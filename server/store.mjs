@@ -177,7 +177,7 @@ async function appendActivity(entry) {
 
 /** 下一个顺序 id：t-0001 → t-0002（扫描目录取最大值 +1） */
 export async function nextId(kind) {
-  const prefix = { tasks: 't', inbox: 'i', notes: 'n', resources: 'r', projects: 'p' }[kind]
+  const prefix = { tasks: 't', inbox: 'i', notes: 'n', resources: 'r', projects: 'p', reviews: 'rev' }[kind]
   if (!prefix) throw new Error(`未知实体类型：${kind}`)
   const list = await readKind(kind)
   let max = 0

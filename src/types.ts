@@ -228,13 +228,13 @@ export interface Resource {
   note?: string
 }
 
-/** 周/月回顾指标 */
+/** 周/月回顾指标（`migrated` 可缺省：生成流程暂不产出，编辑追踪落地后补） */
 export interface ReviewMetrics {
   captured: number
   created: number
   completed: number
   overdue: number
-  migrated: number
+  migrated?: number
 }
 
 /** 回顾 · rev- */

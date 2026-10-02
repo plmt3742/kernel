@@ -81,6 +81,31 @@ export const resourceSchema = z
 
 export const projectStatus = z.enum(['active', 'onHold', 'someday', 'done', 'archived'])
 
+/** 回顾类型（周 / 月） */
+export const reviewType = z.enum(['weekly', 'monthly'])
+
+/** 回顾指标（对齐 docs/04 §4.10；`migrated` 可缺省——生成流程暂不产出，编辑追踪落地后补） */
+export const reviewMetricsSchema = z.object({
+  captured: z.number().int().min(0),
+  created: z.number().int().min(0),
+  completed: z.number().int().min(0),
+  overdue: z.number().int().min(0),
+  migrated: z.number().int().min(0).optional(),
+})
+
+export const reviewSchema = z
+  .object({
+    id: z.string().regex(/^rev-\d{4}$/),
+    type: reviewType,
+    periodKey: z.string().min(1),
+    date: iso,
+    metrics: reviewMetricsSchema,
+    decisions: z.array(z.string().min(1).max(200)),
+    summary: z.string().min(1).max(2000),
+    staleProjectIds: z.array(z.string()).optional(),
+  })
+  .catchall(z.unknown())
+
 export const projectSchema = z
   .object({
     id: z.string().regex(/^p-\d{4}$/),
@@ -104,6 +129,7 @@ export const SCHEMAS = {
   notes: noteSchema,
   resources: resourceSchema,
   projects: projectSchema,
+  reviews: reviewSchema,
 }
 
 /** 实体 kind → id 模式（防目录穿越；与 docs/04 ID 约定一致） */
@@ -113,4 +139,56 @@ export const ID_PATTERNS = {
   notes: /^n-\d{4}$/,
   resources: /^r-\d{4}$/,
   projects: /^p-\d{4}$/,
+  areas: /^a-\d{4}$/,
+  reviews: /^rev-\d{4}$/,
 }
+
+/* ---------------------------------------------------------------------------
+ * AI（v0.5）：收件箱解析建议 + 澄清覆盖字段
+ * 说明：AI 只产出「建议」，真正落盘仍走 commit()；本文件只做形状校验。
+ * ------------------------------------------------------------------------- */
+
+/** AI 收件箱解析建议（不完全对应任何持久化实体，仅作前端预览/应用） */
+export const aiSuggestionSchema = z.object({
+  target: z.enum(['task', 'note', 'resource', 'discard']),
+  title: z.string().min(1).max(80),
+  contexts: z.array(z.string().min(1)).max(5).default([]),
+  energy,
+  importance: z.number().int().min(1).max(3),
+  estimateMin: z.number().int().min(1).max(600).optional(),
+  // 允许模型显式返回 null（"无截止/无关联"），post-validate 时丢弃
+  dueAt: z.union([iso, z.null()]).optional(),
+  // 关联建议：只能来自系统摘要中列出的 id / 标签，post-validate 时按快照过滤
+  projectId: z.union([z.string(), z.null()]).optional(),
+  areaId: z.union([z.string(), z.null()]).optional(),
+  duplicateOf: z.union([z.string(), z.null()]).optional(),
+  tags: z.array(z.string().min(1)).max(5).default([]),
+  reason: z.string().max(300).default(''),
+})
+
+/** 停滞项目处置建议（AI 周回顾草稿产出；action 决定处置方式） */
+export const staleAdviceSchema = z.object({
+  projectId: z.string().min(1),
+  action: z.enum(['archive', 'migrate', 'reactivate']),
+  reason: z.string().max(200).default(''),
+})
+
+/** AI 周回顾草稿（只作前端预览；用户确认后经 /api/reviews 落盘） */
+export const reviewDraftSchema = z.object({
+  summary: z.string().min(1).max(2000),
+  decisions: z.array(z.string().min(1).max(200)).max(6).default([]),
+  staleAdvice: z.array(staleAdviceSchema).default([]),
+})
+
+/** 澄清时的可选覆盖字段（AI 应用或手工预填；全部可选） */
+export const clarifyDetailsSchema = z.object({
+  title: z.string().min(1).max(120).optional(),
+  contexts: z.array(z.string().min(1)).max(8).optional(),
+  energy: energy.optional(),
+  importance: z.number().int().min(1).max(3).optional(),
+  estimateMin: z.number().int().min(1).max(600).optional(),
+  dueAt: iso.optional(),
+  tags: z.array(z.string().min(1)).max(8).optional(),
+  projectId: z.string().min(1).optional(),
+  areaId: z.string().min(1).optional(),
+})
