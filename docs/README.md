@@ -1,0 +1,66 @@
+# 文档索引
+
+KERNEL 的完整文档集。本文件是导航中心，说明每份文档的职责与推荐阅读顺序。
+
+事实源是 `docs/00-DESIGN-BRIEF.md`（项目宪法）。其余文档都是对它的展开，冲突时以宪法为准。
+
+---
+
+## 推荐阅读顺序
+
+新会话请从仓库根目录的 `AGENTS.md` 起步（2 分钟冷启动），然后按下列顺序深入：
+
+1. **`00-DESIGN-BRIEF.md`**：项目宪法。身份、用户画像、系统模型、信息架构、设计系统、技术架构、数据模型、工程制度，全在一处。
+2. **`01-PROJECT-BRIEF.md`**：项目缘起与设计立场。为什么这样设计，系统模型的研究依据，实体与轴的概览。
+3. **`02-ARCHITECTURE.md`**：技术架构。栈选型与理由，数据层现状与未来，opencode 集成路线，托管拓扑。
+4. **`03-DESIGN-SYSTEM.md`**：设计系统。全部 token、组件词汇、可读性纪律、无障碍要求。
+5. **`04-DATA-MODEL.md`**：数据模型。全部实体字段表、6 个通用轴、ID 约定、状态流、示例记录。
+6. **`05-FILE-TREE.md`**：目录结构与各目录职责。动结构必看。
+7. **`06-ROADMAP.md`**：v0.1 到 v1.0 的里程碑路线。
+8. **`07-DEPLOYMENT.md`**：运行与部署。本地、局域网、防火墙、FAQ。
+9. **`08-MATH-SYSTEM.md`**：数理自适应。流体公式、容器查询、φ 层级、复算与验证方法。
+
+按角色的最短路径：
+
+| 你的任务 | 优先读 |
+|---|---|
+| 新 AI 会话冷启动 | `AGENTS.md` → `00-DESIGN-BRIEF.md` |
+| 写前端 / 做交互 | `03-DESIGN-SYSTEM.md` → `01-PROJECT-BRIEF.md` |
+| 改数据 / 加字段 | `04-DATA-MODEL.md` → `02-ARCHITECTURE.md` |
+| 接 AI 能力 | `02-ARCHITECTURE.md`（opencode 集成节）→ `06-ROADMAP.md` |
+| 跑起来给手机看 | `07-DEPLOYMENT.md` |
+| 调版式 / 自适应公式 | `08-MATH-SYSTEM.md` → `03-DESIGN-SYSTEM.md` |
+| 看为什么这么决策 | `decisions/` 下的 ADR |
+
+## 文档清单
+
+| 文件 | 类型 | 一句话职责 |
+|---|---|---|
+| `00-DESIGN-BRIEF.md` | 宪法 | 项目事实源，只读 |
+| `01-PROJECT-BRIEF.md` | 说明 | 背景、立场、系统模型、实体与轴 |
+| `02-ARCHITECTURE.md` | 说明 | 技术决策与数据/集成/托管架构 |
+| `03-DESIGN-SYSTEM.md` | 规范 | 设计 token 与组件规范 |
+| `04-DATA-MODEL.md` | 规范 | 实体字段、ID、状态流 |
+| `05-FILE-TREE.md` | 规范 | 目录树与职责 |
+| `06-ROADMAP.md` | 计划 | 版本里程碑 |
+| `07-DEPLOYMENT.md` | 操作 | 运行、局域网、FAQ |
+| `08-MATH-SYSTEM.md` | 规范 | 数理自适应：流体公式、容器地图、复算方法 |
+| `decisions/0001-naming-kernel.md` | ADR | 命名决策：KERNEL |
+| `decisions/0002-no-role-silos.md` | ADR | 不做身份/领域分区 |
+| `decisions/0003-design-direction-v2.md` | ADR | 视觉方向 v2：C 柔暗 + 柔影悬浮 |
+
+## 根目录文档（不在本目录）
+
+| 文件 | 职责 |
+|---|---|
+| `README.md` | 仓库门面、快速开始、文档总入口 |
+| `AGENTS.md` | 新会话 AI 第一入口、命令、数据纪律、变更记录 |
+| `CHANGELOG.md` | 变更日志（Keep a Changelog） |
+| `TASK_BOOK.md` | 任务台账与迭代记录 |
+
+## 维护规则
+
+- 文档与代码/数据必须保持一致，不一致时应尽快修复。
+- 改目录结构更新 `05-FILE-TREE.md`；改数据字段更新 `04-DATA-MODEL.md`；新决策开新 ADR。
+- 每次改代码，追加 `CHANGELOG.md` 与 `TASK_BOOK.md`（详见 `AGENTS.md` 的文档义务表）。
+- 宪法 `00` 除项目所有者明确要求外不随意改动；重大方向调整走 `decisions/`。

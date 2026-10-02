@@ -1,0 +1,125 @@
+# 05 · 文件树与目录职责
+
+> 本篇给出 KERNEL 的期望目录结构，并明确每个目录的职责。
+> **规则：目录结构一旦变化，必须同步更新本文件。** 这是强制文档义务（见 `AGENTS.md`）。
+
+---
+
+## 1. 目录树
+
+```text
+kernel/
+├─ AGENTS.md                    # 新会话 AI 第一入口
+├─ README.md                    # 仓库门面、快速开始
+├─ CHANGELOG.md                 # 变更日志
+├─ TASK_BOOK.md                 # 任务台账与迭代记录
+├─ package.json                 # 依赖与脚本
+├─ vite.config.ts               # Vite 配置（host: true 等）
+├─ tsconfig.json                # TypeScript strict 配置
+├─ index.html                   # 应用入口 HTML
+│
+├─ docs/                        # 文档
+│  ├─ 00-DESIGN-BRIEF.md        # 项目宪法（事实源，只读）
+│  ├─ README.md                 # 文档索引
+│  ├─ 01-PROJECT-BRIEF.md       # 项目简报
+│  ├─ 02-ARCHITECTURE.md        # 技术架构
+│  ├─ 03-DESIGN-SYSTEM.md       # 设计系统
+│  ├─ 04-DATA-MODEL.md          # 数据模型
+│  ├─ 05-FILE-TREE.md           # 本文件
+│  ├─ 06-ROADMAP.md             # 路线图
+│  ├─ 07-DEPLOYMENT.md          # 运行与部署
+│  ├─ 08-MATH-SYSTEM.md         # 数理自适应系统（流体公式 / 容器地图 / 复算方法）
+│  └─ decisions/                # 架构决策记录（ADR）
+│     ├─ 0001-naming-kernel.md
+│     ├─ 0002-no-role-silos.md
+│     └─ 0003-design-direction-v2.md
+│
+├─ data/                        # 数据源（一记录一文件）
+│  ├─ meta/
+│  │  ├─ config.json            # 全局配置
+│  │  └─ tags.json              # 标签命名空间
+│  ├─ inbox/                    # i-*.json
+│  ├─ tasks/                    # t-*.json
+│  ├─ projects/                 # p-*.json
+│  ├─ areas/                    # a-*.json
+│  ├─ goals/                    # g-*.json
+│  ├─ habits/                   # h-*.json
+│  ├─ events/                   # e-*.json
+│  ├─ notes/                    # n-*.json
+│  ├─ resources/                # r-*.json
+│  └─ reviews/                  # rev-*.json
+│
+├─ src/                         # 前端应用
+│  ├─ main.tsx                  # 挂载入口（样式导入、字体自托管）
+│  ├─ App.tsx                   # 应用壳与路由
+│  ├─ views/                    # 八个视图（Overview/Inbox/Tasks/Calendar/Projects/Library/Review/Settings）
+│  ├─ components/               # 通用组件
+│  │  ├─ shell/                 # 应用壳（RailNav / TopBar / StatusBar / AppLayout）
+│  │  └─ charts/                # 图表（TrendBars / EnergyBars）
+│  ├─ context/                  # React Context（Theme / Toast / Palette）
+│  ├─ lib/                      # 工具与数据访问（data / derive / date / format / motion / focus / proto）
+│  └─ styles/                   # 全局样式与 token（tokens / base / shell / components / views）
+│
+├─ design-drafts/               # 设计草案选型稿（a 硬瑞士 / b 暖雾柔光 / c 柔暗夜色；渲染验证后作方向参考）
+├─ .qa/                         # 视觉 QA 证据（截图与报告；v0.2 归档 + v0.3~v0.5 复核，勿改归档件）
+│
+├─ scripts/                     # 脚本（未来：种子生成、数据校验）
+└─ public/                      # 静态资源（字体、图标）
+```
+
+> 具体文件名（如组件文件名、token 文件拆分方式）由脚手架实现决定；本树表达的是**结构与职责**，结构变化时更新本文件。
+
+## 2. 目录职责
+
+| 路径 | 职责 | 谁拥有 |
+|---|---|---|
+| `docs/` | 全部文档：宪法、架构、设计、数据模型、ADR | 文档工程师 |
+| `design-drafts/` | 设计草案选型稿（方向参考，反映当次选型，非构建产物） | 设计 / 所有者 |
+| `.qa/` | 视觉 QA 证据：截图与报告（归档件只读；复核输出入 `v0.3/`） | QA 执行方 |
+| `data/` | 数据源，一记录一文件 JSON | 数据层实现方；未来经单写者服务写入 |
+| `src/` | React + TypeScript 前端应用 | 前端实现方 |
+| `scripts/` | 脚本（未来）：种子数据生成、数据校验 | 未来 |
+| `public/` | 静态资源：自托管字体、图标 | 前端实现方 |
+| 根目录 `*.md` | 门面与台账（README / AGENTS / CHANGELOG / TASK_BOOK） | 文档工程师 |
+
+## 3. 数据目录与实体的对应
+
+`data/` 下按实体分目录，前缀与目录对应：
+
+| 目录 | 前缀 | 实体 | 文档 |
+|---|---|---|---|
+| `data/inbox/` | `i-` | inboxItem | `04-DATA-MODEL.md` §4.1 |
+| `data/tasks/` | `t-` | task | §4.2 |
+| `data/projects/` | `p-` | project | §4.3 |
+| `data/areas/` | `a-` | area | §4.4 |
+| `data/goals/` | `g-` | goal | §4.5 |
+| `data/habits/` | `h-` | habit | §4.6 |
+| `data/events/` | `e-` | event | §4.7 |
+| `data/notes/` | `n-` | note | §4.8 |
+| `data/resources/` | `r-` | resource | §4.9 |
+| `data/reviews/` | `rev-` | review | §4.10 |
+
+## 4. 前端目录职责
+
+| 路径 | 职责 |
+|---|---|
+| `src/main.tsx` | 应用挂载入口，样式导入；主题 FOUC 防护在 `index.html` 内联脚本中先于其执行 |
+| `src/App.tsx` | 应用壳：Router + Provider 链 + 路由出口 |
+| `src/views/` | 八个视图页面，一一对应宪法 §4 的视图规格 |
+| `src/components/` | 可复用组件（含 `shell/` 与 `charts/` 子目录），命名遵循设计系统签名词汇 |
+| `src/context/` | React Context：主题、Toast、命令面板开关 |
+| `src/lib/` | 数据访问、派生计算、日期、格式化、动效常量、焦点工具、原型态存储 |
+| `src/styles/` | 全局样式、CSS 变量 token、主题定义（唯一事实源 `tokens.css`） |
+
+## 5. 维护规则
+
+1. **结构变化即更新本文件**：新增、删除、重命名目录或关键文件后，必须同步修改本篇第 1、2 节的树与职责表。
+2. 新增实体目录时，同时更新第 3 节表格与 `04-DATA-MODEL.md`。
+3. 新增视图路由时，同步 `02-ARCHITECTURE.md` 的路由清单与 `AGENTS.md`。
+4. 本文件与实际仓库不一致时，以实际为准并尽快修复文档。
+
+## 6. 相关文档
+
+- 数据字段：`04-DATA-MODEL.md`
+- 技术架构与目录职责总述：`02-ARCHITECTURE.md`
+- 运行方式：`07-DEPLOYMENT.md`
