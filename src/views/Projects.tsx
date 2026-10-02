@@ -12,6 +12,7 @@ import { getAreaById, getProjectProgress, getSnapshot, getTaskById } from '@/lib
 import { trashEntity } from '@/lib/mutations'
 import { errorText } from '@/lib/api'
 import { useDataRevision } from '@/lib/hooks'
+import { createUiStore, str, useUiStore } from '@/lib/uiState'
 import { PROJECT_STATUS_EN, PROJECT_STATUS_LABEL, tagLabel } from '@/lib/format'
 import { humanizeDay } from '@/lib/date'
 import type { Project } from '@/types'
@@ -33,12 +34,35 @@ const GROUPS: ProjectGroupSpec[] = [
   { status: 'done', cn: '已完成', en: PROJECT_STATUS_EN.done, variant: 'done' },
 ]
 
+/* ---------------------------------------------------------------------------
+ * 项目页界面状态保留（Slice Z · F29，见 ADR-0022）：快速新建输入草稿持久化。
+ * ------------------------------------------------------------------------- */
+interface ProjectUiState {
+  quick: string
+}
+
+const PROJECT_UI_KEY = 'kernel.ui.projects.v1'
+
+function parseProjectUi(raw: unknown): ProjectUiState | null {
+  if (typeof raw !== 'object' || raw === null) return null
+  return { quick: str((raw as Record<string, unknown>).quick) }
+}
+
+const projectUiStore = createUiStore<ProjectUiState>(PROJECT_UI_KEY, { quick: '' }, {
+  parse: parseProjectUi,
+})
+
 export function Projects() {
   useDataRevision()
   const { toast } = useToast()
   const [searchParams, setSearchParams] = useSearchParams()
   const [drawerId, setDrawerId] = useState<string | null>(null)
-  const [quick, setQuick] = useState('')
+  // 快速新建输入（Slice Z · F29）：来自模块级 store（跨路由 + 刷新保留）
+  const projectUi = useUiStore(projectUiStore)
+  const quick = projectUi.quick
+  const setQuick = (value: string): void => {
+    projectUiStore.set((state) => ({ ...state, quick: value }))
+  }
   // 草稿确认弹窗（Slice R1）：回车后打开，AI 补全完成定义 / 区域 / 标签，确认才写入
   const [draftTitle, setDraftTitle] = useState<string | null>(null)
   const projects = getSnapshot().projects

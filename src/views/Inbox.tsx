@@ -3,6 +3,7 @@
 //   切页再回来仍见真实进度 / 「解析中…」/「AI 建议就绪」标记；批量动作据 running 禁用防重复启动。
 import {
   useEffect,
+  useMemo,
   useRef,
   useState,
   useSyncExternalStore,
@@ -63,6 +64,7 @@ import {
 } from '@/lib/inboxAi'
 import { deepLinkOfId } from '@/lib/relations'
 import { api, errorText } from '@/lib/api'
+import { createUiStore, str, useUiStore } from '@/lib/uiState'
 import { useDataRevision, useNow } from '@/lib/hooks'
 import { humanSize, INBOX_SOURCE_LABEL } from '@/lib/format'
 import {
@@ -163,6 +165,35 @@ function groupOf(item: InboxItem, now: Date): GroupKey {
   return 'earlier'
 }
 
+/* ---------------------------------------------------------------------------
+ * 收件箱界面状态保留（Slice Z · F27，见 ADR-0022）：
+ * 选中项 / 内联展开项 / 捕捉草稿提升到模块级 store 并持久化——切路由或刷新后保留；
+ * 数据版本变化时对账，剔除已不在未澄清列表的脏 id（安全回退）。
+ * `pendingFiles`（File 对象）刻意不持久化：二进制句柄不可序列化，且刷新后不可复得（见 ADR-0022）。
+ * ------------------------------------------------------------------------- */
+interface InboxUiState {
+  selected: string[]
+  expandedId: string | null
+  draft: string
+}
+
+const INBOX_UI_KEY = 'kernel.ui.inbox.v1'
+const INBOX_UI_DEFAULT: InboxUiState = { selected: [], expandedId: null, draft: '' }
+
+function parseInboxUi(raw: unknown): InboxUiState | null {
+  if (typeof raw !== 'object' || raw === null) return null
+  const v = raw as Record<string, unknown>
+  const selected = Array.isArray(v.selected)
+    ? v.selected.filter((value): value is string => typeof value === 'string')
+    : []
+  const expandedId = typeof v.expandedId === 'string' ? v.expandedId : null
+  return { selected, expandedId, draft: str(v.draft) }
+}
+
+const inboxUiStore = createUiStore<InboxUiState>(INBOX_UI_KEY, INBOX_UI_DEFAULT, {
+  parse: parseInboxUi,
+})
+
 export function Inbox() {
   const revision = useDataRevision()
   const { toast } = useToast()
@@ -170,12 +201,33 @@ export function Inbox() {
   const now = useNow()
   const reduce = useReducedMotion()
   const inputRef = useRef<HTMLInputElement>(null)
-  const [draft, setDraft] = useState('')
   const [showClarified, setShowClarified] = useState(false)
   const [showDiscarded, setShowDiscarded] = useState(false)
-  // 多选：未澄清项 id 集合；展开：当前内联展开的单条 id
-  const [selected, setSelected] = useState<Set<string>>(() => new Set())
-  const [expandedId, setExpandedId] = useState<string | null>(null)
+  // 界面状态（Slice Z · F27）：选中 / 展开 / 捕捉草稿来自模块级 store（跨路由 + 刷新保留）
+  const inboxUi = useUiStore(inboxUiStore)
+  const draft = inboxUi.draft
+  const expandedId = inboxUi.expandedId
+  const selected = useMemo(() => new Set(inboxUi.selected), [inboxUi.selected])
+  const setDraft = (value: string): void => {
+    inboxUiStore.set((state) => ({ ...state, draft: value }))
+  }
+  const setExpandedId = (
+    next: string | null | ((prev: string | null) => string | null),
+  ): void => {
+    inboxUiStore.set((state) => ({
+      ...state,
+      expandedId: typeof next === 'function' ? next(state.expandedId) : next,
+    }))
+  }
+  const setSelected = (
+    next: Set<string> | ((prev: Set<string>) => Set<string>),
+  ): void => {
+    inboxUiStore.set((state) => {
+      const prev = new Set(state.selected)
+      const value = typeof next === 'function' ? next(prev) : next
+      return { ...state, selected: [...value] }
+    })
+  }
   // AI 解析状态：模块级 store（跨路由切换存活）——只读快照 + 派发展开 / 滚动 / 播报
   const ai = useSyncExternalStore(subscribeInboxAi, getInboxAiSnapshot)
   const { running, current, total, activeId, phase, stage, text, reasoning, result, error } = ai
@@ -208,22 +260,21 @@ export function Inbox() {
     return () => window.removeEventListener('kernel:focus-capture', focus)
   }, [])
 
-  // 数据变化（澄清 / 撤销 / 水合）后剔除已不在未澄清列表中的选中项，避免残留脏 id
+  // 数据变化（澄清 / 撤销 / 水合）后对账：选中项与展开项剔除已不在未澄清列表的脏 id
   useEffect(() => {
-    setSelected((prev) => {
-      if (prev.size === 0) return prev
+    inboxUiStore.set((state) => {
       const valid = new Set(
         getInbox()
           .filter((item) => item.status === 'unprocessed')
           .map((item) => item.id),
       )
-      let changed = false
-      const next = new Set<string>()
-      prev.forEach((id) => {
-        if (valid.has(id)) next.add(id)
-        else changed = true
-      })
-      return changed ? next : prev
+      const nextSelected = state.selected.filter((id) => valid.has(id))
+      const nextExpanded =
+        state.expandedId !== null && valid.has(state.expandedId) ? state.expandedId : null
+      if (nextSelected.length === state.selected.length && nextExpanded === state.expandedId) {
+        return state
+      }
+      return { ...state, selected: nextSelected, expandedId: nextExpanded }
     })
   }, [revision])
 

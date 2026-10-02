@@ -66,6 +66,7 @@ KERNEL 的完整文档集。本文件是导航中心，说明每份文档的职�
 | `decisions/0019-areas-goals-habits-manageable.md` | ADR | 区域 / 目标 / 习惯可管理 + 打卡（Slice X）：关闭最后三个只读结构（schema + `a-`/`g-`/`h-` id + 创建 / 编辑 / 删除 + 回收站）；区域 / 目标删除**引用护栏**（409 可读计数）；`goals.keyResults` 仅展示保留；习惯 `checkin`/`uncheckin`（缺省今天、幂等、`{date,value:1}`）；设置三管理区；总览「习惯打卡」条取首个习惯（修复 `h-0002` 硬编码）+ 今日打卡切换；关联 area/goal 芯片深链设置（F8）；F23 项目区域默认显式化 |
 | `decisions/0020-note-experience.md` | ADR | 笔记体验：沉浸阅读 / 撰写 + AI 蒸馏（Slice M）：`.k-modal--note` 加宽 + 正文 68ch / 行高 1.8 + 安静元数据条；编辑面标题 + 正文优先（`rows=18`）；「新建笔记」撰写弹窗（创建可撤销）；蒸馏语义澄清（**点选只标注、不改写**）；`POST /api/ai/note/distill`（下一层草稿、缺省当前+1 封顶 L3、**不落盘**）；应用 = 正文**追加** `## 蒸馏 → Lx` + 设层级，撤销往返精确还原 |
 | `decisions/0021-consistency-sweep.md` | ADR | 一致性清扫（Slice Y）：AI 提示词情境从注册表派生（F4）+ 上下文筛选 = 已用 ∪ 注册表（F24）；重要性量纲统一 **0–3**（F21，选 0–3 因存量 t-0057/t-0058 含 0）+ 能量单一源（F7）；`POST /api/resources` 资料直接新建 + 撰写弹窗（F5）；移除死「迁移」瓦片（F11/F12）；总览监视柱 / W40 深链（F13/F14）；报告内停滞建议行可点（F17）；详情「推迟至」行（F18）；重新解析保留用户编辑（F32）；多文件上传受限并发（F33）；编辑保存撤销（F36）；标签输入补全 |
+| `decisions/0022-ui-state-persistence.md` | ADR | 界面状态保留策略（Slice Z）：通用助手 `createUiStore`（模块级 store + 可选 `localStorage`，安全解析 / 裁剪 / 静默失败）；F25 AI 对话（`draft`/`busy`/`error` 提升 + 请求模块化 → 思考中跨页保留 + 对话持久化**上限 60 轮** + 清空同步清副本）；F26 任务筛选 / 分组 / 草稿；F27 收件箱选中 / 展开 / 草稿（对账）；F28 资料筛选；F29 日程游标 / 项目草稿 / 回顾运行态（回顾刻意不持久化）；**机制选择（module store vs URL vs localStorage）与不持久化清单** |
 
 ## 根目录文档（不在本目录）
 

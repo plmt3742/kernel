@@ -1167,6 +1167,7 @@ body.demo-locked { overflow: hidden; }
           <div class="mind"><strong>能量匹配</strong><span>低能量时做 <code class="inl">@phone</code> 这类低耗任务，而不是硬啃大块工作。</span></div>
           <div class="mind"><strong>撤销兜底</strong><span>完成、澄清、批量、AI 应用——5 秒内全可撤，放心操作。</span></div>
           <div class="mind"><strong>清空即归档</strong><span>对话清空不是删除：先归档成一条笔记，想找回就去资料库。</span></div>
+          <div class="mind"><strong>它记得你的进度</strong><span>筛选、分组、草稿、展开、选中、对话——切页再回来都在原地；聊天与任务筛选刷新也还原。</span></div>
             <div class="mind hot"><strong>建议要你点头</strong><span>解析、快速新建——AI 只给建议，落盘永远等你点「应用建议」「创建任务」。回顾报告生成即自动归档（可删除），编辑保存更新同一条。</span></div>
           <div class="mind hot"><strong>周回顾是心跳</strong><span>每周固定一晚，短、可视。系统靠它维持节奏。</span></div>
         </div>
@@ -1231,6 +1232,11 @@ body.demo-locked { overflow: hidden; }
           <article class="qa">
             <h3>清空对话后，之前聊的去哪了？</h3>
             <p>没有丢。清空对话会先把整段记录归档成一条笔记（标题形如「AI 对话归档 · 时间」），在「资料」页就能翻到。你可以点 toast 上的「查看」直接跳过去；归档成功，对话才会清空。</p>
+          </article>
+
+          <article class="qa">
+            <h3>切到别的页面再回来，我的操作会丢吗？</h3>
+            <p>不会。筛选、分组、正在打的草稿、展开的条目、勾选的收件箱项、AI 对话，以及对话「正在思考」的状态，都跨页面保留；对话记录与任务筛选在浏览器里也记得，刷新后还原。这些只是<strong>界面记忆</strong>，不写入 <code class="inl">data/</code>。少数东西刻意不记：收件箱待上传的文件、笔记 / 资料的编辑弹窗等瞬时状态。</p>
           </article>
 
           <article class="qa">

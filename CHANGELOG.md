@@ -4,6 +4,18 @@
 
 ## [Unreleased]
 
+### 状态保留（F25–F29）· Slice Z（已完成 · 2026-10-03）
+所有者反馈：「我每个页面的操作比如首页的 AI 对话，切换页面后再回来就清空了，根本没有保留和记忆。」根因是界面状态（筛选 / 分组 / 草稿 / 展开 / 选中 / 游标）放在组件 `useState`，切路由卸载即丢。本切片把「界面状态保留」确立为**通用策略**：以模块级 store 为基座（沿用 `src/lib/scroll.ts` / `src/lib/inboxAi.ts` 精神），可选叠加 `localStorage` 跨刷新还原，逐页覆盖 F25–F29。**纯前端切片，未改服务端**；`npm run build`（tsc strict + vite）退出 0；浏览器 E2E **51/51**；**零数据残留**（`data/` 下 157 个文件字节哈希前后完全相同）；控制台零 error；证据 `.qa/v42/`。
+
+- **通用助手（新 `src/lib/uiState.ts`）**：`createUiStore<T>(key, initial, { parse, prune, persist })`——模块级状态 + 订阅 + `useUiStore`（`useSyncExternalStore`）；`parse` 校验非法即回退、`prune` 裁剪、`persist:false` 仅模块级；读取 / 解析 / 序列化 / 配额失败**一律静默**。附 `str` / `bool` / `oneOf` / `oneOfOrEmpty` 取值助手。键命名空间 `kernel.ui.<page>.v1`。
+- **F25 · AI 对话（`src/components/OverviewChat.tsx`）**：`draft` / `busy` / `error` 由组件 `useState` 提升到模块级 store；请求函数 `requestChat` 与请求令牌 `chatToken` 亦提升到模块级——**切路由卸载后仍能把回复写回 store**，故「思考中」跨页保留、清空后迟到回复丢弃。对话 + 草稿经 `localStorage` 持久化（安全解析、**上限最近 60 轮**、刷新还原 id 序号）；「清空」语义不变（先归档为笔记，成功才清空内存 + 持久化副本，刷新仍为已清空）。
+- **F26 · 任务页（`src/views/Tasks.tsx`）**：状态 / 时间 / 上下文等筛选、分组模式（平铺 / 按项目 / 按上下文）、更多筛选展开、快速新建草稿 → 模块 store + `localStorage`；切路由与刷新均还原。
+- **F27 · 收件箱（`src/views/Inbox.tsx`）**：选中 id 集、内联展开 id、捕捉草稿 → 模块 store + `localStorage`；数据版本变化时**对账**剔除已不在未澄清列表的脏 id。`pendingFiles`（`File` 对象）刻意维持组件级（不可序列化 / 刷新不可复得）。
+- **F28 · 资料页（`src/views/Library.tsx`）**：标签页（全部 / 笔记 / 资料）、笔记类型、资料类型、资料状态、选中标签 → 模块 store + `localStorage`。
+- **F29 · 日程 / 项目 / 回顾**：日程的迷你月历选中日 + 显示月游标（毫秒）、项目的快速新建输入草稿 → 模块 store + `localStorage`；回顾页周 / 月卡的 AI 草稿运行态 → 模块 store（**刻意不持久化**：正文体量大且绑定归档 `reviewId`）。弹窗 / 编辑 / 撰写等瞬时交互态一律维持组件级。
+- **验证**：`.qa/v42/verify-z.py` **51/51**——对话草稿跨路由保留；发送后消息跨路由保留；刷新还原；思考中切页返回仍思考中（挂起 `/api/ai/chat` 后释放）；清空 → 归档为笔记（拦截 `POST /api/notes` 校验标题）+ 线程清空 + 刷新后仍清空；任务分组 / 时间筛选 / 快速新建草稿跨路由 + 刷新还原；收件箱选中 2 项 + 展开 1 项 + 捕捉草稿跨路由还原；资料标签页 / 笔记类型 / 资料类型 / 资料状态 / 选中标签跨路由 + 刷新还原；390 零横溢；控制台 0 error；数据快照集合与基线一致 + 157 文件字节哈希**逐字节相同**。
+- **记录**：新增 ADR-0022（`docs/decisions/0022-ui-state-persistence.md`，机制选择 / 聊天上限 / 不持久化清单）；`docs/README.md`（ADR 索引）；`public/guide.html`；`CHANGELOG.md`、`TASK_BOOK.md`、`AGENTS.md`。
+
 ### 一致性清扫 · Slice Y（已完成 · 2026-10-03）
 只读「碎片化 / 摩擦」审计剩余项的一致性 / 自动化清扫（F4/F5/F7/F11/F12/F13/F14/F17/F18/F21/F24/F32/F33/F36 + 标签补全）：同一概念在多处各写一份、或 UI 与存储口径不一致。`npm run build`（tsc strict + vite）退出 0；服务端冒烟 **30/30** + 浏览器 E2E **35/35**；零数据残留（所有者 157 个数据文件**字节不变**，含 `t-0057`/`t-0058` 的 `importance: 0`）；控制台零 error；证据 `.qa/v41/`。
 

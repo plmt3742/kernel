@@ -1,37 +1,98 @@
-// KERNEL · 总览 AI 对话盒（v0.5 · Slice G）
+// KERNEL · 总览 AI 对话盒（v0.5 · Slice G；Slice Z 状态保留）
 // 位置：状态条之下、工作台之上；视觉与收件箱捕捉编辑器（.ic-composer）一致。
 // 能力：读库多轮对话（经数据服务 → 本地 opencode）；「清空」先归档为笔记（time-named）再清空。
-// 纪律：纯文本渲染（无 dangerouslySetInnerHTML）；会话级持久（模块级 store，跨路由存活，刷新丢失）。
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
+// 纪律：纯文本渲染（无 dangerouslySetInnerHTML）。
+// Slice Z（见 ADR-0022）状态保留：
+//   · draft / busy / error 全部提升到模块级 store（切路由中途打字 / 思考不再丢）；
+//   · 对话（turns）+ 草稿经 localStorage 持久化（安全解析、上限最近 60 轮、静默失败）→ 刷新还原；
+//   · 「清空」仍先归档为笔记，归档成功即清空内存 + 持久化副本（刷新后保持已清空）。
+import { useEffect, useRef } from 'react'
 import { ArrowUp } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useToast } from '@/context/ToastContext'
 import { errorText } from '@/lib/api'
+import { createUiStore, useUiStore } from '@/lib/uiState'
 import { chatWithAi, createNote, type AiChatMessage } from '@/lib/mutations'
 
 interface ChatTurn extends AiChatMessage {
   id: string
 }
 
-/* 会话级 store：模块级数组 + 订阅；切换路由后重新挂载仍读回同一段对话 */
-let moduleTurns: ChatTurn[] = []
-const turnListeners = new Set<() => void>()
-let turnSeq = 0
+interface ChatState {
+  turns: ChatTurn[]
+  draft: string
+  busy: boolean
+  error: string
+}
 
-function subscribeTurns(listener: () => void): () => void {
-  turnListeners.add(listener)
-  return () => {
-    turnListeners.delete(listener)
+const CHAT_KEY = 'kernel.ui.chat.v1'
+/** 持久化 / 内存上限（ADR-0022）：最多保留最近 60 轮，避免无界增长 */
+const CHAT_MAX_TURNS = 60
+const EMPTY_CHAT: ChatState = { turns: [], draft: '', busy: false, error: '' }
+
+function isTurn(value: unknown): value is ChatTurn {
+  if (typeof value !== 'object' || value === null) return false
+  const v = value as Record<string, unknown>
+  return (
+    typeof v.id === 'string' &&
+    (v.role === 'user' || v.role === 'assistant') &&
+    typeof v.content === 'string'
+  )
+}
+
+/** 安全解析持久化对话；非法 / 缺字段丢弃（busy / error 刻意不还原：刷新后无在途请求） */
+function parseChat(raw: unknown): ChatState | null {
+  if (typeof raw !== 'object' || raw === null) return null
+  const v = raw as Record<string, unknown>
+  const turns = Array.isArray(v.turns) ? v.turns.filter(isTurn).slice(-CHAT_MAX_TURNS) : []
+  const draft = typeof v.draft === 'string' ? v.draft : ''
+  return { turns, draft, busy: false, error: '' }
+}
+
+/** 由已还原轮次推导 id 序号起点，避免刷新后 id 复用（React key 冲突） */
+function maxTurnSeq(turns: ChatTurn[]): number {
+  let max = -1
+  for (const turn of turns) {
+    const match = /^c-(\d+)$/.exec(turn.id)
+    if (match !== null) max = Math.max(max, Number(match[1]))
   }
+  return max
 }
 
-function getTurns(): ChatTurn[] {
-  return moduleTurns
+const chatStore = createUiStore<ChatState>(CHAT_KEY, EMPTY_CHAT, {
+  parse: parseChat,
+  prune: (state) => ({ ...state, turns: state.turns.slice(-CHAT_MAX_TURNS) }),
+})
+
+let seq = maxTurnSeq(chatStore.get().turns) + 1
+
+/** 在途请求令牌（模块级）：清空 / 新请求令旧的迟到响应失效（跨挂载有效） */
+let chatToken = 0
+
+function patchChat(patch: Partial<ChatState>): void {
+  chatStore.set((prev) => ({ ...prev, ...patch }))
 }
 
-function setTurns(next: ChatTurn[]): void {
-  moduleTurns = next
-  for (const listener of turnListeners) listener()
+/**
+ * 发起一轮请求（模块级）：切路由卸载后仍能把回复写回 store，故「思考中」状态可跨页面保留。
+ * 请求令牌保证：清空后迟到的回复直接丢弃。
+ */
+function requestChat(history: ChatTurn[]): void {
+  const token = (chatToken += 1)
+  void (async () => {
+    try {
+      const result = await chatWithAi(history.map(({ role, content }) => ({ role, content })))
+      if (chatToken !== token) return
+      patchChat({
+        turns: [...history, { id: `c-${seq++}`, role: 'assistant', content: result.reply }],
+        busy: false,
+        error: '',
+      })
+    } catch (err) {
+      if (chatToken !== token) return
+      patchChat({ error: errorText(err), busy: false })
+    }
+  })()
 }
 
 function pad2(n: number): string {
@@ -58,12 +119,9 @@ function buildTranscript(title: string, turns: ChatTurn[]): string {
 export function OverviewChat() {
   const { toast } = useToast()
   const navigate = useNavigate()
-  const turns = useSyncExternalStore(subscribeTurns, getTurns, getTurns)
-  const [draft, setDraft] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
+  const chat = useUiStore(chatStore)
+  const { turns, draft, busy, error } = chat
   const threadRef = useRef<HTMLDivElement>(null)
-  const reqRef = useRef(0)
 
   // 新消息 / 思考中：线程滚到底部
   useEffect(() => {
@@ -71,42 +129,23 @@ export function OverviewChat() {
     if (node !== null) node.scrollTop = node.scrollHeight
   }, [turns, busy])
 
-  const request = (history: ChatTurn[]): void => {
-    const req = (reqRef.current += 1)
-    void (async () => {
-      try {
-        const result = await chatWithAi(history.map(({ role, content }) => ({ role, content })))
-        if (reqRef.current !== req) return
-        setTurns([...history, { id: `c-${turnSeq++}`, role: 'assistant', content: result.reply }])
-      } catch (err) {
-        if (reqRef.current !== req) return
-        setError(errorText(err))
-      } finally {
-        if (reqRef.current === req) setBusy(false)
-      }
-    })()
-  }
-
   const send = (): void => {
     const text = draft.trim()
     if (text === '' || busy) return
-    const history = [...turns, { id: `c-${turnSeq++}`, role: 'user' as const, content: text }]
-    setTurns(history)
-    setDraft('')
-    setError('')
-    setBusy(true)
-    request(history)
+    const history = [...turns, { id: `c-${seq++}`, role: 'user' as const, content: text }]
+    patchChat({ turns: history, draft: '', busy: true, error: '' })
+    requestChat(history)
   }
 
   // 失败重试：保留已发出的用户消息，重新请求（不重复追加用户轮）
   const retry = (): void => {
     if (busy || turns.length === 0) return
-    setError('')
-    setBusy(true)
-    request(turns)
+    patchChat({ busy: true, error: '' })
+    requestChat(turns)
   }
 
-  // 清空：非空对话先归档为笔记；归档失败则不清空（对话保留）
+  // 清空：非空对话先归档为笔记；归档失败则不清空（对话保留）。
+  // 归档成功即清空内存 + 持久化副本，刷新后仍为已清空。
   const clear = (): void => {
     if (turns.length === 0 || busy) return
     const now = new Date()
@@ -115,10 +154,8 @@ export function OverviewChat() {
     void (async () => {
       try {
         const note = await createNote({ title, body, type: 'memo' })
-        reqRef.current += 1
-        setTurns([])
-        setError('')
-        setBusy(false)
+        chatToken += 1 // 作废在途请求（迟到响应不再落状态）
+        patchChat({ turns: [], busy: false, error: '' })
         toast('已归档为笔记', {
           action: { label: '查看', onClick: () => navigate(`/library?note=${note.id}`) },
         })
@@ -163,7 +200,7 @@ export function OverviewChat() {
           className="ic-composer__input k-chat__input"
           value={draft}
           rows={1}
-          onChange={(event) => setDraft(event.target.value)}
+          onChange={(event) => patchChat({ draft: event.target.value })}
           onKeyDown={(event) => {
             if (event.key === 'Enter' && !event.shiftKey) {
               event.preventDefault()

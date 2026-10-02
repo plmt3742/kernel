@@ -28,6 +28,7 @@ import {
   toISODateTime,
 } from '@/lib/date'
 import { useDataRevision, useNow } from '@/lib/hooks'
+import { createUiStore, useUiStore } from '@/lib/uiState'
 import type { CalendarEvent } from '@/types'
 
 /* ---------------------------------------------------------------------------
@@ -138,6 +139,38 @@ interface MiniCell {
   hasEvent: boolean
 }
 
+/* ---------------------------------------------------------------------------
+ * 日程页界面状态保留（Slice Z · F29，见 ADR-0022）：
+ * 迷你月历选中日 + 当前显示月游标提升到模块级 store 并持久化——切路由或刷新后
+ * 回到上次浏览的月份与选中日（时间以毫秒存，解析只接受有限数）。
+ * ------------------------------------------------------------------------- */
+interface CalendarUiState {
+  selectedDayMs: number | null
+  monthCursorMs: number
+}
+
+const CALENDAR_UI_KEY = 'kernel.ui.calendar.v1'
+
+function parseCalendarUi(raw: unknown): CalendarUiState | null {
+  if (typeof raw !== 'object' || raw === null) return null
+  const v = raw as Record<string, unknown>
+  const selectedDayMs =
+    typeof v.selectedDayMs === 'number' && Number.isFinite(v.selectedDayMs)
+      ? v.selectedDayMs
+      : null
+  const monthCursorMs =
+    typeof v.monthCursorMs === 'number' && Number.isFinite(v.monthCursorMs)
+      ? v.monthCursorMs
+      : Date.now()
+  return { selectedDayMs, monthCursorMs }
+}
+
+const calendarUiStore = createUiStore<CalendarUiState>(
+  CALENDAR_UI_KEY,
+  { selectedDayMs: null, monthCursorMs: Date.now() },
+  { parse: parseCalendarUi },
+)
+
 export function Calendar() {
   const now = useNow()
   const revision = useDataRevision()
@@ -146,9 +179,26 @@ export function Calendar() {
   const [drawerId, setDrawerId] = useState<string | null>(null)
   // 新建弹窗：null = 关闭；否则为预填开始时刻（ISO）
   const [draftStartAt, setDraftStartAt] = useState<string | null>(null)
-  // 迷你月历选中日（点击日格；用于高亮 + 预填新建开始时刻）
-  const [selectedDay, setSelectedDay] = useState<Date | null>(null)
-  const [monthCursor, setMonthCursor] = useState(() => new Date())
+  // 迷你月历选中日 / 显示月（Slice Z · F29）：来自模块级 store（跨路由 + 刷新保留）
+  const calendarUi = useUiStore(calendarUiStore)
+  const selectedDay = useMemo(
+    () => (calendarUi.selectedDayMs !== null ? new Date(calendarUi.selectedDayMs) : null),
+    [calendarUi.selectedDayMs],
+  )
+  const monthCursor = useMemo(() => new Date(calendarUi.monthCursorMs), [calendarUi.monthCursorMs])
+  const setSelectedDay = (date: Date | null): void => {
+    calendarUiStore.set((state) => ({
+      ...state,
+      selectedDayMs: date === null ? null : date.getTime(),
+    }))
+  }
+  const setMonthCursor = (next: Date | ((prev: Date) => Date)): void => {
+    calendarUiStore.set((state) => {
+      const prev = new Date(state.monthCursorMs)
+      const value = typeof next === 'function' ? next(prev) : next
+      return { ...state, monthCursorMs: value.getTime() }
+    })
+  }
   const heroRef = useRef<HTMLElement>(null)
   const todayRef = useRef<HTMLElement>(null)
   // 事件行 DOM 引用（按事件 id）：迷你月历点击后滚动到该日首个事件

@@ -26,6 +26,7 @@ import {
 } from '@/lib/date'
 import { useDataRevision, useNow, useUndoableToggle } from '@/lib/hooks'
 import { DUR, EASE_ENTER, STAGGER, STAGGER_MAX } from '@/lib/motion'
+import { bool, createUiStore, oneOf, str, useUiStore } from '@/lib/uiState'
 import type { Task } from '@/types'
 
 type GroupMode = 'flat' | 'project' | 'context'
@@ -35,6 +36,47 @@ interface TaskGroup {
   title: string
   tasks: Task[]
 }
+
+/* ---------------------------------------------------------------------------
+ * 任务页界面状态保留（Slice Z · F26，见 ADR-0022）：
+ * 筛选 / 分组 / 更多筛选展开 / 快速新建草稿提升到模块级 store 并持久化，
+ * 切路由或刷新后原样还原（纯界面状态，绝不落盘数据）。
+ * ------------------------------------------------------------------------- */
+interface TaskUiState {
+  filters: Record<string, string>
+  groupMode: GroupMode
+  showMore: boolean
+  quick: string
+}
+
+const TASK_UI_KEY = 'kernel.ui.tasks.v1'
+const TASK_UI_DEFAULT: TaskUiState = {
+  filters: { status: 'open' },
+  groupMode: 'flat',
+  showMore: false,
+  quick: '',
+}
+
+function parseTaskUi(raw: unknown): TaskUiState | null {
+  if (typeof raw !== 'object' || raw === null) return null
+  const v = raw as Record<string, unknown>
+  const filters: Record<string, string> = {}
+  if (typeof v.filters === 'object' && v.filters !== null) {
+    for (const [key, value] of Object.entries(v.filters)) {
+      if (typeof value === 'string') filters[key] = value
+    }
+  }
+  return {
+    filters: Object.keys(filters).length > 0 ? filters : TASK_UI_DEFAULT.filters,
+    groupMode: oneOf(v.groupMode, ['flat', 'project', 'context'] as const, 'flat'),
+    showMore: bool(v.showMore),
+    quick: str(v.quick),
+  }
+}
+
+const taskUiStore = createUiStore<TaskUiState>(TASK_UI_KEY, TASK_UI_DEFAULT, {
+  parse: parseTaskUi,
+})
 
 /** 默认排序：截止近者优先（无截止垫底），其次重要性，最后按 id 稳定 */
 function byDueTask(a: Task, b: Task): number {
@@ -58,10 +100,29 @@ export function Tasks() {
   const { toast } = useToast()
   const reduce = useReducedMotion()
 
-  const [filters, setFilters] = useState<Record<string, string>>({ status: 'open' })
-  const [groupMode, setGroupMode] = useState<GroupMode>('flat')
-  const [showMore, setShowMore] = useState(false)
-  const [quick, setQuick] = useState('')
+  // 界面状态（Slice Z · F26）：来自模块级 store（跨路由 + 刷新保留）
+  const ui = useUiStore(taskUiStore)
+  const { filters, groupMode, showMore, quick } = ui
+  const setFilters = (
+    next: Record<string, string> | ((prev: Record<string, string>) => Record<string, string>),
+  ): void => {
+    taskUiStore.set((state) => ({
+      ...state,
+      filters: typeof next === 'function' ? next(state.filters) : next,
+    }))
+  }
+  const setGroupMode = (value: GroupMode): void => {
+    taskUiStore.set((state) => ({ ...state, groupMode: value }))
+  }
+  const setShowMore = (next: boolean | ((prev: boolean) => boolean)): void => {
+    taskUiStore.set((state) => ({
+      ...state,
+      showMore: typeof next === 'function' ? next(state.showMore) : next,
+    }))
+  }
+  const setQuick = (value: string): void => {
+    taskUiStore.set((state) => ({ ...state, quick: value }))
+  }
   const [drawerId, setDrawerId] = useState<string | null>(null)
   const [pendingDone, setPendingDone] = useState<string[]>([])
   // 快速新建草稿确认弹窗（Slice O）：回车打开，确认前零写入

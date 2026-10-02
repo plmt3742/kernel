@@ -49,6 +49,7 @@ import {
 } from '@/lib/format'
 import { formatRelative } from '@/lib/date'
 import { useDataRevision, useNow } from '@/lib/hooks'
+import { createUiStore, oneOf, oneOfOrEmpty, str, useUiStore } from '@/lib/uiState'
 import type { Note, NoteType, Resource, ResourceKind, ResourceStatus, TrashKind } from '@/types'
 
 type Tab = 'all' | 'notes' | 'resources'
@@ -56,6 +57,44 @@ type Tab = 'all' | 'notes' | 'resources'
 const NOTE_TYPES: NoteType[] = ['fleeting', 'literature', 'permanent', 'meeting', 'memo']
 const RESOURCE_KINDS: ResourceKind[] = ['article', 'course', 'book', 'tool', 'paper', 'file']
 const RESOURCE_STATUSES: ResourceStatus[] = ['unread', 'reading', 'read', 'reference', 'archived']
+
+/* ---------------------------------------------------------------------------
+ * 资料页界面状态保留（Slice Z · F28，见 ADR-0022）：
+ * 标签页 / 笔记类型 / 资料类型 / 资料状态 / 选中标签提升到模块级 store 并持久化，
+ * 切路由或刷新后原样还原（纯界面状态，绝不落盘数据）。
+ * ------------------------------------------------------------------------- */
+interface LibraryUiState {
+  tab: Tab
+  noteType: NoteType | ''
+  resourceKind: ResourceKind | ''
+  resourceStatus: ResourceStatus | ''
+  tag: string
+}
+
+const LIBRARY_UI_KEY = 'kernel.ui.library.v1'
+const LIBRARY_UI_DEFAULT: LibraryUiState = {
+  tab: 'all',
+  noteType: '',
+  resourceKind: '',
+  resourceStatus: '',
+  tag: '',
+}
+
+function parseLibraryUi(raw: unknown): LibraryUiState | null {
+  if (typeof raw !== 'object' || raw === null) return null
+  const v = raw as Record<string, unknown>
+  return {
+    tab: oneOf(v.tab, ['all', 'notes', 'resources'] as const, 'all'),
+    noteType: oneOfOrEmpty(v.noteType, NOTE_TYPES),
+    resourceKind: oneOfOrEmpty(v.resourceKind, RESOURCE_KINDS),
+    resourceStatus: oneOfOrEmpty(v.resourceStatus, RESOURCE_STATUSES),
+    tag: str(v.tag),
+  }
+}
+
+const libraryUiStore = createUiStore<LibraryUiState>(LIBRARY_UI_KEY, LIBRARY_UI_DEFAULT, {
+  parse: parseLibraryUi,
+})
 
 interface DrawerTarget {
   kind: 'note' | 'resource'
@@ -65,11 +104,24 @@ interface DrawerTarget {
 export function Library() {
   const now = useNow()
   const [searchParams, setSearchParams] = useSearchParams()
-  const [tab, setTab] = useState<Tab>('all')
-  const [noteType, setNoteType] = useState<NoteType | ''>('')
-  const [resourceKind, setResourceKind] = useState<ResourceKind | ''>('')
-  const [resourceStatus, setResourceStatus] = useState<ResourceStatus | ''>('')
-  const [tag, setTag] = useState('')
+  // 界面状态（Slice Z · F28）：来自模块级 store（跨路由 + 刷新保留）
+  const libraryUi = useUiStore(libraryUiStore)
+  const { tab, noteType, resourceKind, resourceStatus, tag } = libraryUi
+  const setTab = (value: Tab): void => {
+    libraryUiStore.set((state) => ({ ...state, tab: value }))
+  }
+  const setNoteType = (value: NoteType | ''): void => {
+    libraryUiStore.set((state) => ({ ...state, noteType: value }))
+  }
+  const setResourceKind = (value: ResourceKind | ''): void => {
+    libraryUiStore.set((state) => ({ ...state, resourceKind: value }))
+  }
+  const setResourceStatus = (value: ResourceStatus | ''): void => {
+    libraryUiStore.set((state) => ({ ...state, resourceStatus: value }))
+  }
+  const setTag = (value: string): void => {
+    libraryUiStore.set((state) => ({ ...state, tag: value }))
+  }
   const [target, setTarget] = useState<DrawerTarget | null>(null)
   const { toast } = useToast()
   const [editing, setEditing] = useState(false)

@@ -17,6 +17,7 @@ import { getEnergyDistribution, getWeeklyCompletionSeries } from '@/lib/derive'
 import { daysFromToday, formatDateTime, isoWeekKey, toMonthKey } from '@/lib/date'
 import { errorText } from '@/lib/api'
 import { useDataRevision } from '@/lib/hooks'
+import { createUiStore, useUiStore } from '@/lib/uiState'
 import { parseReviewSummary, sectionParagraphs } from '@/lib/reviewReport'
 import {
   generateReviewDraft,
@@ -76,6 +77,24 @@ interface CycleRuntime {
 }
 
 const IDLE_RUNTIME: CycleRuntime = { phase: 'idle', draft: null, errorMsg: '' }
+
+/* ---------------------------------------------------------------------------
+ * 回顾页界面状态保留（Slice Z · F29，见 ADR-0022）：
+ * 周 / 月卡的 AI 草稿运行态（含生成中 / 错误 / 草稿）提升到模块级 store——
+ * 切路由再回来仍能看到刚生成的草稿（无需重跑）；**刻意不持久化 localStorage**：
+ * 报告正文体量较大，且草稿绑定归档 reviewId，跨刷新回放风险高（见 ADR-0022）。
+ * 弹窗 / 编辑缓冲区为瞬时交互态，随组件卸载关闭（不保留）。
+ * ------------------------------------------------------------------------- */
+interface ReviewRuntimeState {
+  weekly: CycleRuntime
+  monthly: CycleRuntime
+}
+
+const reviewRuntimeStore = createUiStore<ReviewRuntimeState>(
+  'kernel.ui.review',
+  { weekly: IDLE_RUNTIME, monthly: IDLE_RUNTIME },
+  { persist: false },
+)
 
 /** 卡片当前应展示的报告：内存草稿优先，其次该周期最新已归档回顾 */
 type Preview = { draft: ReviewDraft } | { saved: Review } | null
@@ -170,10 +189,13 @@ function DecisionsList({ decisions }: { decisions: string[] }): ReactNode {
 export function Review() {
   const { toast } = useToast()
   useDataRevision()
-  const [runtimes, setRuntimes] = useState<Record<ReviewType, CycleRuntime>>({
-    weekly: IDLE_RUNTIME,
-    monthly: IDLE_RUNTIME,
-  })
+  // 运行态（Slice Z · F29）：来自模块级 store（跨路由保留；刷新即重置）
+  const runtimes = useUiStore(reviewRuntimeStore)
+  const setRuntimes = (
+    next: ReviewRuntimeState | ((prev: ReviewRuntimeState) => ReviewRuntimeState),
+  ): void => {
+    reviewRuntimeStore.set(next)
+  }
   const [modal, setModal] = useState<ModalState>(null)
   // 弹窗默认「阅读视图」；「编辑」进入编辑视图，「完成」回到阅读（Slice U）
   const [editing, setEditing] = useState(false)
