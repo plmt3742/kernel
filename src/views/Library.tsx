@@ -180,7 +180,7 @@ export function Library() {
     { key: 'url', label: '链接', type: 'text', clearable: true },
     { key: 'path', label: '文件位置', type: 'text', clearable: true, placeholder: '如 G:\\…\\file.pdf' },
     { key: 'tags', label: '标签（逗号分隔）', type: 'list' },
-    { key: 'note', label: '备注', type: 'textarea' },
+    { key: 'note', label: '简介', type: 'textarea' },
   ]
 
   const handleSave = (patch: Record<string, unknown>): void => {
@@ -502,7 +502,7 @@ export function Library() {
               onCancel={() => setEditing(false)}
             />
           ) : (
-            <div className="k-detail-grid">
+          <div className="k-detail-grid">
             <dl className="k-dl">
               <dt>类型</dt>
               <dd>
@@ -568,6 +568,12 @@ export function Library() {
             />
           ) : (
           <div className="k-detail-grid">
+            {selectedResource.note !== undefined && selectedResource.note !== '' && (
+              <div className="k-detail-block">
+                <span className="k-detail-block__label u-label">简介</span>
+                <p className="k-detail-note">{selectedResource.note}</p>
+              </div>
+            )}
             <dl className="k-dl">
               <dt>类型</dt>
               <dd>
@@ -630,12 +636,6 @@ export function Library() {
                 {selectedResource.tags.map((item) => (
                   <TagPill key={item}>{tagLabel(item)}</TagPill>
                 ))}
-              </div>
-            )}
-            {selectedResource.note !== undefined && (
-              <div className="k-detail-block">
-                <span className="k-detail-block__label u-label">备注</span>
-                <p className="k-detail-note">{selectedResource.note}</p>
               </div>
             )}
             <Relations kind="resource" id={selectedResource.id} />

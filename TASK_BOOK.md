@@ -33,6 +33,19 @@ KERNEL 的任务台账与迭代记录。记录当前迭代目标、未来待办�
 
 ---
 
+## 文件投递解析校准 + 资料简介 + 删除按钮修整 · Slice R2.5（已完成 · 2026-10-03）
+
+以 owner 校准反馈为规格：①「丢入文件后，希望 AI 解析用于总结出简约的小结，用于资料详情页介绍这份资料，而不是拆分成一堆任务」；②「删除按钮的位置有点奇怪」。本切片把**文件条目**从 Slice R1 的「多动作一揽子」校准为 **「资料 + 简介」单一动作**（提示词 + `postValidateActions` 硬归一化双重保证），为**文本条目**补反过拆规则；资料详情页新增标题下的「简介」；收件箱展开区把删除推到动作行最右。`npm run build`（tsc strict + vite）通过；服务端冒烟 **31/31** + 浏览器 E2E **23/23**；零数据残留（inbox 12 / tasks 62 / notes 16 / resources 12 / projects 10；标签注册表回基线 26；所有者 i-0009..0012、t-0061/0062、rev-0001..0004、n-0016 未动）；控制台零 error；证据 `.qa/v36/`。
+
+- [x] Deliverable A · 文件解析校准（`server/ai.mjs` / `schemas.mjs`）：`buildSystem(digest, hasFile)` 文件条目切换为「恰好 1 个 resource + 简介，绝不拆分」（禁 task/note/project 与任务字段）；`postValidateActions(actions, snapshot, { hasFile, fallbackTitle, fallbackNote })` 硬归一化（丢非 resource；`note` 折叠空白 + 截断 ≤120 + 文件名兜底）；`AI_RESOURCE_NOTE_MAX_CHARS` / `normalizeResourceNote` / `fileParseOptions`；同步 / 流式共用。文本条目保留多动作 + 反过拆规则（1–4 个；信息类优先 resource/note + 小结；仅明确可执行产出 task）。
+- [x] Deliverable A · 写入路径（`server/index.mjs` / `schemas.mjs`）：`aiActionSchema` + `clarifyDetailsSchema` 增 `note`；`clarifyInbox` / `applyInboxActions` resource 分支写 `resource.note`（`kind:'file'` + `path` 与审计名不变）；apply 对文件条目纵深过滤（只留 1 resource，无可应用 → 400）。
+- [x] Deliverable B · 资料简介展示（`src/views/Library.tsx` / `lib/aiForm.ts` / `components/AiSuggestionForm.tsx` / `AiActionsCard.tsx`）：详情弹窗标题下渲染安静「简介」区块（空则不渲染），编辑字段标签改「简介」；`AiAction.note` + `ACTION_FIELD_MATRIX.resource` 增「简介」+ textarea + 卡片小结展示。
+- [x] Deliverable C · 删除按钮位置（`src/views/Inbox.tsx` / `styles/views.css`）：动作行与删除包进 `.ic-subrow__row`（flex），`.ic-lifecycle` `margin-left:auto` + 右对齐；1280 同行靠右、390 换行靠右、零横溢。
+- [x] 验证：`.qa/v36/smoke-r3.mjs` 31/31（确定性层文件归一化 / normalizeResourceNote / 文本保留多动作 / note 仅 resource；真实 AI：上传 .txt → 1 resource + note、apply kind=file + path + note、resource.update note 往返、审计、文本多动作 ≥2；零残留 + 所有者未动）；`.qa/v36/verify-r25.py` 23/23（拦截 parse-stream → 卡片 1 资料 + 小结 + 编辑含简介 → 全部应用 → 详情简介在标题下且在类型区块前 → 删除按钮 1280/390 对齐 / 零横溢 → 控制台 0 error → 零残留 + 所有者未动）；截图 4 张。
+- [x] 记录：ADR-0015 §5 修订；`docs/04` §4.9 / §4.13 / §4.14；`docs/README.md`；`public/guide.html`；`CHANGELOG.md`、`AGENTS.md`。
+
+---
+
 ## 项目诞生：聚类立项 + AI 自动化档位 · Slice R2（已完成 · 2026-10-03）
 
 以 owner 提问「一个项目是怎么诞生的——连续输入多个类似任务会自动整合吗？项目里的子任务又怎么产生」为规格。Slice R1 回答了「一次性多条」，本切片补齐「**连续 / 累积的相似任务 → 新项目**」：新增**聚类立项**（确定性预分组 + AI 命名 + 一次建项归入 + 精确撤销）、**AI 自动化档位**（确认 ↔ 自动）、**AI 动态** 幕后日志。默认仍是**先确认后写入**；自动模式为显式 opt-in，且**只创建、永不删除 / 完成 / 归档**。`npm run build`（tsc strict + vite）通过；服务端冒烟 **44/44** + 浏览器 E2E **36/36**；零数据残留（inbox 12 / tasks 62 / notes 16 / resources 12 / projects 10；标签注册表回基线 26；`aiAutomation` 复位 `confirm`；所有者 i-0009..0012、t-0061/0062、rev-0001..0004、n-0016 未动）；控制台零 error；证据 `.qa/v35/`。

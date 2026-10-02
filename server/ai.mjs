@@ -307,17 +307,50 @@ export async function buildFileSection(item) {
   }
 }
 
-/** 构造系统提示词（注入当前本地时间 + 系统现状摘要 + 一揽子动作规则） */
-function buildSystem(digest) {
+/** 资料小结硬上限（汉字 / 字符数；Slice R2.5） */
+export const AI_RESOURCE_NOTE_MAX_CHARS = 120
+
+/**
+ * 资料小结归一化（Slice R2.5）：折叠空白 → 截断 ≤120 字；模型输出为空时用调用方兜底
+ * （文件名保守概括）。导出供单测。
+ */
+export function normalizeResourceNote(raw, fallback = '') {
+  const collapse = (value) => String(value ?? '').replace(/\s+/g, ' ').trim()
+  let note = collapse(raw)
+  if (note === '') note = collapse(fallback)
+  return Array.from(note).slice(0, AI_RESOURCE_NOTE_MAX_CHARS).join('')
+}
+
+/** 构造系统提示词（注入当前本地时间 + 系统现状摘要 + 一揽子动作规则；Slice R2.5 文件条目校准） */
+function buildSystem(digest, hasFile = false) {
   const d = new Date()
   const pad = (n) => String(n).padStart(2, '0')
   const stamp = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${WEEKDAYS[d.getDay()]} ${pad(d.getHours())}:${pad(d.getMinutes())}`
-  return `你是 KERNEL 个人事务系统的收件箱解析器。把用户丢进来的内容拆解为「一揽子处置动作」，交给用户一次确认后全部落位。
-只输出一个 JSON 对象：{ "actions": [ ... ] }，不要 markdown 代码块、不要解释、不要多余文字。
+  const head = hasFile
+    ? `你是 KERNEL 个人事务系统的收件箱解析器。本条是一个【文件投递】条目：它应当被收录为一条「资料」，并配一段用于资料详情页的「简介」，绝不拆分成任务 / 笔记 / 项目。
+只输出一个 JSON 对象：{ "actions": [ ... ] }，不要 markdown 代码块、不要解释、不要多余文字。`
+    : `你是 KERNEL 个人事务系统的收件箱解析器。把用户丢进来的内容拆解为「一揽子处置动作」，交给用户一次确认后全部落位。
+只输出一个 JSON 对象：{ "actions": [ ... ] }，不要 markdown 代码块、不要解释、不要多余文字。`
+  const rules = hasFile
+    ? `规则（本条带【附件】——按「资料 + 简介」处理，绝不拆分）：
+1. 恰好输出 1 个动作，kind 必须为 "resource"；禁止输出 task / note / project。
+2. title：资料名（≤40 字），通常取文件名或内容主题。
+3. note：1–3 句、≤${AI_RESOURCE_NOTE_MAX_CHARS} 字的简约小结，作为资料详情页「简介」（概括这是什么资料、讲了什么、有什么用）。必须基于【附件】内容摘录；若内容不可读，仅据文件名保守概括，并在小结中注明「仅据文件名」。
+4. tags：优先从下方【标签】选已有名；仅当确无合适已有标签时提议 "topic:名称"（≤12 字）；最多 3 个；无把握省略。areaId 仅在明确属于某区域时填。
+5. 不要输出 outcome / linkToNewProject / duplicateOf 或任务专属字段。`
+    : `规则：
+1. 宁少而精：通常 1–4 个动作，最多 6 个。优先「资料 / 笔记 + 一句小结」；仅对明确可执行的事产出 task，绝不为凑数把同一件事拆成一堆细小任务。
+2. 纯信息 / 资料类内容（链接、文章、规则、通知正文）：优先产出 1 个 resource（带 note 小结）或 1 个 note（正文含要点），不要硬拆成任务。
+3. 确实无事可做（纯寒暄 / 无价值信息）时返回 { "actions": [] }。
+4. 挂靠宁缺毋滥：projectId / areaId / duplicateOf 只能取摘要中列出的 id，且必须有明确依据；表面相似（例如都含「竞赛 / 比赛 / 规则」字样）不算依据；拿不准一律省略。tags 优先取摘要中已有的标签名；仅当确实没有合适已有标签、且新标签是稳定的主题词（学科 / 领域，如「线性代数」「合唱排练」）时才提出新标签，写成 "topic:名称"（≤12 字）；禁止把日期、人名、整句话或临时描述当标签。
+5. 最多一个新项目：整包中 kind:"project" 至多出现 1 次，且仅当内容像一件需要多步推进的新事务（新比赛 / 新活动 / 新项目）时才产出；若属于现有项目，改填 projectId。
+6. 新项目与现有项目互斥：挂现有项目就填 projectId；新建项目就用 kind:"project" + 让相关 task/note 填 linkToNewProject:true，绝不同时填 projectId 和 linkToNewProject。`
+  return `${head}
 
 每个 action 对象字段：
 - kind: "task" | "note" | "resource" | "project"（必填）
 - title: 提炼后的标题（不超过 40 字，必填）
+- note: 仅 resource 用。1–3 句、不超过 ${AI_RESOURCE_NOTE_MAX_CHARS} 字的简约小结，作为资料详情页的「简介」（概括这是什么资料、讲了什么、有什么用）；附件条目必须给出此字段
 - reason: 一句话说明该动作的判断理由
 - contexts: 仅 task 用，字符串数组，只能从 ["@lab","@computer","@campus","@phone","@org-room"] 中选
 - energy: 仅 task 用，"low" | "medium" | "high"
@@ -334,14 +367,7 @@ function buildSystem(digest) {
 【系统现状摘要】
 ${digest}
 
-规则：
-1. 拆成一个自然包：例如一条「比赛通知」→ 1 个新项目 + 若干下一步任务 + 1 条要点笔记；一条纯资料链接 → 1 条 resource。宁少而精（1~4 个通常足够），最多 6 个动作。
-2. 确实无事可做（纯寒暄 / 无价值信息）时返回 { "actions": [] }。
-3. 挂靠宁缺毋滥：projectId / areaId / duplicateOf 只能取摘要中列出的 id，且必须有明确依据；表面相似（例如都含「竞赛 / 比赛 / 规则」字样）不算依据；拿不准一律省略。tags 优先取摘要中已有的标签名；仅当确实没有合适已有标签、且新标签是稳定的主题词（学科 / 领域，如「线性代数」「合唱排练」）时才提出新标签，写成 "topic:名称"（≤12 字）；禁止把日期、人名、整句话或临时描述当标签。
-4. 最多一个新项目：整包中 kind:"project" 至多出现 1 次，且仅当内容像一件需要多步推进的新事务（新比赛 / 新活动 / 新项目）时才产出；若属于现有项目，改填 projectId。
-5. 新项目与现有项目互斥：挂现有项目就填 projectId；新建项目就用 kind:"project" + 让相关 task/note 填 linkToNewProject:true，绝不同时填 projectId 和 linkToNewProject。
-6. 附件不可读时更保守：当【附件】无法直接读取（只有文件名 / 元数据）时，除非文件名直接指向某现有项目（名称 / 主题强匹配），否则 projectId 一律省略，并在 reason 中注明「仅基于文件名判断」。
-7. 若条目带【附件】，基于附件内容与文件名判断动作（读取失败则只凭文件名推断）。`
+${rules}`
 }
 
 /** 从模型响应中抽取纯文本（多段拼接） */
@@ -473,9 +499,14 @@ function legacyToActions(suggestion) {
  * 多动作按快照后校验（Slice R1）：臆造 id 一律丢弃；标签规格化保留（≤3）；
  * 至多保留一个 project 动作（标题与现有项目完全相同者丢弃，防重复建项）；
  * linkToNewProject 仅在存在 project 动作且为 task/note 时保留，且与 projectId 互斥。
+ *
+ * Slice R2.5 文件条目校准：`options.hasFile === true` 时**硬归一化**为恰好一个 resource 动作——
+ * 丢弃全部 task / note / project，仅保留 kind:'resource' + title + note（小结，≤120 字）+
+ * tags（≤3）+ areaId；模型未产出 resource 时用调用方提供的 fallbackTitle / fallbackNote 兜底
+ * （基于文件名保守概括），保证「文件 = 资料 + 简介」不变式。
  * 导出供单测。返回清洗后的动作数组（可能为空）。
  */
-export function postValidateActions(actions, snapshot) {
+export function postValidateActions(actions, snapshot, options = {}) {
   const projects = snapshot.projects ?? []
   const projectIds = new Set(projects.map((p) => p.id))
   const projectTitles = new Set(projects.map((p) => p.title))
@@ -486,7 +517,7 @@ export function postValidateActions(actions, snapshot) {
   const cleaned = []
   for (const raw of (Array.isArray(actions) ? actions : []).slice(0, 6)) {
     const out = { ...raw }
-    for (const key of ['projectId', 'areaId', 'duplicateOf', 'outcome', 'dueAt', 'estimateMin', 'energy', 'importance']) {
+    for (const key of ['projectId', 'areaId', 'duplicateOf', 'outcome', 'dueAt', 'estimateMin', 'energy', 'importance', 'note']) {
       if (out[key] === null) delete out[key]
     }
     const title = Array.from(String(out.title ?? '').trim()).slice(0, 40).join('')
@@ -503,7 +534,34 @@ export function postValidateActions(actions, snapshot) {
       if (outcome === '') delete out.outcome
       else out.outcome = outcome
     }
+    // note 仅 resource 有意义（Slice R2.5）：折叠空白 + 截断 ≤120，空则删除
+    if (out.kind === 'resource') {
+      const note = normalizeResourceNote(out.note, '')
+      if (note === '') delete out.note
+      else out.note = note
+    } else {
+      delete out.note
+    }
     cleaned.push(out)
+  }
+
+  // 文件条目（Slice R2.5）：只保留一个 resource 动作，绝不拆分
+  if (options.hasFile === true) {
+    const raw = cleaned.find((a) => a.kind === 'resource')
+    const fallbackTitle = Array.from(String(options.fallbackTitle ?? '').trim()).slice(0, 40).join('')
+    const title = raw !== undefined && raw.title !== '' ? raw.title : fallbackTitle
+    if (title === '') return []
+    const out = {
+      kind: 'resource',
+      title,
+      contexts: [],
+      tags: raw?.tags ?? [],
+      reason: raw?.reason ?? '',
+    }
+    if (raw?.areaId !== undefined) out.areaId = raw.areaId
+    const note = normalizeResourceNote(raw?.note, options.fallbackNote)
+    if (note !== '') out.note = note
+    return [out]
   }
 
   const projectCandidates = cleaned.filter((a) => a.kind === 'project')
@@ -606,6 +664,25 @@ async function promptWithRetry(sessionID, system, userText, emit) {
 }
 
 /**
+ * 文件条目解析的后校验选项（Slice R2.5）：hasFile + 文件名兜底标题 + 内容可读性兜底小结。
+ * @param {{ file?: { name: string } } | null | undefined} item
+ * @param {boolean} hasFile
+ * @param {string} fileSection buildFileSection 的产物（含不可读提示则判为不可读）
+ */
+function fileParseOptions(item, hasFile, fileSection) {
+  if (hasFile !== true) return { hasFile: false }
+  const name = String(item?.file?.name ?? '')
+  const unreadable = fileSection.includes(FILE_UNREADABLE_HINT)
+  return {
+    hasFile: true,
+    fallbackTitle: path.parse(name).name,
+    fallbackNote: unreadable
+      ? `文件「${name}」已收录为资料；未能自动读取内容，建议打开文件核对。`
+      : `文件「${name}」已收录为资料。`,
+  }
+}
+
+/**
  * 解析收件箱条目为 AI 建议（同步；保持既有契约不变）
  * @param {{ id: string, content: string }} item
  * @returns {Promise<{ suggestion: object, model: string | null, ms: number }>}
@@ -613,12 +690,13 @@ async function promptWithRetry(sessionID, system, userText, emit) {
 export async function parseInboxItem(item) {
   const t0 = Date.now()
   const snapshot = await loadSnapshot()
-  const system = buildSystem(buildDigest(snapshot))
-  const sessionID = await createSession()
   const fileSection = await buildFileSection(item)
+  const hasFile = item?.file !== undefined && item?.file !== null
+  const system = buildSystem(buildDigest(snapshot), hasFile)
+  const sessionID = await createSession()
   const userText = fileSection === '' ? item.content : `${item.content}\n\n${fileSection}`
   const { res, actions } = await promptWithRetry(sessionID, system, userText, null)
-  const clean = postValidateActions(actions, snapshot)
+  const clean = postValidateActions(actions, snapshot, fileParseOptions(item, hasFile, fileSection))
   const model = modelOf(res)
   const ms = Date.now() - t0
   console.log(`[ai] inbox.parse ${item.id} 完成 ${ms}ms（${model ?? '未知模型'} · ${clean.length} 动作）`)
@@ -680,12 +758,13 @@ export async function parseInboxItemStream(item, emit) {
 
   try {
     const snapshot = await loadSnapshot()
-    const system = buildSystem(buildDigest(snapshot))
-    sessionID = await createSession()
     const fileSection = await buildFileSection(item)
+    const hasFile = item?.file !== undefined && item?.file !== null
+    const system = buildSystem(buildDigest(snapshot), hasFile)
+    sessionID = await createSession()
     const userText = fileSection === '' ? item.content : `${item.content}\n\n${fileSection}`
     const { res, actions } = await promptWithRetry(sessionID, system, userText, safeEmit)
-    const clean = postValidateActions(actions, snapshot)
+    const clean = postValidateActions(actions, snapshot, fileParseOptions(item, hasFile, fileSection))
     const model = modelOf(res)
     const ms = Date.now() - t0
     safeEmit({ kind: 'suggestion', actions: clean, model, ms })

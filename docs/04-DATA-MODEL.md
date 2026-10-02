@@ -194,7 +194,9 @@
 | tags | string[] | |
 | areaId? | string | |
 | addedAt | ISO | |
-| note? | string | |
+| note? | string | 资料「简介」（Slice R2.5）：1–3 句、≤120 字的小结，在资料详情页标题下静默展示 |
+
+> **资料「简介」+ 文件条目不拆分（v0.5 · Slice R2.5，见 ADR-0015 §5）**：带【附件】的收件箱条目解析**恰好产出 1 个 `resource` 动作**（`kind:'resource'` + `title` + `note` 小结 + `tags` ≤3 + 可选 `areaId`），绝不拆分为 task / note / project；`note` 经 `postValidateActions` 归一化（折叠空白 + 截断 ≤120 字；附件内容不可读时据文件名保守概括并在小结中注明）。澄清（`clarifyDetailsSchema`）与一揽子应用（`aiActionSchema`）的 resource 分支均接受并把 `note` 写入 `resource.note`。前端资料详情弹窗在标题下渲染「简介」区块（`note` 为空则不显示），并可在编辑表单中修改（`resources` 编辑白名单含 `note`）。
 
 > **文件投递 → 资料（v0.5 · Slice E2）**：`source:'file'` 的收件箱条目澄清为资料时，记录 `kind:'file'` 且 `path` = `data/files/<inboxId>-<fileName>` 的绝对路径；非文件条目行为不变。资料详情弹窗据此显示「文件位置」并可经 `POST /api/reveal` 在本机文件管理器中定位（见 ADR-0009）。
 
@@ -273,22 +275,23 @@ AI 建议卡「编辑」与手工澄清 `POST /api/inbox/:id/clarify` 的 `detai
 | project | —（忽略 details，完成定义待整理） | — | — | — | — | — | — | — | — |
 | discard | —（无需字段） | — | — | — | — | — | — | — | — |
 
-- `projectId` / `areaId` 落盘前校验形状与存在性（臆造即 400）；note 首次支持 `projectId` / `areaId`（Slice V 修复）；resource 的 `title` 对**文件条目同样应用**（此前被强制用原文，属静默丢弃，Slice V 修复）。
+- `projectId` / `areaId` 落盘前校验形状与存在性（臆造即 400）；note 首次支持 `projectId` / `areaId`（Slice V 修复）；resource 的 `title` 对**文件条目同样应用**（此前被强制用原文，属静默丢弃，Slice V 修复）；resource 另接受 `note`（资料「简介」，Slice R2.5，见 §4.9）。
 - `discard` 不产出 `details`。切换到 note / resource 时，表单保留仍相关字段的编辑值（title / tags / projectId / areaId），隐藏任务专属字段。
 
 ### 4.14 一揽子动作矩阵（Slice R1）
 
 收件箱解析输出动作数组（`aiActionSchema`，≤6 个；`server/schemas.mjs`）；`POST /api/inbox/:id/apply` 按 `kind` 落盘如下字段（服务端重新 Zod 校验 + 关联 id 存在性校验，绝不信任客户端形状）。前端逐条编辑只渲染该 kind 会应用的字段（`src/lib/aiForm.ts` `ACTION_FIELD_MATRIX`）。
 
-| kind | title | outcome | contexts | energy | importance | estimateMin | dueAt | projectId | areaId | tags | 备注 |
-|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|---|
-| task | ✓ | — | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ / linkToNewProject | ✓ | ✓ | 新建 `status:'next'`，带 `sourceInboxId` |
-| note | ✓ | — | — | — | — | — | — | ✓ / linkToNewProject | ✓ | ✓ | `type:'fleeting'`，`body` = 条目原文 |
-| resource | ✓ | — | — | — | — | — | — | — | ✓ | ✓ | 文件条目 `kind:'file'` + `path` |
-| project | ✓ | ✓ | — | — | — | — | — | — | ✓ | ✓ | 新建 `status:'active'`，先于实体创建 |
+| kind | title | outcome | contexts | energy | importance | estimateMin | dueAt | projectId | areaId | tags | note | 备注 |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|---|
+| task | ✓ | — | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ / linkToNewProject | ✓ | ✓ | — | 新建 `status:'next'`，带 `sourceInboxId` |
+| note | ✓ | — | — | — | — | — | — | ✓ / linkToNewProject | ✓ | ✓ | — | `type:'fleeting'`，`body` = 条目原文 |
+| resource | ✓ | — | — | — | — | — | — | — | ✓ | ✓ | ✓ | 文件条目 `kind:'file'` + `path`；`note` = 简介（≤120 字） |
+| project | ✓ | ✓ | — | — | — | — | — | — | ✓ | ✓ | — | 新建 `status:'active'`，先于实体创建 |
 
 - 至多 1 个 `project` 动作；`linkToNewProject` 与 `projectId` 互斥（服务端强制）；`project` 动作缺省 `areaId` 为 `a-0001`、缺省 `outcome` 为「完成定义待整理（由收件箱一揽子应用创建）」。
 - 关联 id（`projectId` / `areaId` / `duplicateOf`）与标签仍走 `postValidateActions` 快照过滤（臆造即丢弃）；每个动作 tags ≤3。
+- **文件条目（Slice R2.5）**：条目带【附件】时，`postValidateActions({ hasFile:true })` **硬归一化为恰好 1 个 `resource` 动作**（丢弃全部 task / note / project；模型未产出 resource 时以文件名 + 保守小结兜底），`note` 归一化 ≤120 字。`POST /api/inbox/:id/apply` 亦对文件条目纵深过滤（只保留 1 个 resource）。文本条目保留多动作能力，提示词新增反过拆规则（通常 1–4 个、信息类优先 note / resource + 小结、仅对明确可执行的事产出 task）。
 - 旧式单建议形状（`target` / `newProjectHint` 等）由 `legacyToActions` 归一化为动作数组（`newProjectHint` → 项目动作 + 实体 `linkToNewProject`），同步 / 流式两条路径共用。
 
 ## 5. 生命周期与状态流

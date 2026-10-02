@@ -682,6 +682,8 @@ async function clarifyInbox(id, body) {
     if (isFile) {
       record.path = path.join(FILES_DIR, `${item.id}-${item.file.name}`)
     }
+    // Slice R2.5：文件投递澄清为资料时写入「简介」（resource.note）
+    if (typeof details.note === 'string') record.note = details.note.trim()
     // 资料仅有 areaId 归属（无 projectId）；真实存在才接受
     if (details.areaId !== undefined) {
       if (!validId('areas', details.areaId) || (await readEntity('areas', details.areaId)) === null) {
@@ -741,13 +743,21 @@ async function applyInboxActions(id, body) {
   }
   const parsed = inboxApplySchema.parse(body)
   // 客户端的显式 null（"无关联"）统一移除，避免被当成臆造 id 拒绝
-  const actions = parsed.actions.map((action) => {
+  let actions = parsed.actions.map((action) => {
     const out = { ...action }
-    for (const key of ['projectId', 'areaId', 'dueAt', 'outcome', 'duplicateOf']) {
+    for (const key of ['projectId', 'areaId', 'dueAt', 'outcome', 'duplicateOf', 'note']) {
       if (out[key] === null) delete out[key]
     }
     return out
   })
+  // Slice R2.5 纵深防御：文件条目只允许落地为一条资料（与解析侧 postValidateActions 同口径）
+  const hasFile = item.file !== undefined && item.file !== null
+  if (hasFile) {
+    actions = actions.filter((action) => action.kind === 'resource').slice(0, 1)
+    if (actions.length === 0) {
+      throw Object.assign(new Error('文件条目只能应用为资料'), { status: 400 })
+    }
+  }
   if (actions.filter((a) => a.kind === 'project').length > 1) {
     throw Object.assign(new Error('一揽子应用至多包含一个新项目'), { status: 400 })
   }
@@ -864,6 +874,10 @@ async function applyInboxActions(id, body) {
       }
       if (isFile) record.path = path.join(FILES_DIR, `${item.id}-${item.file.name}`)
       if (action.areaId !== undefined) record.areaId = action.areaId
+      // Slice R2.5：把小结写入 resource.note（资料详情页「简介」）
+      if (typeof action.note === 'string' && action.note.trim() !== '') {
+        record.note = action.note.trim()
+      }
       saved = await commit('resources', record, {
         action: 'resource.create',
         entity: 'resource',

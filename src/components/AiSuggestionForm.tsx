@@ -73,6 +73,23 @@ export function AiSuggestionForm({
         </div>
       )}
 
+      {show('note') && (
+        <div className="k-field k-ai-form__full">
+          <label className="k-field__label u-label" htmlFor={fieldId('note')}>
+            简介
+          </label>
+          <textarea
+            id={fieldId('note')}
+            className="k-textarea"
+            rows={2}
+            value={values.note}
+            placeholder="1–3 句小结，作为资料详情页简介"
+            disabled={disabled}
+            onChange={(event) => onChange({ note: event.target.value })}
+          />
+        </div>
+      )}
+
       {show('contexts') && (
         <div className="k-field">
           <label className="k-field__label u-label" htmlFor={fieldId('contexts')}>

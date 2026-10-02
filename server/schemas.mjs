@@ -246,6 +246,8 @@ export const aiActionSchema = z.object({
   projectId: z.union([z.string(), z.null()]).optional(),
   areaId: z.union([z.string(), z.null()]).optional(),
   tags: z.array(z.string().min(1)).max(5).default([]),
+  // resource 专属（Slice R2.5）：1–3 句简约小结，作为资料详情页「简介」；postValidateActions 归一化
+  note: z.union([z.string().max(200), z.null()]).optional(),
   // project 专属：完成定义
   outcome: z.union([z.string().max(200), z.null()]).optional(),
   // task / note：挂到本批次新建的项目（此时 projectId 须为空）
@@ -336,6 +338,8 @@ export const clarifyDetailsSchema = z.object({
   tags: z.array(z.string().min(1)).max(8).optional(),
   projectId: z.string().min(1).optional(),
   areaId: z.string().min(1).optional(),
+  // Slice R2.5：文件投递澄清为资料时写入「简介」（resource.note）
+  note: z.string().min(1).max(200).optional(),
 })
 
 /* ---------------------------------------------------------------------------

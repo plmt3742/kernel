@@ -375,12 +375,22 @@
   gap: var(--space-2);
   flex-wrap: wrap;
 }
-/* 未澄清条目展开区的生命周期动作行（删除入口），与澄清目标芯片分开 */
+/* 未澄清条目展开区：动作行 + 生命周期删除同一行，删除推至最右（Slice R2.5） */
+.ic-subrow__row {
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+/* 未澄清条目展开区的生命周期动作行（删除入口），与澄清目标芯片同一行、靠右收尾 */
 .ic-lifecycle {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: var(--space-2);
   flex-wrap: wrap;
+  /* 推至动作行最右，读作破坏性动作尾；换行时仍在行尾，不左飘 */
+  margin-left: auto;
 }
 /* 危险动作：复用 danger token；无渐变 / 发光 */
 button.k-pill.is-danger {
@@ -2513,6 +2523,17 @@ button.k-pill.is-danger:hover {
 }
 .ic-action__outcome {
   color: var(--muted);
+  font-size: var(--text-caption);
+  line-height: 1.5;
+  max-width: var(--measure);
+}
+/* 资料小结（Slice R2.5）：文件条目解析出的「简介」，安静面板 */
+.ic-action__note {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  background: var(--fill-subtle);
+  border-radius: var(--radius-inner);
+  color: var(--ink-2);
   font-size: var(--text-caption);
   line-height: 1.5;
   max-width: var(--measure);

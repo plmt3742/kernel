@@ -292,6 +292,8 @@ export interface AiAction {
   projectId?: string
   areaId?: string
   tags: string[]
+  /** resource 专属（Slice R2.5）：1–3 句简约小结，作为资料详情页「简介」 */
+  note?: string
   /** project 专属：完成定义 */
   outcome?: string
   /** task / note：挂到本批次新建的项目（与 projectId 互斥） */

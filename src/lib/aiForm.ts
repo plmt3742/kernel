@@ -34,6 +34,8 @@ export interface AiSuggestionFormValues {
   areaId: string
   /** 逗号分隔（'' = 未设置） */
   tags: string
+  /** 仅资源用：资料简介（Slice R2.5；'' = 未设置） */
+  note: string
 }
 
 /** 可编辑字段键（与 AiSuggestionForm 的渲染单元一一对应） */
@@ -48,6 +50,7 @@ export type ClarifyFieldKey =
   | 'dueAt'
   | 'projectId'
   | 'areaId'
+  | 'note'
 
 /** 任务目标的完整字段集（表单默认） */
 export const ALL_CLARIFY_FIELDS: readonly ClarifyFieldKey[] = [
@@ -88,6 +91,7 @@ export const EMPTY_AI_FORM: AiSuggestionFormValues = {
   projectId: '',
   areaId: '',
   tags: '',
+  note: '',
 }
 
 /**
@@ -100,7 +104,7 @@ export const EMPTY_AI_FORM: AiSuggestionFormValues = {
 export const ACTION_FIELD_MATRIX: Record<AiActionKind, readonly ClarifyFieldKey[]> = {
   task: ALL_CLARIFY_FIELDS,
   note: ['title', 'tags', 'projectId', 'areaId'],
-  resource: ['title', 'tags', 'areaId'],
+  resource: ['title', 'note', 'tags', 'areaId'],
   project: ['title', 'outcome', 'tags', 'areaId'],
 }
 
@@ -138,6 +142,7 @@ export function suggestionToForm(suggestion: AiSuggestion): AiSuggestionFormValu
     projectId: suggestion.projectId ?? '',
     areaId: suggestion.areaId ?? '',
     tags: listToText(suggestion.tags),
+    note: '',
   }
 }
 
@@ -154,6 +159,7 @@ export function draftToForm(title: string, draft: TaskDraftSuggestion): AiSugges
     projectId: draft.projectId ?? '',
     areaId: draft.areaId ?? '',
     tags: listToText(draft.tags),
+    note: '',
   }
 }
 
@@ -219,6 +225,7 @@ export function actionToForm(action: AiAction): AiSuggestionFormValues {
     projectId: action.projectId ?? '',
     areaId: action.areaId ?? '',
     tags: listToText(action.tags),
+    note: action.note ?? '',
   }
 }
 
@@ -248,6 +255,10 @@ export function formToAction(action: AiAction, values: AiSuggestionFormValues): 
   const outcome = values.outcome.trim()
   if (outcome === '') delete next.outcome
   else next.outcome = outcome
+  // note 仅 resource 有意义（Slice R2.5）：空则删除，避免送出空串
+  const note = values.note.trim()
+  if (note === '') delete next.note
+  else next.note = note
   if (next.projectId !== undefined) delete next.linkToNewProject
   return next
 }

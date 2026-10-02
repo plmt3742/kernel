@@ -70,3 +70,35 @@
 - `server/`：`schemas.mjs`（+`aiActionSchema` / `aiActionsSchema` / `inboxApplySchema` / `projectDraftSchema`）、`ai.mjs`（多动作提示词 + `postValidateActions` / `legacyToActions` / `tryParseActions` / `draftProject`）、`index.mjs`（apply / unapply / 扩展 createProject / project draft 路由）、`store.mjs`（`pruneTags`）。
 - `src/`：`lib/mutations.ts`（`AiAction` / apply / unapply / project draft / 扩展 createProject）、`lib/aiForm.ts`（`outcome` + `ACTION_FIELD_MATRIX` + `actionToForm` / `formToAction`）、`components/AiActionsCard.tsx`（新）、`components/ProjectDraftModal.tsx`（新）、`components/AiSuggestionForm.tsx`（outcome）、`views/Inbox.tsx`、`views/Projects.tsx`、`styles/views.css`。
 - 验证：服务端冒烟 39/39 + 前端 E2E 36/36 + 构建通过，零残留，证据 `.qa/v34/`。
+
+---
+
+## 5. 修订（Slice R2.5 · 2026-10-03）：文件条目 = 资料 + 简介，不拆分
+
+### 5.1 背景（owner 校准）
+
+Slice R1 把「一条内容 → 一揽子动作」铺开，对**文本**条目是增益；但对**文件投递**它是错的默认。Owner 原话：「我丢入文件后，我希望 AI 解析是用于总结出简约的小结用于到时候资料详情页介绍这个资料用的，而不是作为一个任务，拆分成一堆任务。」——一份 `示例文档.docx` 被拆成「新建项目 + 任务 + 笔记 + 资料」四件套，与 owner 的心智（**文件 = 一份资料**）相反。
+
+### 5.2 决策
+
+- **文件条目（`item.file` 存在）只产出 1 个 `resource` 动作**：`{ kind:'resource', title, note, tags? ≤3, areaId? }`。
+  - **提示词**：`buildSystem(digest, hasFile)` 在 `hasFile` 时切换到「资料 + 简介，绝不拆分」规则（并禁止 outcome / linkToNewProject / 任务字段）。
+  - **硬归一化**：`postValidateActions(actions, snapshot, { hasFile:true, fallbackTitle, fallbackNote })` 丢弃全部 task / note / project，仅保留首个 resource，并归一化 `note`（折叠空白 + 截断 ≤120 字；未产出 resource 时用文件名 + 保守小结兜底）；`normalizeResourceNote()` 导出供单测。
+  - **小结语义**：`note` 是资料详情页的「简介」，必须基于【附件】文本摘录；内容不可读时据文件名保守概括并注明。
+- **前端纵深防御**：`POST /api/inbox/:id/apply` 对文件条目额外只允许 1 个 resource（多于 0 的非 resource 动作被过滤；无可应用 resource → 400）。
+- **文本条目保留多动作**：新增反过拆规则——通常 1–4 个（最多 6）；纯信息 / 资料类优先 `resource`（带 `note` 小结）或 `note`，仅对明确可执行的事产出 task。
+- **存储与展示**：`resource.note` 经 `clarifyDetailsSchema`（新增 `note`）与 `aiActionSchema`（新增 `note`）接受并落盘；资料详情弹窗标题下渲染安静「简介」区块（空则不显示），`resources` 编辑白名单已含 `note`。
+
+### 5.3 不变
+
+- `resource` 的 `kind:'file'` + `path` 行为、Zod 校验、审计动作名（`inbox.apply` / `resource.create` / `resource.update`）均不变。
+- 默认仍是先确认后写入；撤销仍走 `unapply`（文件条目产物为单个 resource）。
+- 手工澄清路径（→ 任务 / 项目 / 笔记 / 资源 / 丢弃）不受影响。
+
+### 5.4 影响
+
+- `server/schemas.mjs`：`aiActionSchema` + `clarifyDetailsSchema` 增 `note`。
+- `server/ai.mjs`：`AI_RESOURCE_NOTE_MAX_CHARS` / `normalizeResourceNote` / `fileParseOptions`；`buildSystem(digest, hasFile)`；`postValidateActions(..., options)`；`parseInboxItem` / `parseInboxItemStream` 传递文件校准。
+- `server/index.mjs`：`clarifyInbox` / `applyInboxActions` 写 `resource.note`；apply 文件条目纵深过滤。
+- `src/`：`lib/mutations.ts`（`AiAction.note`）、`lib/aiForm.ts`（`note` 字段 + `ACTION_FIELD_MATRIX.resource`）、`components/AiSuggestionForm.tsx`（简介 textarea）、`components/AiActionsCard.tsx`（小结展示）、`views/Library.tsx`（简介区块 + 编辑标签）、`views/Inbox.tsx`（动作行 + 删除同排）、`styles/views.css`（`.ic-subrow__row` / `.ic-lifecycle` 靠右 / `.ic-action__note`）。
+- 验证：服务端冒烟 31/31 + 前端 E2E 23/23 + 构建通过，零残留，证据 `.qa/v36/`。

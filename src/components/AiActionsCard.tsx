@@ -155,6 +155,9 @@ export function AiActionsCard({
                   )}
                 </div>
               )}
+              {action.note !== undefined && action.note !== '' && !isEditing && (
+                <p className="ic-action__note">{action.note}</p>
+              )}
               {action.reason !== '' && !isEditing && (
                 <p className="ic-action__reason">{action.reason}</p>
               )}

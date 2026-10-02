@@ -978,6 +978,7 @@ export function Inbox() {
                           </div>
                           {isExpanded && (
                             <div className="ic-subrow">
+                              <div className="ic-subrow__row">
                               <div className="k-clarify">
                                 {item.file !== undefined && (
                                   <>
@@ -1057,6 +1058,7 @@ export function Inbox() {
                                     删除
                                   </button>
                                 )}
+                              </div>
                               </div>
                               {showPanel && (
                                 <div
