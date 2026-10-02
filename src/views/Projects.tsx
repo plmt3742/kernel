@@ -12,10 +12,11 @@ import {
   getTaskById,
   getTasksByProject,
 } from '@/lib/data'
-import { isTaskDone, useDone } from '@/lib/proto'
+import { isTaskDone } from '@/lib/mutations'
+import { useDataRevision, useUndoableToggle } from '@/lib/hooks'
 import { PROJECT_STATUS_EN, PROJECT_STATUS_LABEL, tagLabel } from '@/lib/format'
 import { humanizeDay } from '@/lib/date'
-import type { Project, ProjectStatus } from '@/types'
+import type { Project, ProjectStatus, Task } from '@/types'
 
 const COLUMNS: Array<{ status: ProjectStatus; cn: string; en: string }> = [
   { status: 'active', cn: '进行中', en: PROJECT_STATUS_EN.active },
@@ -25,7 +26,8 @@ const COLUMNS: Array<{ status: ProjectStatus; cn: string; en: string }> = [
 ]
 
 export function Projects() {
-  const { set: doneSet, toggle } = useDone()
+  useDataRevision()
+  const toggleTask = useUndoableToggle()
   const [drawerId, setDrawerId] = useState<string | null>(null)
   const projects = getSnapshot().projects
 
@@ -66,7 +68,7 @@ export function Projects() {
         kicker={`项目 · ${selected?.id ?? ''} · ${selected !== undefined ? PROJECT_STATUS_LABEL[selected.status] : ''}`}
         title={selected?.title ?? ''}
       >
-        {selected !== undefined && <ProjectDetail project={selected} doneSet={doneSet} onToggle={toggle} />}
+        {selected !== undefined && <ProjectDetail project={selected} onToggleTask={toggleTask} />}
       </Drawer>
     </div>
   )
@@ -113,11 +115,10 @@ function ProjectCard({ project, onOpen }: ProjectCardProps) {
 
 interface ProjectDetailProps {
   project: Project
-  doneSet: Set<string>
-  onToggle: (id: string) => void
+  onToggleTask: (task: Task) => void
 }
 
-function ProjectDetail({ project, doneSet, onToggle }: ProjectDetailProps) {
+function ProjectDetail({ project, onToggleTask }: ProjectDetailProps) {
   const tasks = getTasksByProject(project.id)
   const progress = getProjectProgress(project.id)
   const area = getAreaById(project.areaId)
@@ -157,8 +158,11 @@ function ProjectDetail({ project, doneSet, onToggle }: ProjectDetailProps) {
               <TaskRow
                 key={task.id}
                 task={task}
-                done={isTaskDone(task, doneSet)}
-                onToggle={onToggle}
+                done={isTaskDone(task)}
+                onToggle={(id) => {
+                  const target = tasks.find((item) => item.id === id)
+                  if (target !== undefined) onToggleTask(target)
+                }}
                 onOpen={() => undefined}
               />
             ))}

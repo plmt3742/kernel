@@ -1,5 +1,5 @@
-// KERNEL · 收件箱 INBOX（P0）：快速捕捉 + 未澄清列表 + 澄清操作条（原型态）
-import { useEffect, useMemo, useRef, useState } from 'react'
+// KERNEL · 收件箱 INBOX（P0）：快速捕捉 + 未澄清列表 + 澄清操作条（v0.4：直写数据服务）
+import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import { Bell, ChevronRight, FileText, Mic, PenLine } from 'lucide-react'
 import { Panel } from '@/components/Panel'
@@ -8,22 +8,13 @@ import { TagPill } from '@/components/TagPill'
 import { EmptyState } from '@/components/EmptyState'
 import { useToast } from '@/context/ToastContext'
 import { getInbox } from '@/lib/data'
-import { addProtoInbox, useProtoInbox } from '@/lib/proto'
+import { captureInbox, clarifyInbox, revertInbox, type ClarifyTarget } from '@/lib/mutations'
+import { errorText } from '@/lib/api'
+import { useDataRevision, useNow } from '@/lib/hooks'
 import { INBOX_SOURCE_LABEL } from '@/lib/format'
 import { formatRelative } from '@/lib/date'
 import { DUR, EASE_ENTER, EASE_EXIT } from '@/lib/motion'
-import type { InboxSource } from '@/types'
-
-type LocalStatus = 'clarified' | 'discarded'
-
-interface DisplayItem {
-  id: string
-  content: string
-  source: InboxSource
-  capturedAt: string
-  status: 'unprocessed' | 'clarified' | 'discarded'
-  proto?: boolean
-}
+import type { InboxItem } from '@/types'
 
 const WATER_MAX = 12
 const WATER_THRESHOLD = 8
@@ -35,7 +26,7 @@ const SOURCE_ICON = {
   voice: Mic,
 } as const
 
-const CLARIFY_TARGETS: Array<{ key: string; label: string }> = [
+const CLARIFY_TARGETS: Array<{ key: ClarifyTarget; label: string }> = [
   { key: 'task', label: '→ 任务' },
   { key: 'project', label: '→ 项目' },
   { key: 'note', label: '→ 笔记' },
@@ -44,11 +35,11 @@ const CLARIFY_TARGETS: Array<{ key: string; label: string }> = [
 ]
 
 export function Inbox() {
-  const protoInbox = useProtoInbox()
+  useDataRevision()
   const { toast } = useToast()
+  const now = useNow()
   const inputRef = useRef<HTMLInputElement>(null)
   const [draft, setDraft] = useState('')
-  const [localStatus, setLocalStatus] = useState<Record<string, LocalStatus>>({})
   const [showClarified, setShowClarified] = useState(false)
   const [showDiscarded, setShowDiscarded] = useState(false)
 
@@ -62,47 +53,46 @@ export function Inbox() {
     return () => window.removeEventListener('kernel:focus-capture', focus)
   }, [])
 
-  const merged = useMemo<DisplayItem[]>(() => {
-    const proto: DisplayItem[] = protoInbox.map((item) => ({
-      id: item.id,
-      content: item.content,
-      source: item.source,
-      capturedAt: item.capturedAt,
-      status: 'unprocessed',
-      proto: true,
-    }))
-    const real: DisplayItem[] = getInbox().map((item) => ({
-      id: item.id,
-      content: item.content,
-      source: item.source,
-      capturedAt: item.capturedAt,
-      status: item.status,
-    }))
-    return [...proto, ...real].sort(
-      (a, b) => new Date(b.capturedAt).getTime() - new Date(a.capturedAt).getTime(),
-    )
-  }, [protoInbox])
-
-  const effective = (item: DisplayItem): DisplayItem['status'] => localStatus[item.id] ?? item.status
-  const unprocessed = merged.filter((item) => effective(item) === 'unprocessed')
-  const clarified = merged.filter((item) => effective(item) === 'clarified')
-  const discarded = merged.filter((item) => effective(item) === 'discarded')
+  const merged = [...getInbox()].sort(
+    (a, b) => new Date(b.capturedAt).getTime() - new Date(a.capturedAt).getTime(),
+  )
+  const unprocessed = merged.filter((item) => item.status === 'unprocessed')
+  const clarified = merged.filter((item) => item.status === 'clarified')
+  const discarded = merged.filter((item) => item.status === 'discarded')
 
   const capture = (): void => {
     const value = draft.trim()
     if (value === '') return
-    addProtoInbox(value)
-    setDraft('')
-    toast('原型态：已捕捉到本地收件箱，v0.4 起持久化写入 data/')
+    void (async () => {
+      try {
+        await captureInbox(value)
+        setDraft('')
+        toast('已捕捉 · 待澄清')
+      } catch (err) {
+        toast(`捕捉失败：${errorText(err)}`, { tone: 'error' })
+      }
+    })()
   }
 
-  const clarify = (item: DisplayItem, target: string, label: string): void => {
-    setLocalStatus((prev) => ({
-      ...prev,
-      [item.id]: target === 'discard' ? 'discarded' : 'clarified',
-    }))
+  const clarify = (item: InboxItem, target: ClarifyTarget, label: string): void => {
     const preview = item.content.length > 18 ? `${item.content.slice(0, 18)}…` : item.content
-    toast(`原型态：「${preview}」${label}，v0.4 起持久化写入 data/`)
+    void (async () => {
+      try {
+        await clarifyInbox(item.id, target)
+        toast(`「${preview}」${label}`, {
+          action: {
+            label: '撤销',
+            onClick: () => {
+              void revertInbox(item.id).catch((err) => {
+                toast(`撤销失败：${errorText(err)}`, { tone: 'error' })
+              })
+            },
+          },
+        })
+      } catch (err) {
+        toast(`澄清失败：${errorText(err)}`, { tone: 'error' })
+      }
+    })()
   }
 
   return (
@@ -171,11 +161,10 @@ export function Inbox() {
                         <Icon size={13} strokeWidth={1.5} aria-hidden />
                       </span>
                       <span className="k-inbox-item__content">{item.content}</span>
-                      {item.proto === true && <TagPill accent>原型</TagPill>}
                     </div>
                     <div className="k-inbox-item__meta">
                       <span className="u-label">{INBOX_SOURCE_LABEL[item.source]}</span>
-                      <span className="k-mono">{formatRelative(item.capturedAt)}</span>
+                      <span className="k-mono">{formatRelative(item.capturedAt, now)}</span>
                       <span className="k-mono">{item.id}</span>
                     </div>
                     <div className="k-clarify">
@@ -213,8 +202,8 @@ export function Inbox() {
                 <div className="k-inbox-item" key={item.id}>
                   <span className="k-inbox-item__content k-muted">{item.content}</span>
                   <span className="k-inbox-item__meta">
-                    <span className="k-mono">{formatRelative(item.capturedAt)}</span>
-                    <span className="k-mono">{item.id}</span>
+                    <span className="k-mono">{formatRelative(item.capturedAt, now)}</span>
+                    <span className="k-mono">{item.linkedId ?? item.id}</span>
                   </span>
                 </div>
               ))}
@@ -240,7 +229,7 @@ export function Inbox() {
                 <div className="k-inbox-item" key={item.id}>
                   <span className="k-inbox-item__content k-muted">{item.content}</span>
                   <span className="k-inbox-item__meta">
-                    <span className="k-mono">{formatRelative(item.capturedAt)}</span>
+                    <span className="k-mono">{formatRelative(item.capturedAt, now)}</span>
                     <span className="k-mono">{item.id}</span>
                   </span>
                 </div>

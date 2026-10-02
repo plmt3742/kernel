@@ -16,6 +16,7 @@ import {
   tagLabel,
 } from '@/lib/format'
 import { formatRelative } from '@/lib/date'
+import { useNow } from '@/lib/hooks'
 import type { NoteType, ResourceKind, ResourceStatus } from '@/types'
 
 type Tab = 'all' | 'notes' | 'resources'
@@ -30,6 +31,7 @@ interface DrawerTarget {
 }
 
 export function Library() {
+  const now = useNow()
   const [tab, setTab] = useState<Tab>('all')
   const [noteType, setNoteType] = useState<NoteType | ''>('')
   const [resourceKind, setResourceKind] = useState<ResourceKind | ''>('')
@@ -189,7 +191,7 @@ export function Library() {
                       />
                     ))}
                   </span>
-                  <span className="k-mono">{formatRelative(note.updatedAt)}</span>
+                  <span className="k-mono">{formatRelative(note.updatedAt, now)}</span>
                 </span>
               </button>
             ))
@@ -249,7 +251,7 @@ export function Library() {
               <dt>蒸馏</dt>
               <dd>L{selectedNote.distillLevel} / 3</dd>
               <dt>更新</dt>
-              <dd>{formatRelative(selectedNote.updatedAt)}</dd>
+              <dd>{formatRelative(selectedNote.updatedAt, now)}</dd>
             </dl>
             {selectedNote.tags.length > 0 && (
               <div className="k-hstack">
@@ -309,7 +311,7 @@ export function Library() {
                 )}
               </dd>
               <dt>添加</dt>
-              <dd>{formatRelative(selectedResource.addedAt)}</dd>
+              <dd>{formatRelative(selectedResource.addedAt, now)}</dd>
             </dl>
             {selectedResource.tags.length > 0 && (
               <div className="k-hstack">

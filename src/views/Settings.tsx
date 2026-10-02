@@ -1,11 +1,19 @@
-// KERNEL · 设置 SETTINGS（P2）：主题 / 数据统计 / AI 状态 / 关于 / 原型态说明
-import { useState } from 'react'
+// KERNEL · 设置 SETTINGS（P2）：主题 / 数据服务 / 数据统计 / AI 状态 / 关于
+import { useEffect, useState } from 'react'
 import { Panel } from '@/components/Panel'
 import { useTheme } from '@/context/ThemeContext'
-import { useToast } from '@/context/ToastContext'
 import { getSnapshot } from '@/lib/data'
 import { getDataRecordCount } from '@/lib/derive'
-import { resetProto } from '@/lib/proto'
+import { useDataRevision, useDataSource } from '@/lib/hooks'
+import { api } from '@/lib/api'
+import { formatTime } from '@/lib/date'
+
+interface ActivityEntry {
+  ts: string
+  action: string
+  entity: string
+  id: string
+}
 
 const PHILOSOPHY: Array<{ n: string; text: string }> = [
   { n: '01', text: '文件即数据库，opencode 即大脑，网页即驾驶舱。' },
@@ -15,9 +23,10 @@ const PHILOSOPHY: Array<{ n: string; text: string }> = [
 ]
 
 export function Settings() {
+  useDataRevision()
   const { theme, setTheme } = useTheme()
-  const { toast } = useToast()
-  const [protoCleared, setProtoCleared] = useState(false)
+  const source = useDataSource()
+  const [activity, setActivity] = useState<ActivityEntry[]>([])
   const snapshot = getSnapshot()
   const total = getDataRecordCount(snapshot)
 
@@ -34,11 +43,25 @@ export function Settings() {
     { label: '回顾 REVIEWS', value: snapshot.reviews.length },
   ]
 
-  const handleReset = (): void => {
-    resetProto()
-    setProtoCleared(true)
-    toast('原型态：本地覆盖数据已清除')
-  }
+  // 最近活动（审计日志尾部；仅在线时拉取）
+  useEffect(() => {
+    if (source !== 'server') {
+      setActivity([])
+      return
+    }
+    let cancelled = false
+    api
+      .get<{ items: ActivityEntry[] }>('/api/activity?limit=8')
+      .then((res) => {
+        if (!cancelled) setActivity(res.items)
+      })
+      .catch(() => {
+        if (!cancelled) setActivity([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [source])
 
   return (
     <div className="k-view">
@@ -74,10 +97,10 @@ export function Settings() {
           </div>
           <p className="k-view__intro">
             计划链路：网页 → 本地 Node 服务（唯一写者）→ <code>opencode serve</code>（仅 127.0.0.1:4096）→
-            结果写回 <code>data/</code> 并经 SSE 推进度。详见 <code>docs/02-ARCHITECTURE.md §6.3</code>。
+            结果写回 <code>data/</code> 并经 SSE 推进度。详见 <code>docs/02-ARCHITECTURE.md</code>。
           </p>
           <p className="k-view__intro">
-            v0.3 仅做 UI 预留（AI 建议卡、命令面板入口）；opencode 永不直接暴露到局域网。
+            v0.4 数据服务已就位；AI 仍为 UI 预留（AI 建议卡、命令面板入口），v0.5 接入。opencode 永不直接暴露到局域网。
           </p>
         </Panel>
 
@@ -123,7 +146,7 @@ export function Settings() {
           </div>
           <dl className="k-dl">
             <dt>版本</dt>
-            <dd className="k-mono">v0.3.0</dd>
+            <dd className="k-mono">v0.4.0</dd>
             <dt>内核隐喻</dt>
             <dd>进程 = 任务/项目 · 内存 = 资料/知识 · I/O = 收件箱 · 调度器 = 日程 · 检索 = 命令面板 · GC = 回顾</dd>
             <dt>数据版本</dt>
@@ -134,39 +157,46 @@ export function Settings() {
         </Panel>
       </div>
 
-      <Panel index="05" title="原型态说明" en="PROTOTYPE">
-        <div className="k-proto-note">
-          <p className="k-view__intro">
-            v0.3 是前端高保真原型：数据只读自 <code>data/</code>，用户操作写入 localStorage 覆盖层，界面标注「原型态」。
-          </p>
-          <dl className="k-proto-list">
-            <div className="k-proto-list__row">
-              <dt>任务完成</dt>
-              <dd>真实可用：写入 <code>kernel:proto:done</code>，总览 / 任务 / 抽屉同步反映。</dd>
-            </div>
-            <div className="k-proto-list__row">
-              <dt>收件箱捕捉</dt>
-              <dd>真实可用：写入 <code>kernel:proto:inbox</code>；澄清动作仅演示并提示。</dd>
-            </div>
-            <div className="k-proto-list__row">
-              <dt>快速新建任务</dt>
-              <dd>真实可用：写入 <code>kernel:proto:tasks</code>。</dd>
-            </div>
-            <div className="k-proto-list__row">
-              <dt>澄清 / 迁移 / 归档</dt>
-              <dd>演示动作 + 提示，v0.4 起持久化写入 <code>data/</code>。</dd>
-            </div>
-            <div className="k-proto-list__row">
-              <dt>AI 能力</dt>
-              <dd>占位，v0.5 接入 opencode。</dd>
-            </div>
-          </dl>
-          <div className="k-view__actions">
-            <button type="button" className="k-btn" onClick={handleReset} disabled={protoCleared}>
-              {protoCleared ? '已清除本地覆盖' : '清除原型态本地数据'}
-            </button>
-          </div>
+      <Panel index="05" title="数据服务" en="DATA SERVICE">
+        <div className="k-between">
+          <span className="k-panel__cn">
+            {source === 'server' ? '状态 · ONLINE' : source === 'offline' ? '状态 · OFFLINE' : '状态 · 连接中'}
+          </span>
+          <span
+            className={[
+              'k-svc-pill',
+              source === 'server' ? 'is-ok' : '',
+              source === 'offline' ? 'is-off' : '',
+            ]
+              .filter(Boolean)
+              .join(' ')}
+          >
+            127.0.0.1:4097
+          </span>
         </div>
+        <p className="k-view__intro">
+          v0.4 起所有写入（完成 / 捕捉 / 澄清 / 快速新建）经本地 Node 数据服务（唯一写者）：
+          Zod 校验 + 原子写入 + 审计日志 <code>data/activity.jsonl</code>。服务仅监听 127.0.0.1，永不暴露局域网。
+        </p>
+        {source === 'server' ? (
+          activity.length === 0 ? (
+            <p className="k-muted">暂无活动记录。</p>
+          ) : (
+            <div className="k-activity">
+              {activity.map((entry) => (
+                <div className="k-activity__row" key={`${entry.ts}-${entry.action}-${entry.id}`}>
+                  <span className="k-mono k-muted">{formatTime(entry.ts)}</span>
+                  <span className="k-mono">{entry.action}</span>
+                  <span className="k-mono k-muted">{entry.id}</span>
+                </div>
+              ))}
+            </div>
+          )
+        ) : (
+          <p className="k-view__intro k-muted">
+            数据服务离线：界面以只读方式浏览，写入操作会收到失败提示。启动方式：<code>npm run dev</code>。
+          </p>
+        )}
       </Panel>
     </div>
   )

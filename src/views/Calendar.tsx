@@ -17,17 +17,13 @@ import {
   isSameDay,
   startOfWeek,
 } from '@/lib/date'
+import { useNow } from '@/lib/hooks'
 
 export function Calendar() {
   const [selected, setSelected] = useState(() => new Date())
-  const [now, setNow] = useState(() => new Date())
+  const now = useNow()
   const [drawerId, setDrawerId] = useState<string | null>(null)
   const spineRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    const timer = window.setInterval(() => setNow(new Date()), 60_000)
-    return () => window.clearInterval(timer)
-  }, [])
 
   // M4：进入日历自动滚动到"现在"（1440×900 下 NOW 线在首屏折叠之下）
   const scrollToNow = useCallback(() => {

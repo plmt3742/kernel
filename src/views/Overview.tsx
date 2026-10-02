@@ -1,5 +1,4 @@
 // KERNEL · 总览 OVERVIEW（P0）——对齐 C 稿：状态胶囊 + 统计瓦片 + 紧凑日程 + 下一步行动
-import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Sparkles } from 'lucide-react'
 import { Panel } from '@/components/Panel'
@@ -13,52 +12,35 @@ import {
   getInboxCount,
   getNextActions,
   getProjectProgress,
-  getSnapshot,
   getTodayEvents,
 } from '@/lib/data'
-import { getCodingStreak, getNextEvent, getTodayTaskScope } from '@/lib/derive'
-import { isTaskDone, useDone } from '@/lib/proto'
-import { formatTime, isPast } from '@/lib/date'
+import { getCodingStreak, getNextEvent, getOverdueOpen, getTodayTaskScope } from '@/lib/derive'
+import { isTaskDone } from '@/lib/mutations'
+import { useDataRevision, useNow, useUndoableToggle } from '@/lib/hooks'
+import { formatTime } from '@/lib/date'
 
 const INBOX_THRESHOLD = 10
 const WIP_LIMIT = 3
 
 export function Overview() {
+  useDataRevision()
   const navigate = useNavigate()
-  const { set: doneSet, toggle } = useDone()
-  const [now, setNow] = useState(() => new Date())
+  const toggleTask = useUndoableToggle()
+  const now = useNow()
 
-  useEffect(() => {
-    const timer = window.setInterval(() => setNow(new Date()), 60_000)
-    return () => window.clearInterval(timer)
-  }, [])
-
-  const snapshot = getSnapshot()
   const inboxCount = getInboxCount()
   const activeProjectList = getActiveProjects()
   const activeProjects = activeProjectList.length
 
-  const scope = getTodayTaskScope(now, doneSet)
-  const overdueOpen = useMemo(
-    () =>
-      snapshot.tasks.filter(
-        (task) =>
-          task.dueAt !== undefined &&
-          task.status !== 'dropped' &&
-          !isTaskDone(task, doneSet) &&
-          isPast(task.dueAt, now),
-      ).length,
-    [snapshot.tasks, doneSet, now],
-  )
+  const scope = getTodayTaskScope(now)
+  const overdueOpen = getOverdueOpen(now).length
 
   const nextEvent = getNextEvent(now)
   const todayEvents = getTodayEvents(now)
   const visibleEvents = todayEvents.slice(0, 6)
   const streak = getCodingStreak(now)
 
-  const topActions = getNextActions(20)
-    .filter((task) => !doneSet.has(task.id))
-    .slice(0, 5)
+  const topActions = getNextActions(5)
 
   return (
     <div className="k-view">
@@ -143,9 +125,12 @@ export function Overview() {
                   <TaskRow
                     key={task.id}
                     task={task}
-                    done={isTaskDone(task, doneSet)}
-                    onToggle={toggle}
-                    onOpen={() => navigate('/tasks', { viewTransition: true })}
+                    done={isTaskDone(task)}
+                    onToggle={(id) => {
+                      const target = topActions.find((item) => item.id === id)
+                      if (target !== undefined) toggleTask(target)
+                    }}
+                    onOpen={(id) => navigate(`/tasks?task=${id}`, { viewTransition: true })}
                   />
                 ))}
               </div>
@@ -220,7 +205,7 @@ export function Overview() {
           </p>
           <p className="k-aisug__line">
             <span className="k-aisug__bullet">02</span>
-            收件箱有 6 条未澄清，其中"助学金材料"类 2 条可合并为一个任务。
+            收件箱有 {inboxCount} 条未澄清，其中"助学金材料"类可合并为一个任务。
           </p>
           <p className="k-aisug__line">
             <span className="k-aisug__bullet">03</span>

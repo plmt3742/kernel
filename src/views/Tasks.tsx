@@ -1,6 +1,6 @@
-// KERNEL · 任务 TASKS（P0）：筛选 / 分组 / 行内完成动效 / 详情抽屉 / 快速新建
+// KERNEL · 任务 TASKS（P0）：筛选（状态 + 时间）/ 分组 / 行内完成动效 / 详情抽屉 / 快速新建
 import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { ChevronRight, Plus } from 'lucide-react'
 import { FilterBar, type FilterGroup } from '@/components/FilterBar'
@@ -10,9 +10,21 @@ import { EmptyState } from '@/components/EmptyState'
 import { TagPill } from '@/components/TagPill'
 import { useToast } from '@/context/ToastContext'
 import { getAreaById, getAreas, getProjectById, getSnapshot, getTags } from '@/lib/data'
-import { addProtoTask, isTaskDone, useDone, useProtoTasks } from '@/lib/proto'
+import { createTask, isTaskDone } from '@/lib/mutations'
+import { errorText } from '@/lib/api'
 import { ENERGY_LABEL, TASK_STATUS_LABEL, tagLabel } from '@/lib/format'
-import { formatDateTime, formatRelative, humanizeDay, isPast, isSameDay } from '@/lib/date'
+import {
+  endOfWeek,
+  formatDateTime,
+  formatRelative,
+  humanizeDay,
+  isPast,
+  isSameDay,
+  isWithinRange,
+  startOfWeek,
+  toDate,
+} from '@/lib/date'
+import { useDataRevision, useNow, useUndoableToggle } from '@/lib/hooks'
 import { DUR, EASE_ENTER, EASE_EXIT, STAGGER, STAGGER_MAX } from '@/lib/motion'
 import type { Task } from '@/types'
 
@@ -24,9 +36,20 @@ interface TaskGroup {
   tasks: Task[]
 }
 
+/** 默认排序：截止近者优先（无截止垫底），其次重要性，最后按 id 稳定 */
+function byDueTask(a: Task, b: Task): number {
+  const aDue = a.dueAt !== undefined ? toDate(a.dueAt).getTime() : Number.POSITIVE_INFINITY
+  const bDue = b.dueAt !== undefined ? toDate(b.dueAt).getTime() : Number.POSITIVE_INFINITY
+  if (aDue !== bDue) return aDue - bDue
+  if (a.importance !== b.importance) return b.importance - a.importance
+  return a.id.localeCompare(b.id)
+}
+
 export function Tasks() {
-  const { set: doneSet, toggle } = useDone()
-  const protoTasks = useProtoTasks()
+  useDataRevision()
+  const toggleTask = useUndoableToggle()
+  const now = useNow()
+  const [searchParams, setSearchParams] = useSearchParams()
   const { toast } = useToast()
   const reduce = useReducedMotion()
 
@@ -37,11 +60,7 @@ export function Tasks() {
   const [drawerId, setDrawerId] = useState<string | null>(null)
   const [pendingDone, setPendingDone] = useState<string[]>([])
 
-  const snapshot = getSnapshot()
-  const allTasks = useMemo<Task[]>(
-    () => [...protoTasks, ...snapshot.tasks],
-    [protoTasks, snapshot.tasks],
-  )
+  const allTasks = getSnapshot().tasks
 
   useEffect(() => {
     if (pendingDone.length === 0) return
@@ -49,23 +68,51 @@ export function Tasks() {
     return () => window.clearTimeout(timer)
   }, [pendingDone])
 
+  // 深链直达任务抽屉（总览「下一步行动」等入口）：/tasks?task=t-0001
+  useEffect(() => {
+    const id = searchParams.get('task')
+    if (id !== null && allTasks.some((task) => task.id === id)) {
+      setDrawerId(id)
+    }
+  }, [searchParams, allTasks])
+
+  const closeDrawer = (): void => {
+    setDrawerId(null)
+    if (searchParams.get('task') !== null) {
+      setSearchParams({}, { replace: true })
+    }
+  }
+
   const statusValue = filters.status ?? ''
+  const timeValue = filters.time ?? ''
+
+  const inTime = (task: Task): boolean => {
+    if (timeValue === '') return true
+    if (task.dueAt === undefined) return false
+    if (timeValue === 'overdue') return !isTaskDone(task) && isPast(task.dueAt, now)
+    if (timeValue === 'today') return isSameDay(task.dueAt, now)
+    // 本周：周一 00:00 ～ 周日 23:59（区间落点，含本周内已过期的项）
+    return isWithinRange(task.dueAt, startOfWeek(now), endOfWeek(now))
+  }
 
   const base = allTasks.filter((task) => {
     if (filters.context !== undefined && !task.contexts.includes(filters.context)) return false
     if (filters.energy !== undefined && task.energy !== filters.energy) return false
     if (filters.area !== undefined && task.areaId !== filters.area) return false
     if (filters.role !== undefined && !task.tags.includes(filters.role)) return false
+    if (!inTime(task)) return false
     return true
   })
 
-  const visible = base.filter((task) => {
-    const done = isTaskDone(task, doneSet)
-    if (statusValue === 'open') return (!done && task.status !== 'dropped') || pendingDone.includes(task.id)
-    if (statusValue === 'done') return done
-    if (statusValue === '') return true
-    return task.status === statusValue
-  })
+  const visible = base
+    .filter((task) => {
+      const done = isTaskDone(task)
+      if (statusValue === 'open') return (!done && task.status !== 'dropped') || pendingDone.includes(task.id)
+      if (statusValue === 'done') return done
+      if (statusValue === '') return true
+      return task.status === statusValue
+    })
+    .sort(byDueTask)
 
   const groups = useMemo<TaskGroup[]>(() => {
     if (groupMode === 'flat') return [{ key: 'all', title: '全部', tasks: visible }]
@@ -91,17 +138,17 @@ export function Tasks() {
   }, [groupMode, visible])
 
   const openCount = allTasks.filter(
-    (task) => task.status !== 'dropped' && !isTaskDone(task, doneSet),
+    (task) => task.status !== 'dropped' && !isTaskDone(task),
   ).length
   const overdueCount = allTasks.filter(
     (task) =>
       task.dueAt !== undefined &&
       task.status !== 'dropped' &&
-      !isTaskDone(task, doneSet) &&
+      !isTaskDone(task) &&
       isPast(task.dueAt),
   ).length
   const todayCount = allTasks.filter(
-    (task) => task.dueAt !== undefined && !isTaskDone(task, doneSet) && isSameDay(task.dueAt, new Date()),
+    (task) => task.dueAt !== undefined && !isTaskDone(task) && isSameDay(task.dueAt, new Date()),
   ).length
 
   const contexts = useMemo(
@@ -151,6 +198,15 @@ export function Tasks() {
   ]
 
   const [statusGroup, ...advancedGroups] = filterGroups
+  const timeGroup: FilterGroup = {
+    key: 'time',
+    label: '时间',
+    chips: [
+      { value: 'overdue', label: '逾期' },
+      { value: 'today', label: '今天' },
+      { value: 'week', label: '本周' },
+    ],
+  }
   const advancedActive = advancedGroups.filter((group) => filters[group.key] !== undefined).length
 
   const handleFilterSelect = (key: string, value: string): void => {
@@ -165,21 +221,26 @@ export function Tasks() {
   const handleToggle = (id: string): void => {
     const task = allTasks.find((item) => item.id === id)
     if (task === undefined) return
-    const wasDone = isTaskDone(task, doneSet)
-    toggle(id)
+    const wasDone = toggleTask(task)
     if (!wasDone) setPendingDone((prev) => [...prev, id])
   }
 
   const handleQuickAdd = (): void => {
     const value = quick.trim()
     if (value === '') return
-    addProtoTask(value)
-    setQuick('')
-    toast('原型态：任务已加入本地，v0.4 起持久化写入 data/')
+    void (async () => {
+      try {
+        await createTask(value)
+        setQuick('')
+        toast('已创建任务 · 写入 data/tasks')
+      } catch (err) {
+        toast(`创建失败：${errorText(err)}`, { tone: 'error' })
+      }
+    })()
   }
 
   const selected = drawerId !== null ? allTasks.find((task) => task.id === drawerId) : undefined
-  const selectedDone = selected !== undefined && isTaskDone(selected, doneSet)
+  const selectedDone = selected !== undefined && isTaskDone(selected)
 
   return (
     <div className="k-view">
@@ -209,13 +270,13 @@ export function Tasks() {
           onKeyDown={(event) => {
             if (event.key === 'Enter') handleQuickAdd()
           }}
-          placeholder="快速新建任务，回车加入（原型态，本地）"
+          placeholder="快速新建任务，回车加入（写入 data/tasks）"
           aria-label="快速新建任务"
         />
         <span className="u-label k-muted">ENTER</span>
       </div>
 
-      <FilterBar groups={[statusGroup]} selected={filters} onSelect={handleFilterSelect} />
+      <FilterBar groups={[statusGroup, timeGroup]} selected={filters} onSelect={handleFilterSelect} />
 
       <div className="k-tasks__groupbar">
         <button
@@ -289,7 +350,7 @@ export function Tasks() {
                 >
                   <TaskRow
                     task={task}
-                    done={isTaskDone(task, doneSet)}
+                    done={isTaskDone(task)}
                     onToggle={handleToggle}
                     onOpen={setDrawerId}
                   />
@@ -302,7 +363,7 @@ export function Tasks() {
 
       <Drawer
         open={selected !== undefined}
-        onClose={() => setDrawerId(null)}
+        onClose={closeDrawer}
         kicker={`任务 · ${selected?.id ?? ''}`}
         title={selected?.title ?? ''}
         footer={
@@ -326,10 +387,7 @@ export function Tasks() {
           <div className="k-detail-grid">
             <dl className="k-dl">
               <dt>状态</dt>
-              <dd>
-                {TASK_STATUS_LABEL[selected.status]}
-                {selectedDone && selected.status !== 'done' ? ' · 原型态已完成' : ''}
-              </dd>
+              <dd>{TASK_STATUS_LABEL[selected.status]}</dd>
               <dt>能量</dt>
               <dd>{ENERGY_LABEL[selected.energy]}</dd>
               <dt>重要性</dt>
