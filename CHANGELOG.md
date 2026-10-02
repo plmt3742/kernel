@@ -4,6 +4,18 @@
 
 ## [Unreleased]
 
+### 笔记体验：沉浸阅读 / 撰写 + AI 蒸馏 · Slice M（已完成 · 2026-10-03）
+所有者 backlog「笔记的详情页需要设计一个笔记系统，需要有沉浸式的阅读和撰写体验」+ 蒸馏困惑「这个蒸馏是什么意思，是点击后就可以 ai 蒸馏还是什么意思」。此前笔记详情与任务 / 项目共用 660px 弹窗、正文沿用全局 65ch/行高 1.65 且被元数据表压在下方；编辑态正文字段与其它字段同规格（`rows=5`）、标题不醒目；**无「新建笔记」入口**（`POST /api/notes` 存在但 UI 未暴露）；`distillLevel` 只能标注、无任何内容变换与语义说明。本切片交付沉浸阅读 / 撰写面、新建笔记入口，并把「蒸馏」从语义澄清升级为**可执行 AI 蒸馏**（出草稿 → 确认 → 追加 → 可撤销），延续「AI 只出建议、确认后写入、精确撤销」纪律。`npm run build`（tsc strict + vite）退出 0；服务端冒烟 **34/34** + 浏览器 E2E **35/35**；零数据残留（所有者 157 个数据文件**字节不变**，`n-0016` 与标签注册表逐字节一致）；控制台零 error；证据 `.qa/v40/`。
+
+- **沉浸阅读（`src/views/Library.tsx` / `src/styles/shell.css` / `src/styles/views.css`）**：笔记详情改用专用加宽弹窗变体 `.k-modal--note`（`min(820px, 100vw-32px)`、`max-height min(88vh, 920px)`）；正文包入 `.k-note-read`（`68ch`、`line-height: 1.8`、标题按 h2/h3/h4 token 分层、blockquote / pre / hr token 化）；类型 / 层级 / 区域 / 项目 / 更新 / 标签收进正文上方安静 `.k-note__meta` 条，蒸馏 / AI 蒸馏 / 反向链接 / 关联收进正文下方 `.k-note__secondary`——**正文成为主角**。渲染仍用 `react-markdown`（React 元素，无 `dangerouslySetInnerHTML`）。
+- **沉浸撰写（`src/components/EntityEditForm.tsx` / `Library.tsx` / views.css）**：`EntityEditForm` 增可选 `rows`（textarea 专用）；笔记字段顺序改为**标题 → 正文（`rows=18`）→ 元数据**，外壳 `.k-note-edit` 使 `#k-edit-title` 醒目、`#k-edit-body` 高行数（`min-height: 42vh`、行高 1.8）。保留既有「编辑」toggle。
+- **新建笔记（`src/components/NoteComposeModal.tsx`）**：资料页笔记区头部新增安静「新建笔记」→ 撰写弹窗（醒目标题输入 + 高行数 Markdown 正文）→ 点「创建笔记」才经 `POST /api/notes` 落盘（ESC / 取消零写入）→ toast「笔记已创建 · 撤销」（撤销 = 移入回收站）+ 打开新笔记（`?note=` 深链）。
+- **蒸馏语义澄清（`src/lib/format.ts`）**：新增 `DISTILL_HELP`（「点选只标注层级、不会改写内容；『AI 蒸馏』生成下一层草稿，确认后才追加」）与 `nextDistillLevel(level)`；蒸馏快捷设置下方以安静一行呈现。
+- **AI 蒸馏端点（`server/{schemas,ai,index}.mjs`）**：新增 `noteDistillSchema` + `noteDistillRequestSchema`（`id` 必 `/^n-\d{4}$/`、`targetLevel` 1–3 可选）与 `draftNoteDistill(note, target)`（注入标题 / 类型 / 层级 / 正文 ≤6000 字 + 分层指令 L1 划线 / L2 摘要 / L3 永久笔记 + ≤300 字 / 保守 / 保留关键事实；指令式 JSON + Zod + 单次重试）；新增 `POST /api/ai/note/distill { id, targetLevel? }`——缺省目标 = 当前层级 + 1 并 clamp 1–3（封顶 L3）；health 503 / 失败 502；返回 `{ text, targetLevel, model, ms }`，**绝不落盘、无审计**。
+- **应用 / 撤销（`Library.tsx` / `src/lib/mutations.ts`）**：`aiNoteDistill()` 客户端；详情内联 `.k-note-ai` 建议面板（可编辑 textarea + 「应用到笔记」/「忽略」+ 失败重试，非阻断）。应用经 `POST /api/notes/:id/update` 一次写 `{ body, distillLevel }`——正文**追加** `\n\n---\n\n## 蒸馏 → L{n} {层级名}\n\n{text}`（不替换、原文不丢）；撤销客户端记录应用前 `body` / `distillLevel` 往返**精确还原**。
+- **验证**：`.qa/v40/server-smoke.mjs` **34/34**（笔记 create → update（body+distillLevel）→ trash → restore → purge 往返；`nextId` = `n-<max+1>`；空标题 400；蒸馏端点非法 id 400 / 不存在 404 / 真实 AI 形状 + 缺省目标（2→3）+ 显式 targetLevel=1 + L3 封顶 + **不写入**；审计 `note.create/update/trash/restore/purge`；零残留 + 所有者 157 文件字节不变）；`.qa/v40/verify-m.py` **35/35**（阅读面 `.k-modal--note` + 行高 1.80 + 阅读宽度 634px；编辑面标题 > 正文 + 撰写面 ≥300px；新建笔记撰写 → 创建 → 打开 `?note=` → toast 撤销；AI 蒸馏拦截 → 建议面板 → 应用追加 + 层级提升 + 原文保留 → 撤销精确还原；390 零横溢；控制台 0 error；零残留 + 笔记集合 / 标签与基线一致）。
+- **记录**：新增 ADR-0020（`docs/decisions/0020-note-experience.md`）；`docs/02`（端点）；`docs/04` §4.8 / §5 写入路径；`docs/README.md`（ADR 索引）；`public/guide.html`；`CHANGELOG.md`、`TASK_BOOK.md`、`AGENTS.md`。
+
 ### 区域 / 目标 / 习惯可管理 + 打卡 · Slice X（已完成 · 2026-10-03）
 关闭最后三个只读结构。此前 `data/areas` / `data/goals` / `data/habits` 是**仅种子可读**：有选择器 / 关联芯片 / 统计，却**无 schema、无路由、无 UI** 可创建 / 编辑 / 删除（审计 F7/F8），且总览「连续刷题」条读冻结的 `habit.log`、`derive.ts` **硬编码 `h-0002`**、**无任何打卡写入路径**（F23 / 习惯打卡缺口）。本切片把三类并入可管理族（schema + 创建 / 编辑 / 删除 + 回收站 + 区域 / 目标**引用护栏**），补齐习惯**打卡闭环**，并让 area/goal 关联芯片可点（F8）、项目区域默认显式化（F23）。`npm run build`（tsc strict + vite）退出 0；服务端冒烟 **62/62** + 浏览器 E2E **45/45**；零数据残留（areas 7 / goals 7 / habits 5 等全部回基线；所有者 157 个数据文件**字节不变**，含 20 事件 / 区域 / 目标 / 习惯种子与 `h-0002` log）；控制台零 error；证据 `.qa/v39/`。
 

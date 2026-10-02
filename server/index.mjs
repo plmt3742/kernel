@@ -39,6 +39,7 @@ import {
   habitCreateSchema,
   ID_PATTERNS,
   inboxApplySchema,
+  noteDistillRequestSchema,
   taskCreateFieldsSchema,
   tagMergeSchema,
   tagUpdateSchema,
@@ -51,6 +52,7 @@ import {
   computeMonthMetrics,
   computeWeekMetrics,
   draftClusters,
+  draftNoteDistill,
   draftProject,
   draftTask,
   generateReviewDraft,
@@ -1759,6 +1761,32 @@ const server = http.createServer(async (req, res) => {
       const result = await applyConfigUpdate(await readBody(req))
       console.log(`[data] config.update aiAutomation=${result.config.aiAutomation}`)
       send(res, 200, result)
+      return
+    }
+    // 笔记 AI 蒸馏（Slice M）：把笔记压缩到目标层级 → 返回草稿文本（绝不自动落盘）
+    if (method === 'POST' && pathname === '/api/ai/note/distill') {
+      const payload = noteDistillRequestSchema.parse(await readBody(req))
+      const note = await readEntity('notes', payload.id)
+      if (note === null) return fail(res, 404, '笔记不存在')
+      const current = typeof note.distillLevel === 'number' ? note.distillLevel : 0
+      // 缺省 = 当前层级 + 1；显式 targetLevel 与缺省值一并 clamp 到 1–3（封顶 L3）
+      const target = Math.min(Math.max(payload.targetLevel ?? current + 1, 1), 3)
+      const health = await getAiHealth()
+      if (health.available === false) return fail(res, 503, 'opencode 服务未就绪（127.0.0.1:4096）')
+      let result
+      try {
+        result = await draftNoteDistill(note, target)
+      } catch (err) {
+        console.error('[ai] note.distill 失败：', err?.message ?? err)
+        return fail(res, 502, err?.message ?? 'AI 调用失败')
+      }
+      console.log(`[ai] note.distill ok ${result.ms}ms（L${target}）`)
+      send(res, 200, {
+        text: result.text,
+        targetLevel: target,
+        model: result.model,
+        ms: result.ms,
+      })
       return
     }
     // 聚类立项草稿（Slice R2）：扫描无归属任务 + 未澄清条目 → 0~3 个「新项目」建议（只出建议，绝不落盘）

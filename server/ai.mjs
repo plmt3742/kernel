@@ -12,6 +12,7 @@ import {
   aiSuggestionSchema,
   clusterDraftSchema,
   clusterProposalSchema,
+  noteDistillSchema,
   projectDraftSchema,
   reviewDraftSchema,
   taskDraftSchema,
@@ -1096,6 +1097,122 @@ export async function draftProject(title) {
   const ms = Date.now() - t0
   console.log(`[ai] project.draft 完成 ${ms}ms（${model ?? '未知模型'}）`)
   return { suggestion: clean, model, ms }
+}
+
+/* ---------------------------------------------------------------------------
+ * 笔记 AI 蒸馏（v0.5 · Slice M，见 ADR-0020）：把笔记压缩到目标层级
+ * 纪律：AI 只产出「草稿文本」，绝不自动落盘；应用由用户确认后经
+ *       POST /api/notes/:id/update（body 追加 + distillLevel）写入。
+ * ------------------------------------------------------------------------- */
+
+/** 蒸馏输入正文硬上限（超长截断；有界输入） */
+export const NOTE_DISTILL_MAX_BODY_CHARS = 6000
+/** 蒸馏输出文本硬上限（与 noteDistillSchema 对齐） */
+export const NOTE_DISTILL_MAX_TEXT_CHARS = 1200
+
+/** 层级中文名（与前端 DISTILL_LEVEL_LABEL 同口径） */
+const NOTE_DISTILL_LEVEL_LABEL = { 1: '划线', 2: '摘要', 3: '永久笔记' }
+/** 各层指令（渐进压缩：L1 挑原句 → L2 自述摘要 → L3 可复用提炼） */
+const NOTE_DISTILL_LEVEL_RULE = {
+  1: 'L1 划线：从正文中挑出最关键的原句（可原文摘录），最多 5 条，每条一行；不改写、不点评。',
+  2: 'L2 摘要：用自己的话把正文压缩成一段摘要，保留核心事实与结论，删去旁枝与重复；不编造。',
+  3: 'L3 永久笔记：提炼为一条可复用的永久笔记——一个清晰的主张（第一句）+ 2–4 条支撑要点；脱离原文也能独立理解。',
+}
+
+/** 构造蒸馏系统提示词（注入目标层级定义 + 硬性规则） */
+function buildNoteDistillSystem(targetLevel) {
+  return `你是 KERNEL 个人知识库的「渐进蒸馏」助手。用户会给你一篇笔记，请把它压缩到 L${targetLevel}（${NOTE_DISTILL_LEVEL_LABEL[targetLevel]}）。
+只输出一个 JSON 对象：不要 markdown 代码块、不要解释、不要多余文字。
+- text: 压缩后的正文（字符串；中文为主，目标 ≤300 字，最多不超过 1200 字）
+- reason: 一句话说明你的压缩依据（可选）
+
+当前目标层级：
+${targetLevel}. ${NOTE_DISTILL_LEVEL_RULE[targetLevel]}
+
+规则：
+1. 保守压缩：只保留笔记中真实存在的信息，绝不编造事实、数字或结论；拿不准的细节宁可省略。
+2. 保留关键事实（人名 / 数字 / 结论 / 待办）。
+3. 如果正文已经包含「## 蒸馏 → Lx」小节，请基于它上方的内容重新生成目标层级，不要照抄旧蒸馏小节。
+4. 输出纯文本正文，不要加「以下是」「摘要：」之类的前后缀，也不要再用 Markdown 标题包裹。`
+}
+
+/** 构造蒸馏用户输入（标题 / 类型 / 层级上下文 + 截断后的正文） */
+function buildNoteDistillInput(note, targetLevel) {
+  const body = typeof note.body === 'string' ? note.body : ''
+  const clipped =
+    body.length > NOTE_DISTILL_MAX_BODY_CHARS
+      ? `${body.slice(0, NOTE_DISTILL_MAX_BODY_CHARS)}…（正文过长已截断）`
+      : body
+  const current = typeof note.distillLevel === 'number' ? note.distillLevel : 0
+  return `笔记标题：${note.title}
+笔记类型：${note.type}
+当前层级：L${current}
+目标层级：L${targetLevel}（${NOTE_DISTILL_LEVEL_LABEL[targetLevel]}）
+
+【笔记正文】
+${clipped}`
+}
+
+/** 解析 + 校验单次蒸馏响应；返回 { ok, draft } 或 { ok:false, reason } */
+function tryParseNoteDistill(res) {
+  const cleaned = extractText(res)
+    .trim()
+    .replace(/^```(?:json)?/i, '')
+    .replace(/```$/, '')
+    .trim()
+  let obj
+  try {
+    obj = JSON.parse(cleaned)
+  } catch (err) {
+    return { ok: false, reason: `JSON 解析失败（${err.message}）` }
+  }
+  try {
+    return { ok: true, draft: noteDistillSchema.parse(obj) }
+  } catch (err) {
+    return { ok: false, reason: `字段校验失败（${describeError(err)}）` }
+  }
+}
+
+/** 单会话内「prompt → 解析 → 一次重试」；失败抛错 */
+async function promptNoteDistillWithRetry(sessionID, system, userText) {
+  let res = await promptOnce(sessionID, system, userText)
+  let parsed = tryParseNoteDistill(res)
+  if (!parsed.ok) {
+    console.warn(`[ai] note.distill 首次失败（${parsed.reason}），重试一次`)
+    res = await promptOnce(
+      sessionID,
+      system,
+      `上次输出无法解析（${parsed.reason}）。请只输出一个合法 JSON 对象（形如 {"text":"..."}），不要任何多余文字。`,
+    )
+    parsed = tryParseNoteDistill(res)
+    if (!parsed.ok) throw new Error(`AI 输出无法解析：${parsed.reason}`)
+  }
+  return { res, draft: parsed.draft }
+}
+
+/**
+ * 笔记 AI 蒸馏：把笔记正文压缩到 targetLevel（调用方已 clamp 到 1–3）。
+ * @param {{ title: string, type: string, body: string, distillLevel?: number }} note 已读取的笔记
+ * @param {number} targetLevel 1–3
+ * @returns {Promise<{ text: string, reason: string, model: string | null, ms: number }>}
+ */
+export async function draftNoteDistill(note, targetLevel) {
+  const t0 = Date.now()
+  const system = buildNoteDistillSystem(targetLevel)
+  const sessionID = await createSession('kernel:note-distill')
+  const { res, draft } = await promptNoteDistillWithRetry(
+    sessionID,
+    system,
+    buildNoteDistillInput(note, targetLevel),
+  )
+  const text =
+    draft.text.length > NOTE_DISTILL_MAX_TEXT_CHARS
+      ? draft.text.slice(0, NOTE_DISTILL_MAX_TEXT_CHARS)
+      : draft.text
+  const model = modelOf(res)
+  const ms = Date.now() - t0
+  console.log(`[ai] note.distill L${targetLevel} 完成 ${ms}ms（${model ?? '未知模型'}）`)
+  return { text, reason: draft.reason ?? '', model, ms }
 }
 
 /* ---------------------------------------------------------------------------

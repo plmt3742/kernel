@@ -404,6 +404,11 @@
   width: min(660px, calc(100vw - 32px));
   max-height: min(85vh, 900px);
 }
+/* 笔记详情弹窗（Slice M）：加宽以承载 68ch 沉浸阅读 / 撰写面；正文为视觉主角。 */
+.k-modal--note {
+  width: min(820px, calc(100vw - 32px));
+  max-height: min(88vh, 920px);
+}
 .k-modal__head {
   display: flex;
   align-items: flex-start;

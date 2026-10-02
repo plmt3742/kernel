@@ -188,6 +188,8 @@
 
 > **蒸馏层级可设置（v0.5 · Slice H）**：`distillLevel` 0–3 为渐进蒸馏（progressive summarization）层级——L0 原文（原始摘录 / 未加工）、L1 划线（已标出关键句）、L2 摘要（已用自己的话压缩）、L3 永久（已提炼为可复用的永久笔记）。笔记详情弹窗内以安静分段控件直接设置（经 `POST /api/notes/:id/update`，审计 `note.update`）；`areaId` / `projectId` 也可在编辑表单中设置（`notes` 编辑白名单已含 `areaId / projectId / distillLevel`，见 ADR-0011）。UI helper 文本与本文一致（`src/lib/format.ts` `DISTILL_LEVEL_DEF`）。
 
+> **蒸馏语义（v0.5 · Slice M，见 ADR-0020）**：**点选层级只标注、不改写内容**——`distillLevel` 始终是可独立设置的标签，选择它不会触碰 `body`（UI 以 `format.ts` `DISTILL_HELP` 显式说明）。**AI 蒸馏**是独立的辅助动作：`POST /api/ai/note/distill { id, targetLevel? }` 由 AI 生成**下一层草稿**（缺省目标 = 当前层级 + 1，clamp 1–3 封顶 L3），只返回 `{ text, targetLevel, model, ms }`、**不落盘**；用户确认后经 `POST /api/notes/:id/update` 一次写入 `{ body, distillLevel }`，其中 `body` **追加**（而非替换）`\n\n---\n\n## 蒸馏 → L{n} {层级名}\n\n{text}` 小节，原文永不丢失。撤销由客户端记录应用前 `body` / `distillLevel` 往返精确还原。`distillLevel` 的派生展示（列表 / 详情点阵）不变。
+
 ### 4.9 resource（`r-`）
 
 | 字段 | 类型 | 说明 |
@@ -446,5 +448,6 @@ confirmed ──取消──> cancelled
 - **回顾报告归档（v0.5 · Slice L，见 ADR-0013）**：`POST /api/ai/review/draft` 成功后自动 `commit('reviews', …)`（`source:'ai'`，审计 `review.create` · `detail.auto`）；`POST /api/reviews/:id/update` 编辑归档报告（白名单 `summary` / `decisions`，递增 `updatedAt`，审计 `review.update` · `detail.fields`）；`POST /api/reviews/:id/remove` 删除（审计 `review.remove`）。前端回顾页「报告历史」按 `date` 倒序查阅。
 - **标签生命周期（v0.5 · Slice T，见 ADR-0014 / §4.12）**：标签名写入前规格化（裸名 → `topic:` 等）；任意携带 `tags` 的写入后 `ensureTags()` **自动登记**未注册名（`origin` / `createdAt` / `firstUsedIn`，审计 `tag.create`）；AI 可在无合适已有标签时提议新标签（`postValidate` 规格化保留，应用时以 `origin:'ai'` 登记）；新增管理端点 `POST /api/tags/:id/update`（重命名级联，`tag.rename`）、`…/merge`（合并级联 + 去重，`tag.merge`）、`…/remove`（使用中 409 阻止，`tag.remove`）、`POST /api/tags/backfill`（扫描登记存量，`tag.backfill`）；设置页新增「标签管理」区；资料库标签条按使用计数降序、不再截断前 12。
 - **区域 / 目标 / 习惯可管理 + 打卡（v0.5 · Slice X，见 ADR-0019 / §4.4–4.6）**：三类只读结构转为可管理——创建 `POST /api/areas` · `/api/goals` · `/api/habits`、编辑 `POST /api/<kind>/:id/update`（白名单）、删除 `POST /api/<kind>/:id/remove`（入回收站，区域 / 目标带**引用护栏**：被引用 → 409 含可读计数）；习惯打卡 `POST /api/habits/:id/checkin` · `/uncheckin`（缺省今天、幂等、写 `{date,value:1}`）；审计 `area.*` / `goal.*` / `habit.*`。设置页新增「区域 / 目标 / 习惯」三管理区；总览「习惯打卡」条取首个习惯并支持「今日打卡」切换；关联 area/goal 芯片深链到设置分区（F8）。`keyResults` 与 `habit.log` 的精细编辑延后。
+- **笔记 AI 蒸馏（v0.5 · Slice M，见 ADR-0020 / §4.8）**：`POST /api/ai/note/distill { id, targetLevel? }` 只产出**下一层草稿文本**（返回 `{ text, targetLevel, model, ms }`，**不落盘、无审计**；缺省目标 = 当前层级 + 1，clamp 1–3）。应用经既有 `POST /api/notes/:id/update` 一次写 `{ body, distillLevel }`——`body` **追加** `## 蒸馏 → Lx` 小节（不替换、原文不丢），撤销往返精确还原；**点选层级本身只标注、不改内容**。新建笔记入口 `POST /api/notes`（Slice M 前端暴露，创建可撤销 = 移入回收站）。
 - schema 预留实体（`timeLog` / `person` / `journalEntry`）在 v1.0 前评估是否实现。
 - 字段演进必须同步更新本篇，并通过 ADR 记录重大结构变更。

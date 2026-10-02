@@ -121,6 +121,17 @@ export const DISTILL_LEVEL_DEF: Record<number, string> = {
   2: '已用自己的话压缩成摘要。',
   3: '已提炼为可复用的永久笔记。',
 }
+/**
+ * 蒸馏语义释义（Slice M）：区分「标注层级」与「AI 蒸馏」——
+ * 点选层级只改标签、不动内容；AI 蒸馏才生成下一层草稿（仍需用户确认后应用）。
+ */
+export const DISTILL_HELP =
+  '蒸馏 = 逐层压缩：L0 原文 → L1 划线 → L2 摘要 → L3 永久笔记。点选只标注层级、不会改写内容；『AI 蒸馏』生成下一层草稿，确认后才追加到正文。'
+
+/** 下一蒸馏层级（缺省目标；封顶 L3） */
+export function nextDistillLevel(level: number): number {
+  return Math.min(Math.max(level + 1, 1), 3)
+}
 
 export const EVENT_STATUS_LABEL: Record<EventStatus, string> = {
   confirmed: '已确认',

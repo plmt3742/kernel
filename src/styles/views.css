@@ -2599,6 +2599,222 @@ button.k-pill.is-danger:hover {
 }
 
 /* ---------------------------------------------------------------------------
+ * 笔记体验（v0.5 · Slice M，见 ADR-0020）：沉浸阅读 + 沉浸撰写 + AI 蒸馏
+ * 正文是视觉主角；元数据条安静退后；全部走既有 token。
+ * ------------------------------------------------------------------------- */
+
+/* 笔记区块头动作（计数 + 新建笔记） */
+.k-lib__head-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+/* 笔记详情根：正文为主，次级区留白收紧 */
+.k-note {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+/* 安静元数据条：单行小字，正文之前；标签靠右（窄屏换行） */
+.k-note__meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+  padding-bottom: var(--space-4);
+  border-bottom: var(--hairline) solid var(--outline);
+  color: var(--muted);
+  font-size: var(--text-caption);
+  line-height: var(--text-caption-leading);
+}
+.k-note__meta-type {
+  color: var(--ink-2);
+}
+.k-note__meta-chip {
+  color: var(--muted);
+  background: var(--fill-subtle);
+  border-radius: var(--radius-pill);
+  padding: 2px var(--space-3);
+}
+.k-note__meta-tags {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-left: auto;
+}
+
+/* 沉浸阅读面：正文 68ch、行高 1.8、段落节奏放宽；标题安静分层 */
+.k-note-read {
+  padding: var(--space-2) 0;
+}
+.k-note-read .k-markdown {
+  max-width: 68ch;
+  color: var(--ink-2);
+  font-size: var(--text-body);
+  line-height: 1.8;
+}
+.k-note-read .k-markdown > * + * {
+  margin-top: var(--space-5);
+}
+.k-note-read .k-markdown p,
+.k-note-read .k-markdown li {
+  line-height: 1.8;
+}
+.k-note-read .k-markdown h1 {
+  color: var(--ink);
+  font-size: var(--text-h2);
+  line-height: var(--text-h2-leading);
+  letter-spacing: var(--text-h2-tracking);
+  margin-top: var(--space-6);
+}
+.k-note-read .k-markdown h2 {
+  color: var(--ink);
+  font-size: var(--text-h3);
+  line-height: var(--text-h3-leading);
+  letter-spacing: var(--text-h3-tracking);
+  margin-top: var(--space-6);
+}
+.k-note-read .k-markdown h3 {
+  color: var(--ink);
+  font-size: var(--text-h4);
+  line-height: var(--text-h4-leading);
+  letter-spacing: var(--text-h4-tracking);
+  font-weight: 600;
+  margin-top: var(--space-5);
+}
+.k-note-read .k-markdown blockquote {
+  border-left: 3px solid var(--accent);
+  padding-left: var(--space-4);
+  color: var(--muted);
+  font-style: italic;
+}
+.k-note-read .k-markdown ul,
+.k-note-read .k-markdown ol {
+  padding-left: 1.4em;
+}
+.k-note-read .k-markdown li + li {
+  margin-top: var(--space-1);
+}
+.k-note-read .k-markdown pre {
+  background: var(--surface-sunken);
+  line-height: 1.6;
+}
+.k-note-read .k-markdown hr {
+  border: none;
+  border-top: var(--hairline) solid var(--outline);
+}
+.k-note-read__empty {
+  max-width: 68ch;
+  padding: var(--space-6) 0;
+  line-height: var(--text-body-leading);
+}
+
+/* 次级区（蒸馏 / 反向链接 / 关联）：与正文拉开距离、安静退后 */
+.k-note__secondary {
+  gap: var(--space-6);
+  padding-top: var(--space-5);
+  border-top: var(--hairline) solid var(--outline);
+}
+
+/* 蒸馏释义 + AI 蒸馏入口 */
+.k-note-distill {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.k-note-distill__hint {
+  margin: 0;
+  max-width: var(--measure);
+  font-size: var(--text-caption);
+  line-height: var(--text-caption-leading);
+}
+.k-note-distill__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+.k-note-distill__note {
+  font-size: var(--text-caption);
+}
+
+/* AI 蒸馏建议面板（内联；避免嵌套弹窗的 ESC / 焦点争用） */
+.k-note-ai {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--fill-subtle);
+  border-radius: var(--radius-inner);
+}
+.k-note-ai__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--ink-2);
+  font-size: var(--text-caption);
+}
+.k-note-ai__text {
+  min-height: 140px;
+  line-height: 1.75;
+  resize: vertical;
+}
+
+/* 沉浸撰写面（编辑）：标题醒目 + 正文高行数、阅读友好行高 */
+.k-note-edit #k-edit-title {
+  font-size: var(--text-h3);
+  line-height: var(--text-h3-leading);
+  font-weight: 600;
+}
+.k-note-edit #k-edit-body {
+  min-height: 42vh;
+  font-size: var(--text-body);
+  line-height: 1.8;
+  resize: vertical;
+}
+
+/* 新建笔记撰写面（标题输入 + Markdown 正文） */
+.k-note-compose {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.k-note-compose__label {
+  color: var(--muted);
+}
+.k-note-compose__label:not(:first-child) {
+  margin-top: var(--space-3);
+}
+.k-note-compose__title {
+  width: 100%;
+  padding: var(--space-2) 0;
+  border: none;
+  border-bottom: var(--hairline) solid var(--outline);
+  background: transparent;
+  color: var(--ink);
+  font-size: var(--text-h3);
+  line-height: var(--text-h3-leading);
+  font-weight: 600;
+}
+.k-note-compose__title:focus-visible {
+  border-bottom-color: var(--accent);
+}
+.k-note-compose__body {
+  min-height: 42vh;
+  font-size: var(--text-body);
+  line-height: 1.8;
+  resize: vertical;
+}
+.k-note-compose__hint {
+  margin: 0;
+  font-size: var(--text-caption);
+  line-height: var(--text-caption-leading);
+}
+
+/* ---------------------------------------------------------------------------
  * AI 建议可编辑表单（Slice O）：任务草稿确认弹窗 + 收件箱建议卡共用
  * 宽松两列网格（标题独占整行）；≤640px 收为单列。全部走既有 token / 表单组件类。
  * ------------------------------------------------------------------------- */

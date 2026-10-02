@@ -1,11 +1,13 @@
 // KERNEL · 资料 LIBRARY（P1）：笔记 + 资料混合流 / 类型与标签筛选 / Markdown 阅读抽屉
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import { clsx } from 'clsx'
+import { Sparkles } from 'lucide-react'
 import { Panel } from '@/components/Panel'
 import { Modal } from '@/components/Modal'
 import { EntityEditForm, type EditFieldSpec } from '@/components/EntityEditForm'
+import { NoteComposeModal } from '@/components/NoteComposeModal'
 import { TagPill } from '@/components/TagPill'
 import { EmptyState } from '@/components/EmptyState'
 import { Relations } from '@/components/Relations'
@@ -20,14 +22,23 @@ import {
   getTags,
   getTagUsage,
 } from '@/lib/data'
-import { openPath, restoreEntity, revealPath, trashEntity, updateEntity } from '@/lib/mutations'
+import {
+  aiNoteDistill,
+  openPath,
+  restoreEntity,
+  revealPath,
+  trashEntity,
+  updateEntity,
+} from '@/lib/mutations'
 import { errorText } from '@/lib/api'
 import {
+  DISTILL_HELP,
   DISTILL_LEVEL_DEF,
   DISTILL_LEVEL_LABEL,
   DISTILL_LEVELS,
   NOTE_TYPE_EN,
   NOTE_TYPE_LABEL,
+  nextDistillLevel,
   RESOURCE_KIND_EN,
   RESOURCE_KIND_LABEL,
   RESOURCE_STATUS_DEF,
@@ -36,7 +47,7 @@ import {
 } from '@/lib/format'
 import { formatRelative } from '@/lib/date'
 import { useDataRevision, useNow } from '@/lib/hooks'
-import type { NoteType, ResourceKind, ResourceStatus, TrashKind } from '@/types'
+import type { Note, NoteType, ResourceKind, ResourceStatus, TrashKind } from '@/types'
 
 type Tab = 'all' | 'notes' | 'resources'
 
@@ -61,10 +72,21 @@ export function Library() {
   const { toast } = useToast()
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
+  // Slice M：新建笔记撰写弹窗
+  const [composing, setComposing] = useState(false)
+  // Slice M：AI 蒸馏草稿（editable textarea）+ 加载 / 错误 / 应用中
+  const [distill, setDistill] = useState<{ text: string; targetLevel: number } | null>(null)
+  const [distillLoading, setDistillLoading] = useState(false)
+  const [distillError, setDistillError] = useState('')
+  const [applying, setApplying] = useState(false)
 
-  // 切换抽屉目标时退出编辑态
+  // 切换抽屉目标时退出编辑态 + 清空 AI 蒸馏草稿
   useEffect(() => {
     setEditing(false)
+    setDistill(null)
+    setDistillError('')
+    setDistillLoading(false)
+    setApplying(false)
   }, [target])
 
   const notes = getNotes()
@@ -123,9 +145,17 @@ export function Library() {
   const selectedNote = target?.kind === 'note' ? notes.find((n) => n.id === target.id) : undefined
   const selectedResource =
     target?.kind === 'resource' ? resources.find((r) => r.id === target.id) : undefined
+  const selectedNoteArea =
+    selectedNote?.areaId !== undefined ? getAreaById(selectedNote.areaId) : undefined
+  const selectedNoteProject =
+    selectedNote?.projectId !== undefined
+      ? getSnapshot().projects.find((project) => project.id === selectedNote.projectId)
+      : undefined
 
+  // 笔记字段顺序（Slice M）：标题 + 正文置顶（沉浸撰写面），其余元数据次之
   const noteFields: EditFieldSpec[] = [
     { key: 'title', label: '标题', type: 'text' },
+    { key: 'body', label: '正文（Markdown）', type: 'textarea', rows: 18 },
     {
       key: 'type',
       label: '类型',
@@ -149,7 +179,6 @@ export function Library() {
         label: project.title,
       })),
     },
-    { key: 'body', label: '正文', type: 'textarea' },
     { key: 'tags', label: '标签（逗号分隔）', type: 'list' },
   ]
 
@@ -298,6 +327,89 @@ export function Library() {
     })()
   }
 
+  // 新建笔记成功（Slice M）：关闭撰写弹窗 → 打开新笔记（深链）→ toast（撤销 = 移入回收站）
+  const handleNoteCreated = (note: Note): void => {
+    setComposing(false)
+    setTarget({ kind: 'note', id: note.id })
+    setSearchParams({ note: note.id }, { replace: true })
+    toast('笔记已创建', {
+      action: {
+        label: '撤销',
+        onClick: () => {
+          void (async () => {
+            try {
+              await trashEntity('notes', note.id)
+              setTarget((prev) =>
+                prev !== null && prev.kind === 'note' && prev.id === note.id ? null : prev,
+              )
+              setSearchParams(
+                (prev) => (prev.get('note') === note.id ? {} : prev),
+                { replace: true },
+              )
+              toast('已撤销创建')
+            } catch (err) {
+              toast(`撤销失败：${errorText(err)}`, { tone: 'error' })
+            }
+          })()
+        },
+      },
+    })
+  }
+
+  // AI 蒸馏（Slice M）：请求下一层草稿（服务端 clamp 1–3）；只出建议，不自动写入
+  const handleAiDistill = (): void => {
+    if (selectedNote === undefined || distillLoading) return
+    const id = selectedNote.id
+    setDistillLoading(true)
+    setDistill(null)
+    setDistillError('')
+    void (async () => {
+      try {
+        const result = await aiNoteDistill(id)
+        setDistill({ text: result.text, targetLevel: result.targetLevel })
+      } catch (err) {
+        setDistillError(errorText(err))
+      } finally {
+        setDistillLoading(false)
+      }
+    })()
+  }
+
+  // 应用蒸馏（Slice M）：正文末尾追加「## 蒸馏 → Lx」小节 + distillLevel = 目标层级；
+  // 撤销客户端记录原 body + 原层级，回写精确还原。追加不替换——原文永不丢失。
+  const handleApplyDistill = (): void => {
+    if (selectedNote === undefined || distill === null || applying) return
+    const id = selectedNote.id
+    const prevBody = selectedNote.body
+    const prevLevel = selectedNote.distillLevel
+    const text = distill.text.trim()
+    if (text === '') return
+    const { targetLevel } = distill
+    const section = `## 蒸馏 → L${targetLevel} ${DISTILL_LEVEL_LABEL[targetLevel]}\n\n${text}`
+    const nextBody = prevBody.trim() === '' ? section : `${prevBody.replace(/\s+$/, '')}\n\n---\n\n${section}`
+    setApplying(true)
+    void (async () => {
+      try {
+        await updateEntity('notes', id, { body: nextBody, distillLevel: targetLevel })
+        setDistill(null)
+        toast(`已应用 L${targetLevel} 蒸馏`, {
+          action: {
+            label: '撤销',
+            onClick: () => {
+              void updateEntity('notes', id, { body: prevBody, distillLevel: prevLevel })
+                .then(() => toast('已撤销蒸馏'))
+                .catch((err) => toast(`撤销失败：${errorText(err)}`, { tone: 'error' }))
+            },
+          },
+        })
+      } catch (err) {
+        toast(`应用失败：${errorText(err)}`, { tone: 'error' })
+      } finally {
+        setApplying(false)
+      }
+    })()
+  }
+
   return (
     <div className="k-view">
       <div className="k-tabs k-lib__tabs">
@@ -400,7 +512,23 @@ export function Library() {
       </div>
 
       {showNotes && (
-        <Panel index="01" title="笔记" en="NOTES" actions={<span className="u-label k-muted">{filteredNotes.length}</span>}>
+        <Panel
+          index="01"
+          title="笔记"
+          en="NOTES"
+          actions={
+            <div className="k-lib__head-actions">
+              <span className="u-label k-muted">{filteredNotes.length}</span>
+              <button
+                type="button"
+                className="k-btn k-btn--sm"
+                onClick={() => setComposing(true)}
+              >
+                新建笔记
+              </button>
+            </div>
+          }
+        >
           {filteredNotes.length === 0 ? (
             <EmptyState index="01" title="没有匹配的笔记" hint="调整类型或标签筛选。" />
           ) : (
@@ -478,7 +606,7 @@ export function Library() {
               : ''
         }
         title={selectedNote?.title ?? selectedResource?.title ?? ''}
-        className="k-modal--detail"
+        className={selectedNote !== undefined ? 'k-modal--note' : 'k-modal--detail'}
         footer={
           (selectedNote !== undefined || selectedResource !== undefined) && !editing ? (
             <div className="k-modal__foot-actions">
@@ -494,68 +622,158 @@ export function Library() {
       >
         {selectedNote !== undefined &&
           (editing ? (
-            <EntityEditForm
-              fields={noteFields}
-              initial={selectedNote as unknown as Record<string, unknown>}
-              saving={saving}
-              onSubmit={handleSave}
-              onCancel={() => setEditing(false)}
-            />
+            <div className="k-note-edit">
+              <EntityEditForm
+                fields={noteFields}
+                initial={selectedNote as unknown as Record<string, unknown>}
+                saving={saving}
+                onSubmit={handleSave}
+                onCancel={() => setEditing(false)}
+              />
+            </div>
           ) : (
-          <div className="k-detail-grid">
-            <dl className="k-dl">
-              <dt>类型</dt>
-              <dd>
-                {NOTE_TYPE_LABEL[selectedNote.type]} · {NOTE_TYPE_EN[selectedNote.type]}
-              </dd>
-              <dt>蒸馏</dt>
-              <dd>L{selectedNote.distillLevel} / 3</dd>
-              <dt>更新</dt>
-              <dd>{formatRelative(selectedNote.updatedAt, now)}</dd>
-            </dl>
-            <QuickSegmented
-              label="蒸馏层级 · 判断标准"
-              value={selectedNote.distillLevel}
-              options={DISTILL_LEVELS.map((level) => ({
-                value: level,
-                label: `L${level} ${DISTILL_LEVEL_LABEL[level]}`,
-                def: DISTILL_LEVEL_DEF[level],
-              }))}
-              helper={DISTILL_LEVEL_DEF[selectedNote.distillLevel]}
-              onSelect={handleSetDistillLevel}
-            />
-            {selectedNote.tags.length > 0 && (
-              <div className="k-hstack">
-                {selectedNote.tags.map((item) => (
-                  <TagPill key={item}>{tagLabel(item)}</TagPill>
-                ))}
+            <div className="k-note">
+              {/* 安静元数据条：类型 / 层级 / 区域 / 项目 / 更新 / 标签 —— 正文才是主角 */}
+              <div className="k-note__meta">
+                <span className="k-note__meta-type u-label">
+                  {NOTE_TYPE_LABEL[selectedNote.type]}
+                  <span className="k-muted"> {NOTE_TYPE_EN[selectedNote.type]}</span>
+                </span>
+                <span className="k-note__meta-chip u-label">L{selectedNote.distillLevel} / 3</span>
+                {selectedNoteArea !== undefined && (
+                  <span className="k-mono">{selectedNoteArea.title}</span>
+                )}
+                {selectedNoteProject !== undefined && (
+                  <span className="k-mono">{selectedNoteProject.title}</span>
+                )}
+                <span className="k-mono">{formatRelative(selectedNote.updatedAt, now)}</span>
+                {selectedNote.tags.length > 0 && (
+                  <span className="k-note__meta-tags">
+                    {selectedNote.tags.map((item) => (
+                      <TagPill key={item}>{tagLabel(item)}</TagPill>
+                    ))}
+                  </span>
+                )}
               </div>
-            )}
-            <div className="k-markdown">
-              <ReactMarkdown>{selectedNote.body}</ReactMarkdown>
-            </div>
-            <div className="k-detail-block">
-              <span className="k-detail-block__label u-label">反向链接 · BACKLINKS</span>
-              {getBacklinks(selectedNote.id).length === 0 ? (
-                <p className="k-muted">暂无其他笔记指向本篇。</p>
+
+              {/* 正文 · 主角（沉浸阅读面） */}
+              {selectedNote.body.trim() !== '' ? (
+                <article className="k-note-read">
+                  <div className="k-markdown">
+                    <ReactMarkdown>{selectedNote.body}</ReactMarkdown>
+                  </div>
+                </article>
               ) : (
-                <div className="k-backlink">
-                  {getBacklinks(selectedNote.id).map((note) => (
-                    <button
-                      type="button"
-                      className="k-lib-row"
-                      key={note.id}
-                      onClick={() => setTarget({ kind: 'note', id: note.id })}
-                    >
-                      <span className="k-lib-row__title">{note.title}</span>
-                      <span className="k-lib-row__meta k-mono">{note.id}</span>
-                    </button>
-                  ))}
-                </div>
+                <p className="k-note-read__empty k-muted">
+                  还没有正文。点「编辑」开始撰写，或用下方「AI 蒸馏」由 AI 起草下一层草稿。
+                </p>
               )}
+
+              {/* 次级区：蒸馏设置 + AI 蒸馏 + 反向链接 + 关联 */}
+              <div className="k-detail-grid k-note__secondary">
+                <QuickSegmented
+                  label="蒸馏层级 · 判断标准"
+                  value={selectedNote.distillLevel}
+                  options={DISTILL_LEVELS.map((level) => ({
+                    value: level,
+                    label: `L${level} ${DISTILL_LEVEL_LABEL[level]}`,
+                    def: DISTILL_LEVEL_DEF[level],
+                  }))}
+                  helper={DISTILL_LEVEL_DEF[selectedNote.distillLevel]}
+                  onSelect={handleSetDistillLevel}
+                  footer={
+                    <div className="k-note-distill">
+                      <p className="k-note-distill__hint k-muted">{DISTILL_HELP}</p>
+                      <div className="k-note-distill__actions">
+                        <button
+                          type="button"
+                          className="k-btn k-btn--sm"
+                          onClick={handleAiDistill}
+                          disabled={distillLoading}
+                        >
+                          <Sparkles size={14} strokeWidth={1.5} aria-hidden />
+                          {distillLoading
+                            ? 'AI 蒸馏中…'
+                            : `AI 蒸馏（生成 L${nextDistillLevel(selectedNote.distillLevel)} 草稿）`}
+                        </button>
+                        <span className="k-muted k-note-distill__note">
+                          只出草稿，确认后追加；不会自动改写
+                        </span>
+                      </div>
+                    </div>
+                  }
+                />
+                {distillError !== '' && (
+                  <p className="k-ai-form__error" role="alert">
+                    AI 蒸馏失败：{distillError}{' '}
+                    <button type="button" className="k-btn k-btn--sm" onClick={handleAiDistill}>
+                      重试
+                    </button>
+                  </p>
+                )}
+                {distill !== null && (
+                  <div className="k-note-ai">
+                    <div className="k-note-ai__head">
+                      <Sparkles size={14} strokeWidth={1.5} aria-hidden />
+                      <span>
+                        AI 蒸馏建议 · L{distill.targetLevel}{' '}
+                        {DISTILL_LEVEL_LABEL[distill.targetLevel]}
+                      </span>
+                      <span className="k-muted">可编辑后应用</span>
+                    </div>
+                    <textarea
+                      className="k-textarea k-note-ai__text"
+                      value={distill.text}
+                      aria-label="AI 蒸馏草稿"
+                      onChange={(event) =>
+                        setDistill((prev) =>
+                          prev === null ? prev : { ...prev, text: event.target.value },
+                        )
+                      }
+                    />
+                    <div className="k-hstack">
+                      <button
+                        type="button"
+                        className="k-btn k-btn--sm is-solid"
+                        onClick={handleApplyDistill}
+                        disabled={applying || distill.text.trim() === ''}
+                      >
+                        {applying ? '应用中…' : '应用到笔记'}
+                      </button>
+                      <button
+                        type="button"
+                        className="k-btn k-btn--sm"
+                        onClick={() => setDistill(null)}
+                        disabled={applying}
+                      >
+                        忽略
+                      </button>
+                    </div>
+                  </div>
+                )}
+                <div className="k-detail-block">
+                  <span className="k-detail-block__label u-label">反向链接 · BACKLINKS</span>
+                  {getBacklinks(selectedNote.id).length === 0 ? (
+                    <p className="k-muted">暂无其他笔记指向本篇。</p>
+                  ) : (
+                    <div className="k-backlink">
+                      {getBacklinks(selectedNote.id).map((note) => (
+                        <button
+                          type="button"
+                          className="k-lib-row"
+                          key={note.id}
+                          onClick={() => setTarget({ kind: 'note', id: note.id })}
+                        >
+                          <span className="k-lib-row__title">{note.title}</span>
+                          <span className="k-lib-row__meta k-mono">{note.id}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <Relations kind="note" id={selectedNote.id} />
+              </div>
             </div>
-            <Relations kind="note" id={selectedNote.id} />
-          </div>
           ))}
         {selectedResource !== undefined &&
           (editing ? (
@@ -642,6 +860,12 @@ export function Library() {
           </div>
           ))}
       </Modal>
+
+      <NoteComposeModal
+        open={composing}
+        onClose={() => setComposing(false)}
+        onCreated={handleNoteCreated}
+      />
     </div>
   )
 }
@@ -664,12 +888,15 @@ function QuickSegmented<T extends string | number>({
   options,
   helper,
   onSelect,
+  footer,
 }: {
   label: string
   value: T
   options: QuickOption<T>[]
   helper: string
   onSelect: (value: T) => void
+  /** 追加在 helper 之下的安静内容（如蒸馏释义 + AI 蒸馏按钮） */
+  footer?: ReactNode
 }) {
   return (
     <div className="k-detail-block k-quickset">
@@ -687,6 +914,7 @@ function QuickSegmented<T extends string | number>({
         ))}
       </div>
       <p className="k-quickset__hint k-muted">{helper}</p>
+      {footer}
     </div>
   )
 }

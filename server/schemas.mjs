@@ -435,6 +435,27 @@ export const taskDraftSchema = z.object({
   reason: z.string().max(300).default(''),
 })
 
+/* ---------------------------------------------------------------------------
+ * AI 笔记蒸馏（v0.5 · Slice M，见 ADR-0020）：把笔记压缩到目标层级。
+ * AI 只产出「下一层草稿文本」，绝不自动落盘；应用由用户确认后经
+ * POST /api/notes/:id/update（body + distillLevel）写入。
+ * ------------------------------------------------------------------------- */
+
+/**
+ * AI 蒸馏输出形状：text 为压缩后的正文（可 ≤1200 字；指令建议 ≤300 汉字），
+ * reason 为可选的一句话依据。文本为空则视为无效（触发一次重试）。
+ */
+export const noteDistillSchema = z.object({
+  text: z.string().min(1).max(1200),
+  reason: z.string().max(300).default(''),
+})
+
+/** AI 蒸馏入参：id 必填；targetLevel 1–3 可选（缺省 = 当前层级 + 1，封顶 L3） */
+export const noteDistillRequestSchema = z.object({
+  id: z.string().regex(/^n-\d{4}$/),
+  targetLevel: z.number().int().min(1).max(3).optional(),
+})
+
 /** 停滞项目处置建议（AI 周回顾草稿产出；action 决定处置方式） */
 export const staleAdviceSchema = z.object({
   projectId: z.string().min(1),

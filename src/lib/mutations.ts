@@ -692,6 +692,31 @@ export async function aiProjectDraft(title: string): Promise<ProjectDraftResult>
 }
 
 /* ---------------------------------------------------------------------------
+ * 笔记 AI 蒸馏（v0.5 · Slice M，见 ADR-0020）：把笔记压缩到目标层级
+ * AI 只出「草稿文本」，绝不自动落盘；应用由用户确认后经 updateEntity('notes', …)
+ * 写 body + distillLevel。
+ * ------------------------------------------------------------------------- */
+
+export interface NoteDistillResult {
+  /** 压缩后的正文（≤1200 字；目标 ≤300） */
+  text: string
+  /** 服务端最终目标层级（1–3；缺省 = 当前层级 + 1，封顶 L3） */
+  targetLevel: number
+  model: string | null
+  ms: number
+}
+
+/**
+ * 请求 AI 把笔记蒸馏到 targetLevel（省略则由服务端取「当前层级 + 1，封顶 L3」）。
+ * 不写数据；失败抛出由调用方安静处理（非阻断）。
+ */
+export async function aiNoteDistill(id: string, targetLevel?: number): Promise<NoteDistillResult> {
+  const body: { id: string; targetLevel?: number } = { id }
+  if (targetLevel !== undefined) body.targetLevel = targetLevel
+  return api.post<NoteDistillResult>('/api/ai/note/distill', body)
+}
+
+/* ---------------------------------------------------------------------------
  * 聚类立项（v0.5 · Slice R2，见 ADR-0016）：连续累积的相似任务 → 新项目
  * AI 只出「建议提案」，绝不自动建项；应用经 cluster-apply（一次写入建项 + 归入任务）。
  * ------------------------------------------------------------------------- */

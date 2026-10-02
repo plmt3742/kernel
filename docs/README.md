@@ -64,6 +64,7 @@ KERNEL 的完整文档集。本文件是导航中心，说明每份文档的职�
 | `decisions/0017-subtasks-and-project-actions.md` | ADR | 子任务全链路 + 项目内操作（Slice R3）：`parentTaskId` 一等写入字段（创建 / 编辑 + 自引用 / 成环 / 存在性服务端护栏）；任务详情「子任务」区块 + 就地打开 + quick-add 继承父项目；项目任务行就地打开 + 按项目预填新建（草稿确认）；替换式覆盖层 |
 | `decisions/0018-events-writable.md` | ADR | 事件可写（日程 · Slice W）：events 并入可写 / 可回收实体族（schema + `e-` id + `EDITABLE_FIELDS` + `POST /api/events` / `:id/remove` + 回收站）；`endAt` 可选 + `end ≥ start` 服务端校验；文档状态流（tentative→confirmed→cancelled）可执行；日历新建（先确认后写入）+ 详情编辑 / 删除 / 状态快捷切换 + 迷你月历日格可点；`repeatRule` 仅展示延后 |
 | `decisions/0019-areas-goals-habits-manageable.md` | ADR | 区域 / 目标 / 习惯可管理 + 打卡（Slice X）：关闭最后三个只读结构（schema + `a-`/`g-`/`h-` id + 创建 / 编辑 / 删除 + 回收站）；区域 / 目标删除**引用护栏**（409 可读计数）；`goals.keyResults` 仅展示保留；习惯 `checkin`/`uncheckin`（缺省今天、幂等、`{date,value:1}`）；设置三管理区；总览「习惯打卡」条取首个习惯（修复 `h-0002` 硬编码）+ 今日打卡切换；关联 area/goal 芯片深链设置（F8）；F23 项目区域默认显式化 |
+| `decisions/0020-note-experience.md` | ADR | 笔记体验：沉浸阅读 / 撰写 + AI 蒸馏（Slice M）：`.k-modal--note` 加宽 + 正文 68ch / 行高 1.8 + 安静元数据条；编辑面标题 + 正文优先（`rows=18`）；「新建笔记」撰写弹窗（创建可撤销）；蒸馏语义澄清（**点选只标注、不改写**）；`POST /api/ai/note/distill`（下一层草稿、缺省当前+1 封顶 L3、**不落盘**）；应用 = 正文**追加** `## 蒸馏 → Lx` + 设层级，撤销往返精确还原 |
 
 ## 根目录文档（不在本目录）
 

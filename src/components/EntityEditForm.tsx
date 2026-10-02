@@ -21,6 +21,8 @@ export interface EditFieldSpec {
   clearable?: boolean
   /** 文本 / 下拉的值为数字（如 importance）：提交时转为 number */
   numeric?: boolean
+  /** 多行文本框行数（textarea 专用；缺省 5）。Slice M：笔记正文用更高行数以获沉浸撰写 */
+  rows?: number
 }
 
 interface EntityEditFormProps {
@@ -140,7 +142,7 @@ export function EntityEditForm({
                     id={id}
                     className="k-textarea"
                     value={value}
-                    rows={5}
+                    rows={field.rows ?? 5}
                     placeholder={field.placeholder}
                     onChange={(event) => setValue(field.key, event.target.value)}
                   />
