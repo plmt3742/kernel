@@ -1,10 +1,15 @@
-// KERNEL · 总览 OVERVIEW（P0）——「工作台（Workbench）」：状态胶囊 + 左工作区（日程/行动交织）+ 右粘性监视柱 + 项目推进
-import { useNavigate } from 'react-router-dom'
+// KERNEL · 总览 OVERVIEW（P0）——「工作台（Workbench）」：状态条 + AI 对话 + 左工作区（日程/行动交织）+ 右粘性监视柱 + 项目推进
+import { useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import { clsx } from 'clsx'
 import { Panel } from '@/components/Panel'
 import { TaskRow } from '@/components/TaskRow'
 import { ScheduleList } from '@/components/ScheduleList'
 import { EmptyState } from '@/components/EmptyState'
+import { Modal } from '@/components/Modal'
+import { TaskDetail } from '@/components/TaskDetail'
+import { ProjectDetail } from '@/components/ProjectDetail'
+import { OverviewChat } from '@/components/OverviewChat'
 import { TrendLine } from '@/components/charts/TrendLine'
 import {
   getActiveProjects,
@@ -12,6 +17,7 @@ import {
   getProjectById,
   getProjectProgress,
   getReviews,
+  getTaskById,
   getTodayEvents,
 } from '@/lib/data'
 import {
@@ -26,6 +32,7 @@ import {
 import { isTaskDone } from '@/lib/mutations'
 import { useDataRevision, useNow, useUndoableToggle } from '@/lib/hooks'
 import { formatTime, humanizeDay, isPast, toDate } from '@/lib/date'
+import { PROJECT_STATUS_LABEL } from '@/lib/format'
 
 /* 水位容量 / 阈值与 WIP 上限：与 StatusBar 口径一致（capacity 12 · threshold 8） */
 const INBOX_CAPACITY = 12
@@ -78,6 +85,10 @@ export function Overview() {
   const toggleTask = useUndoableToggle()
   const now = useNow()
 
+  // 就地详情弹窗（Slice G）：URL 保持在 "/"，不跳转（owner 反馈：跳转后无高亮、不知在哪）
+  const [taskModalId, setTaskModalId] = useState<string | null>(null)
+  const [projectModalId, setProjectModalId] = useState<string | null>(null)
+
   const inboxCount = getInboxCount()
   const activeProjectList = getActiveProjects()
   const scope = getTodayTaskScope(now)
@@ -89,6 +100,10 @@ export function Overview() {
   // 行动列：即将到期的下一步行动（按截止升序，逾期已排除）
   const flow = getUpcomingNextActions(5, now)
   const streak = getCodingStreakDetail(now)
+
+  // 就地弹窗目标（按 id 查全量快照，完成任务后仍可停留查看）
+  const taskModal = taskModalId !== null ? getTaskById(taskModalId) : undefined
+  const projectModal = projectModalId !== null ? getProjectById(projectModalId) : undefined
 
   const completionSeries = getWeeklyCompletionSeries(now)
   const dueLoadSeries = getDueLoadSeries(now)
@@ -136,24 +151,46 @@ export function Overview() {
 
   return (
     <div className="k-view">
-      <div className="k-chips">
-        <span className="k-chip">
-          <span className="k-chip__dot" aria-hidden />
-          {nextEvent !== undefined
-            ? `下一项 · ${nextEvent.title} ${humanizeDay(nextEvent.startAt, now)} ${formatTime(nextEvent.startAt)}`
-            : '下一项 · 今日暂无日程'}
-        </span>
-        <span className="k-chip">
-          <span className="k-chip__dot k-chip__dot--quiet" aria-hidden />
-          收件箱 · {inboxCount} 待处理
-        </span>
-        {overdueOpen > 0 && (
-          <span className="k-chip">
-            <span className="k-chip__dot k-chip__dot--accent" aria-hidden />
-            逾期 · {overdueOpen} 项
+      {/* 状态条（Slice G 重做）：整宽三等分、左右对齐版心；替代此前左对齐 / 右边参差的胶囊行 */}
+      <div className="k-status" role="group" aria-label="今日状态">
+        <button
+          type="button"
+          className="k-status__seg"
+          onClick={() => navigate('/calendar', { viewTransition: true })}
+        >
+          <span className="k-status__dot" aria-hidden />
+          <span className="k-status__k">下一项</span>
+          <span className="k-status__v">
+            {nextEvent !== undefined
+              ? `${nextEvent.title} ${humanizeDay(nextEvent.startAt, now)} ${formatTime(nextEvent.startAt)}`
+              : '今日暂无日程'}
           </span>
-        )}
+        </button>
+        <button
+          type="button"
+          className="k-status__seg"
+          onClick={() => navigate('/inbox', { viewTransition: true })}
+        >
+          <span className="k-status__dot k-status__dot--quiet" aria-hidden />
+          <span className="k-status__k">收件箱</span>
+          <span className="k-status__v">{inboxCount} 待处理</span>
+        </button>
+        <button
+          type="button"
+          className={overdueOpen > 0 ? 'k-status__seg is-accent' : 'k-status__seg'}
+          onClick={() => navigate('/tasks', { viewTransition: true })}
+        >
+          <span
+            className={overdueOpen > 0 ? 'k-status__dot k-status__dot--accent' : 'k-status__dot k-status__dot--quiet'}
+            aria-hidden
+          />
+          <span className="k-status__k">逾期</span>
+          <span className="k-status__v">{overdueOpen} 项</span>
+        </button>
       </div>
+
+      {/* AI 对话盒（Slice G）：状态条之下、工作台之上 */}
+      <OverviewChat />
 
       <div className="r3c-body">
         {/* 左 2/3：工作台（已结束日程 + 现在分界 + 行动） */}
@@ -203,7 +240,7 @@ export function Overview() {
                       const target = flow.find((item) => item.id === id)
                       if (target !== undefined) toggleTask(target)
                     }}
-                    onOpen={(id) => navigate(`/tasks?task=${id}`, { viewTransition: true })}
+                    onOpen={(id) => setTaskModalId(id)}
                   />
                 )
               })}
@@ -315,7 +352,7 @@ export function Overview() {
                     type="button"
                     className="k-proj-mini__row"
                     key={project.id}
-                    onClick={() => navigate('/projects', { viewTransition: true })}
+                    onClick={() => setProjectModalId(project.id)}
                   >
                     <span className="k-proj-mini__top">
                       <span className="k-proj-mini__name">{project.title}</span>
@@ -340,6 +377,55 @@ export function Overview() {
           <EmptyState title="暂无进行中项目" hint="所有项目都在暂停或已完成状态。" />
         )}
       </Panel>
+
+      {/* 就地任务详情弹窗（Slice G）：复用 Tasks 抽屉的 TaskDetail；完成任务 / 查看项目可用 */}
+      <Modal
+        open={taskModal !== undefined}
+        onClose={() => setTaskModalId(null)}
+        kicker={taskModal !== undefined ? `任务 · ${taskModal.id}` : ''}
+        title={taskModal?.title ?? ''}
+        footer={
+          taskModal !== undefined ? (
+            <div className="k-drawer__foot-main">
+              <button
+                type="button"
+                className={isTaskDone(taskModal) ? 'k-btn' : 'k-btn is-solid'}
+                onClick={() => toggleTask(taskModal)}
+              >
+                {isTaskDone(taskModal) ? '取消完成' : '标记完成'}
+              </button>
+              {taskModal.projectId !== undefined && (
+                <Link
+                  to={`/projects?project=${taskModal.projectId}`}
+                  viewTransition
+                  className="k-btn"
+                  onClick={() => setTaskModalId(null)}
+                >
+                  查看项目
+                </Link>
+              )}
+            </div>
+          ) : undefined
+        }
+      >
+        {taskModal !== undefined && <TaskDetail task={taskModal} />}
+      </Modal>
+
+      {/* 就地项目详情弹窗（Slice G）：复用 Projects 抽屉的 ProjectDetail */}
+      <Modal
+        open={projectModal !== undefined}
+        onClose={() => setProjectModalId(null)}
+        kicker={
+          projectModal !== undefined
+            ? `项目 · ${projectModal.id} · ${PROJECT_STATUS_LABEL[projectModal.status]}`
+            : ''
+        }
+        title={projectModal?.title ?? ''}
+      >
+        {projectModal !== undefined && (
+          <ProjectDetail project={projectModal} onToggleTask={toggleTask} />
+        )}
+      </Modal>
     </div>
   )
 }
