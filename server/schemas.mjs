@@ -156,7 +156,43 @@ export const ID_PATTERNS = {
   projects: /^p-\d{4}$/,
   areas: /^a-\d{4}$/,
   reviews: /^rev-\d{4}$/,
+  tags: /^tag-\d{3,}$/,
 }
+
+/* ---------------------------------------------------------------------------
+ * 标签注册表（v0.5 · Slice T）：data/meta/tags.json
+ * 既有字段向后兼容；origin / createdAt / firstUsedIn 为可选（旧种子记录缺省，
+ * UI 将缺省 origin 视作 'seed'）。见 ADR-0014。
+ * ------------------------------------------------------------------------- */
+
+export const tagOrigin = z.enum(['seed', 'manual', 'ai'])
+
+export const tagItemSchema = z
+  .object({
+    id: z.string().regex(/^tag-\d{3,}$/),
+    name: z.string().min(1),
+    namespace: z.enum(['role', 'context', 'topic']),
+    label: z.string().min(1),
+    origin: tagOrigin.optional(),
+    createdAt: iso.optional(),
+    firstUsedIn: z.string().min(1).optional(),
+  })
+  .catchall(z.unknown())
+
+export const tagRegistrySchema = z
+  .object({ tags: z.array(tagItemSchema) })
+  .catchall(z.unknown())
+
+/** 标签重命名（Slice T）：name / label 至少提供其一 */
+export const tagUpdateSchema = z.object({
+  name: z.string().min(1).max(64).optional(),
+  label: z.string().min(1).max(60).optional(),
+})
+
+/** 标签合并（Slice T）：目标标签 id */
+export const tagMergeSchema = z.object({
+  targetId: z.string().regex(/^tag-\d{3,}$/),
+})
 
 /* ---------------------------------------------------------------------------
  * AI（v0.5）：收件箱解析建议 + 澄清覆盖字段
@@ -228,6 +264,8 @@ export const taskCreateFieldsSchema = z.object({
   tags: z.array(z.string().min(1)).max(8).optional(),
   projectId: z.string().min(1).optional(),
   areaId: z.string().min(1).optional(),
+  // Slice T：本次创建来自 AI 草稿确认（新标签按 origin:'ai' 登记）；仅影响标签来源，缺省 manual
+  ai: z.boolean().optional(),
 })
 
 /** 澄清时的可选覆盖字段（AI 应用或手工预填；全部可选） */

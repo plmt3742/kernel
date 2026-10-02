@@ -117,6 +117,8 @@ function toClarifyDetails(suggestion: AiSuggestion): ClarifyDetails | undefined 
   // 标题为空时省略，回退服务端用条目原文（编辑时用户可清空）
   if (suggestion.title !== '') details.title = suggestion.title
   if (suggestion.contexts.length > 0) details.contexts = suggestion.contexts
+  // 标签（Slice T）：AI 建议的标签（含新标签）随澄清应用落盘，服务端登记 origin:'ai'
+  if (suggestion.tags.length > 0) details.tags = suggestion.tags
   if (suggestion.estimateMin !== undefined) details.estimateMin = suggestion.estimateMin
   if (suggestion.dueAt !== undefined) details.dueAt = suggestion.dueAt
   // 关联建议仅对任务目标生效（服务端对非 task 忽略 projectId / areaId）

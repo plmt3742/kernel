@@ -118,7 +118,8 @@ export function TaskDraftModal({
     setSubmitError('')
     void (async () => {
       try {
-        const task = await createTask(formToTaskCreate({ ...fields, title: value }))
+        // ai:true —— 本次创建经 AI 草稿确认；新标签登记 origin:'ai'（Slice T）
+        const task = await createTask({ ...formToTaskCreate({ ...fields, title: value }), ai: true })
         onCreated(task)
       } catch (err) {
         setSubmitError(`创建失败：${errorText(err)}`)

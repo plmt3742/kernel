@@ -282,12 +282,21 @@ export interface Review {
   updatedAt?: string
 }
 
+/** 标签来源（Slice T）：seed = 种子内置；manual = 用户录入自动登记；ai = AI 提议并应用 */
+export type TagOrigin = 'seed' | 'manual' | 'ai'
+
 /** 标签定义 */
 export interface TagItem {
   id: string
   name: string
   namespace: TagNamespace
   label: string
+  /** 来源（旧记录缺省，UI 视作 seed） */
+  origin?: TagOrigin
+  /** 登记时间（ISO 8601；旧种子记录缺省） */
+  createdAt?: string
+  /** 首次随哪个实体登记（如 t-0003） */
+  firstUsedIn?: string
 }
 
 /** 标签注册表（meta/tags.json） */

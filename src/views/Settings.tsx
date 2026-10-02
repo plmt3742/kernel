@@ -2,6 +2,7 @@
 // 结构取自设计稿 v2 · settings-b「侧导航」：导航决定右面板渲染的唯一分区，默认「外观」。
 import { useEffect, useState } from 'react'
 import { Panel } from '@/components/Panel'
+import { TagManager } from '@/components/TagManager'
 import { useTheme } from '@/context/ThemeContext'
 import { getSnapshot } from '@/lib/data'
 import { getDataRecordCount } from '@/lib/derive'
@@ -17,11 +18,12 @@ interface ActivityEntry {
 }
 
 /** 设置分类：左导航与右面板共用同一组 id，保证单区渲染 */
-type SectionId = 'appearance' | 'ai' | 'data' | 'service' | 'about'
+type SectionId = 'appearance' | 'ai' | 'tags' | 'data' | 'service' | 'about'
 
 const SECTIONS: Array<{ id: SectionId; cn: string; en: string }> = [
   { id: 'appearance', cn: '外观', en: 'APPEARANCE' },
   { id: 'ai', cn: 'AI 集成', en: 'OPENCODE' },
+  { id: 'tags', cn: '标签管理', en: 'TAGS' },
   { id: 'data', cn: '数据统计', en: 'DATA' },
   { id: 'service', cn: '数据服务', en: 'SERVICE' },
   { id: 'about', cn: '关于', en: 'ABOUT' },
@@ -173,6 +175,8 @@ export function Settings() {
               )}
             </Panel>
           )}
+
+          {section === 'tags' && <TagManager />}
 
           {section === 'data' && (
             <Panel

@@ -228,8 +228,25 @@
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
-| tags | array | `[{id, name, namespace, label}]` |
-| tags[].namespace | `role` \| `context` \| `topic` | |
+| tags | array | `[{id, name, namespace, label, origin?, createdAt?, firstUsedIn?}]` |
+| tags[].id | string | `tag-\d{3,}`（`tag-001` 起；运行时登记继续递增） |
+| tags[].name | string | 规范标签名（见 §4.12 规格化规则） |
+| tags[].namespace | `role` \| `context` \| `topic` | 由名字前缀推断（`@` → `context`；`role:` / `topic:` / `context:`；裸名 → `topic`） |
+| tags[].label | string | 展示名（默认取名字去掉命名空间前缀） |
+| tags[].origin | `seed` \| `manual` \| `ai` | 来源（可选；旧记录缺省视作 `seed`） |
+| tags[].createdAt | ISO | 登记时间（可选；旧种子记录缺省） |
+| tags[].firstUsedIn | string | 首次随哪个实体登记，如 `t-0003`（可选） |
+
+### 4.12 标签生命周期（Slice T）
+
+标签是交叉筛选轴（非目录分区，见 ADR-0002 / ADR-0014），其完整生命周期如下：
+
+1. **规格化**：实体写入前，标签名经 `normalizeTagName()` 归一——`@x` → `@x`（context）；`role:` / `topic:` / `context:` 前缀原样；裸名 `线性代数` → `topic:线性代数`；未知前缀归入 `topic`；空串丢弃。保证实体标签名与注册表 / 筛选条同名匹配。
+2. **录入即生成**：任何携带 `tags` 的写入（任务创建 / 更新、澄清 `details.tags`、项目创建 / 更新、笔记创建 / 更新、资料更新）之后，`ensureTags()` 把未注册名登记进注册表（`origin` / `createdAt` / `firstUsedIn`），每个新标签审计 `tag.create`。请求带 `ai:true` → `origin:'ai'`，否则 `'manual'`。
+3. **AI 生标签**：收件箱解析与任务补全可在无合适已有标签时提议 `topic:名称`（≤12 字、≤3 个、去重）；`postValidate` 规格化保留（不再过滤注册表外名）。应用 / 创建时才登记（`origin:'ai'`）。
+4. **管理**：`POST /api/tags/:id/update`（重命名，级联实体 tags；审计 `tag.rename`）、`…/merge`（合并，级联 + 去重 + 源移除；`tag.merge`）、`…/remove`（使用中 409 阻止；`tag.remove`）、`POST /api/tags/backfill`（扫描登记存量未注册名；`tag.create` + `tag.backfill`）。
+5. **级联不 bump `updatedAt`**：改名 / 合并只替换 `tags` 数组，不改实体更新时间，避免污染停滞项目与回顾「最近活动」口径。
+6. **计数**：使用数 = 在 `tasks / projects / notes / resources / events` 上出现的实体数（`events` 只读但计入）。
 
 ## 5. 生命周期与状态流
 
@@ -360,5 +377,6 @@ confirmed ──取消──> cancelled
 - **先确认后写入（v0.5 · Slice O）**：`POST /api/tasks` 创建时接受可选字段 `contexts / energy / importance / estimateMin / dueAt / projectId / areaId / tags`（`title` 必填不变；缺省默认同旧：`contexts ['@computer'] / energy 'low' / importance 2 / tags []`）；`projectId / areaId` 需形状合法且存在（否则 400）；审计 `task.create` 的 `detail.fields` 列出本次携带字段。任务快速新建改为**草稿确认弹窗**（确认前零写入；AI 仅预填，绝不改写标题 / 用户已改字段；AI 失败不阻断创建）；收件箱 AI 建议卡增「编辑」，应用提交编辑值经既有 `clarify`（`details` + `ai:true`）。见 ADR-0011 §6。
 - 审计动作新增：`note.update` / `resource.update` / `project.update` 的 `detail.fields` 记录变更键；`task.update` 同。
 - **回顾报告归档（v0.5 · Slice L，见 ADR-0013）**：`POST /api/ai/review/draft` 成功后自动 `commit('reviews', …)`（`source:'ai'`，审计 `review.create` · `detail.auto`）；`POST /api/reviews/:id/update` 编辑归档报告（白名单 `summary` / `decisions`，递增 `updatedAt`，审计 `review.update` · `detail.fields`）；`POST /api/reviews/:id/remove` 删除（审计 `review.remove`）。前端回顾页「报告历史」按 `date` 倒序查阅。
+- **标签生命周期（v0.5 · Slice T，见 ADR-0014 / §4.12）**：标签名写入前规格化（裸名 → `topic:` 等）；任意携带 `tags` 的写入后 `ensureTags()` **自动登记**未注册名（`origin` / `createdAt` / `firstUsedIn`，审计 `tag.create`）；AI 可在无合适已有标签时提议新标签（`postValidate` 规格化保留，应用时以 `origin:'ai'` 登记）；新增管理端点 `POST /api/tags/:id/update`（重命名级联，`tag.rename`）、`…/merge`（合并级联 + 去重，`tag.merge`）、`…/remove`（使用中 409 阻止，`tag.remove`）、`POST /api/tags/backfill`（扫描登记存量，`tag.backfill`）；设置页新增「标签管理」区；资料库标签条按使用计数降序、不再截断前 12。
 - schema 预留实体（`timeLog` / `person` / `journalEntry`）在 v1.0 前评估是否实现。
 - 字段演进必须同步更新本篇，并通过 ADR 记录重大结构变更。

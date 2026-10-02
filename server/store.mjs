@@ -5,13 +5,17 @@ import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import writeFileAtomic from 'write-file-atomic'
-import { SCHEMAS } from './schemas.mjs'
+import { SCHEMAS, tagRegistrySchema } from './schemas.mjs'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 export const DATA_DIR = path.join(ROOT, 'data')
 const ACTIVITY_FILE = path.join(DATA_DIR, 'activity.jsonl')
 /** 回收站目录：data/trash/<kind>/<id>.json（记录 + trashedAt；见 ADR-0009） */
 export const TRASH_DIR = path.join(DATA_DIR, 'trash')
+/** 标签注册表（v0.5 · Slice T）：data/meta/tags.json */
+const TAGS_FILE = path.join(DATA_DIR, 'meta', 'tags.json')
+/** 带 tags 数组、参与标签级联 / 计数 / 登记的实体目录（events 只读但同样级联，见 ADR-0014） */
+const TAG_ENTITY_KINDS = ['tasks', 'projects', 'notes', 'resources', 'events']
 /** 可回收实体类型（与 index.mjs 路由白名单一致） */
 const TRASH_KINDS = ['tasks', 'projects', 'notes', 'resources']
 
@@ -187,6 +191,325 @@ export function remove(kind, id, audit) {
     const file = path.join(DATA_DIR, kind, `${id}.json`)
     await fs.unlink(file)
     if (audit) await appendActivity(audit)
+  })
+}
+
+/* ---------------------------------------------------------------------------
+ * 标签生命周期（v0.5 · Slice T，见 ADR-0014）
+ * 口径：标签名规格化（裸名 → topic: 前缀；@ → context；role:/topic:/context: 保留）；
+ *       ensureTags 在任意携带 tags 的写入后把未注册名登记进 data/meta/tags.json；
+ *       backfillTags 扫描存量补齐；rename / merge / remove 为管理操作（级联重写实体 tags）。
+ * 纪律：全部走 serialize 串行队列；登记沿用原子写 + 审计（tag.create / tag.backfill /
+ *       tag.rename / tag.merge / tag.remove）；级联只改 tags 数组，**不 bump updatedAt**，
+ *       以免污染停滞项目 / 回顾指标的「最近活动」口径。绝不静默丢弃实体上的标签。
+ * ------------------------------------------------------------------------- */
+
+const TAG_NAMESPACES = new Set(['role', 'context', 'topic'])
+
+/** 标签名规格化：trim + 折叠空白 → 统一命名空间形式；空 / 非法返回 null */
+export function normalizeTagName(raw) {
+  if (typeof raw !== 'string') return null
+  const name = raw.trim().replace(/\s+/g, ' ')
+  if (name === '') return null
+  if (name.startsWith('@')) {
+    const rest = name.slice(1).trim()
+    return rest === '' ? null : `@${rest}`
+  }
+  const colon = name.indexOf(':')
+  if (colon > 0) {
+    const ns = name.slice(0, colon).toLowerCase()
+    const rest = name.slice(colon + 1).trim()
+    if (rest === '') return null
+    if (TAG_NAMESPACES.has(ns)) return `${ns}:${rest}`
+    return `topic:${name}`
+  }
+  return `topic:${name}`
+}
+
+/** 由标签名推断命名空间（@ → context；合法前缀 → 该 ns；其余 → topic） */
+export function tagNamespaceOf(name) {
+  if (name.startsWith('@')) return 'context'
+  const colon = name.indexOf(':')
+  if (colon > 0) {
+    const ns = name.slice(0, colon)
+    if (TAG_NAMESPACES.has(ns)) return ns
+  }
+  return 'topic'
+}
+
+/** 标签展示名（去命名空间前缀；@ 保留原文） */
+export function tagLabelOf(name) {
+  if (name.startsWith('@')) return name
+  const colon = name.indexOf(':')
+  return colon >= 0 ? name.slice(colon + 1) : name
+}
+
+/** 数组规格化：逐项 normalize + 去重 + 上限长度；非数组返回 [] */
+export function normalizeTagList(rawList) {
+  if (!Array.isArray(rawList)) return []
+  const seen = new Set()
+  const out = []
+  for (const raw of rawList) {
+    const name = normalizeTagName(raw)
+    if (name === null || name.length > 64 || seen.has(name)) continue
+    seen.add(name)
+    out.push(name)
+  }
+  return out
+}
+
+/** 读标签注册表（缺失 / 损坏 → { tags: [] }） */
+async function readTagRegistryFile() {
+  try {
+    const parsed = await readJson(TAGS_FILE)
+    return Array.isArray(parsed?.tags) ? parsed : { tags: [] }
+  } catch {
+    return { tags: [] }
+  }
+}
+
+/** 注册表 id 生成器：扫描最大值 +1（tag-001 → tag-002） */
+function tagIdFactory(tags) {
+  let max = 0
+  for (const item of tags) {
+    const match = /^tag-(\d+)$/.exec(String(item.id))
+    if (match) max = Math.max(max, Number(match[1]))
+  }
+  return () => {
+    max += 1
+    return `tag-${String(max).padStart(3, '0')}`
+  }
+}
+
+/**
+ * 登记缺失标签（不串行、不审计——供 ensureTags / backfillTags 在各自队列任务内复用）。
+ * @param {string[]} rawNames 原始标签名数组
+ * @param {{ origin?: 'seed'|'manual'|'ai', firstUsedIn?: string, firstUsedInMap?: Record<string,string> }} opts
+ * @returns {Promise<Array>} 新建的注册项
+ */
+async function ensureTagsInner(rawNames, { origin = 'manual', firstUsedIn, firstUsedInMap } = {}) {
+  const wanted = normalizeTagList(rawNames)
+  if (wanted.length === 0) return []
+  const reg = await readTagRegistryFile()
+  const tags = [...(reg.tags ?? [])]
+  const existing = new Set(tags.map((item) => item.name))
+  const nextTagId = tagIdFactory(tags)
+  const createdAt = nowIso()
+  const created = []
+  for (const name of wanted) {
+    if (existing.has(name)) continue
+    const item = {
+      id: nextTagId(),
+      name,
+      namespace: tagNamespaceOf(name),
+      label: tagLabelOf(name),
+      origin,
+      createdAt,
+    }
+    const used = (firstUsedInMap !== undefined ? firstUsedInMap[name] : undefined) ?? firstUsedIn
+    if (typeof used === 'string' && used !== '') item.firstUsedIn = used
+    tags.push(item)
+    existing.add(name)
+    created.push(item)
+  }
+  if (created.length === 0) return []
+  const parsed = tagRegistrySchema.parse({ tags })
+  await writeFileAtomic(TAGS_FILE, `${JSON.stringify(parsed, null, 2)}\n`, { encoding: 'utf8' })
+  return created
+}
+
+/**
+ * 「录入即生成」：任意写入携带 tags 后调用——把未注册名登记进注册表并审计 tag.create。
+ * @param {string[]} names 标签名数组
+ * @param {{ origin?: 'seed'|'manual'|'ai', firstUsedIn?: string }} [opts]
+ */
+export function ensureTags(names, opts) {
+  return serialize(async () => {
+    const created = await ensureTagsInner(names, opts)
+    for (const item of created) {
+      await appendActivity({
+        action: 'tag.create',
+        entity: 'tag',
+        id: item.id,
+        detail: { name: item.name, origin: item.origin },
+      })
+    }
+    return created
+  })
+}
+
+/** 扫描全部实体上出现但未注册的标签名并登记（origin 'manual'，firstUsedIn 取首个使用实体） */
+export function backfillTags() {
+  return serialize(async () => {
+    const firstUsed = new Map()
+    for (const kind of TAG_ENTITY_KINDS) {
+      const records = await readKind(kind)
+      for (const record of records) {
+        const list = Array.isArray(record.tags) ? record.tags : []
+        for (const raw of list) {
+          const name = normalizeTagName(raw)
+          if (name !== null && !firstUsed.has(name)) firstUsed.set(name, record.id)
+        }
+      }
+    }
+    const reg = await readTagRegistryFile()
+    const existing = new Set((reg.tags ?? []).map((item) => item.name))
+    const missing = [...firstUsed.keys()].filter((name) => !existing.has(name))
+    if (missing.length === 0) return { created: [], scanned: firstUsed.size }
+    const created = await ensureTagsInner(missing, {
+      origin: 'manual',
+      firstUsedInMap: Object.fromEntries(firstUsed),
+    })
+    for (const item of created) {
+      await appendActivity({
+        action: 'tag.create',
+        entity: 'tag',
+        id: item.id,
+        detail: { name: item.name, origin: item.origin, backfill: true },
+      })
+    }
+    await appendActivity({
+      action: 'tag.backfill',
+      entity: 'tag',
+      id: '-',
+      detail: { created: created.length, scanned: firstUsed.size },
+    })
+    return { created, scanned: firstUsed.size }
+  })
+}
+
+/** 级联重写实体 tags 数组（oldName → newName，去重；不 bump updatedAt）；返回受影响记录数 */
+async function rewriteTagsAcrossEntities(oldName, newName) {
+  let affected = 0
+  for (const kind of TAG_ENTITY_KINDS) {
+    const dir = path.join(DATA_DIR, kind)
+    let names
+    try {
+      names = await fs.readdir(dir)
+    } catch {
+      continue
+    }
+    for (const file of names) {
+      if (!file.endsWith('.json')) continue
+      const filePath = path.join(dir, file)
+      let record
+      try {
+        record = JSON.parse(await fs.readFile(filePath, 'utf8'))
+      } catch {
+        continue
+      }
+      if (!Array.isArray(record.tags) || !record.tags.includes(oldName)) continue
+      const seen = new Set()
+      record.tags = record.tags
+        .map((tag) => (tag === oldName ? newName : tag))
+        .filter((tag) => {
+          if (seen.has(tag)) return false
+          seen.add(tag)
+          return true
+        })
+      await writeFileAtomic(filePath, `${JSON.stringify(record, null, 2)}\n`, { encoding: 'utf8' })
+      affected += 1
+    }
+  }
+  return affected
+}
+
+/** 统计某标签名在实体 tags 中出现的记录数（一个实体计一次） */
+async function countTagUsage(name) {
+  let count = 0
+  for (const kind of TAG_ENTITY_KINDS) {
+    const records = await readKind(kind)
+    for (const record of records) {
+      if (Array.isArray(record.tags) && record.tags.includes(name)) count += 1
+    }
+  }
+  return count
+}
+
+/**
+ * 重命名标签：更新注册表 name / label / namespace，并级联重写全部实体 tags。
+ * 目标名与其它标签冲突 → 409（提示改用合并）。
+ */
+export function renameTag(id, { name, label } = {}) {
+  return serialize(async () => {
+    const reg = await readTagRegistryFile()
+    const tags = [...(reg.tags ?? [])]
+    const tag = tags.find((item) => item.id === id)
+    if (tag === undefined) throw Object.assign(new Error('标签不存在'), { status: 404 })
+    const newName = name === undefined ? tag.name : normalizeTagName(name)
+    if (newName === null) throw Object.assign(new Error('标签名不能为空'), { status: 400 })
+    if (tags.some((item) => item.name === newName && item.id !== id)) {
+      throw Object.assign(new Error('已存在同名标签，请改用「合并」'), { status: 409 })
+    }
+    const oldName = tag.name
+    const nextLabel =
+      typeof label === 'string' && label.trim() !== '' ? label.trim() : tagLabelOf(newName)
+    const changed = newName !== oldName
+    tag.name = newName
+    tag.label = nextLabel
+    tag.namespace = tagNamespaceOf(newName)
+    const affected = changed ? await rewriteTagsAcrossEntities(oldName, newName) : 0
+    const parsed = tagRegistrySchema.parse({ tags })
+    await writeFileAtomic(TAGS_FILE, `${JSON.stringify(parsed, null, 2)}\n`, { encoding: 'utf8' })
+    await appendActivity({
+      action: 'tag.rename',
+      entity: 'tag',
+      id,
+      detail: { from: oldName, to: newName, affected },
+    })
+    return { tag, affected }
+  })
+}
+
+/** 合并标签：source 名在全部实体上替换为 target 名（去重），source 从注册表移除 */
+export function mergeTags(sourceId, targetId) {
+  return serialize(async () => {
+    const reg = await readTagRegistryFile()
+    const tags = [...(reg.tags ?? [])]
+    const source = tags.find((item) => item.id === sourceId)
+    const target = tags.find((item) => item.id === targetId)
+    if (source === undefined || target === undefined) {
+      throw Object.assign(new Error('标签不存在'), { status: 404 })
+    }
+    if (source.id === target.id) throw Object.assign(new Error('不能合并到自身'), { status: 400 })
+    const affected = await rewriteTagsAcrossEntities(source.name, target.name)
+    const nextTags = tags.filter((item) => item.id !== sourceId)
+    const parsed = tagRegistrySchema.parse({ tags: nextTags })
+    await writeFileAtomic(TAGS_FILE, `${JSON.stringify(parsed, null, 2)}\n`, { encoding: 'utf8' })
+    await appendActivity({
+      action: 'tag.merge',
+      entity: 'tag',
+      id: sourceId,
+      detail: { from: source.name, to: target.name, targetId, affected },
+    })
+    return { tag: target, affected }
+  })
+}
+
+/** 删除标签：使用中（usage>0）→ 409 阻止（不静默剥离实体标签）；未使用则从注册表移除 */
+export function removeTag(id) {
+  return serialize(async () => {
+    const reg = await readTagRegistryFile()
+    const tags = [...(reg.tags ?? [])]
+    const tag = tags.find((item) => item.id === id)
+    if (tag === undefined) throw Object.assign(new Error('标签不存在'), { status: 404 })
+    const usage = await countTagUsage(tag.name)
+    if (usage > 0) {
+      throw Object.assign(
+        new Error(`该标签正被 ${usage} 条记录使用，不能删除；请先合并到其他标签，或移除实体上的该标签`),
+        { status: 409 },
+      )
+    }
+    const nextTags = tags.filter((item) => item.id !== id)
+    const parsed = tagRegistrySchema.parse({ tags: nextTags })
+    await writeFileAtomic(TAGS_FILE, `${JSON.stringify(parsed, null, 2)}\n`, { encoding: 'utf8' })
+    await appendActivity({
+      action: 'tag.remove',
+      entity: 'tag',
+      id,
+      detail: { name: tag.name },
+    })
+    return { removed: { id } }
   })
 }
 

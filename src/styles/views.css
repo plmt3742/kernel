@@ -1897,6 +1897,98 @@
   color: var(--muted);
   font-size: var(--text-body-sm);
 }
+
+/* ---------------------------------------------------------------------------
+ * 标签管理（Slice T）：注册表列表 + 重命名 / 合并 / 删除；quiet token-only。
+ * ------------------------------------------------------------------------- */
+.k-tagmgr__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.k-tagmgr__search {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.k-tagmgr__search .k-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 360px;
+}
+.k-tagmgr__list {
+  display: flex;
+  flex-direction: column;
+  border-top: var(--hairline) solid var(--outline);
+}
+.k-tagmgr__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    'main meta'
+    'ops  ops';
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  padding: var(--space-3) var(--space-2);
+  border-bottom: var(--hairline) solid var(--outline);
+}
+.k-tagmgr__main {
+  grid-area: main;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  min-width: 0;
+}
+.k-tagmgr__label {
+  color: var(--ink);
+  font-size: var(--text-body-sm);
+  font-weight: 600;
+}
+.k-tagmgr__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.k-tagmgr__meta {
+  grid-area: meta;
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-content: flex-end;
+}
+.k-tagmgr__ops {
+  grid-area: ops;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+/* 来源徽标：种子最安静；手动略深；AI 用强调帏作信号（非高饱和）。 */
+.k-tagmgr__origin.is-seed {
+  color: var(--muted);
+}
+.k-tagmgr__origin.is-manual {
+  color: var(--ink-2);
+  background: var(--fill-tag);
+}
+.k-tagmgr__origin.is-ai {
+  color: var(--accent-text);
+  background: var(--accent-veil);
+  border-color: transparent;
+}
+@media (max-width: 767px) {
+  .k-tagmgr__row {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      'main'
+      'meta'
+      'ops';
+  }
+  .k-tagmgr__meta {
+    justify-content: flex-start;
+  }
+}
 .k-table {
   width: 100%;
   border-collapse: collapse;

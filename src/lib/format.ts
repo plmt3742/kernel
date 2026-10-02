@@ -11,6 +11,7 @@ import type {
   ResourceKind,
   ResourceStatus,
   ReviewType,
+  TagOrigin,
   TaskStatus,
 } from '@/types'
 import { getTags } from '@/lib/data'
@@ -181,11 +182,25 @@ export function humanSize(bytes: number): string {
  * 标签
  * ------------------------------------------------------------------------- */
 
-const tagMap = new Map(getTags().map((tag) => [tag.name, tag.label]))
+/** 标签来源中文徽标（Slice T）：缺省 origin 视作种子 */
+export const TAG_ORIGIN_LABEL: Record<TagOrigin, string> = {
+  seed: '种子',
+  manual: '手动',
+  ai: 'AI',
+}
 
-/** 标签名 → 中文标签（未知则回退原名） */
+/** 标签来源（缺省 → seed，兼容旧注册表记录） */
+export function tagOriginOf(origin: TagOrigin | undefined): TagOrigin {
+  return origin ?? 'seed'
+}
+
+/**
+ * 标签名 → 中文标签（未知则回退原名）。
+ * Slice T：运行时读取当前注册表（而非模块加载时快照），使新登记标签即时显示其 label。
+ */
 export function tagLabel(name: string): string {
-  return tagMap.get(name) ?? name
+  const found = getTags().find((tag) => tag.name === name)
+  return found?.label ?? name
 }
 
 /** 去掉命名空间前缀：role:acm → acm；@lab 原样返回 */

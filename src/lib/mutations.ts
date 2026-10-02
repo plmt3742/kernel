@@ -13,6 +13,7 @@ import type {
   Review,
   ReviewMetrics,
   ReviewType,
+  TagItem,
   Task,
   TrashItem,
   TrashKind,
@@ -88,6 +89,8 @@ export interface TaskCreateInput {
   projectId?: string
   areaId?: string
   tags?: string[]
+  /** Slice T：本次创建来自 AI 草稿确认——新标签按 origin:'ai' 登记 */
+  ai?: boolean
 }
 
 export async function createTask(input: TaskCreateInput): Promise<Task> {
@@ -563,4 +566,51 @@ export async function createNote(input: CreateNoteInput): Promise<Note> {
   const { note } = await api.post<{ note: Note }>('/api/notes', input)
   upsertEntity('notes', note)
   return note
+}
+
+/* ---------------------------------------------------------------------------
+ * 标签管理（v0.5 · Slice T，见 ADR-0014）：管理操作改变注册表并级联实体，
+ * 故一律在成功后整体重新水合快照（服务端是事实源），使筛选条 / 面板即时刷新。
+ * ------------------------------------------------------------------------- */
+
+/** 重命名标签（级联重写全部实体 tags）；返回受影响记录数 */
+export async function renameTag(
+  id: string,
+  name: string,
+  label?: string,
+): Promise<{ tag: TagItem; affected: number }> {
+  const body: { name: string; label?: string } = { name }
+  if (label !== undefined && label.trim() !== '') body.label = label.trim()
+  const result = await api.post<{ tag: TagItem; affected: number }>(
+    `/api/tags/${id}/update`,
+    body,
+  )
+  await hydrateFromServer()
+  return result
+}
+
+/** 合并标签：source 名在全部实体上替换为 target 名，source 移除；返回受影响记录数 */
+export async function mergeTag(
+  sourceId: string,
+  targetId: string,
+): Promise<{ tag: TagItem; affected: number }> {
+  const result = await api.post<{ tag: TagItem; affected: number }>(
+    `/api/tags/${sourceId}/merge`,
+    { targetId },
+  )
+  await hydrateFromServer()
+  return result
+}
+
+/** 删除标签（仅未被任何记录使用时可删；使用中服务端 409 阻止）；成功后重新水合 */
+export async function removeTag(id: string): Promise<void> {
+  await api.post<{ removed: { id: string } }>(`/api/tags/${id}/remove`)
+  await hydrateFromServer()
+}
+
+/** 扫描并登记现有未注册标签；返回新建项与扫描到的标签数，成功后重新水合 */
+export async function backfillTags(): Promise<{ created: TagItem[]; scanned: number }> {
+  const result = await api.post<{ created: TagItem[]; scanned: number }>('/api/tags/backfill')
+  await hydrateFromServer()
+  return result
 }

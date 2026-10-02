@@ -8,7 +8,7 @@ import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import zlib from 'node:zlib'
 import { aiSuggestionSchema, reviewDraftSchema, taskDraftSchema } from './schemas.mjs'
-import { DATA_DIR, readActivity, readSnapshot } from './store.mjs'
+import { DATA_DIR, normalizeTagList, readActivity, readSnapshot } from './store.mjs'
 
 const OPENCODE_URL = process.env.KERNEL_OPENCODE_URL ?? 'http://127.0.0.1:4096'
 const SERVER_PASSWORD = process.env.OPENCODE_SERVER_PASSWORD ?? ''
@@ -315,7 +315,7 @@ function buildSystem(digest) {
 - dueAt: ISO8601 带时区或 null。现在是 ${stamp}
 - projectId: 字符串或 null。仅当内容有明确依据属于下方某个项目时，填该项目 id；否则 null
 - areaId: 字符串或 null。仅当内容明确属于下方某个区域时，填该区域 id；否则 null
-- tags: 字符串数组，只能从下方标签名中选，最多 3 个（无把握则空数组）
+- tags: 字符串数组。优先从下方【标签】中选已有标签名；仅当没有合适的已有标签、且该标签对日后检索明确有用时，才提出新标签名（必须写成 "topic:名称" 形式，名称 ≤12 字）；最多 3 个，去重；无把握则空数组
 - duplicateOf: 字符串或 null。仅当与下方某个未完成任务高度可能重复时，填该任务 id；否则 null
 - newProjectHint: 字符串或 null（不超过 40 字）。当内容像一件需要多步推进的新事务（如一个新比赛 / 新活动 / 新项目）且不属于任何现有项目时，给出建议项目名（例：「辩论赛筹备」）；否则 null
 - reason: 一句话说明判断理由
@@ -324,7 +324,7 @@ function buildSystem(digest) {
 ${digest}
 
 规则：
-1. 挂靠宁缺毋滥：projectId / areaId / tags / duplicateOf 只能取摘要中列出的 id 或标签名，且必须有明确依据；表面相似（例如都含「竞赛 / 比赛 / 规则」字样）不算依据；拿不准一律填 null（tags 可为空数组）。
+1. 挂靠宁缺毋滥：projectId / areaId / duplicateOf 只能取摘要中列出的 id，且必须有明确依据；表面相似（例如都含「竞赛 / 比赛 / 规则」字样）不算依据；拿不准一律填 null。tags 优先取摘要中已有的标签名；仅当确实没有合适已有标签、且新标签是稳定的主题词（学科 / 领域，如「线性代数」「合唱排练」）时才提出新标签，写成 "topic:名称"（≤12 字）；禁止把日期、人名、整句话或临时描述当标签。
 2. 附件不可读时更保守：当【附件】无法直接读取（只有文件名 / 元数据）时，除非文件名直接指向某现有项目（名称 / 主题强匹配），否则 projectId 一律 null，并在 reason 中注明「仅基于文件名判断」。
 3. newProjectHint 与 projectId 互斥：要么挂现有项目（填 projectId、newProjectHint 为 null），要么提示新建（填 newProjectHint、projectId 为 null），要么都不填；绝不能既挂现有项目又提示新建。
 4. 若条目带【附件】，基于附件内容与文件名判断 target 与 title（读取失败则只凭文件名推断）。`
@@ -358,13 +358,40 @@ function normalizeSuggestion(suggestion) {
   return out
 }
 
+/** AI 新标签后缀硬上限（汉字 / 字符数）；超出即视为不可用提议而丢弃 */
+const AI_TAG_MAX_CHARS = 12
+
+/** 取标签名的可读后缀长度（@lab → lab；topic:线性代数 → 线性代数） */
+function tagSuffixLength(name) {
+  const colon = name.indexOf(':')
+  if (colon >= 0) return name.slice(colon + 1).length
+  return name.startsWith('@') ? name.length - 1 : name.length
+}
+
 /**
- * 关联字段按快照后校验：未知 id / 标签一律丢弃（模型可能臆造）
- * projectId 必须在 projects；areaId 必须在 areas；duplicateOf 必须在 tasks；tags 必须在注册表。
+ * AI 标签建议清洗（Slice T）：规格化（裸名 → topic: 前缀）+ 去重 + 最多 3 个。
+ * 已有注册标签名原样保留（不受长度上限影响）；新提议须 ≤ AI_TAG_MAX_CHARS 字。
+ * **不再**过滤掉注册表外的标签名——新标签在应用 / 创建落盘时由服务端登记。
+ */
+function cleanTagSuggestions(rawTags, tagNames) {
+  const out = []
+  for (const name of normalizeTagList(rawTags)) {
+    if (tagNames.has(name)) out.push(name)
+    else if (tagSuffixLength(name) <= AI_TAG_MAX_CHARS) out.push(name)
+    if (out.length >= 3) break
+  }
+  return out.slice(0, 3)
+}
+
+/**
+ * 关联字段按快照后校验：臆造 id 一律丢弃（模型可能编造）；标签改为规格化保留（Slice T）。
+ * projectId 必须在 projects；areaId 必须在 areas；duplicateOf 必须在 tasks；
+ * tags 优先已有注册名，允许 ≤3 个新主题标签（应用时自动登记，origin:'ai'）。
  * newProjectHint（Slice E2.5）：trim + 截断 40 字 + 丢弃空串；与 projectId 互斥；
  * 与现有项目标题完全相同者丢弃（那是在重复已有项目）。
+ * 导出供单测（验证新标签不再被剥离）。
  */
-function postValidate(suggestion, snapshot) {
+export function postValidate(suggestion, snapshot) {
   const out = { ...suggestion }
   const projects = snapshot.projects ?? []
   const projectIds = new Set(projects.map((p) => p.id))
@@ -374,7 +401,7 @@ function postValidate(suggestion, snapshot) {
   if (out.projectId !== undefined && !projectIds.has(out.projectId)) delete out.projectId
   if (out.areaId !== undefined && !areaIds.has(out.areaId)) delete out.areaId
   if (out.duplicateOf !== undefined && !taskIds.has(out.duplicateOf)) delete out.duplicateOf
-  if (Array.isArray(out.tags)) out.tags = out.tags.filter((name) => tagNames.has(name))
+  if (Array.isArray(out.tags)) out.tags = cleanTagSuggestions(out.tags, tagNames)
 
   if (typeof out.newProjectHint === 'string') {
     const hint = Array.from(out.newProjectHint.trim()).slice(0, 40).join('')
@@ -726,14 +753,14 @@ function buildTaskDraftSystem(digest) {
 - dueAt: ISO8601 带时区或 null。现在是 ${stamp}
 - projectId: 字符串或 null。仅当标题有明确依据属于下方某个项目时，填该项目 id；否则省略
 - areaId: 字符串或 null。仅当标题明确属于下方某个区域时，填该区域 id；否则省略
-- tags: 字符串数组，只能从下方标签名中选，最多 3 个（无把握则省略）
+- tags: 字符串数组。优先从下方【标签】中选已有标签名；仅当没有合适的已有标签、且该标签是稳定的主题词（学科 / 领域，如「线性代数」）时才提出新标签名（必须写成 "topic:名称"，≤12 字）；最多 3 个，去重；无把握则省略
 - reason: 一句话说明判断理由
 
 【系统现状摘要】
 ${digest}
 
 规则：
-1. 宁缺毋滥：projectId / areaId / tags 只能取摘要中列出的 id 或标签名，且必须有明确依据；表面相似不算；拿不准一律省略。
+1. 宁缺毋滥：projectId / areaId 只能取摘要中列出的 id，且必须有明确依据；表面相似不算；拿不准一律省略。tags 优先取已有标签名，仅在确有必要时提出稳定的主题词新标签（"topic:名称"，≤12 字），禁止日期 / 人名 / 整句话。
 2. 只补全标题之外的信息，不要返回 title / status / 备注字段。
 3. 不确定 dueAt 就省略，不要编造截止日期。
 4. 一个字段都没把握时，返回 {"reason":"无明确可补全信息"}。`

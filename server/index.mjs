@@ -6,11 +6,15 @@ import { spawn } from 'node:child_process'
 import { createReadStream, createWriteStream, existsSync, promises as fs } from 'node:fs'
 import path from 'node:path'
 import {
+  backfillTags,
   commit,
   DATA_DIR,
+  ensureTags,
   lastCompleteStatus,
+  mergeTags,
   moveToTrash,
   nextId,
+  normalizeTagList,
   nowIso,
   purgeTrash,
   readActivity,
@@ -18,9 +22,17 @@ import {
   readSnapshot,
   readTrash,
   remove,
+  removeTag,
+  renameTag,
   restoreFromTrash,
 } from './store.mjs'
-import { clarifyDetailsSchema, ID_PATTERNS, taskCreateFieldsSchema } from './schemas.mjs'
+import {
+  clarifyDetailsSchema,
+  ID_PATTERNS,
+  taskCreateFieldsSchema,
+  tagMergeSchema,
+  tagUpdateSchema,
+} from './schemas.mjs'
 import {
   CHAT_MAX_CHARS,
   CHAT_MAX_MESSAGES,
@@ -265,6 +277,9 @@ async function createTask(body) {
   const title = typeof body.title === 'string' ? body.title.trim() : ''
   if (title === '') throw Object.assign(new Error('标题不能为空'), { status: 400 })
   const fields = taskCreateFieldsSchema.parse(body)
+  // 标签规格化（裸名 → topic: 前缀等），保证实体与注册表 / 筛选条同名匹配（Slice T）
+  const tags = normalizeTagList(fields.tags ?? [])
+  const origin = fields.ai === true ? 'ai' : 'manual'
   const now = nowIso()
   const task = {
     id: await nextId('tasks'),
@@ -273,7 +288,7 @@ async function createTask(body) {
     contexts: fields.contexts ?? ['@computer'],
     energy: fields.energy ?? 'low',
     importance: fields.importance ?? 2,
-    tags: fields.tags ?? [],
+    tags,
     createdAt: now,
     updatedAt: now,
   }
@@ -298,6 +313,8 @@ async function createTask(body) {
     id: task.id,
     detail: { title, fields: applied },
   })
+  // 录入即生成：登记新标签（origin 'ai' 表示来自 AI 草稿确认）
+  if (tags.length > 0) await ensureTags(tags, { origin, firstUsedIn: saved.id })
   return { task: saved }
 }
 
@@ -306,6 +323,7 @@ async function createProject(body) {
   const title = typeof body.title === 'string' ? body.title.trim() : ''
   if (title === '') throw Object.assign(new Error('标题不能为空'), { status: 400 })
   const rawArea = typeof body.areaId === 'string' ? body.areaId.trim() : ''
+  const tags = normalizeTagList(body.tags)
   const now = nowIso()
   const project = {
     id: await nextId('projects'),
@@ -313,7 +331,7 @@ async function createProject(body) {
     outcome: '完成定义待整理',
     status: 'active',
     areaId: rawArea !== '' ? rawArea : 'a-0001',
-    tags: [],
+    tags,
     createdAt: now,
     updatedAt: now,
   }
@@ -323,6 +341,7 @@ async function createProject(body) {
     id: project.id,
     detail: { title },
   })
+  if (tags.length > 0) await ensureTags(tags, { origin: 'manual', firstUsedIn: saved.id })
   return { project: saved }
 }
 
@@ -336,7 +355,7 @@ async function createNote(body) {
   const text = typeof body.body === 'string' ? body.body : ''
   const allowed = new Set(['fleeting', 'literature', 'permanent', 'meeting', 'memo'])
   const type = allowed.has(body.type) ? body.type : 'memo'
-  const tags = Array.isArray(body.tags) ? body.tags.filter((tag) => typeof tag === 'string') : []
+  const tags = normalizeTagList(body.tags)
   const now = nowIso()
   const note = {
     id: await nextId('notes'),
@@ -355,6 +374,7 @@ async function createNote(body) {
     id: note.id,
     detail: { title, type },
   })
+  if (tags.length > 0) await ensureTags(tags, { origin: 'manual', firstUsedIn: saved.id })
   return { note: saved }
 }
 
@@ -435,6 +455,9 @@ async function clarifyInbox(id, body) {
 
   // 可选覆盖字段（AI 应用 / 手工预填）；非法形状抛 zod 错误 → 全局处理器 400
   const details = body.details === undefined ? {} : clarifyDetailsSchema.parse(body.details)
+  // 标签规格化（Slice T）；AI 建议的新标签在 created 落盘后登记（origin 'ai'）
+  const detailTags = normalizeTagList(details.tags ?? [])
+  const tagOrigin = aiFlag === true ? 'ai' : 'manual'
 
   const kind = CLARIFY_KINDS[target]
   const now = nowIso()
@@ -447,7 +470,7 @@ async function clarifyInbox(id, body) {
       contexts: details.contexts ?? ['@computer'],
       energy: details.energy ?? 'low',
       importance: details.importance ?? 2,
-      tags: details.tags ?? [],
+      tags: detailTags,
       createdAt: now,
       updatedAt: now,
       sourceInboxId: item.id,
@@ -487,7 +510,7 @@ async function clarifyInbox(id, body) {
       type: 'fleeting',
       body: item.content,
       links: [],
-      tags: details.tags ?? [],
+      tags: detailTags,
       distillLevel: 0,
       createdAt: now,
       updatedAt: now,
@@ -500,7 +523,7 @@ async function clarifyInbox(id, body) {
       title: isFile ? item.content : (details.title ?? item.content),
       kind: isFile ? 'file' : 'article',
       status: 'unread',
-      tags: details.tags ?? [],
+      tags: detailTags,
       addedAt: now,
     }
     if (isFile) {
@@ -513,6 +536,11 @@ async function clarifyInbox(id, body) {
     id,
     detail: { createdKind: kind, createdId: record.id, ai: aiFlag },
   })
+  // 录入即生成：以「实际落盘记录」的 tags 为准登记（project 目标不带 tags，天然不产生孤儿标签）
+  const savedTags = Array.isArray(savedRecord.tags) ? savedRecord.tags : []
+  if (savedTags.length > 0) {
+    await ensureTags(savedTags, { origin: tagOrigin, firstUsedIn: savedRecord.id })
+  }
   const savedItem = await commit('inbox', { ...item, status: 'clarified', linkedId: record.id }, {
     action: 'inbox.clarify',
     entity: 'inboxItem',
@@ -659,10 +687,16 @@ async function updateEntity(kind, id, body) {
   const next = { ...record }
   const fields = []
   let hasField = false
+  let tagList = null
   for (const key of EDITABLE_FIELDS[kind]) {
     if (!Object.prototype.hasOwnProperty.call(body, key)) continue
     hasField = true
-    const value = body[key]
+    let value = body[key]
+    if (key === 'tags' && Array.isArray(value)) {
+      // 标签规格化（裸名 → topic: 前缀等，Slice T）
+      value = normalizeTagList(value)
+      tagList = value
+    }
     if (value === null) {
       if (Object.prototype.hasOwnProperty.call(next, key)) {
         delete next[key]
@@ -682,6 +716,8 @@ async function updateEntity(kind, id, body) {
     id,
     detail: { fields },
   })
+  // 录入即生成：编辑携带的新标签登记（origin 'manual'）
+  if (tagList !== null && tagList.length > 0) await ensureTags(tagList, { origin: 'manual', firstUsedIn: id })
   return { record: saved }
 }
 
@@ -786,6 +822,8 @@ const EDITABLE_GROUP = EDITABLE_KINDS.join('|')
 const ENTITY_ACTION_RE = new RegExp(`^/api/(${EDITABLE_GROUP})/([^/]+)/(update|trash)$`)
 /** 回收站恢复 / 彻底删除：/api/trash/<kind>/<id>/(restore|purge) */
 const TRASH_ITEM_RE = new RegExp(`^/api/trash/(${EDITABLE_GROUP})/([^/]+)/(restore|purge)$`)
+/** 标签管理（Slice T）：/api/tags/<id>/(update|merge|remove) */
+const TAG_ACTION_RE = /^\/api\/tags\/([^/]+)\/(update|merge|remove)$/
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url ?? '/', `http://${HOST}:${PORT}`)
@@ -994,6 +1032,37 @@ const server = http.createServer(async (req, res) => {
       if (!validId('reviews', id)) return fail(res, 400, '回顾 id 格式不正确')
       const result = await removeReview(id)
       console.log(`[data] review.remove ${id}`)
+      send(res, 200, result)
+      return
+    }
+    // 标签管理（Slice T）：扫描登记 / 重命名 / 合并 / 删除
+    if (method === 'POST' && pathname === '/api/tags/backfill') {
+      const result = await backfillTags()
+      console.log(`[data] tag.backfill created=${result.created.length} scanned=${result.scanned}`)
+      send(res, 200, result)
+      return
+    }
+    const tagActionMatch = TAG_ACTION_RE.exec(pathname)
+    if (method === 'POST' && tagActionMatch !== null) {
+      const id = decodeURIComponent(tagActionMatch[1])
+      if (!validId('tags', id)) return fail(res, 400, '标签 id 格式不正确')
+      const action = tagActionMatch[2]
+      if (action === 'update') {
+        const patch = tagUpdateSchema.parse(await readBody(req))
+        const result = await renameTag(id, patch)
+        console.log(`[data] tag.rename ${id} → ${result.tag.name}（影响 ${result.affected}）`)
+        send(res, 200, { tag: result.tag, affected: result.affected })
+        return
+      }
+      if (action === 'merge') {
+        const { targetId } = tagMergeSchema.parse(await readBody(req))
+        const result = await mergeTags(id, targetId)
+        console.log(`[data] tag.merge ${id} → ${targetId}（影响 ${result.affected}）`)
+        send(res, 200, { tag: result.tag, affected: result.affected })
+        return
+      }
+      const result = await removeTag(id)
+      console.log(`[data] tag.remove ${id}`)
       send(res, 200, result)
       return
     }

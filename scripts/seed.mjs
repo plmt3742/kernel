@@ -929,15 +929,18 @@ function tagId() {
   return `tag-${n}`
 }
 
+// 标签来源（Slice T）：种子标签带 origin/createdAt，与运行时自动登记的标签同形
+const TAG_CREATED_AT = '2026-10-02T00:00:00+08:00'
+
 const tags = [
   ...Object.entries(roleLabels).map(([name, label]) => ({
-    id: tagId(), name: `role:${name}`, namespace: 'role', label,
+    id: tagId(), name: `role:${name}`, namespace: 'role', label, origin: 'seed', createdAt: TAG_CREATED_AT,
   })),
   ...Object.entries(contextLabels).map(([name, label]) => ({
-    id: tagId(), name, namespace: 'context', label,
+    id: tagId(), name, namespace: 'context', label, origin: 'seed', createdAt: TAG_CREATED_AT,
   })),
   ...Object.entries(topicLabels).map(([topic, label]) => ({
-    id: tagId(), name: `topic:${topic}`, namespace: 'topic', label,
+    id: tagId(), name: `topic:${topic}`, namespace: 'topic', label, origin: 'seed', createdAt: TAG_CREATED_AT,
   })),
 ]
 

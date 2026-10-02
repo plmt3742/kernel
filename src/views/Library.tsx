@@ -18,6 +18,7 @@ import {
   getResources,
   getSnapshot,
   getTags,
+  getTagUsage,
 } from '@/lib/data'
 import { openPath, restoreEntity, revealPath, trashEntity, updateEntity } from '@/lib/mutations'
 import { errorText } from '@/lib/api'
@@ -34,7 +35,7 @@ import {
   tagLabel,
 } from '@/lib/format'
 import { formatRelative } from '@/lib/date'
-import { useNow } from '@/lib/hooks'
+import { useDataRevision, useNow } from '@/lib/hooks'
 import type { NoteType, ResourceKind, ResourceStatus, TrashKind } from '@/types'
 
 type Tab = 'all' | 'notes' | 'resources'
@@ -89,10 +90,20 @@ export function Library() {
     }
   }
 
-  const topicTags = useMemo(
-    () => getTags().filter((item) => item.namespace === 'topic').slice(0, 12),
-    [],
-  )
+  // Slice T：标签条不再截断前 12 个；按使用计数降序渲染全部主题标签（bar 已自然换行）。
+  // 依赖数据版本 revision，使新登记 / 改名 / 合并后即时刷新。
+  const revision = useDataRevision()
+  const topicTags = useMemo(() => {
+    const usage = new Map(getTagUsage().map((item) => [item.tag, item.count]))
+    return getTags()
+      .filter((item) => item.namespace === 'topic')
+      .slice()
+      .sort(
+        (a, b) =>
+          (usage.get(b.name) ?? 0) - (usage.get(a.name) ?? 0) ||
+          a.label.localeCompare(b.label),
+      )
+  }, [revision])
 
   const filteredNotes = notes.filter(
     (note) =>

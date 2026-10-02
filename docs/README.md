@@ -58,6 +58,7 @@ KERNEL 的完整文档集。本文件是导航中心，说明每份文档的职�
 | `decisions/0011-state-coherence-and-task-draft.md` | ADR | 状态贯通（Slice H）：资料状态 / 笔记蒸馏判断标准 + 快捷设置 + 白名单扩充 + 任务快速新建 AI 补全（不落盘） |
 | `decisions/0012-unified-detail-modal.md` | ADR | 全站详情统一（Slice K）：所有实体详情改居中弹窗 + 统一操作矩阵 + 底栏统一 + 日历吸顶遮罩柔化；删除 Drawer |
 | `decisions/0013-review-report-and-archive.md` | ADR | 回顾报告升级 + 自动归档（Slice L）：七段结构正文 + 环比 / 阈值 / 带 id 清单 + 数字护栏 + 生成即归档（复用 reviews + update 路径 + 报告历史） |
+| `decisions/0014-tag-lifecycle.md` | ADR | 标签生命周期（Slice T）：录入即生成 + 自动登记（origin/createdAt/firstUsedIn）+ AI 可提议新标签 + 管理（重命名 / 合并 / 删除 / backfill）+ 筛选条不截断 |
 
 ## 根目录文档（不在本目录）
 

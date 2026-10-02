@@ -9,7 +9,7 @@ KERNEL 的任务台账与迭代记录。记录当前迭代目标、未来待办�
 ## 下一会话待办（Handoff · 2026-10-03 修订）
 
 > **新会话处理入口**：先读 `AGENTS.md` → 本清单 → 按序处理。每项均附上下文与落点。
-> 状态：v0.4.0 已交付（数据服务 + 前端写入改造 + 审阅 P0 六项 + 路由滚动记忆）；页面排版选型已落地 10/10；**v0.5 首个切片（收件箱「AI 解析」）已交付**；**互联 Slice A（深链 + 关联区块）、AI 澄清升级 Slice B（上下文注入 + 挂接建议 + SSE 过程可视）与 AI 周回顾 Slice C（草稿 → 编辑 → 确认落盘 / 撤销）已交付**（验收：A 20/20、B E2E 13/13、C 冒烟 PASS + E2E 13/13，证据 `.qa/v14/`）；**使用指南 HTML（`public/guide.html`，自包含单文件，三态 25/25，证据 `.qa/v15/`）已交付**；**收件箱升级 Slice D（文件投递 + 居中编辑器 + AI 先读）已交付**（冒烟 PASS + E2E 12/12，证据 `.qa/v16/`）；**收件箱修复包 Slice E1（编辑器回位 + 「批量 → 任务」反馈加固 + AI 结果缓存 + 批量 AI 解析）已交付**（E2E 24/24，证据 `.qa/v17/`）；**详情操作 + 回收站 Slice E2（通用编辑 / 软删除回收站 / 资源文件位置 + reveal）已交付**（冒烟 34/34 + E2E 19/19 + 全站 smoke PASS，证据 `.qa/v18/`）；**动效与布局稳定 Slice E2.6（批量解析过程可视 + 流式节流 + 定高 + 间距 + 换行 + 零重叠）与趋势图数据点裁切修复 Slice E2.7 已交付**（E2E 22/22 + 像素级 8/8，证据 `.qa/v20/`、`.qa/v21/`）；**回顾页重构 Slice F（周 / 月回顾卡并列一栏 + 动画弹窗报告 + 月回顾 AI 支持 + 停滞项目独立栏）已交付**（服务端冒烟 13/13 + E2E 30/30 + 移动 6/6，证据 `.qa/v22/`）；**总览升级 Slice G（AI 对话盒 + 状态条重做 + 就地详情弹窗）已交付**（E2E **42/42** + 构建通过，零残留，证据 `.qa/v23/`）；**状态贯通 Slice H（资料状态 / 笔记蒸馏判断标准 + 快捷设置 + 白名单扩充 + 任务快速新建 AI 补全）已交付**（服务端冒烟 21/21 + E2E 28/28 + 构建通过，零残留，证据 `.qa/v24/`）；**使用指南同步 Slice I（`public/guide.html` 对齐 Slice D–H，三态 65/65，证据 `.qa/v25/`）已完成**；**收件箱修复包 2 Slice J（批量 AI 解析状态跨路由存活 + OOXML `.docx/.pptx/.xlsx` 文本抽取）已完成**（服务端冒烟 14/14 + E2E 16/16 + 零写入，证据 `.qa/v26/`）；**收件箱附件「打开文件 / 位置」Slice J2（去掉浏览器下载，改默认程序打开 / 文件管理器定位；新增 `/api/open` + `/api/inbox/:id/(open|reveal)` 带 `dryRun` 测试通道）已完成**（服务端冒烟 33/33 + E2E 21/21 + 零写入，证据 `.qa/v27/`）；数据服务运行于 `127.0.0.1:4097`；**全部切片（D–J2）已交付、验证（J2 待批次提交）**；**「先确认后写入」Slice O（任务快速新建草稿确认弹窗 + 收件箱建议卡可编辑 + 全站同类审计）已完成**（服务端冒烟 35/35 + E2E 31/31 + 构建通过，零残留，证据 `.qa/v28/`）；**全站详情「居中弹窗」统一 + 操作统一 + 日历遮罩柔化 Slice K 已完成**（五类详情从 Drawer 迁居中 Modal、任务 / 项目详情组件化保证操作一致、底栏统一、日历吸顶条渐隐柔化、删除 Drawer 死代码；E2E **109/109** + 构建通过，零残留，证据 `.qa/v29/`）；**回顾报告升级 + 自动归档 Slice L 已完成**（七段结构正文 + 环比 / 阈值 / 带 id 清单 + 数字落地护栏；生成即自动归档 + 报告历史 + update 同条；服务端冒烟 40/40 + 护栏单测 6/6 + E2E 32/32 + 构建通过，零残留，证据 `.qa/v30/`）。
+> 状态：v0.4.0 已交付（数据服务 + 前端写入改造 + 审阅 P0 六项 + 路由滚动记忆）；页面排版选型已落地 10/10；**v0.5 首个切片（收件箱「AI 解析」）已交付**；**互联 Slice A（深链 + 关联区块）、AI 澄清升级 Slice B（上下文注入 + 挂接建议 + SSE 过程可视）与 AI 周回顾 Slice C（草稿 → 编辑 → 确认落盘 / 撤销）已交付**（验收：A 20/20、B E2E 13/13、C 冒烟 PASS + E2E 13/13，证据 `.qa/v14/`）；**使用指南 HTML（`public/guide.html`，自包含单文件，三态 25/25，证据 `.qa/v15/`）已交付**；**收件箱升级 Slice D（文件投递 + 居中编辑器 + AI 先读）已交付**（冒烟 PASS + E2E 12/12，证据 `.qa/v16/`）；**收件箱修复包 Slice E1（编辑器回位 + 「批量 → 任务」反馈加固 + AI 结果缓存 + 批量 AI 解析）已交付**（E2E 24/24，证据 `.qa/v17/`）；**详情操作 + 回收站 Slice E2（通用编辑 / 软删除回收站 / 资源文件位置 + reveal）已交付**（冒烟 34/34 + E2E 19/19 + 全站 smoke PASS，证据 `.qa/v18/`）；**动效与布局稳定 Slice E2.6（批量解析过程可视 + 流式节流 + 定高 + 间距 + 换行 + 零重叠）与趋势图数据点裁切修复 Slice E2.7 已交付**（E2E 22/22 + 像素级 8/8，证据 `.qa/v20/`、`.qa/v21/`）；**回顾页重构 Slice F（周 / 月回顾卡并列一栏 + 动画弹窗报告 + 月回顾 AI 支持 + 停滞项目独立栏）已交付**（服务端冒烟 13/13 + E2E 30/30 + 移动 6/6，证据 `.qa/v22/`）；**总览升级 Slice G（AI 对话盒 + 状态条重做 + 就地详情弹窗）已交付**（E2E **42/42** + 构建通过，零残留，证据 `.qa/v23/`）；**状态贯通 Slice H（资料状态 / 笔记蒸馏判断标准 + 快捷设置 + 白名单扩充 + 任务快速新建 AI 补全）已交付**（服务端冒烟 21/21 + E2E 28/28 + 构建通过，零残留，证据 `.qa/v24/`）；**使用指南同步 Slice I（`public/guide.html` 对齐 Slice D–H，三态 65/65，证据 `.qa/v25/`）已完成**；**收件箱修复包 2 Slice J（批量 AI 解析状态跨路由存活 + OOXML `.docx/.pptx/.xlsx` 文本抽取）已完成**（服务端冒烟 14/14 + E2E 16/16 + 零写入，证据 `.qa/v26/`）；**收件箱附件「打开文件 / 位置」Slice J2（去掉浏览器下载，改默认程序打开 / 文件管理器定位；新增 `/api/open` + `/api/inbox/:id/(open|reveal)` 带 `dryRun` 测试通道）已完成**（服务端冒烟 33/33 + E2E 21/21 + 零写入，证据 `.qa/v27/`）；数据服务运行于 `127.0.0.1:4097`；**全部切片（D–J2）已交付、验证（J2 待批次提交）**；**「先确认后写入」Slice O（任务快速新建草稿确认弹窗 + 收件箱建议卡可编辑 + 全站同类审计）已完成**（服务端冒烟 35/35 + E2E 31/31 + 构建通过，零残留，证据 `.qa/v28/`）；**全站详情「居中弹窗」统一 + 操作统一 + 日历遮罩柔化 Slice K 已完成**（五类详情从 Drawer 迁居中 Modal、任务 / 项目详情组件化保证操作一致、底栏统一、日历吸顶条渐隐柔化、删除 Drawer 死代码；E2E **109/109** + 构建通过，零残留，证据 `.qa/v29/`）；**回顾报告升级 + 自动归档 Slice L 已完成**（七段结构正文 + 环比 / 阈值 / 带 id 清单 + 数字落地护栏；生成即自动归档 + 报告历史 + update 同条；服务端冒烟 40/40 + 护栏单测 6/6 + E2E 32/32 + 构建通过，零残留，证据 `.qa/v30/`）；**标签生命周期 Slice T 已完成**（录入即生成 + 自动登记 origin/createdAt/firstUsedIn + AI 可提议新标签 + 管理（重命名 / 合并 / 删除 / backfill）+ 筛选条按使用排序不截断；服务端冒烟 54/54 + 护栏单测 14/14 + E2E 41/41 + 构建通过，零残留，证据 `.qa/v31/`）。
 
 ### A. 验收（所有者）
 
@@ -30,6 +30,35 @@ KERNEL 的任务台账与迭代记录。记录当前迭代目标、未来待办�
 
 - [ ] 种子数据以 2026-10-02 为"现在"；时间久了用 `npm run seed -- --force` 重置演示数据。
 - [ ] `design-drafts/`（三份设计稿 + 选型页）保留作方向参考；`.qa/` 证据归档保留（体积小）。
+
+---
+
+## 标签生命周期（录入即生成 · 自动登记 · 管理 / 合并 / 删除 · 筛选条修正）· Slice T（已完成 · 2026-10-03）
+
+以 owner 两条指令为规格：①「对于标签这种，没有生成由来，如果投入使用那不是用户使用体验崩塌吗」②「类似于标签你完全可以在录入任务的时候判断后生成标签，但是你却没有做这一步」。此前标签无生命周期：注册表只由 seed 写、运行时新标签只落实体不登记、AI 被禁止生标签、筛选条截断前 12、无管理入口。`npm run build`（tsc strict + vite）通过；服务端冒烟 **54/54** + 护栏单测 **14/14** + 浏览器 E2E **41/41**；零数据残留（inbox 10 / tasks 62 / projects 10 / notes 15 / resources 12 / tags 26；所有者 t-0001 未动）；控制台零 error；证据 `.qa/v31/`。
+
+- [x] Deliverable A1 · 规格化：`server/store.mjs` 新增 `normalizeTagName()` / `normalizeTagList()`（裸名 → `topic:` 前缀、`@` → context、合法前缀保留、空串丢弃）；实体写入前统一规格化，保证与注册表 / 筛选条同名匹配。
+- [x] Deliverable A2 · 录入即生成：`ensureTags(names, {origin, firstUsedIn})` 在任意携带 tags 的写入后登记未注册名（注册项增 `origin/createdAt/firstUsedIn`；原子写 + 审计 `tag.create`）；接入任务创建 / 更新、澄清 `details.tags`、项目创建 / 更新、笔记创建 / 更新、资料更新；请求 `ai:true` → `origin:'ai'`；`seed.mjs` 同步补 `origin:'seed'`。
+- [x] Deliverable A3 · AI 生标签：`buildSystem` / `buildTaskDraftSystem` 允许提议 `topic:名称`（≤12 字、≤3、去重、禁日期 / 人名 / 整句）；`postValidate` 改 `cleanTagSuggestions()` 规格化保留（不再过滤注册表外名，臆造 id 规则不变）；修复收件箱 `toClarifyDetails` 漏传 tags。
+- [x] Deliverable A4 · backfill：`POST /api/tags/backfill` 扫描 `tasks/projects/notes/resources/events` 未注册名并登记（`firstUsedIn` 取首个使用实体；审计 `tag.create` + `tag.backfill`）；设置页「扫描并登记」按钮。
+- [x] Deliverable B1 · 管理区：`src/components/TagManager.tsx` + Settings「标签管理」——列出全部标签（label / name / namespace / 来源徽标 / 使用计数 / 登记时间）、可搜索；quiet token-only。
+- [x] Deliverable B2 · 操作：重命名（`POST /api/tags/:id/update`，级联；`tag.rename`）、合并（`…/merge`，级联去重 + 源移除；`tag.merge`）、删除（`…/remove`，使用中 409 阻止给计数；`tag.remove`）；均带确认；级联**不 bump updatedAt**。
+- [x] Deliverable C · 筛选条：`src/views/Library.tsx` 去 `.slice(0,12)`、按使用计数降序、订阅 revision；`src/lib/format.ts` `tagLabel` 运行时读注册表 + `TAG_ORIGIN_LABEL`；`src/lib/mutations.ts` `renameTag/mergeTag/removeTag/backfillTags` + `TaskCreateInput.ai`；`src/types.ts` `TagItem` 扩字段。
+- [x] Deliverable D · 文档：新增 ADR-0014；`docs/02` §3.2 / §4.3；`docs/04` §4.11 / §4.12 / §9；`docs/README`；`public/guide.html`；`CHANGELOG.md`、`AGENTS.md`。
+
+### Slice T · 标签来源语义
+
+| origin | 含义 | 产生路径 |
+|---|---|---|
+| `seed`（缺省） | 种子内置 | `scripts/seed.mjs`（旧记录无字段，UI 视作种子） |
+| `manual` | 用户录入 / 存量扫描 | 任务 / 项目 / 笔记 / 资料写入、`backfill` |
+| `ai` | AI 提议并应用 | 收件箱澄清 `ai:true`、任务草稿确认 `POST /api/tasks { ai:true }` |
+
+### Slice T · 已知取舍
+
+- 级联（重命名 / 合并）只改 `tags` 数组、不 bump `updatedAt`——避免污染停滞项目 / 回顾「最近活动」口径。
+- 文件式 JSON 无跨文件事务：级联先改实体后写注册表，崩溃残留可由 `backfill` 收敛；登记失败不阻断实体写入，同样由 `backfill` 兜底。
+- `events` 无服务端写端点，不纳入「录入即生成」写入路径，仅在管理级联 / 计数中包含。
 
 ---
 
