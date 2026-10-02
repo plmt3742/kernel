@@ -168,31 +168,176 @@
  * 收件箱 INBOX
  * ------------------------------------------------------------------------- */
 
-.k-capture {
+/* 捕捉编辑器（DeepSeek 式风格）：文本捕捉 + 文件投递合一；全宽（对齐版心）、抬升表面、柔影
+ * Slice E1：所有者反馈后回位——不再居中，占满版心宽度，左右边距与下方「水位」面板一致 */
+.ic-composer {
+  position: relative;
+  width: 100%;
   display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  padding: 0 var(--space-4);
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
   background: var(--surface-elevated);
   border: var(--hairline) solid var(--outline);
-  border-radius: var(--radius-card);
+  border-radius: calc(var(--radius-card) + 4px);
   box-shadow: var(--shadow-card), var(--shadow-highlight);
   transition: border-color var(--dur-fast) var(--ease-standard),
     box-shadow var(--dur-fast) var(--ease-standard);
 }
-.k-capture:focus-within {
+.ic-composer:focus-within {
   border-color: var(--outline-strong);
   box-shadow: var(--shadow-hover), var(--shadow-highlight);
 }
-.k-capture__input {
-  flex: 1 1 auto;
-  height: 60px;
+.ic-composer.is-dragover {
+  border-color: var(--accent);
+  box-shadow: var(--shadow-hover), var(--shadow-highlight);
+}
+.ic-composer__file {
+  display: none;
+}
+.ic-composer__input {
+  width: 100%;
+  min-height: 30px;
   background: transparent;
   color: var(--ink);
   outline: none;
+  font-size: var(--text-body);
 }
-.k-capture__input::placeholder {
+.ic-composer__input::placeholder {
   color: var(--muted);
+}
+.ic-composer__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.ic-composer__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.ic-composer__hint {
+  white-space: nowrap;
+}
+.ic-composer__busy {
+  color: var(--accent-text);
+  white-space: nowrap;
+}
+.ic-icon-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  border-radius: var(--radius-pill);
+  color: var(--muted);
+  background: transparent;
+  transition: color var(--dur-fast) var(--ease-standard),
+    background var(--dur-fast) var(--ease-standard);
+}
+.ic-icon-btn:hover {
+  color: var(--ink);
+  background: var(--fill-subtle);
+}
+.ic-send {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  color: var(--accent-ink);
+  transition: opacity var(--dur-fast) var(--ease-standard),
+    transform var(--dur-fast) var(--ease-standard);
+}
+.ic-send:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+.ic-send:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.ic-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.ic-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: 100%;
+  padding: var(--space-1) var(--space-1) var(--space-1) var(--space-3);
+  background: var(--fill-subtle);
+  border-radius: var(--radius-pill);
+  color: var(--ink-2);
+  font-size: var(--text-caption);
+}
+.ic-chip__name {
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ic-chip__size {
+  color: var(--muted);
+}
+.ic-chip__remove {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  border-radius: var(--radius-pill);
+  color: var(--muted);
+  line-height: 1;
+  transition: color var(--dur-fast) var(--ease-standard),
+    background var(--dur-fast) var(--ease-standard);
+}
+.ic-chip__remove:hover {
+  color: var(--ink);
+  background: var(--hover-veil);
+}
+/* 拖拽覆盖层：显示"松开：放入收件箱"；不拦截指针 */
+.ic-composer__veil {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  border-radius: inherit;
+  border: 2px dashed var(--accent);
+  background: var(--surface-elevated);
+  color: var(--accent-text);
+  font-size: var(--text-body-sm);
+  pointer-events: none;
+}
+.ic-composer__veil-text {
+  padding: var(--space-2) var(--space-3);
+}
+.ic-row__file {
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 260px;
+}
+.ic-file-link {
+  text-decoration: none;
+}
+/* Slice E1：光学居中补偿已移除（所有者反馈后回位，不居中）——编辑器回到原捕捉栏位置 */
+@container route (max-width: 640px) {
+  .ic-composer {
+    border-radius: var(--radius-card);
+  }
+  .ic-composer__hint {
+    display: none;
+  }
+  .ic-chip__name {
+    max-width: 140px;
+  }
 }
 .k-inbox-item {
   display: flex;
@@ -287,6 +432,11 @@
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
+/* 批量 AI 解析进度（Slice E1）：安静，仅作状态播报 */
+.ic-batchbar__progress {
+  color: var(--accent-text);
+  white-space: nowrap;
+}
 .ic-batchbar__actions {
   margin-left: auto;
   display: flex;
@@ -356,8 +506,11 @@
   align-items: center;
   gap: var(--space-2);
 }
-/* 内联澄清子行：缩进对齐正文列（checkbox 1.2em + 序号 + 图标 + 行内间距，均取自组件度量） */
+/* 内联澄清子行：缩进对齐正文列（checkbox 1.2em + 序号 + 图标 + 行内间距，均取自组件度量）。
+   Slice E2.6：顶部以外边距留出真实呼吸间距（--space-3 ≈ 12px），与上方条目行分开，
+   不再"黏在一块"（内边距不会产生 box 间隙，故用 margin-top） */
 .ic-subrow {
+  margin-top: var(--space-3);
   padding: 0 var(--space-3) var(--space-4)
     calc(1.2em + var(--ic-no-w) + 26px + var(--space-3) * 4);
 }
@@ -383,6 +536,16 @@
   padding: var(--space-3) var(--space-4);
   background: var(--fill-subtle);
   border-radius: var(--radius-inner);
+  /* Slice E2.6：阶段切换（parsing → ready / error）时简单淡入，避免突兀换块 */
+  animation: k-ai-fade var(--dur-fast) var(--ease-enter);
+}
+@keyframes k-ai-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 .ic-ai__head {
   display: flex;
@@ -416,7 +579,9 @@
 .ic-ai.is-error .ic-ai__title {
   color: var(--danger-text);
 }
-/* 解析中的过程可视：阶段行 + 增量预览（安静；无渐变 / 发光 / 强动画） */
+/* 解析中的过程可视（Slice E2.6：解析期间高度恒定，杜绝下方元素抖动）
+   - 阶段行：单行不折行（ellipsis），行高固定
+   - 预览：固定 3 行高度、溢出隐藏、最新文本贴底；顶部柔化渐隐 */
 .ic-ai__process {
   display: flex;
   flex-direction: column;
@@ -425,6 +590,10 @@
 .ic-ai__stage {
   color: var(--muted);
   font-size: var(--text-caption);
+  line-height: 1.5;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .ic-ai__stream {
   color: var(--muted);
@@ -434,6 +603,14 @@
   margin: 0;
   white-space: pre-wrap;
   word-break: break-word;
+  /* 固定高度 = 3 行（随字号自适应），流式期间盒子尺寸不变 */
+  height: calc(1.5em * 3);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 1.4em);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 1.4em);
 }
 .ic-ai__stream.is-dim {
   opacity: 0.7;
@@ -448,6 +625,57 @@
 .ic-ai__dup {
   color: var(--muted);
   font-size: var(--text-caption);
+}
+
+/* 批量条侧挂 dock（Slice E2.5）：内联批量条滚出视口后的右侧浮动镜像。
+   固定右缘、纵向居中；位于抽屉层级之下（--z-drawer - 1）；≤767px 隐藏。 */
+.ic-dock {
+  position: fixed;
+  right: var(--space-4);
+  top: 0;
+  bottom: 0;
+  margin-block: auto;
+  height: max-content;
+  width: 172px;
+  z-index: calc(var(--z-drawer) - 1);
+  pointer-events: none;
+}
+.ic-dock__panel {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: var(--surface-elevated);
+  border: var(--hairline) solid var(--outline);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card), var(--shadow-highlight);
+  pointer-events: auto;
+}
+.ic-dock__count {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-size: var(--text-body-sm);
+  color: var(--ink-2);
+}
+.ic-dock__count b {
+  color: var(--ink);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.ic-dock__progress {
+  color: var(--accent-text);
+}
+.ic-dock__panel .k-btn {
+  width: 100%;
+  justify-content: center;
+  white-space: nowrap;
+}
+@media (max-width: 767px) {
+  .ic-dock {
+    display: none;
+  }
 }
 
 /* ---------------------------------------------------------------------------
@@ -905,6 +1133,17 @@
  * 非活跃分组更紧凑；交互行可悬停抬升（静态容器不抬升）。
  * ------------------------------------------------------------------------- */
 
+/* 快速新建工具条（镜像任务页 .k-quickadd；Slice E2.5） */
+.k-projects__toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+}
+.k-projects__toolbar .k-quickadd {
+  flex: 1 1 320px;
+  max-width: 620px;
+}
+
 .k-plist {
   display: flex;
   flex-direction: column;
@@ -1077,44 +1316,41 @@
   margin-left: auto;
 }
 
-/* 单一整合过滤条：笔记类型 / 资料类型 / 状态 / 标签 四组收进一条紧凑分段带
-   宽屏单行（横向可滚动不换行）；窄容器换行（见文末 container 查询） */
+/* 单一整合过滤条：笔记类型 / 资料类型 / 状态 / 标签 四组。
+   Slice E2.6：不再横向滚动 —— chip 自然换行（组间留较大列距做安静分隔），
+   组内分段槽亦可换行；1280px 与 390px 均无需左右滑动（scrollWidth === clientWidth）。 */
 .k-lib__filters {
   display: flex;
   align-items: center;
-  gap: var(--space-3) var(--space-5);
-  flex-wrap: nowrap;
-  overflow-x: auto;
+  gap: var(--space-2) var(--space-5);
+  flex-wrap: wrap;
   padding: var(--space-4) 0;
   border-top: var(--hairline) solid var(--outline);
   border-bottom: var(--hairline) solid var(--outline);
 }
-/* 一组筛选：安静内联标签 + 分段槽 */
+/* 一组筛选：安静内联标签 + 分段槽；可收缩以便窄屏在组内换行 */
 .k-lib__fgroup {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
 }
 .k-lib__flabel {
   flex: 0 0 auto;
   white-space: nowrap;
 }
-/* 组间发际线分隔（仅非首组，窄屏换行时隐藏） */
-.k-lib__fgroup + .k-lib__fgroup::before {
-  content: '';
-  align-self: center;
-  flex: 0 0 auto;
-  width: 1px;
-  height: 18px;
-  margin-right: var(--space-3);
-  background: var(--outline);
-}
-/* 分段槽：胶囊嵌入浅底轨道；未选项透明、选中项 ink 填充（压过全局悬停抬升） */
+/* 分段槽：胶囊嵌入浅底轨道；未选项透明、选中项 ink 填充（压过全局悬停抬升）。
+   Slice E2.6：允许换行，避免窄屏在组内横向溢出。 */
 .k-lib__seg {
   display: inline-flex;
   align-items: center;
+  align-content: center;
+  flex-wrap: wrap;
   gap: var(--space-1);
+  flex: 0 1 auto;
+  min-width: 0;
   padding: 3px;
   border-radius: var(--radius-pill);
   background: var(--fill-subtle);
@@ -1189,16 +1425,8 @@
   gap: var(--space-2);
 }
 
-/* 窄容器（route）：过滤条换行、行 meta 沉到第二行（标题独占首行） */
+/* 窄容器（route）：行 meta 沉到第二行（标题独占首行）；过滤条已全局换行（Slice E2.6） */
 @container route (max-width: 640px) {
-  .k-lib__filters {
-    flex-wrap: wrap;
-    overflow-x: visible;
-    gap: var(--space-3);
-  }
-  .k-lib__fgroup + .k-lib__fgroup::before {
-    display: none;
-  }
   .k-lib-row {
     flex-wrap: wrap;
     gap: var(--space-2) var(--space-3);
@@ -1235,29 +1463,7 @@
   gap: var(--space-2);
   flex-wrap: wrap;
 }
-/* 双栏仪表盘：左栏 1.15fr（指标 + 图表）· 右栏 0.85fr（回顾卡 + 停滞 + CTA） */
-.k-review__dash {
-  display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
-  gap: var(--space-5);
-  align-items: start;
-}
-.k-review__col {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-5);
-  min-width: 0;
-}
-.k-review__card {
-  background: var(--surface);
-  border: var(--hairline) solid var(--outline);
-  border-radius: var(--radius-card);
-  box-shadow: var(--shadow-card), var(--shadow-highlight);
-  padding: var(--pad-card);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-}
+/* 指标瓦片（回顾卡 / 弹窗共用）：5 列 */
 .k-review__metrics {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -1276,12 +1482,6 @@
 }
 .k-met__num.is-accent {
   color: var(--accent-text);
-}
-/* 右栏回顾卡内 CTA（开始周回顾 + 原型态说明） */
-.k-review__cta {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
 }
 .k-stale {
   display: flex;
@@ -1376,6 +1576,100 @@
 .k-step.is-guide:hover {
   transform: none;
   box-shadow: var(--shadow-soft);
+}
+
+/* ---------------------------------------------------------------------------
+ * 回顾页重构 · Slice F：周 / 月回顾卡并列一栏（能量分析之上）+ 弹窗报告
+ * ------------------------------------------------------------------------- */
+
+/* 栏 1：周 / 月回顾卡并列 */
+.k-review__cycles {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-5);
+  align-items: stretch;
+}
+.k-cycle {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--pad-card);
+  background: var(--surface);
+  border: var(--hairline) solid var(--outline);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card), var(--shadow-highlight);
+  transition: border-color var(--dur-fast) var(--ease-standard),
+    box-shadow var(--dur-fast) var(--ease-standard);
+}
+.k-cycle:hover {
+  box-shadow: var(--shadow-hover), var(--shadow-highlight);
+}
+.k-cycle.is-draft {
+  border-color: var(--accent);
+}
+.k-cycle__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.k-cycle__kicker {
+  display: block;
+  color: var(--muted);
+  margin-bottom: var(--space-1);
+}
+.k-cycle__title {
+  font-size: var(--text-h3);
+  line-height: var(--text-h3-leading);
+  letter-spacing: var(--text-h3-tracking);
+  font-weight: 600;
+}
+.k-cycle__meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-1);
+  text-align: right;
+}
+.k-cycle__metrics {
+  gap: var(--space-2) var(--space-3);
+}
+.k-cycle__summary {
+  color: var(--ink-2);
+  font-size: var(--text-body-sm);
+  line-height: var(--text-body-sm-leading);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.k-cycle__empty {
+  color: var(--muted);
+  font-size: var(--text-body-sm);
+  line-height: var(--text-body-sm-leading);
+  min-height: 3.2em;
+}
+.k-cycle__foot {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: auto;
+  padding-top: var(--space-2);
+}
+
+/* 栏 2：图表区（能量分析在前，完成趋势在后） */
+.k-review__charts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-5);
+  align-items: start;
+}
+
+/* 弹窗内已保存回顾的摘要正文 */
+.k-report__summary {
+  color: var(--ink-2);
+  font-size: var(--text-body);
+  line-height: 1.7;
+  white-space: pre-wrap;
 }
 
 /* 回顾流程 stepper */
@@ -1653,7 +1947,8 @@
 /* route < 900px：日脊+议程 / 回顾仪表盘 / 设置栅格 → 单列 */
 @container route (max-width: 900px) {
   .k-cal__body,
-  .k-review__dash,
+  .k-review__cycles,
+  .k-review__charts,
   .k-settings__grid {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -1690,4 +1985,450 @@
   .k-drawer .k-dl {
     grid-template-columns: max-content 1fr;
   }
+}
+
+/* ---------------------------------------------------------------------------
+ * 详情操作 · 编辑表单 / 回收站 / 文件位置（v0.5 · Slice E2，见 ADR-0009）
+ * ------------------------------------------------------------------------- */
+
+/* 抽屉底部：主操作区 + 右侧安静动作（编辑 / 删除） */
+.k-drawer__foot-main {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+.k-drawer__foot-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+.k-btn.is-danger {
+  color: var(--danger-text);
+}
+.k-btn.is-danger:hover {
+  background: var(--danger-bg);
+  color: var(--danger-text);
+}
+
+/* 内联编辑表单：字段纵向排列，输入件与全局 token 一致 */
+.k-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+.k-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.k-field__label {
+  color: var(--muted);
+}
+.k-input,
+.k-select,
+.k-textarea {
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: var(--hairline) solid var(--outline);
+  border-radius: var(--radius-inner);
+  background: var(--fill-subtle);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: var(--text-body-sm);
+  line-height: var(--text-body-sm-leading);
+  transition: border-color var(--dur-fast) var(--ease-standard),
+    background var(--dur-fast) var(--ease-standard);
+}
+.k-textarea {
+  resize: vertical;
+  min-height: 96px;
+}
+.k-input:hover,
+.k-select:hover,
+.k-textarea:hover {
+  background: var(--fill-secondary);
+}
+.k-input:focus-visible,
+.k-select:focus-visible,
+.k-textarea:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+  border-color: var(--outline-strong);
+}
+.k-form__actions {
+  display: flex;
+  gap: var(--space-3);
+}
+
+/* 回收站：按类型分组，行内恢复 / 彻底删除 */
+.k-trash {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-7);
+}
+.k-trash__list {
+  display: flex;
+  flex-direction: column;
+}
+.k-trash-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-3);
+  border-radius: var(--radius-inner);
+  transition: background var(--dur-fast) var(--ease-standard);
+}
+.k-trash-row + .k-trash-row {
+  border-top: var(--hairline) solid var(--rule-soft);
+}
+.k-trash-row:hover {
+  background: var(--surface-hover);
+}
+.k-trash-row__main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.k-trash-row__title {
+  color: var(--ink);
+  font-size: var(--text-body);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.k-trash-row__meta {
+  color: var(--muted);
+  font-size: var(--text-caption);
+}
+.k-trash-row__actions {
+  flex: 0 0 auto;
+  display: flex;
+  gap: var(--space-2);
+}
+
+/* 文件位置（资料抽屉）：安静等宽路径，超长省略 */
+.k-file-path {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: var(--fill-subtle);
+  border-radius: var(--radius-inner);
+  padding: var(--space-3) var(--space-4);
+  color: var(--ink-2);
+  font-size: var(--text-caption);
+}
+.k-file-path__hint {
+  font-size: var(--text-caption);
+}
+
+/* 窄容器：编辑表单动作竖排；回收站行动作沉到第二行 */
+@container drawer (max-width: 400px) {
+  .k-form__actions {
+    flex-direction: column;
+  }
+}
+@container route (max-width: 640px) {
+  .k-trash-row {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .k-trash-row__actions {
+    width: 100%;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * 快捷设置（Slice H）：安静 segmented 选择器 + 判断标准 helper 文本
+ * 复用 .k-lib__seg 轨道 / TagPill 选中反转；仅补轨道收缩与 helper 排版
+ * ------------------------------------------------------------------------- */
+
+.k-quickset__seg {
+  align-self: flex-start;
+  max-width: 100%;
+}
+.k-quickset__hint {
+  margin: 0;
+  font-size: var(--text-caption);
+  line-height: var(--text-caption-leading);
+}
+
+/* ---------------------------------------------------------------------------
+ * 快速新建 AI 建议（Slice H）：工具栏下方的安静内联面板（草稿预览，非写入）
+ * ------------------------------------------------------------------------- */
+
+.k-ai-draft {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: var(--hairline) solid var(--outline);
+  border-radius: var(--radius-card);
+  background: var(--surface-elevated);
+}
+.k-ai-draft__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.k-ai-draft__title {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.k-ai-draft__close {
+  flex: 0 0 auto;
+}
+.k-ai-draft__line,
+.k-ai-draft__reason {
+  margin: 0;
+  font-size: var(--text-body-sm);
+  line-height: var(--text-body-sm-leading);
+}
+.k-ai-draft__reason {
+  font-size: var(--text-caption);
+  line-height: var(--text-caption-leading);
+}
+.k-ai-draft__chips {
+  flex-wrap: wrap;
+}
+.k-ai-draft__chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-pill);
+  background: var(--fill-subtle);
+  color: var(--ink-2);
+  font-size: var(--text-caption);
+}
+.k-ai-draft__foot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+.k-ai-draft__foot .k-ai-draft__line {
+  flex: 1 1 auto;
+}
+
+@container route (max-width: 640px) {
+  .k-ai-draft__foot {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * 总览状态条（Slice G）：整宽、等分、左右对齐版心；替代左对齐 / 右边参差的胶囊行
+ * ------------------------------------------------------------------------- */
+
+.k-status {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  background: var(--fill-subtle);
+  border: var(--hairline) solid var(--outline);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+}
+.k-status__seg {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 var(--space-4);
+  text-align: left;
+  background: transparent;
+  transition: background var(--dur-fast) var(--ease-standard);
+}
+.k-status__seg + .k-status__seg {
+  border-left: var(--hairline) solid var(--outline);
+}
+.k-status__seg:hover {
+  background: var(--surface-hover);
+}
+.k-status__seg:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.k-status__dot {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--ink-2);
+  box-shadow: 0 0 8px rgba(244, 244, 245, 0.28);
+}
+.k-status__dot--quiet {
+  background: var(--muted);
+  box-shadow: none;
+}
+.k-status__dot--accent {
+  background: var(--accent);
+  box-shadow: none;
+}
+.k-status__k {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: var(--text-body-sm);
+}
+.k-status__v {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--ink);
+  font-size: var(--text-body-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.k-status__seg.is-accent .k-status__v {
+  color: var(--accent-text);
+}
+
+/* 窄容器：状态条竖排（各段占满宽度，左右仍对齐） */
+@container route (max-width: 640px) {
+  .k-status {
+    grid-auto-flow: row;
+  }
+  .k-status__seg + .k-status__seg {
+    border-left: none;
+    border-top: var(--hairline) solid var(--outline);
+  }
+  .k-status__seg {
+    min-height: 0;
+    padding: var(--space-3) var(--space-4);
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * 总览 AI 对话盒（Slice G）：复用 ic-composer 视觉；对话线程在其上方安静展开
+ * ------------------------------------------------------------------------- */
+
+.k-chat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.k-chat__input {
+  width: 100%;
+  min-height: 30px;
+  max-height: 140px;
+  background: transparent;
+  color: var(--ink);
+  outline: none;
+  font-family: inherit;
+  font-size: var(--text-body);
+  line-height: 1.5;
+  resize: none;
+}
+.k-chat__input::placeholder {
+  color: var(--muted);
+}
+.k-chat__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.k-chat__clear {
+  height: 30px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-pill);
+  color: var(--muted);
+  background: transparent;
+  font-size: var(--text-body-sm);
+  transition: color var(--dur-fast) var(--ease-standard),
+    background var(--dur-fast) var(--ease-standard);
+}
+.k-chat__clear:hover:not(:disabled) {
+  color: var(--ink);
+  background: var(--fill-subtle);
+}
+.k-chat__clear:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.k-chat__thread {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-height: 320px;
+  overflow-y: auto;
+  padding: var(--space-4);
+  background: var(--surface-elevated);
+  border: var(--hairline) solid var(--outline);
+  border-radius: calc(var(--radius-card) + 4px);
+  box-shadow: var(--shadow-card), var(--shadow-highlight);
+}
+.k-chat__msg {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  max-width: 88%;
+}
+.k-chat__msg--me {
+  align-self: flex-end;
+  align-items: flex-end;
+}
+.k-chat__msg--ai {
+  align-self: flex-start;
+}
+.k-chat__who {
+  color: var(--muted);
+}
+.k-chat__text {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-inner);
+  background: var(--fill-subtle);
+  color: var(--ink-2);
+  font-size: var(--text-body-sm);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.k-chat__msg--me .k-chat__text {
+  background: var(--fill-tag);
+  color: var(--ink);
+}
+.k-chat__text--thinking {
+  color: var(--muted);
+}
+.k-chat__error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border-radius: var(--radius-inner);
+  background: var(--fill-subtle);
+  color: var(--accent-text);
+  font-size: var(--text-body-sm);
+}
+.k-chat__error-text {
+  min-width: 0;
+  word-break: break-word;
+}
+
+@container route (max-width: 640px) {
+  .k-chat__thread {
+    max-height: 260px;
+  }
+  .k-chat__msg {
+    max-width: 100%;
+  }
+}
+
+/* 就地详情弹窗：动作区复用抽屉底栏样式（.k-drawer__foot-main 定义于本文件 Slice E2 段） */
+.k-modal__foot .k-drawer__foot-main {
+  width: 100%;
 }

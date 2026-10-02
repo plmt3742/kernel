@@ -489,6 +489,10 @@ button.k-pill.is-selected:hover {
   display: block;
   width: 100%;
   height: 100%;
+  /* 数据点为「零长度路径 + 圆头端帽」（non-scaling-stroke，屏幕像素恒定）：
+     贴底（y=100 基线）的点默认被 SVG 视口裁掉下半圆——owner 2026-10-03 反馈
+     「小圆点被遮盖」。放开溢出，让点在基线上完整呈现（下溢 ~3.5px 落入间隙）。 */
+  overflow: visible;
 }
 .k-line__stroke {
   fill: none;
