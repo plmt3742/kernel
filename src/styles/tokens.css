@@ -1,0 +1,266 @@
+/* =============================================================================
+ * KERNEL · DESIGN TOKENS v2（唯一事实源）
+ * 方向：柔暗夜色「C」为默认 + 柔影悬浮「B」语言融合（见 docs/decisions/0003）。
+ * 纪律：柔暗为主、柔影悬浮（无硬边线，用表面阶 + 柔影表达深度）、
+ *       圆角 16、单一强调色仅作信号、低亮度柔和对比、亮/暗共享几何与排版。
+ * 值对应 docs/00-DESIGN-BRIEF.md §5（v2）。
+ * ========================================================================== */
+
+/* -----------------------------------------------------------------------------
+ * 几何 · 字号 · 间距 · 动效 · 层级（两主题共享，只换色彩与高度）
+ * -------------------------------------------------------------------------- */
+:root {
+  /* --- 5.2 字体（本地自托管，禁止 CDN；等宽栈补 CJK 回退，避免中文豆腐块） --- */
+  --font-sans: "Inter Variable", "Inter", "PingFang SC", "HarmonyOS Sans SC",
+    "Microsoft YaHei", "Noto Sans CJK SC", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Consolas,
+    "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", monospace;
+
+  /* ===========================================================================
+   * 5.3 字号 · 流体比例（数理自适应 · Utopia 方法）
+   * 公式：clamp(MIN, calc(INTERCEPT + SLOPEvw), MAX)
+   *   SLOPE(vw) = (MAX − MIN) / (1440 − 390) × 100
+   *   INTERCEPT = MIN − (SLOPE/100) × 390
+   * 锚点：mobile 390px = MIN，desktop 1440px = MAX（1440 保持既有视觉尺寸）。
+   * 复算：任取视口 w，值 = INTERCEPT + (SLOPE/100)·w，线性夹在 [MIN, MAX]。
+   * 小号（micro 11px）保持固定：其流体收益 < 反锯齿/4px 栅格成本。
+   * =========================================================================== */
+  --text-micro: 11px; /* 固定 390=11 / 1440=11 */
+  --text-micro-leading: 1.3;
+  --text-micro-tracking: 0.02em;
+
+  /* caption 11.5→12 | m=0.0476vw b=11.314 */
+  --text-caption: clamp(11.5px, calc(11.314px + 0.0476vw), 12px);
+  --text-caption-leading: 1.45;
+  --text-caption-tracking: 0.01em;
+
+  /* body-sm 12.4→13 | m=0.0571vw b=12.177 */
+  --text-body-sm: clamp(12.4px, calc(12.177px + 0.0571vw), 13px);
+  --text-body-sm-leading: 1.55;
+  --text-body-sm-tracking: 0;
+
+  /* body 14.4→15 | m=0.0571vw b=14.177 */
+  --text-body: clamp(14.4px, calc(14.177px + 0.0571vw), 15px);
+  --text-body-leading: 1.65;
+  --text-body-tracking: 0;
+
+  /* h4 17→18 | m=0.0952vw b=16.629 */
+  --text-h4: clamp(17px, calc(16.629px + 0.0952vw), 18px);
+  --text-h4-leading: 1.3;
+  --text-h4-tracking: -0.01em;
+
+  /* h3 20→22 | m=0.1905vw b=19.257 */
+  --text-h3: clamp(20px, calc(19.257px + 0.1905vw), 22px);
+  --text-h3-leading: 1.25;
+  --text-h3-tracking: -0.012em;
+
+  /* h2 24→27 | m=0.2857vw b=22.886 */
+  --text-h2: clamp(24px, calc(22.886px + 0.2857vw), 27px);
+  --text-h2-leading: 1.2;
+  --text-h2-tracking: -0.015em;
+
+  /* h1 29→34 | m=0.4762vw b=27.143 */
+  --text-h1: clamp(29px, calc(27.143px + 0.4762vw), 34px);
+  --text-h1-leading: 1.12;
+  --text-h1-tracking: -0.02em;
+
+  /* 展示数字（统计瓦片）30→40.32（1440 既有 2.8vw=40.32）| m=0.9829vw b=26.167
+     1680 触及 MAX 42，与 v2 上限一致 */
+  --text-display: clamp(30px, calc(26.167px + 0.9829vw), 42px);
+  --text-display-leading: 1.08;
+  --text-display-tracking: -0.02em;
+
+  /* ===========================================================================
+   * 5.4 间距 · 流体阶梯 + φ 层级
+   * 微步（4/8/12/16）保持固定：用于图标/行内对齐，流体化会破坏 4px 栅格且收益极小。
+   * 大步（≥24）流体：390 收紧 → 1440 保持既有 → >1440 封顶。注释含 390→1440 与 (m,b)。
+   * =========================================================================== */
+  --space-0: 0;
+  --space-1: 4px; /* 固定 */
+  --space-2: 8px; /* 固定 */
+  --space-3: 12px; /* 固定 */
+  --space-4: 16px; /* 固定 */
+  --space-5: clamp(20px, calc(18.514px + 0.381vw), 24px); /* 20→24 | m=0.381 b=18.514 */
+  --space-6: clamp(26px, calc(23.771px + 0.5714vw), 32px); /* 26→32 | m=0.5714 b=23.771 */
+  --space-7: clamp(38px, calc(34.286px + 0.9524vw), 48px); /* 38→48 | m=0.9524 b=34.286 */
+  --space-8: clamp(48px, calc(42.057px + 1.5238vw), 64px); /* 48→64 | m=1.5238 b=42.057 */
+  --space-9: clamp(64px, calc(52.114px + 3.0476vw), 96px); /* 64→96 | m=3.0476 b=52.114 */
+  --space-10: clamp(80px, calc(62.171px + 4.5714vw), 128px); /* 80→128 | m=4.5714 b=62.171 */
+
+  /* φ 间距层级（几何级数 1 : φ : φ² : φ³ ≈ 1 : 1.62 : 2.62 : 4.24）
+     锚点 1440：inner 10.4 · element 16.83 · section 27.23 · page 44.05
+     语义：inner=组件内缝 / element=元素间隙 / section=区块间隙 / page=页边距 */
+  --phi: 1.618;
+  --rhythm-inner: 10.4px;
+  --rhythm-element: calc(var(--rhythm-inner) * 1.618); /* 16.83 */
+  --rhythm-section: calc(var(--rhythm-inner) * 2.618); /* 27.23 */
+  --rhythm-page: calc(var(--rhythm-inner) * 4.236); /* 44.05 */
+
+  --grid-cols: 12;
+  --rail-w: 96px;
+  --rail-w-collapsed: 64px;
+  /* 版心：居中内容上限 + 页边距（20→44 线性，与 φ page 层级同锚） */
+  --content-max: 1240px;
+  --page-margin: clamp(20px, calc(11.086px + 2.2857vw), var(--rhythm-page));
+  --measure: 65ch;
+
+  /* 组件呼吸：卡片内边距 / 列表行最小高度（流体，1440 保持 26 / 64） */
+  --pad-card: clamp(20px, calc(17.771px + 0.5714vw), 26px); /* 20→26 | m=0.5714 b=17.771 */
+  --row-min: clamp(52px, calc(47.543px + 1.1429vw), 64px); /* 52→64 | m=1.1429 b=47.543 */
+
+  /* 圆角比值：card 16（大表面）· inner 12（= card − 4 ≈ 0.75×，内部控件）· pill 全圆（chip/按钮）
+     半径随组件尺度分级：小件不显笨重、大件维持柔影悬浮感 */
+  --radius-card: 16px;
+  --radius-inner: 12px;
+  --radius-pill: 999px;
+  --radius: 12px;
+  --hairline: 1px;
+
+  /* --- 5.5 动效 · 按「位移/距离类别」分级（与 src/lib/motion.ts 一一对应） ---
+   * instant 80ms  颜色/描边等零位移状态切换
+   * micro   120ms 微小状态（chip 反选、透明度）
+   * fast    180ms 悬停/按压/短位移（translateY -2px、fade）
+   * base    240ms 入场/抽屉滑入（面板位移）
+   * slow    400ms 计量条宽度等长距离属性
+   * page    560ms 路由级过渡（最大距离）
+   * 曲线：standard 通用 / enter 进场(减速) / exit 退场(加速) */
+  --dur-instant: 80ms;
+  --dur-micro: 120ms;
+  --dur-fast: 180ms;
+  --dur-base: 240ms;
+  --dur-slow: 400ms;
+  --dur-page: 560ms;
+
+  --ease-standard: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-enter: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+
+  /* --- 层级 --- */
+  --z-base: 0;
+  --z-sticky: 100;
+  --z-drawer: 200;
+  --z-overlay: 300;
+  --z-palette: 400;
+  --z-toast: 500;
+
+  /* --- 布局常量 --- */
+  --rail-current: var(--rail-w);
+  --statusbar-h: 34px;
+  --tabbar-h: 58px;
+  --topbar-h: 104px;
+  --drawer-w: 460px;
+  --palette-w: 640px;
+}
+
+/* =============================================================================
+ * 5.1 色彩 · 暗色「柔暗夜色」—— 默认主题（无 data-theme 时即此套）
+ * 低亮度、柔和对比；表面阶 + 柔影表达深度；边缘至多 faint rgba(255,255,255,.06)。
+ * ========================================================================== */
+:root {
+  /* 表面阶 */
+  --bg: #0f0f10;
+  --surface: #1a1a1c;
+  --surface-elevated: #212124;
+  --surface-hover: #232327;
+  --surface-sunken: #141416;
+
+  /* 原生控件/滚动条随主题（暗色下不出现亮色原生部件） */
+  color-scheme: dark;
+
+  /* 文字（避免纯白，主文 #F4F4F5） */
+  --ink: #f4f4f5;
+  --ink-2: #a1a1aa;
+  --muted: #929298; /* 验收校正：全表面（含填充合成）≥4.5:1 */
+
+  /* 边缘 / 分隔（柔和，非硬线） */
+  --outline: rgba(255, 255, 255, 0.06);
+  --outline-strong: rgba(255, 255, 255, 0.12);
+  --rule: rgba(255, 255, 255, 0.1);
+  --rule-soft: rgba(255, 255, 255, 0.06);
+  --rule-ghost: rgba(255, 255, 255, 0.05);
+
+  /* 填充 */
+  --fill-tag: rgba(255, 255, 255, 0.07);
+  --fill-subtle: rgba(255, 255, 255, 0.05);
+  --fill-secondary: rgba(255, 255, 255, 0.08);
+  --hover-veil: rgba(255, 255, 255, 0.04);
+
+  /* 强调色：仅信号 / 焦点 / 激活。文字用 accent-text（暗底提亮变体） */
+  --accent: #ff5a52;
+  --accent-ink: #0f0f10;
+  --accent-text: #ff8a80; /* 暗底上的强调文字，实测 ≥4.5:1 */
+  --accent-on-ink: #b3261e; /* 浅色 ink 填充上的强调文字，实测 ≥4.5:1 */
+  --accent-veil: rgba(255, 90, 82, 0.16);
+
+  /* 语义色（克制） */
+  --success: #4caf7d;
+  --warning: #d08a2b;
+  --danger: #f87171;
+  --danger-bg: rgba(248, 113, 113, 0.14);
+  --danger-text: #fca5a5;
+
+  /* 柔影悬浮：大模糊、低不透明度 + 顶部微弱高光衬托悬浮 */
+  --shadow-card: 0 16px 40px rgba(0, 0, 0, 0.45);
+  --shadow-soft: 0 8px 24px rgba(0, 0, 0, 0.35);
+  --shadow-hover: 0 22px 54px rgba(0, 0, 0, 0.55);
+  --shadow-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+
+  --scrim: rgba(0, 0, 0, 0.62);
+  --focus-ring: rgba(244, 244, 245, 0.55);
+
+  /* 背景氛围：三处极淡辉光，避免纯平死黑 */
+  --ambient: radial-gradient(1100px 560px at 12% -8%, rgba(124, 124, 160, 0.06), transparent 62%),
+    radial-gradient(980px 620px at 98% 4%, rgba(96, 132, 168, 0.045), transparent 58%),
+    radial-gradient(900px 640px at 50% 112%, rgba(168, 150, 120, 0.035), transparent 60%);
+}
+
+/* =============================================================================
+ * 5.1 色彩 · 亮色「暖雾柔光」（draft B 语言：暖白 + 柔影；几何/排版与暗色一致）
+ * ========================================================================== */
+[data-theme='light'] {
+  color-scheme: light;
+
+  --bg: #f7f6f3;
+  --surface: #ffffff;
+  --surface-elevated: #ffffff;
+  --surface-hover: #fbfaf8;
+  --surface-sunken: #f1efe9;
+
+  --ink: #1c1917;
+  --ink-2: #665f59; /* 验收校正：全表面（含填充合成）≥4.5:1 */
+  --muted: #6e6862; /* 验收校正：全表面（含填充合成）≥4.5:1 */
+
+  --outline: #ede9e3;
+  --outline-strong: #e2dcd3;
+  --rule: #ede9e3;
+  --rule-soft: #efebe4;
+  --rule-ghost: #e8e3db;
+
+  --fill-tag: #f1efe9;
+  --fill-subtle: #f5f3ef;
+  --fill-secondary: #edeae4;
+  --hover-veil: rgba(28, 25, 23, 0.035);
+
+  --accent: #d62828;
+  --accent-ink: #ffffff;
+  --accent-text: #b3261e; /* 亮底上的强调文字，实测 ≥4.5:1 */
+  --accent-on-ink: #ff8a80; /* 深色 ink 填充上的强调文字，实测 ≥4.5:1 */
+  --accent-veil: rgba(214, 40, 40, 0.1);
+
+  --success: #1d6b3c;
+  --warning: #b26a00;
+  --danger: #b91c1c;
+  --danger-bg: #fbeae7;
+  --danger-text: #b91c1c;
+
+  --shadow-card: 0 1px 2px rgba(28, 25, 23, 0.04), 0 10px 30px -12px rgba(28, 25, 23, 0.14);
+  --shadow-soft: 0 1px 2px rgba(28, 25, 23, 0.04), 0 6px 18px -10px rgba(28, 25, 23, 0.16);
+  --shadow-hover: 0 2px 4px rgba(28, 25, 23, 0.05), 0 18px 42px -14px rgba(28, 25, 23, 0.2);
+  --shadow-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+
+  --scrim: rgba(28, 25, 23, 0.3);
+  --focus-ring: rgba(28, 25, 23, 0.45);
+
+  --ambient: radial-gradient(1100px 460px at 50% -140px, rgba(232, 219, 199, 0.42), rgba(232, 219, 199, 0) 68%),
+    radial-gradient(760px 420px at 92% 6%, rgba(233, 224, 210, 0.3), rgba(233, 224, 210, 0) 70%);
+}
