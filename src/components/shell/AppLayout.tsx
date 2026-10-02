@@ -10,6 +10,7 @@ import { CommandPalette } from '@/components/CommandPalette'
 import { usePalette } from '@/context/PaletteContext'
 import { navByPath } from '@/lib/nav'
 import { hydrateFromServer } from '@/lib/mutations'
+import { useRouteScrollMemory } from '@/lib/scroll'
 import { DUR, EASE_ENTER } from '@/lib/motion'
 
 function readCollapsed(): boolean {
@@ -26,6 +27,9 @@ export function AppLayout() {
   const { toggle: togglePalette } = usePalette()
   const [collapsed, setCollapsed] = useState(readCollapsed)
   const reduce = useReducedMotion()
+
+  // 路由滚动记忆：各页面独立位置（回访恢复 / 首次回顶）
+  useRouteScrollMemory()
 
   // 全局快捷键：Ctrl/Cmd+K 命令面板；c 捕捉（跳转收件箱并聚焦）
   useEffect(() => {
