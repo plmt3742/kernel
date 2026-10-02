@@ -5,8 +5,42 @@
 ## [Unreleased]
 
 ### Planned
-- v0.4.0 数据服务：Node 单写者 + 原子写入 + Zod 校验 + 审计日志 `activity.jsonl`。
 - v0.5.0 opencode AI 集成：本地代理链路、`@opencode-ai/sdk`、SSE 流式进度与结构化输出。
+- 页面排版多版本设计探索：每页 + 详情面板 / 卡片详情各做多版排版与组件样式方案（风格保持不变），供所有者选型（沿用 `design-drafts/` 选型模式）。
+
+## [v0.4.0] - 2026-10-02
+
+数据服务落地：本地 Node 单写者（`server/`，仅 `127.0.0.1:4097`）成为唯一写入路径——Zod 校验 + 原子写入（write-file-atomic）+ 审计日志（`data/activity.jsonl`）；前端 localStorage 原型层退役，改为「构建期 seed 首帧 + `/api/snapshot` 水合 + 乐观更新写入」；全站审阅确认的 P0 六项一并落地。决策记录：ADR-0004。
+
+### Added
+- `server/`：HTTP 入口（`index.mjs`）/ 存储层（`store.mjs`：串行写队列、原子写、nextId、审计）/ Zod schema（`schemas.mjs`，对齐 docs/04）。
+- 写入端点：`POST /api/tasks`（快速新建）、`POST /api/tasks/:id/complete`、`POST /api/tasks/:id/reopen`（从审计还原先前状态）、`POST /api/inbox`（捕捉）、`POST /api/inbox/:id/clarify`（→任务 / →项目 / →笔记 / →资源 / 丢弃）、`POST /api/inbox/:id/revert`（撤销澄清并删除产物）；读取端点 `GET /api/snapshot`、`GET /api/activity`、`GET /api/health`。
+- `scripts/dev.mjs`：`npm run dev` / `npm run preview` 一体启动数据服务 + Vite；`--host` 等参数透传给 Vite。
+- 前端：`src/lib/api.ts`（API 客户端）、`src/lib/mutations.ts`（写入动作：乐观更新 + 失败回滚）、`src/lib/hooks.ts` 增 `useDataRevision` / `useDataSource`。
+- 数据服务状态：状态条胶囊（在线 / 离线只读 / 连接中）+ 设置页「数据服务」面板（含最近 8 条审计活动）。
+- 多标签同步：窗口聚焦 / 可见时重新水合（`AppLayout`）。Toast 错误态（危险色描边 + 「错误」标签）。
+
+### Changed
+- `src/lib/data.ts` 改为可变更快照 + 订阅（构建期 seed 首帧；挂载后经 `/api/snapshot` 水合），全部视图 getter 保持同步 API 不变。
+- 完成语义：完成 = `status:'done'` + `doneAt` 落盘（回顾「本周完成」图表开始联动）；已完成任务可重新打开（从审计日志还原先前状态）。
+- 收件箱澄清真实落地：条目 `status:'clarified'` + `linkedId` 指向新实体；新任务带 `sourceInboxId` 反指；撤销（revert）删除该次创建。
+- 写入失败不再静默：全部失败显式 toast（审阅 P0#3）；乐观更新失败自动回滚。
+- 「原型态」语义退役：Toast 标签移除、命令面板「原型标注」组改为「AI · 待接入」、设置页原型态说明改为数据服务面板（「清除本地覆盖」入口一并移除）。
+- `vite.config.ts`：新增 `/api` 代理（dev 与 preview）；`data/**` 不再触发 Vite 热重载（避免写入后整页刷新打断撤销窗口）。
+- 应用内版本号 → v0.4.0（品牌区、设置页「关于」）。
+
+### Fixed（全站审阅 P0 六项）
+- 澄清不落地 / 刷新回滚：澄清、捕捉、快速新建全部真实落盘。
+- 跨视图计数口径分裂：单一数据源，总览 / 状态条 / 任务 / 收件箱口径一致。
+- proto 写入失败静默：改为显式错误提示 + 回滚。
+- 「清除原型态」入口移除：数据以文件为事实源，历史由 git + 审计日志承担。
+- 完成态缺 `doneAt`：完成写入 `doneAt`，回顾图表联动。
+- 多标签不同步：聚焦 / 可见时重水合。
+
+### Notes
+- 验证证据：`.qa/v07/`（服务端冒烟 15 项断言、浏览器端到端断言与截图、离线降级、移动端检查）。
+- 写入格式：2 空格缩进 + 尾换行；时间 ISO 8601 带本机偏移；审计日志每行一条 JSON。
+- `npm run build`（tsc -b + vite build）通过。
 
 ## [v0.3.0] - 2026-10-02
 
@@ -123,6 +157,26 @@
 - 审阅证据与报告：`.qa/review/`（8 视图截图 + `REVIEW-2026-10-02.md`，含剩余 19 项分级建议）；修复复核截图：`.qa/issue/`。
 - 审阅其余发现（原型态数据一致性 P0、任务时间筛选、撤销/确认、看板空列等）已列入 `TASK_BOOK.md`「审阅发现（Review Findings）」跟踪，其中 1–6 建议并入 v0.4 范围。
 - `npm run build`（tsc -b + vite build）通过。
+
+### 体验增强（2026-10-02 · 审阅 P1 第一批）
+
+落地 `.qa/review/REVIEW-2026-10-02.md` 审阅建议的 P1 前几项：任务时间维度、撤销、统一时间刷新、AI 卡动态计数。功能、数据、路由不变（原型态纪律保持）。
+
+#### Added
+- 任务页「时间」筛选组：逾期 / 今天 / 本周（周一–周日区间落点），与状态筛选组合生效。
+- 任务默认排序：截止近者优先（无截止垫底）→ 重要性 → id 稳定（`byDueTask`）。
+- 任务深链：`/tasks?task=<id>` 直达任务详情抽屉；总览「下一步行动」点击直达对应任务（原仅跳转列表页），关闭抽屉时清理查询参数。
+- Toast 动作支持（`ToastOptions.action`；带动作默认停留 5s，动作按钮 click 后即消失）：完成任务、取消完成、收件箱任一澄清动作（含丢弃）均可 5s 内「撤销」。
+- `src/lib/hooks.ts`：`useNow`（统一 60s 时刻刷新）与 `useUndoableToggle`（完成切换 + 撤销，返回 wasDone）。
+- 总览「下一步行动」勾选完成支持撤销；AI 建议卡第 2 条数字改为动态（收件箱含原型态捕捉）。
+
+#### Changed
+- 时刻口径统一：总览 / 日历 / 任务 / 资料 / 收件箱 的相对时间与「今天」判定全部走 `useNow`，每 60s 自动刷新（原仅总览与日历带定时器，任务 / 资料 / 收件箱渲染时取一次）。
+- 总览收件箱计数对齐：`getInboxCount() + protoInbox.length`（与状态条、收件箱页未澄清数同口径；完整数据源统一仍属 v0.4 范围）。
+
+#### Notes
+- 验证证据 `.qa/v06/`（时间筛选 / 排序 / 深链 / 撤销断言与截图，控制台无错误）；`npm run build`（tsc -b + vite build）通过。
+- 审阅 P1 剩余项：日历翻周 + `deferUntil`、回顾步骤持久化 + 资料搜索、a11y 三处——保留在 `TASK_BOOK.md` Handoff。
 
 ## [v0.2.0] - 2026-10-02
 

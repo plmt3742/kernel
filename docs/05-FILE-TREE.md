@@ -32,9 +32,11 @@ kernel/
 │  └─ decisions/                # 架构决策记录（ADR）
 │     ├─ 0001-naming-kernel.md
 │     ├─ 0002-no-role-silos.md
-│     └─ 0003-design-direction-v2.md
+│     ├─ 0003-design-direction-v2.md
+│     └─ 0004-data-service-v0.4.md
 │
-├─ data/                        # 数据源（一记录一文件）
+├─ data/                        # 数据源（一记录一文件；v0.4 起写入经数据服务）
+│  ├─ activity.jsonl            # 审计日志（每次变更追加；服务创建）
 │  ├─ meta/
 │  │  ├─ config.json            # 全局配置
 │  │  └─ tags.json              # 标签命名空间
@@ -49,6 +51,11 @@ kernel/
 │  ├─ resources/                # r-*.json
 │  └─ reviews/                  # rev-*.json
 │
+├─ server/                      # 数据服务（v0.4：单写者 · 原子写 · Zod 校验 · 审计；仅 127.0.0.1:4097）
+│  ├─ index.mjs                 # HTTP 入口与路由
+│  ├─ store.mjs                 # 存储层（读快照 / 串行写队列 / nextId / activity.jsonl）
+│  └─ schemas.mjs               # Zod schema（写入前校验的唯一事实源）
+│
 ├─ src/                         # 前端应用
 │  ├─ main.tsx                  # 挂载入口（样式导入、字体自托管）
 │  ├─ App.tsx                   # 应用壳与路由
@@ -57,13 +64,15 @@ kernel/
 │  │  ├─ shell/                 # 应用壳（RailNav / TopBar / StatusBar / AppLayout）
 │  │  └─ charts/                # 图表（TrendBars / EnergyBars）
 │  ├─ context/                  # React Context（Theme / Toast / Palette）
-│  ├─ lib/                      # 工具与数据访问（data / derive / date / format / motion / focus / proto）
+│  ├─ lib/                      # 数据访问与工具（data 可变快照 / api 客户端 / mutations 写入动作 / derive / date / format / motion / focus / hooks）
 │  └─ styles/                   # 全局样式与 token（tokens / base / shell / components / views）
 │
 ├─ design-drafts/               # 设计草案选型稿（a 硬瑞士 / b 暖雾柔光 / c 柔暗夜色；渲染验证后作方向参考）
-├─ .qa/                         # 视觉 QA 证据（截图与报告；v0.2 归档 + v0.3~v0.5 复核，勿改归档件）
+├─ .qa/                         # 视觉 QA 证据（截图与报告；v0.2 起按批次归档，勿改归档件）
 │
-├─ scripts/                     # 脚本（未来：种子生成、数据校验）
+├─ scripts/                     # 脚本
+│  ├─ dev.mjs                   # 开发启动器（数据服务 + Vite 一体启动；--preview 走 preview）
+│  └─ seed.mjs                  # 种子数据生成
 └─ public/                      # 静态资源（字体、图标）
 ```
 
@@ -75,10 +84,11 @@ kernel/
 |---|---|---|
 | `docs/` | 全部文档：宪法、架构、设计、数据模型、ADR | 文档工程师 |
 | `design-drafts/` | 设计草案选型稿（方向参考，反映当次选型，非构建产物） | 设计 / 所有者 |
-| `.qa/` | 视觉 QA 证据：截图与报告（归档件只读；复核输出入 `v0.3/`） | QA 执行方 |
-| `data/` | 数据源，一记录一文件 JSON | 数据层实现方；未来经单写者服务写入 |
-| `src/` | React + TypeScript 前端应用 | 前端实现方 |
-| `scripts/` | 脚本（未来）：种子数据生成、数据校验 | 未来 |
+| `.qa/` | 视觉 QA 证据：截图与报告（归档件只读；按批次入子目录） | QA 执行方 |
+| `data/` | 数据源，一记录一文件 JSON；v0.4 起写入一律经 `server/` 数据服务（单写者） | 数据服务（唯一写者） |
+| `server/` | 数据服务：Zod 校验 + 原子写 + 审计日志；仅监听 127.0.0.1:4097 | 数据层实现方 |
+| `src/` | React + TypeScript 前端应用（只读数据经水合，写入经 API） | 前端实现方 |
+| `scripts/` | 开发启动器（`dev.mjs`）与种子数据生成（`seed.mjs`） | 工程 |
 | `public/` | 静态资源：自托管字体、图标 | 前端实现方 |
 | 根目录 `*.md` | 门面与台账（README / AGENTS / CHANGELOG / TASK_BOOK） | 文档工程师 |
 
@@ -108,7 +118,7 @@ kernel/
 | `src/views/` | 八个视图页面，一一对应宪法 §4 的视图规格 |
 | `src/components/` | 可复用组件（含 `shell/` 与 `charts/` 子目录），命名遵循设计系统签名词汇 |
 | `src/context/` | React Context：主题、Toast、命令面板开关 |
-| `src/lib/` | 数据访问、派生计算、日期、格式化、动效常量、焦点工具、原型态存储 |
+| `src/lib/` | 数据访问与写入动作（data 可变快照 / api 客户端 / mutations / derive）、日期、格式化、动效常量、焦点工具、共享 hooks |
 | `src/styles/` | 全局样式、CSS 变量 token、主题定义（唯一事实源 `tokens.css`） |
 
 ## 5. 维护规则

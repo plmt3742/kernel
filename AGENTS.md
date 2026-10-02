@@ -32,22 +32,26 @@
 ## 3. 命令
 
 ```bash
-npm install          # 安装依赖
-npm run dev          # 本地开发，默认 http://localhost:5173
+npm install          # 安装依赖（前端 + 数据服务）
+npm run dev          # 本地开发：数据服务(127.0.0.1:4097) + Vite，默认 http://localhost:5173
 npm run dev -- --host    # 允许局域网 / 手机访问
+npm run dev:web      # 只启动前端（数据服务离线则写入不可用）
+npm run server       # 单独启动数据服务
 npm run build        # 生产构建
-npm run preview -- --host   # 预览构建产物，默认 http://localhost:4173
-npm run seed         # 生成并写入种子数据到 data/
+npm run preview -- --host   # 预览构建产物（含数据服务），默认 http://localhost:4173
+npm run seed         # 生成并写入种子数据到 data/（绕过服务，仅维护用）
 ```
 
-技术栈固定：Vite + React 19 + TypeScript（strict）+ 原生 CSS（CSS 变量 token），不使用 UI 框架、不使用 Tailwind。依赖白名单见 `docs/02-ARCHITECTURE.md`。
+技术栈固定：Vite + React 19 + TypeScript（strict）+ 原生 CSS（CSS 变量 token），不使用 UI 框架、不使用 Tailwind。前端依赖白名单见 `docs/02-ARCHITECTURE.md`；服务端依赖（zod / write-file-atomic）见 ADR-0004。
+
+> **Windows 操作纪律（2026-10-02 事故记录）**：不要在一行 cmd 中组合 `for /f` 变量循环 + `&` 链接 + 嵌套引号——cmd 会重解析导致命令体被重复执行（曾造成服务被杀、启动流程混乱）。查端口/杀进程分两步：先 `netstat -ano | findstr :<PORT>` 取 PID，再 `taskkill /F /PID <字面量>`；后台启动服务用单独、简单的命令（`start "" /min cmd /c "..."`）；等待服务就绪 ≥6 秒后再断言。
 
 ## 4. 数据纪律
 
 1. **`data/` 是唯一事实源**。前端只读，禁止前端直接写文件。
-2. **当前（v0.1 / v0.2）**：数据为文件式 JSON，一记录一文件，UTF-8，ID 稳定（`t-0001` 式），时间用 ISO 8601 带偏移。
-3. **禁止在 JSON 中存储计算派生值**（进度、计数、状态聚合等一律运行时计算）。
-4. **未来（v0.3）**：引入 Node 单写者数据服务，作为唯一写入路径，配合原子写入（write-file-atomic）+ Zod 校验 + 审计日志（`activity.jsonl`）。浏览器写入必须经 API，禁止多进程直接写文件。
+2. **v0.4 起写入一律经数据服务**：Node 单写者（`server/`，仅 `127.0.0.1:4097`）——Zod 校验 + 原子写入（write-file-atomic）+ 审计日志（`data/activity.jsonl`）。浏览器与手机均经 `/api` 代理访问；禁止绕过服务直写文件（`npm run seed` 维护脚本除外）。实现见 ADR-0004。
+3. 数据为文件式 JSON，一记录一文件，UTF-8，ID 稳定（`t-0001` 式），时间用 ISO 8601 带偏移。
+4. **禁止在 JSON 中存储计算派生值**（进度、计数、状态聚合等一律运行时计算）。
 5. 改数据结构，必须同步更新 `docs/04-DATA-MODEL.md`；动目录结构，必须同步更新 `docs/05-FILE-TREE.md`。
 
 字段定义与示例见 `docs/04-DATA-MODEL.md`。
@@ -83,6 +87,8 @@ npm run seed         # 生成并写入种子数据到 data/
 
 | 日期 | 版本 | 变更摘要 | 影响文件 |
 |---|---|---|---|
+| 2026-10-02 | v0.4.0 | 数据服务落地：Node 单写者（127.0.0.1:4097）+ 原子写 + Zod 校验 + `activity.jsonl` 审计；前端写入改造（proto 退役，乐观更新 + 撤销 + 离线显式报错）；审阅 P0 六项并入；ADR-0004 | `server/**`、`src/lib/{data,api,mutations,hooks}.ts`、`src/views/**`、`src/components/{Toast,shell/**}`、`scripts/dev.mjs`、`vite.config.ts`、`docs/**`、`CHANGELOG.md`、`TASK_BOOK.md` |
+| 2026-10-02 | v0.3.0 | 体验增强（审阅 P1 第一批）：任务时间筛选 + 截止排序 + `?task=` 深链直达 / 撤销 toast / `useNow` 统一刷新 / AI 卡动态计数 | `src/lib/hooks.ts`、`src/context/ToastContext.tsx`、`src/components/Toast.tsx`、`src/views/{Tasks,Overview,Inbox,Library,Calendar}.tsx`、`.qa/v06/**`、`CHANGELOG.md`、`TASK_BOOK.md` |
 | 2026-10-02 | v0.3.0 | 界面缺陷修复：品牌锁排（KERNEL 不再裁切）/ 顶栏接缝对齐（104px 共线）/ Toast 跟随折叠 / `color-scheme` / 任务分组行 / 项目卡标签 / 0 值柱 / 能量斜纹 / 日历日期条吸顶 / 阈值线；git 初始化 + 首次提交；全站三视角审阅（报告 `.qa/review/REVIEW-2026-10-02.md`） | `src/styles/**`、`src/components/shell/AppLayout.tsx`、`.qa/review/**`、`.gitignore`、`TASK_BOOK.md`、`CHANGELOG.md` |
 | 2026-10-02 | v0.3.0 | 文档一致性全量同步（20 处：宪法/设计系统/文件树/索引/徽标顺延/零引用清理）；TASK_BOOK 新增「下一会话待办」交接清单 | `docs/**`、`TASK_BOOK.md`、`AGENTS.md`、`CHANGELOG.md` |
 | 2026-10-02 | v0.3.0 | 数理自适应：流体字号/间距（Utopia，锚点 390/1440）+ φ 间距层级 + 容器查询（route/stat/task/pcard/drawer）+ 死代码清理 | `src/**`、`docs/**` |
@@ -97,6 +103,7 @@ npm run seed         # 生成并写入种子数据到 data/
 ## 8. 安全纪律
 
 - opencode 服务仅监听 `127.0.0.1:4096`，**永不直接暴露到局域网**。
+- 数据服务（v0.4）仅监听 `127.0.0.1:4097`，经 Vite 代理接入，永不直接暴露到局域网。
 - 敏感操作需显式确认。
 - AI 能力现仅 UI 预留（AI 建议卡、命令面板入口），标记"待接入 v0.5"（原 v0.4，路线图重编号后顺延）。
 - 本系统不发布公网，局域网访问仅限可信 WiFi。详见 `docs/07-DEPLOYMENT.md`。

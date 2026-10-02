@@ -323,8 +323,10 @@ confirmed ──取消──> cancelled
 | inboxItem | 5 到 8 | 未澄清 |
 | review | 2 | 2026-W40 周回顾 + 9 月月回顾 |
 
-## 9. 未来（v0.3+）
+## 9. 写入路径与未来
 
-- 写入经 Node 单写者数据服务，Zod 校验，原子写入，审计日志 `data/activity.jsonl`。
+- **已实现（v0.4）**：写入经 Node 单写者数据服务（`server/`）：Zod 校验 + 原子写入，审计日志 `data/activity.jsonl`；前端经 `/api` 访问（ADR-0004）。
+- **完成语义**：任务完成 = `status:'done'` + `doneAt` 落盘；重新打开从审计日志还原此前的 `status`。
+- **澄清联动**：收件箱条目澄清后 `status:'clarified'` 且 `linkedId` 指向新实体；新任务带 `sourceInboxId` 反指；撤销澄清（`revert`）会删除该次澄清创建的实体。
 - schema 预留实体（`timeLog` / `person` / `journalEntry`）在 v1.0 前评估是否实现。
 - 字段演进必须同步更新本篇，并通过 ADR 记录重大结构变更。
