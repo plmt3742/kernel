@@ -4,6 +4,20 @@
 
 ## [Unreleased]
 
+### 一致性清扫 · Slice Y（已完成 · 2026-10-03）
+只读「碎片化 / 摩擦」审计剩余项的一致性 / 自动化清扫（F4/F5/F7/F11/F12/F13/F14/F17/F18/F21/F24/F32/F33/F36 + 标签补全）：同一概念在多处各写一份、或 UI 与存储口径不一致。`npm run build`（tsc strict + vite）退出 0；服务端冒烟 **30/30** + 浏览器 E2E **35/35**；零数据残留（所有者 157 个数据文件**字节不变**，含 `t-0057`/`t-0058` 的 `importance: 0`）；控制台零 error；证据 `.qa/v41/`。
+
+- **情境统一（F4 / F24）**：`server/ai.mjs` 收件箱解析与任务补全提示词的**情境列表改由标签注册表派生**（新增 `contextNamesOf` / `contextRuleText`，注入 `buildSystem` / `buildTaskDraftSystem`），终结硬编码 5 个（遗漏 `@errands` / `@home`）；`src/views/Tasks.tsx` 上下文筛选改为**已用 ∪ 注册表情境**（依赖 revision 刷新）。
+- **重要性量纲（F21）**：统一为 **0–3**——5 个 AI / 创建 / 澄清 schema 的 `importance` 由 `.min(1)` 放宽为 `.min(0)`、AI 提示词改 `0 | 1 | 2 | 3`；前端抽出 `IMPORTANCE_OPTIONS` + `importanceLabel`（`src/lib/format.ts`）供 `AiSuggestionForm` / `Tasks` / `TaskDetailModal` 共用。**选择 0–3 而非审计倾向的 1–3**：存量 `t-0057`/`t-0058` 含 `importance: 0`，收紧将破坏既有记录（见 ADR-0021 §2.3）。
+- **能量单一源（F7）**：抽出 `ENERGY_OPTIONS`，删除三处 `['low','medium','high']` 字面量。
+- **资料直接新建（F5）**：`resourceCreateSchema` + `POST /api/resources`（审计 `resource.create`）+ 新 `ResourceDraftModal` + Library「新建资料」→ 创建 → toast 撤销（= 回收站）+ 打开 `?resource=` 深链（镜像 Slice M 的新建笔记流）。
+- **报告 / 总览（F11 / F12 / F13 / F14）**：移除恒为「—」的死「迁移」瓦片（`ReviewMetrics.migrated` 字段保留兼容旧归档）；总览 W40 行缺省渲染 `—`；监视柱「收件箱水位」→ `/inbox`、「WIP · 进行中」→ `/tasks` 整块按钮化、W40 行 → `/review`（新增 token-only `button.r3c-block--link` / `button.r3c-w40`）。
+- **报告内停滞建议可点（F17）**：弹窗 `draft.staleAdvice` 行渲染动作按钮，复用下方「停滞项目」栏同一套处理（归档可撤销 / 迁移 touch / 新增重启）。
+- **详情 / 重新解析 / 上传 / 撤销（F18 / F32 / F33 / F36）**：任务详情增只读「推迟至」行；重新解析经模块级 `actionEditCache`（`src/lib/inboxAi.ts`，按 `itemId`）保留用户已改字段（防活跃相位 `parsing` 卸载重建丢失）；多文件上传改**受限并发** `mapLimit(≤3)`（结果顺序保持、解析仍严格顺序）；新增纯函数 `undoPatchOf` 使任务 / 项目 / 笔记 / 资料编辑保存附「撤销」往返还原。
+- **标签补全（F13）**：`AiSuggestionForm`（tags / contexts）与 `EntityEditForm`（`list` 字段 `key==='tags'`）加 `<datalist>`（注册表名称 + 中文标签，`useDataRevision` revision-aware）。
+- **验证**：`.qa/v41/server-smoke.mjs` **30/30**（`contextNamesOf` 派生 == 注册表 7 情境；`POST /api/resources` 201 + `nextId` + 缺省 `article`/`unread`/`[]` + 空标题 400 + 臆造 areaId 400 + 非法 kind 400；importance 创建 / 编辑 `0` 通过、`4` → 400；审计 `resource.create`/`task.create`；回收站往返；零残留 + 所有者 157 文件字节不变）；`.qa/v41/verify-y.py` **35/35**（新建资料草稿 → 落盘 → `?resource=` → 撤销；上下文 chips == 注册表情境数 7；重新解析保留用户标题；编辑保存撤销还原；总览 水位→/inbox、WIP→/tasks、W40→/review；报告无「迁移」瓦片 + 建议行按建议归档；tags 字段带 datalist；390 零横溢；控制台 0 error；零残留）。
+- **记录**：新增 ADR-0021（`docs/decisions/0021-consistency-sweep.md`）；`docs/02`（资料端点 + 情境派生）；`docs/04`（§3 重要性量纲 / §4.2 推迟至 / §4.9 直接新建 / §4.10 迁移瓦片移除）；`docs/README.md`（ADR 索引）；`public/guide.html`；`CHANGELOG.md`、`TASK_BOOK.md`、`AGENTS.md`。
+
 ### 笔记体验：沉浸阅读 / 撰写 + AI 蒸馏 · Slice M（已完成 · 2026-10-03）
 所有者 backlog「笔记的详情页需要设计一个笔记系统，需要有沉浸式的阅读和撰写体验」+ 蒸馏困惑「这个蒸馏是什么意思，是点击后就可以 ai 蒸馏还是什么意思」。此前笔记详情与任务 / 项目共用 660px 弹窗、正文沿用全局 65ch/行高 1.65 且被元数据表压在下方；编辑态正文字段与其它字段同规格（`rows=5`）、标题不醒目；**无「新建笔记」入口**（`POST /api/notes` 存在但 UI 未暴露）；`distillLevel` 只能标注、无任何内容变换与语义说明。本切片交付沉浸阅读 / 撰写面、新建笔记入口，并把「蒸馏」从语义澄清升级为**可执行 AI 蒸馏**（出草稿 → 确认 → 追加 → 可撤销），延续「AI 只出建议、确认后写入、精确撤销」纪律。`npm run build`（tsc strict + vite）退出 0；服务端冒烟 **34/34** + 浏览器 E2E **35/35**；零数据残留（所有者 157 个数据文件**字节不变**，`n-0016` 与标签注册表逐字节一致）；控制台零 error；证据 `.qa/v40/`。
 

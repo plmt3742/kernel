@@ -44,6 +44,8 @@
 
 标签命名空间示例：`role:acm`、`role:competition-head`、`topic:数据结构`、`topic:面试`。
 
+> **重要性量纲统一（v0.5 · Slice Y，见 ADR-0021）**：`importance` 统一为 **0–3**（0 = 最低 / 可略过的输入）。此前 AI 输入 schema 与部分 UI 用 1–3，与本节及 `taskSchema` 不一致；清扫后 AI 提示词 / 各创建·澄清 schema / UI 选项（`src/lib/format.ts` `IMPORTANCE_OPTIONS`）与存储一致为 0–3。**刻意不收紧为 1–3**：存量 `data/tasks/t-0057.json`、`t-0058.json` 已含 `importance: 0`，收紧将破坏既有记录。另：情境（`context`）标签列表由标签注册表派生（`contextNamesOf`），AI 提示词与任务筛选不再硬编码子集。
+
 ## 4. 实体字段
 
 `?` 表示可选字段。
@@ -94,6 +96,8 @@
 | sourceInboxId? | string | |
 
 > **子任务 / `parentTaskId` 语义（v0.5 · Slice R3）**：`parentTaskId` 指向 `data/tasks/` 中另一任务，构成父子层级（一任务至多一个父、可有多个子）；派生展示不落盘。服务端写入护栏（`server/index.mjs` `assertValidParentTask`）：① 父任务必须真实存在（否则 400）；② 不得指向自身（400）；③ **不得成环**——沿 `parentTaskId` 祖先链上溯，命中自身即 400（`A→B→A` 被拒，且拒绝后不写半成品）。创建（`POST /api/tasks` 可选 `parentTaskId`）与编辑（`POST /api/tasks/:id/update`；`parentTaskId:null` 清除）均支持，审计 `task.create` / `task.update`（`detail.fields` 含 `parentTaskId`）。UI 路径：任务详情「子任务」区块列出直接子任务（点击就地打开其详情，可逐级返回）+ 安静 quick-add（回车即建，**继承父任务 `projectId`**，其余字段走默认，toast 可撤销）；项目详情的任务行可就地打开、并提供「添加任务到本项目」（草稿确认、`projectId` 预填）。系统**不自动生成子任务**——一律用户显式创建 / 编辑。
+
+> **「推迟至」展示（v0.5 · Slice Y，见 ADR-0021）**：任务详情字段网格在 `deferUntil` 设置时显示只读「推迟至」行（与「截止」并列）；编辑仍在 `TaskDetailModal` 编辑表单的「推迟至」字段（`EDITABLE_FIELDS.tasks` 已含 `deferUntil`）。创建期暂不写入（`CREATE_FIELD_KEYS` 未含），延后。
 
 ### 4.3 project（`p-`）
 
@@ -211,6 +215,8 @@
 
 > **状态判断标准 + 可设置（v0.5 · Slice H）**：资料状态五档——`unread` 未读（收进资料库、尚未开始阅读）、`reading` 在读（正在读、有明确推进）、`read` 读完（已完整读完）、`reference` 参考（不打算通读，仅备查引用）、`archived` 归档（已处理完，退出主动视野）。资料详情弹窗内以安静分段控件直接设置（经 `POST /api/resources/:id/update`，审计 `resource.update`）；`areaId` 也可在编辑表单中设置（`resources` 编辑白名单已含 `areaId / status`，见 ADR-0011）。UI helper 文本与本文一致（`src/lib/format.ts` `RESOURCE_STATUS_DEF`）。
 
+> **直接新建（v0.5 · Slice Y，见 ADR-0021）**：新增 `POST /api/resources`（`resourceCreateSchema`：`title` 必填；`kind` / `status` 缺省 `article` / `unread`；可选 `url` / `path` / `note` / `areaId` / `tags`；`areaId` 真实存在校验；标签规格化 + `ensureTags` 登记；审计 `resource.create`）。资料页「新建资料」→ 草稿弹窗（标题 / 类型 / 链接 / 简介 / 标签）→ 点「创建资料」才落盘（ESC / 取消零写入）→ toast 撤销（= 移入回收站）+ 打开 `?resource=` 深链。镜像 Slice M 的「新建笔记」流。
+
 ### 4.10 review（`rev-`）
 
 | 字段 | 类型 | 说明 |
@@ -231,6 +237,8 @@
 > **报告升级 + 自动归档（v0.5 · Slice L，见 ADR-0013）**：`summary` 升级为七段结构正文，摘要注入上一周期指标 + 环比 + 阈值 + 带 id 的清单；模型输出经「数字子集护栏」校验（越界单次纠正重试，仍越界保留并记录）。`POST /api/ai/review/draft` 成功后**自动归档**一条 `review`（`source:'ai'`、`date` = 归档时刻、审计 `review.create` · `detail.auto`），响应附 `reviewId`；前端「保存回顾」经新增的 `POST /api/reviews/:id/update` 更新**同一**记录（保留 id / type / periodKey / date / metrics / staleProjectIds，递增 `updatedAt`，审计 `review.update`），不重复建。**每次生成 = 新增一个归档版本**（时间序可查阅）；`/api/reviews/:id/remove` 删除（审计 `review.remove`）。
 
 > **可读性升级（v0.5 · Slice U，见 ADR-0013 §6）**：字段与归档语义**不变**，三点修订——① **同期口径**：进行中的周期对照上一周期**同等已走完长度**（月：本月 1..N 日 ↔ 上月 1..N 日，短月截断；周：本周至今 ↔ 上周同期），摘要以「上X同期」标注，窗口未满 7 天附【窗口说明】；② **去重**：第 6 段「下期行动」只留一行指针「见决策区（N 条）」，完整 if-then 仅在 `decisions`；③ **可读性**：清单「标题（id）」标题优先、百分比仅基准 ≥5、结论不以「窗口仅 N 天」开场。前端报告弹窗默认**阅读视图**（分节渲染，`src/lib/reviewReport.ts` 解析，「编辑」切换 textarea），报告历史只读复用同一视图。
+
+> **「迁移」瓦片移除（v0.5 · Slice Y，见 ADR-0021）**：`migrated` 生成流程**刻意不产出**（`computeMetricsForWindow` 只返回 captured / created / completed / overdue），报告面板的「迁移」瓦片长期恒显示 `—`，已从 `Review.tsx` `METRIC_LABELS` **移除**。`ReviewMetrics.migrated` 字段**保留**以兼容旧归档（`rev-0001` / `rev-0002` 含该值）；总览 W40 行在缺省时渲染 `—`（修复字面 `undefined`）。若日后落地「编辑追踪」需要，可重新引入该瓦片。
 
 ### 4.11 元数据
 

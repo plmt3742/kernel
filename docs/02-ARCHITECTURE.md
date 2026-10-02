@@ -87,6 +87,8 @@ v0.5 增补（Slice E2，见 ADR-0009）：可写实体通用编辑 `POST /api/<
 
 v0.5 增补（Slice G，见 ADR-0010）：通用笔记创建 `POST /api/notes`（title 非空 + `type` 白名单缺省 `memo`；`nextId` + `commit` + 审计 `note.create`；201），供总览「AI 对话归档」等调用；只读 AI 对话 `POST /api/ai/chat`（有界历史 + 读快照摘要，自然语言回答，不落盘）。
 
+v0.5 增补（Slice Y，见 ADR-0021）：**一致性清扫**。新增通用资料创建 `POST /api/resources`（`resourceCreateSchema`：`title` 必填；`kind`/`status` 缺省 `article`/`unread`；可选 `url`/`path`/`note`/`areaId`/`tags`；`areaId` 真实存在校验；标签规格化 + 登记 `origin:'manual'`；审计 `resource.create`；201），供资料页「新建资料」草稿确认流（创建可撤销 = 回收站 + 打开 `?resource=` 深链）。AI 收件箱 / 任务补全提示词的**情境列表改由标签注册表派生**（`contextNamesOf`；此前硬编码 5 个，遗漏 `@errands`/`@home`）。各 AI / 创建 / 澄清 schema 的 `importance` 统一放宽为 **0–3**（与 `taskSchema` / `docs/04` 对齐；存量 `t-0057`/`t-0058` 含 0）。无新增依赖。
+
 v0.5 增补（Slice H，见 ADR-0011）：任务快速新建 AI 补全 `POST /api/ai/task/draft { title }`（标题非空 400 / 有界 ≤200 字；读快照摘要 + 指令式 JSON + Zod + 单次重试；返回 `{ suggestion, model, ms }`，**不落盘**，health 503 / 失败 502）；通用编辑白名单扩充（见 ADR-0009 路径）——`notes` 增 `areaId/projectId/distillLevel`、`resources` 增 `areaId`、`projects` 增 `goalId/nextActionId`，使「已显示」的状态 / 字段全部可设。
 
 v0.5 增补（Slice O，见 ADR-0011 §6）：**先确认后写入**成为统一模式。`POST /api/tasks` 扩展——`title` 必填不变，接受可选白名单字段 `contexts/energy/importance/estimateMin/dueAt/projectId/areaId/tags`（`taskCreateFieldsSchema`，与澄清覆盖同口径），创建前校验 `projectId/areaId` 形状与存在性（臆造即 400），审计 `task.create` 的 `detail.fields`；仅传 `{title}` 的旧调用行为不变。前端任务快速新建改为**居中草稿确认弹窗**（打开即 `POST /api/ai/task/draft` 预填、全字段可编辑、点「创建任务」才经扩展后的 `POST /api/tasks` 落盘，确认前零写入）；收件箱 AI 建议卡亦增「编辑」，应用提交编辑值走既有 `clarify`（`details` + `ai:true`）。
