@@ -506,6 +506,34 @@
   align-items: center;
   gap: var(--space-2);
 }
+/* 行内 AI 状态标记（Slice J）：解析中 / 建议就绪——仅 token 表面阶，无渐变 / 发光。
+   跨路由切换后据此一眼可见，无需再次点击解析。 */
+.ic-row__ai {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  color: var(--accent-text);
+}
+.ic-row__ai.is-running {
+  animation: k-ai-pulse 1.6s var(--ease-standard) infinite;
+}
+@keyframes k-ai-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+.ic-row__ai-marker {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ic-row__ai.is-running {
+    animation: none;
+  }
+}
 /* 内联澄清子行：缩进对齐正文列（checkbox 1.2em + 序号 + 图标 + 行内间距，均取自组件度量）。
    Slice E2.6：顶部以外边距留出真实呼吸间距（--space-3 ≈ 12px），与上方条目行分开，
    不再"黏在一块"（内边距不会产生 box 间隙，故用 margin-top） */

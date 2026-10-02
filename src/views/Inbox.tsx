@@ -1,5 +1,14 @@
 // KERNEL · 收件箱 INBOX（P0）：快速捕捉 + 按捕捉日期分组浏览 + 多选批量澄清（v0.4：直写数据服务）
-import { useEffect, useRef, useState, type DragEvent as ReactDragEvent } from 'react'
+// Slice J：AI 解析状态提升至模块级 store（src/lib/inboxAi.ts）——批量任务跨路由切换存活，
+//   切页再回来仍见真实进度 / 「解析中…」/「AI 建议就绪」标记；批量动作据 running 禁用防重复启动。
+import {
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type DragEvent as ReactDragEvent,
+  type ReactNode,
+} from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { ArrowUp, Bell, ChevronRight, FileText, Mic, Paperclip, PenLine, Sparkles } from 'lucide-react'
 import { Panel } from '@/components/Panel'
@@ -10,16 +19,26 @@ import { EmptyState } from '@/components/EmptyState'
 import { useToast } from '@/context/ToastContext'
 import { getAreaById, getInbox, getProjectById, getTaskById } from '@/lib/data'
 import {
-  aiParseInboxStream,
   captureInbox,
   clarifyInbox,
   revertInbox,
   uploadInboxFile,
-  type AiParseResult,
   type AiSuggestion,
   type ClarifyDetails,
   type ClarifyTarget,
 } from '@/lib/mutations'
+import {
+  clearInboxAiActive,
+  getCachedSuggestion,
+  getInboxAiSnapshot,
+  reconcileInboxAiCache,
+  runSingleAi,
+  startBatchAi,
+  subscribeInboxAi,
+  takeInboxAiCompletion,
+  takeInboxAiFailures,
+  type AiStage,
+} from '@/lib/inboxAi'
 import { errorText } from '@/lib/api'
 import { useDataRevision, useNow } from '@/lib/hooks'
 import { ENERGY_LABEL, humanSize, INBOX_SOURCE_LABEL, tagLabel } from '@/lib/format'
@@ -61,8 +80,7 @@ const AI_TARGET_LABEL: Record<AiSuggestion['target'], string> = {
   discard: '丢弃',
 }
 
-// 解析过程阶段（由 SSE 事件驱动；文案安静、不夸大）
-type AiStage = 'connecting' | 'thinking' | 'generating' | 'retry' | 'validating'
+// 解析过程阶段文案（由 SSE 事件驱动；安静、不夸大）
 const AI_STAGE_TEXT: Record<AiStage, string> = {
   connecting: '已连接，等待模型…',
   thinking: '思考中…',
@@ -70,16 +88,6 @@ const AI_STAGE_TEXT: Record<AiStage, string> = {
   retry: '输出未通过校验，重试中…',
   validating: '校验通过',
 }
-// 实时预览保留的尾部字符数
-const AI_PREVIEW_MAX = 240
-
-/**
- * 单条 AI 建议缓存（Slice E1）：模块级 Map，跨路由切换存活于本会话。
- * - 收起 / 切换条目后再次展开：直接命中缓存 → 就绪卡（不重解析、无阶段文案）。
- * - 条目离开未澄清列表（应用 / 撤销 / 水合对账）：删除其缓存。
- * - 「重新解析」：强制覆盖该条缓存。
- */
-const aiSuggestionCache = new Map<string, AiParseResult>()
 
 /** 由 AI 建议构造澄清覆盖字段（discard 无需 details；仅取已定义字段） */
 function toClarifyDetails(suggestion: AiSuggestion): ClarifyDetails | undefined {
@@ -98,6 +106,95 @@ function toClarifyDetails(suggestion: AiSuggestion): ClarifyDetails | undefined 
     if (suggestion.areaId !== undefined) details.areaId = suggestion.areaId
   }
   return details
+}
+
+/** AI 就绪建议卡（应用 / 重新解析 / 忽略；关联信息按 id 查快照，仅提示不自动合并） */
+function AiReadyCard({
+  suggestion,
+  now,
+  onApply,
+  onRetry,
+  retryDisabled,
+  onClear,
+}: {
+  suggestion: AiSuggestion
+  now: Date
+  onApply: () => void
+  onRetry: () => void
+  retryDisabled: boolean
+  onClear: () => void
+}): ReactNode {
+  const project =
+    suggestion.projectId !== undefined ? getProjectById(suggestion.projectId) : undefined
+  const area = suggestion.areaId !== undefined ? getAreaById(suggestion.areaId) : undefined
+  const duplicate =
+    suggestion.duplicateOf !== undefined ? getTaskById(suggestion.duplicateOf) : undefined
+  const newProjectHint = suggestion.newProjectHint
+  const hasLinks =
+    project !== undefined ||
+    area !== undefined ||
+    duplicate !== undefined ||
+    newProjectHint !== undefined ||
+    suggestion.tags.length > 0
+  return (
+    <>
+      <div className="ic-ai__head">
+        <span className="k-pill">{AI_TARGET_LABEL[suggestion.target]}</span>
+        <span className="ic-ai__title">{suggestion.title}</span>
+      </div>
+      <div className="ic-ai__meta">
+        {suggestion.contexts.map((ctx) => (
+          <TagPill key={ctx}>{ctx}</TagPill>
+        ))}
+        <span className="k-pill">{ENERGY_LABEL[suggestion.energy]}能</span>
+        <span className="k-pill">重要性 {suggestion.importance}/3</span>
+        {suggestion.estimateMin !== undefined && (
+          <span className="k-pill">≈{suggestion.estimateMin} 分钟</span>
+        )}
+        {suggestion.dueAt !== undefined && (
+          <span className="k-pill">
+            截止 {humanizeDay(suggestion.dueAt, now)} {formatTime(suggestion.dueAt)}
+          </span>
+        )}
+      </div>
+      <p className="ic-ai__reason">{suggestion.reason}</p>
+      {hasLinks && (
+        <div className="ic-ai__links">
+          {project !== undefined && <span className="k-pill">建议挂到 {project.title}</span>}
+          {newProjectHint !== undefined && (
+            <>
+              <span className="k-pill">建议新项目：{newProjectHint}</span>
+              <span className="ic-ai__dup">可到项目页新建</span>
+            </>
+          )}
+          {area !== undefined && <span className="k-pill">建议归入 {area.title}</span>}
+          {suggestion.tags.map((tag) => (
+            <TagPill key={tag}>{tagLabel(tag)}</TagPill>
+          ))}
+          {duplicate !== undefined && (
+            <span className="ic-ai__dup">疑似与「{duplicate.title}」重复</span>
+          )}
+        </div>
+      )}
+      <div className="ic-ai__actions">
+        <button type="button" className="k-btn is-solid" onClick={onApply}>
+          应用建议
+        </button>
+        <button
+          type="button"
+          className="k-pill is-ghost"
+          disabled={retryDisabled}
+          onClick={onRetry}
+          title="丢弃本条缓存，重新请求一次解析"
+        >
+          重新解析
+        </button>
+        <button type="button" className="k-btn" onClick={onClear}>
+          忽略
+        </button>
+      </div>
+    </>
+  )
 }
 
 // 日期分组：今天 / 昨天 / 更早（按 capturedAt 的日历日相对今天）
@@ -124,28 +221,15 @@ export function Inbox() {
   // 多选：未澄清项 id 集合；展开：当前内联展开的单条 id
   const [selected, setSelected] = useState<Set<string>>(() => new Set())
   const [expandedId, setExpandedId] = useState<string | null>(null)
-  // AI 解析：同一时刻仅一条活跃流（aiReqRef 防止旧请求迟到覆盖）
-  const [aiFor, setAiFor] = useState<string | null>(null)
-  const [aiPhase, setAiPhase] = useState<'parsing' | 'ready' | 'error'>('parsing')
-  const [aiResult, setAiResult] = useState<AiParseResult | null>(null)
-  const [aiError, setAiError] = useState('')
-  // 过程可视：阶段 + 流式增量（text / reasoning 分开累积，保留尾部）
-  const [aiStage, setAiStage] = useState<AiStage>('connecting')
-  const [aiText, setAiText] = useState('')
-  const [aiReasoning, setAiReasoning] = useState('')
-  const aiReqRef = useRef(0)
-  // 流式增量节流（Slice E2.6）：delta 先入 ref 缓冲，~100ms 节流 flush 到 React state，
-  // 避免逐 delta 重渲染导致过程面板与下方元素频繁抖动；尾部字符上限沿用 AI_PREVIEW_MAX。
-  const deltaBufRef = useRef<{ text: string; reasoning: string }>({ text: '', reasoning: '' })
-  const deltaTimerRef = useRef<number | null>(null)
+  // AI 解析状态：模块级 store（跨路由切换存活）——只读快照 + 派发展开 / 滚动 / 播报
+  const ai = useSyncExternalStore(subscribeInboxAi, getInboxAiSnapshot)
+  const { running, current, total, activeId, phase, stage, text, reasoning, result, error } = ai
   // 文件投递（Slice D）：待上传队列 + 拖拽态 + 上传/解析状态播报
   const fileInputRef = useRef<HTMLInputElement>(null)
   const dragDepth = useRef(0)
   const [pendingFiles, setPendingFiles] = useState<File[]>([])
   const [dragOver, setDragOver] = useState(false)
   const [busyLabel, setBusyLabel] = useState('')
-  // 批量 AI 解析进度（Slice E1）：非空即运行中，期间禁用批量动作防重叠
-  const [batchAi, setBatchAi] = useState<{ current: number; total: number } | null>(null)
   // 批量条侧挂 dock（Slice E2.5）：内联批量条滚出视口时为 true；dock 镜像其状态与动作
   const batchBarRef = useRef<HTMLDivElement>(null)
   const [barVisible, setBarVisible] = useState(true)
@@ -179,35 +263,53 @@ export function Inbox() {
     })
   }, [revision])
 
-  // 条目离开未澄清列表（应用建议 / 撤销 / 水合）后收起 AI 流，避免残留脏状态
+  // 活跃条目离开未澄清列表（应用建议 / 撤销 / 水合）→ 收起面板，避免残留脏状态
   useEffect(() => {
-    if (aiFor === null) return
+    if (activeId === null) return
     const stillUnprocessed = getInbox().some(
-      (item) => item.id === aiFor && item.status === 'unprocessed',
+      (item) => item.id === activeId && item.status === 'unprocessed',
     )
-    if (!stillUnprocessed) {
-      aiReqRef.current += 1
-      setAiFor(null)
-      setAiResult(null)
-      setAiError('')
-      setAiStage('connecting')
-      setAiText('')
-      setAiReasoning('')
-    }
-  }, [revision, aiFor])
+    if (!stillUnprocessed) clearInboxAiActive()
+  }, [revision, activeId])
 
-  // AI 建议缓存对账（Slice E1）：条目一旦离开未澄清列表即删除其缓存（应用 / 撤销 / 水合）
+  // 建议缓存对账：条目一旦离开未澄清列表即删除其缓存（应用 / 撤销 / 水合）
   useEffect(() => {
-    if (aiSuggestionCache.size === 0) return
     const unprocessedIds = new Set(
       getInbox()
         .filter((item) => item.status === 'unprocessed')
         .map((item) => item.id),
     )
-    for (const id of [...aiSuggestionCache.keys()]) {
-      if (!unprocessedIds.has(id)) aiSuggestionCache.delete(id)
-    }
+    reconcileInboxAiCache(unprocessedIds)
   }, [revision])
+
+  // 批量运行中自动展开当前条目（切页回来亦据真实 store 恢复现场）
+  useEffect(() => {
+    if (running && activeId !== null) setExpandedId(activeId)
+  }, [running, activeId])
+
+  // 批量解析过程可视：当前解析条目若不在视口内，轻柔滚入（尊重 reduced-motion → 瞬时）
+  useEffect(() => {
+    if (!running || activeId === null) return
+    const node = document.querySelector(`.ic-item[data-inbox-id="${CSS.escape(activeId)}"]`)
+    if (node instanceof HTMLElement) {
+      node.scrollIntoView({
+        behavior: reduce === true ? 'auto' : 'smooth',
+        block: 'nearest',
+      })
+    }
+  }, [running, activeId, reduce])
+
+  // 完成 / 失败播报（各消费一次，绝不刷屏）：切页期间也会在回到收件箱时补播
+  useEffect(() => {
+    if (ai.pendingCompletion > 0) {
+      const done = takeInboxAiCompletion()
+      if (done > 0) toast(`AI 解析完成 · ${done} 条建议已就绪`)
+    }
+    if (ai.pendingFailures > 0) {
+      const failed = takeInboxAiFailures()
+      if (failed > 0) toast(`AI 解析：${failed} 条失败，已跳过`, { tone: 'error' })
+    }
+  }, [ai.pendingCompletion, ai.pendingFailures, toast])
 
   const merged = [...getInbox()].sort(
     (a, b) => new Date(b.capturedAt).getTime() - new Date(a.capturedAt).getTime(),
@@ -227,26 +329,6 @@ export function Inbox() {
     observer.observe(node)
     return () => observer.disconnect()
   }, [unprocessed.length])
-
-  // 批量解析过程可视（Slice E2.6）：当前解析条目若不在视口内，轻柔滚入（尊重 reduced-motion → 瞬时）
-  useEffect(() => {
-    if (batchAi === null || aiFor === null) return
-    const node = document.querySelector(`.ic-item[data-inbox-id="${CSS.escape(aiFor)}"]`)
-    if (node instanceof HTMLElement) {
-      node.scrollIntoView({
-        behavior: reduce === true ? 'auto' : 'smooth',
-        block: 'nearest',
-      })
-    }
-  }, [batchAi, aiFor, reduce])
-
-  // 流式增量定时器卸载清理（避免离开页面后仍触发 setState）
-  useEffect(
-    () => () => {
-      if (deltaTimerRef.current !== null) window.clearTimeout(deltaTimerRef.current)
-    },
-    [],
-  )
 
   // 行序号（全局顺序，仅展示层派生，不落盘）
   const ordinal = new Map<string, number>()
@@ -270,22 +352,6 @@ export function Inbox() {
   }
 
   const allSelected = unprocessed.length > 0 && unprocessed.every((item) => selected.has(item.id))
-
-  // AI 建议的关联展示（按 id 查快照；仅提示，绝不自动合并 / 落盘）
-  const aiSuggestion = aiResult?.suggestion ?? null
-  const aiProject =
-    aiSuggestion?.projectId !== undefined ? getProjectById(aiSuggestion.projectId) : undefined
-  const aiArea =
-    aiSuggestion?.areaId !== undefined ? getAreaById(aiSuggestion.areaId) : undefined
-  const aiDuplicate =
-    aiSuggestion?.duplicateOf !== undefined ? getTaskById(aiSuggestion.duplicateOf) : undefined
-  const aiNewProjectHint = aiSuggestion?.newProjectHint
-  const aiHasLinks =
-    aiProject !== undefined ||
-    aiArea !== undefined ||
-    aiDuplicate !== undefined ||
-    aiNewProjectHint !== undefined ||
-    (aiSuggestion?.tags.length ?? 0) > 0
 
   const captureText = (): void => {
     const value = draft.trim()
@@ -358,138 +424,33 @@ export function Inbox() {
     })()
   }
 
-  // 清空流式增量缓冲并取消待 flush（切换条目 / 清空 / 出错时调用）
-  const resetDeltas = (): void => {
-    if (deltaTimerRef.current !== null) {
-      window.clearTimeout(deltaTimerRef.current)
-      deltaTimerRef.current = null
-    }
-    deltaBufRef.current.text = ''
-    deltaBufRef.current.reasoning = ''
-  }
-
-  // 把缓冲的增量一次性写入 state（保留尾部）；成功 / 重试 / 出错前做最终 flush
-  const flushDeltas = (): void => {
-    if (deltaTimerRef.current !== null) {
-      window.clearTimeout(deltaTimerRef.current)
-      deltaTimerRef.current = null
-    }
-    const text = deltaBufRef.current.text
-    const reasoning = deltaBufRef.current.reasoning
-    deltaBufRef.current.text = ''
-    deltaBufRef.current.reasoning = ''
-    if (text !== '') setAiText(text.slice(-AI_PREVIEW_MAX))
-    if (reasoning !== '') setAiReasoning(reasoning.slice(-AI_PREVIEW_MAX))
-  }
-
-  // 增量入缓冲（尾部截断）；首个增量触发一次 ~100ms 节流窗口
-  const pushDelta = (field: string, delta: string): void => {
-    const buf = deltaBufRef.current
-    if (field === 'reasoning') buf.reasoning = (buf.reasoning + delta).slice(-AI_PREVIEW_MAX)
-    else if (field === 'text') buf.text = (buf.text + delta).slice(-AI_PREVIEW_MAX)
-    else return
-    if (deltaTimerRef.current === null) {
-      deltaTimerRef.current = window.setTimeout(flushDeltas, 100)
-    }
-  }
-
-  // 清空 AI 流并作废在途请求（旧响应迟到不再落状态）
-  const clearAi = (): void => {
-    aiReqRef.current += 1
-    resetDeltas()
-    setAiFor(null)
-    setAiResult(null)
-    setAiError('')
-    setAiStage('connecting')
-    setAiText('')
-    setAiReasoning('')
-  }
-
-  // 展开 / 收起：收起时停止 AI 流（保留缓存）；展开时命中缓存直接显示就绪卡（不重解析）
+  // 展开 / 收起：收起时清空面板（保留缓存）。批量运行中不打断活跃批次的解析，仅切换显示
   const toggleExpand = (id: string): void => {
     const next = expandedId === id ? null : id
-    clearAi()
-    if (next !== null) {
-      const cached = aiSuggestionCache.get(next)
-      if (cached !== undefined) {
-        setAiFor(next)
-        setAiPhase('ready')
-        setAiResult(cached)
-      }
-    }
+    if (!(running && activeId === id)) clearInboxAiActive()
     setExpandedId(next)
   }
 
-  // 运行 AI 解析（流式；同一时刻仅一条活跃流）；失败置错误态并抛出（自动流程据此 toast 后继续）
+  // 运行 AI 解析：缓存命中则直接展开就绪卡（不重解析）；无缓存才发起流式解析。
+  // 强制重新解析走 forceParse（「重新解析」/「重试」）。失败抛出由调用方提示。
   const runParse = async (item: InboxItem): Promise<void> => {
-    const req = (aiReqRef.current += 1)
-    resetDeltas()
     setExpandedId(item.id)
-    setAiFor(item.id)
-    setAiPhase('parsing')
-    setAiResult(null)
-    setAiError('')
-    setAiStage('connecting')
-    setAiText('')
-    setAiReasoning('')
-    try {
-      const result = await aiParseInboxStream(item.id, (event) => {
-        if (aiReqRef.current !== req) return
-        if (event.kind === 'status') {
-          if (event.status === 'busy') {
-            setAiStage((prev) => (prev === 'connecting' ? 'thinking' : prev))
-          }
-        } else if (event.kind === 'delta') {
-          pushDelta(event.field, event.delta)
-          if (event.field === 'reasoning') {
-            setAiStage((prev) => (prev === 'generating' ? prev : 'thinking'))
-          } else if (event.field === 'text') {
-            setAiStage('generating')
-          }
-        } else if (event.kind === 'retry') {
-          flushDeltas()
-          setAiStage('retry')
-        } else if (event.kind === 'suggestion') {
-          flushDeltas()
-          setAiStage('validating')
-        }
-      })
-      if (aiReqRef.current !== req) return
-      flushDeltas()
-      aiSuggestionCache.set(item.id, result)
-      setAiResult(result)
-      setAiPhase('ready')
-    } catch (err) {
-      if (aiReqRef.current !== req) return
-      flushDeltas()
-      setAiError(errorText(err))
-      setAiPhase('error')
-      throw err
-    }
+    const cached = getCachedSuggestion(item.id)
+    if (cached !== undefined && !(activeId === item.id && phase === 'parsing')) return
+    await runSingleAi(item)
   }
 
-  // 批量 AI 解析（Slice E1 + E2.6）：顺序解析选中项、进度可见、失败续跑；绝不自动应用。
-  // E2.6：复用单条流式路径 runParse —— 当前条目自动展开并显示实时过程面板（阶段 + 增量预览），
-  // 上一条随之收起；完成后其建议入缓存（再次展开命中缓存瞬时呈现）。末尾条目保持展开显示就绪卡。
+  // 强制重新解析（丢弃展示缓存，重新请求一次；失败静默，错误态由面板承载）
+  const forceParse = (item: InboxItem): void => {
+    setExpandedId(item.id)
+    void runSingleAi(item).catch(() => {})
+  }
+
+  // 批量 AI 解析（Slice E1 + E2.6 + J）：模块级顺序解析、进度可见、失败续跑；绝不自动应用。
   const runBatchAi = (): void => {
     const ids = [...selected]
     if (ids.length === 0) return
-    void (async () => {
-      let succeeded = 0
-      for (let i = 0; i < ids.length; i += 1) {
-        setBatchAi({ current: i + 1, total: ids.length })
-        const item = getInbox().find((candidate) => candidate.id === ids[i])
-        if (item === undefined || item.status !== 'unprocessed') continue
-        try {
-          await runParse(item)
-          succeeded += 1
-        } catch (err) {
-          toast(`AI 解析失败：${errorText(err)}`, { tone: 'error' })
-        }
-      }
-      setBatchAi(null)
-      if (succeeded > 0) toast(`AI 解析完成 · ${succeeded} 条建议已就绪`)
-    })()
+    void startBatchAi(ids)
   }
 
   // 发送（DeepSeek 式）：无文件 → 文本捕捉；有文件 → 逐个上传（caption = 当前输入）→ 逐个自动 AI 先读
@@ -541,8 +502,7 @@ export function Inbox() {
           suggestion.target,
           details === undefined ? { ai: true } : { ai: true, details },
         )
-        aiSuggestionCache.delete(item.id)
-        clearAi()
+        clearInboxAiActive()
         toast(label, {
           action: {
             label: '撤销',
@@ -743,15 +703,15 @@ export function Inbox() {
             </span>
             <span className="u-label k-muted">共 {unprocessed.length} 项未澄清</span>
             <div className="ic-batchbar__actions">
-              {batchAi !== null && (
+              {running && (
                 <span className="ic-batchbar__progress u-label" role="status" aria-live="polite">
-                  AI 解析中 {batchAi.current}/{batchAi.total}…
+                  AI 解析中 {current}/{total}…
                 </span>
               )}
               <button
                 type="button"
                 className="k-btn"
-                disabled={selected.size === 0 || batchAi !== null}
+                disabled={selected.size === 0 || running}
                 onClick={runBatchAi}
               >
                 批量 AI 解析
@@ -759,7 +719,7 @@ export function Inbox() {
               <button
                 type="button"
                 className="k-btn is-solid"
-                disabled={selected.size === 0 || batchAi !== null}
+                disabled={selected.size === 0 || running}
                 onClick={() => runBatch('task', '澄清', (n) => `已批量创建 ${n} 条任务`)}
               >
                 批量 → 任务
@@ -767,7 +727,7 @@ export function Inbox() {
               <button
                 type="button"
                 className="k-btn"
-                disabled={selected.size === 0 || batchAi !== null}
+                disabled={selected.size === 0 || running}
                 onClick={() => runBatch('discard', '丢弃', (n) => `已批量丢弃 ${n} 条`)}
               >
                 批量丢弃
@@ -775,7 +735,7 @@ export function Inbox() {
               <button
                 type="button"
                 className="k-btn"
-                disabled={selected.size === 0 || batchAi !== null}
+                disabled={selected.size === 0 || running}
                 onClick={() => setSelected(new Set())}
               >
                 取消选择
@@ -798,6 +758,21 @@ export function Inbox() {
                       const Icon = item.file !== undefined ? FileText : SOURCE_ICON[item.source]
                       const isSelected = selected.has(item.id)
                       const isExpanded = expandedId === item.id
+                      const cached = getCachedSuggestion(item.id)
+                      const isParsingThis = activeId === item.id && phase === 'parsing'
+                      const panelActive = activeId === item.id && phase !== 'idle'
+                      const panelPhase = panelActive
+                        ? phase
+                        : cached !== undefined
+                          ? 'ready'
+                          : 'idle'
+                      const panelResult = panelActive ? result : (cached ?? null)
+                      const panelError = panelActive ? error : ''
+                      const panelStage = panelActive ? stage : 'connecting'
+                      const panelText = panelActive ? text : ''
+                      const panelReasoning = panelActive ? reasoning : ''
+                      const showPanel = panelActive || cached !== undefined
+                      const showMarker = cached !== undefined && !isParsingThis
                       return (
                         <motion.div
                           className="ic-item"
@@ -839,6 +814,20 @@ export function Inbox() {
                               </span>
                             </span>
                             <span className="ic-row__tail">
+                              {isParsingThis && (
+                                <span
+                                  className="ic-row__ai is-running u-label"
+                                  role="status"
+                                  aria-live="polite"
+                                >
+                                  解析中…
+                                </span>
+                              )}
+                              {showMarker && (
+                                <span className="k-pill is-ghost ic-row__ai-marker">
+                                  AI 建议就绪
+                                </span>
+                              )}
                               <button
                                 type="button"
                                 className={isExpanded ? 'k-pill' : 'k-pill is-ghost'}
@@ -869,10 +858,8 @@ export function Inbox() {
                                   onClick={() => {
                                     void runParse(item).catch(() => {})
                                   }}
-                                  disabled={
-                                    (aiFor === item.id && aiPhase === 'parsing') || batchAi !== null
-                                  }
-                                  aria-busy={aiFor === item.id && aiPhase === 'parsing'}
+                                  disabled={isParsingThis || running}
+                                  aria-busy={isParsingThis}
                                   title="让本地 AI 解析为结构化建议（仅建议，确认后写入）"
                                 >
                                   <Sparkles size={12} strokeWidth={1.5} aria-hidden />
@@ -887,135 +874,61 @@ export function Inbox() {
                                   </TagPill>
                                 ))}
                               </div>
-                              {aiFor === item.id && (
+                              {showPanel && (
                                 <div
-                                  key={aiPhase}
-                                  className={aiPhase === 'error' ? 'ic-ai is-error' : 'ic-ai'}
+                                  key={panelPhase}
+                                  className={panelPhase === 'error' ? 'ic-ai is-error' : 'ic-ai'}
                                   aria-live="polite"
                                 >
-                                  {aiPhase === 'parsing' && (
+                                  {panelPhase === 'parsing' && (
                                     <div className="ic-ai__process">
-                                      <span className="ic-ai__stage" title={AI_STAGE_TEXT[aiStage]}>
-                                        {AI_STAGE_TEXT[aiStage]}
+                                      <span className="ic-ai__stage" title={AI_STAGE_TEXT[panelStage]}>
+                                        {AI_STAGE_TEXT[panelStage]}
                                       </span>
                                       <p
                                         className={
-                                          aiText === '' && aiReasoning !== ''
+                                          panelText === '' && panelReasoning !== ''
                                             ? 'ic-ai__stream is-dim'
                                             : 'ic-ai__stream'
                                         }
                                       >
-                                        {aiText !== '' ? aiText : aiReasoning}
+                                        {panelText !== '' ? panelText : panelReasoning}
                                       </p>
                                     </div>
                                   )}
-                                  {aiPhase === 'error' && (
+                                  {panelPhase === 'error' && (
                                     <>
                                       <div className="ic-ai__head">
                                         <span className="ic-ai__title">解析失败</span>
                                       </div>
-                                      <p className="ic-ai__reason">{aiError}</p>
+                                      <p className="ic-ai__reason">{panelError}</p>
                                       <div className="ic-ai__actions">
                                         <button
                                           type="button"
                                           className="k-pill is-ghost"
-                                          onClick={() => {
-                                            void runParse(item).catch(() => {})
-                                          }}
+                                          onClick={() => forceParse(item)}
                                         >
                                           重试
                                         </button>
                                         <button
                                           type="button"
                                           className="k-pill is-ghost"
-                                          onClick={clearAi}
+                                          onClick={clearInboxAiActive}
                                         >
                                           忽略
                                         </button>
                                       </div>
                                     </>
                                   )}
-                                  {aiPhase === 'ready' && aiResult !== null && (
-                                    <>
-                                      <div className="ic-ai__head">
-                                        <span className="k-pill">
-                                          {AI_TARGET_LABEL[aiResult.suggestion.target]}
-                                        </span>
-                                        <span className="ic-ai__title">{aiResult.suggestion.title}</span>
-                                      </div>
-                                      <div className="ic-ai__meta">
-                                        {aiResult.suggestion.contexts.map((ctx) => (
-                                          <TagPill key={ctx}>{ctx}</TagPill>
-                                        ))}
-                                        <span className="k-pill">
-                                          {ENERGY_LABEL[aiResult.suggestion.energy]}能
-                                        </span>
-                                        <span className="k-pill">
-                                          重要性 {aiResult.suggestion.importance}/3
-                                        </span>
-                                        {aiResult.suggestion.estimateMin !== undefined && (
-                                          <span className="k-pill">
-                                            ≈{aiResult.suggestion.estimateMin} 分钟
-                                          </span>
-                                        )}
-                                        {aiResult.suggestion.dueAt !== undefined && (
-                                          <span className="k-pill">
-                                            截止 {humanizeDay(aiResult.suggestion.dueAt, now)}{' '}
-                                            {formatTime(aiResult.suggestion.dueAt)}
-                                          </span>
-                                        )}
-                                      </div>
-                                      <p className="ic-ai__reason">{aiResult.suggestion.reason}</p>
-                                      {aiHasLinks && (
-                                        <div className="ic-ai__links">
-                                          {aiProject !== undefined && (
-                                            <span className="k-pill">建议挂到 {aiProject.title}</span>
-                                          )}
-                                          {aiNewProjectHint !== undefined && (
-                                            <>
-                                              <span className="k-pill">
-                                                建议新项目：{aiNewProjectHint}
-                                              </span>
-                                              <span className="ic-ai__dup">可到项目页新建</span>
-                                            </>
-                                          )}
-                                          {aiArea !== undefined && (
-                                            <span className="k-pill">建议归入 {aiArea.title}</span>
-                                          )}
-                                          {(aiSuggestion?.tags ?? []).map((tag) => (
-                                            <TagPill key={tag}>{tagLabel(tag)}</TagPill>
-                                          ))}
-                                          {aiDuplicate !== undefined && (
-                                            <span className="ic-ai__dup">
-                                              疑似与「{aiDuplicate.title}」重复
-                                            </span>
-                                          )}
-                                        </div>
-                                      )}
-                                      <div className="ic-ai__actions">
-                                        <button
-                                          type="button"
-                                          className="k-btn is-solid"
-                                          onClick={() => applyAi(item, aiResult.suggestion)}
-                                        >
-                                          应用建议
-                                        </button>
-                                        <button
-                                          type="button"
-                                          className="k-pill is-ghost"
-                                          disabled={batchAi !== null}
-                                          onClick={() => {
-                                            void runParse(item).catch(() => {})
-                                          }}
-                                          title="丢弃本条缓存，重新请求一次解析"
-                                        >
-                                          重新解析
-                                        </button>
-                                        <button type="button" className="k-btn" onClick={clearAi}>
-                                          忽略
-                                        </button>
-                                      </div>
-                                    </>
+                                  {panelPhase === 'ready' && panelResult !== null && (
+                                    <AiReadyCard
+                                      suggestion={panelResult.suggestion}
+                                      now={now}
+                                      onApply={() => applyAi(item, panelResult.suggestion)}
+                                      onRetry={() => forceParse(item)}
+                                      retryDisabled={running}
+                                      onClear={clearInboxAiActive}
+                                    />
                                   )}
                                 </div>
                               )}
@@ -1103,15 +1016,15 @@ export function Inbox() {
                 <span className="ic-dock__count">
                   <b>{selected.size}</b> 项已选
                 </span>
-                {batchAi !== null && (
+                {running && (
                   <span className="ic-dock__progress u-label" role="status" aria-live="polite">
-                    AI 解析中 {batchAi.current}/{batchAi.total}…
+                    AI 解析中 {current}/{total}…
                   </span>
                 )}
                 <button
                   type="button"
                   className="k-btn k-btn--sm"
-                  disabled={selected.size === 0 || batchAi !== null}
+                  disabled={selected.size === 0 || running}
                   onClick={runBatchAi}
                 >
                   批量 AI 解析
@@ -1119,7 +1032,7 @@ export function Inbox() {
                 <button
                   type="button"
                   className="k-btn k-btn--sm is-solid"
-                  disabled={selected.size === 0 || batchAi !== null}
+                  disabled={selected.size === 0 || running}
                   onClick={() => runBatch('task', '澄清', (n) => `已批量创建 ${n} 条任务`)}
                 >
                   批量 → 任务
@@ -1127,7 +1040,7 @@ export function Inbox() {
                 <button
                   type="button"
                   className="k-btn k-btn--sm"
-                  disabled={selected.size === 0 || batchAi !== null}
+                  disabled={selected.size === 0 || running}
                   onClick={() => runBatch('discard', '丢弃', (n) => `已批量丢弃 ${n} 条`)}
                 >
                   批量丢弃
@@ -1135,7 +1048,7 @@ export function Inbox() {
                 <button
                   type="button"
                   className="k-btn k-btn--sm"
-                  disabled={selected.size === 0 || batchAi !== null}
+                  disabled={selected.size === 0 || running}
                   onClick={() => setSelected(new Set())}
                 >
                   取消选择

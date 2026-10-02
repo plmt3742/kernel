@@ -6,6 +6,7 @@
 import { createOpencodeClient } from '@opencode-ai/sdk/v2'
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
+import zlib from 'node:zlib'
 import { aiSuggestionSchema, reviewDraftSchema, taskDraftSchema } from './schemas.mjs'
 import { DATA_DIR, readActivity, readSnapshot } from './store.mjs'
 
@@ -122,10 +123,148 @@ const TEXT_EXTS = new Set([
   '.js', '.mjs', '.ts', '.tsx', '.jsx', '.py', '.java', '.c', '.cpp', '.h', '.hpp',
   '.css', '.html', '.xml', '.sql', '.sh', '.bat', '.ps1',
 ])
+/** 可抽取文本的 Office Open XML 扩展名（Slice J：docx / pptx / xlsx 二进制 docx 即 ZIP） */
+const OOXML_EXTS = new Set(['.docx', '.pptx', '.xlsx'])
 /** 摘录上限：≤5MB 且扩展名/mime 判定为文本时，读前 8000 字（else 仅给元数据） */
 const FILE_EXCERPT_MAX_BYTES = 5 * 1024 * 1024
 const FILE_EXCERPT_CHARS = 8000
 const FILE_UNREADABLE_HINT = '——无法直接读取内容，请依据文件名与上下文判断'
+
+/* ---------------------------------------------------------------------------
+ * Office Open XML 文本抽取（Slice J）：无新依赖
+ * - 最小 ZIP 读取器：解析 EOCD + 中央目录；method 8 → inflateRawSync，method 0 → 原文。
+ * - .docx → word/document.xml；.pptx → ppt/slides/slideN.xml（数字排序）；
+ *   .xlsx → xl/sharedStrings.xml。剥标签 + 解实体 + 归一空白。
+ * - 任何异常 → 上层回退 FILE_UNREADABLE_HINT（5MB 上限沿用）。
+ * ------------------------------------------------------------------------- */
+const ZIP_EOCD_SIG = 0x06054b50
+const ZIP_CD_SIG = 0x02014b50
+const ZIP_LF_SIG = 0x04034b50
+
+/** 解析 ZIP 中央目录，返回 name → { method, compSize, localOffset } */
+function readZipEntries(buf) {
+  let eocd = -1
+  const minEocd = Math.max(0, buf.length - (22 + 0xffff))
+  for (let i = buf.length - 22; i >= minEocd; i -= 1) {
+    if (buf.readUInt32LE(i) === ZIP_EOCD_SIG) {
+      eocd = i
+      break
+    }
+  }
+  if (eocd < 0) throw new Error('ZIP: 未找到中央目录结尾')
+  const count = buf.readUInt16LE(eocd + 10)
+  let offset = buf.readUInt32LE(eocd + 16)
+  const entries = new Map()
+  for (let i = 0; i < count; i += 1) {
+    if (offset + 46 > buf.length || buf.readUInt32LE(offset) !== ZIP_CD_SIG) {
+      throw new Error('ZIP: 中央目录项损坏')
+    }
+    const method = buf.readUInt16LE(offset + 10)
+    const compSize = buf.readUInt32LE(offset + 20)
+    const nameLen = buf.readUInt16LE(offset + 28)
+    const extraLen = buf.readUInt16LE(offset + 30)
+    const commentLen = buf.readUInt16LE(offset + 32)
+    const localOffset = buf.readUInt32LE(offset + 42)
+    if (compSize === 0xffffffff || localOffset === 0xffffffff) {
+      throw new Error('ZIP: 不支持 ZIP64')
+    }
+    const name = buf.toString('utf8', offset + 46, offset + 46 + nameLen)
+    entries.set(name, { method, compSize, localOffset })
+    offset += 46 + nameLen + extraLen + commentLen
+  }
+  return entries
+}
+
+/** 读取单个 ZIP 条目并解压（method 0 原文 / method 8 raw deflate） */
+function readZipEntry(buf, entry) {
+  const lo = entry.localOffset
+  if (lo + 30 > buf.length || buf.readUInt32LE(lo) !== ZIP_LF_SIG) {
+    throw new Error('ZIP: 本地头损坏')
+  }
+  const nameLen = buf.readUInt16LE(lo + 26)
+  const extraLen = buf.readUInt16LE(lo + 28)
+  const start = lo + 30 + nameLen + extraLen
+  const data = buf.subarray(start, start + entry.compSize)
+  if (entry.method === 0) return data
+  if (entry.method === 8) {
+    return zlib.inflateRawSync(data, { maxOutputLength: FILE_EXCERPT_MAX_BYTES * 8 })
+  }
+  throw new Error(`ZIP: 不支持的压缩方法 ${entry.method}`)
+}
+
+const XML_ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" }
+
+/** 解 XML 实体（命名 + 十进制 / 十六进制数字引用） */
+function decodeXmlEntities(text) {
+  return text.replace(/&(#[0-9]+|#x[0-9a-fA-F]+|[a-zA-Z][a-zA-Z0-9]*);/g, (match, body) => {
+    if (body[0] === '#') {
+      const code =
+        body[1] === 'x' || body[1] === 'X'
+          ? Number.parseInt(body.slice(2), 16)
+          : Number.parseInt(body.slice(1), 10)
+      try {
+        return String.fromCodePoint(code)
+      } catch {
+        return match
+      }
+    }
+    return Object.prototype.hasOwnProperty.call(XML_ENTITIES, body) ? XML_ENTITIES[body] : match
+  })
+}
+
+/** XML → 纯文本：段落 / 换行 / 制表转为可读分隔，剥标签，解实体，归一空白 */
+function xmlToText(xml) {
+  const withBreaks = xml
+    .replace(/<w:tab\b[^>]*\/>/g, '\t')
+    .replace(/<w:br\b[^>]*\/>/g, '\n')
+    .replace(/<\/w:p>/g, '\n')
+    .replace(/<\/a:p>/g, '\n')
+    .replace(/<\/si>/g, '\n')
+  const stripped = withBreaks.replace(/<[^>]*>/g, '')
+  return decodeXmlEntities(stripped)
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .map((line) => line.replace(/[\t\u00a0 ]+/g, ' ').trim())
+    .filter((line, index, arr) => !(line === '' && arr[index - 1] === ''))
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
+
+/**
+ * 抽取 OOXML 文本（供 buildFileSection 与冒烟测试复用）。
+ * @param {string} ext 小写扩展名（.docx / .pptx / .xlsx）
+ * @param {Buffer} buf 文件二进制
+ * @returns {string} 归一化纯文本；失败抛出
+ */
+export function extractOfficeText(ext, buf) {
+  const entries = readZipEntries(buf)
+  if (ext === '.docx') {
+    const entry = entries.get('word/document.xml')
+    if (entry === undefined) throw new Error('docx: 缺少 word/document.xml')
+    return xmlToText(readZipEntry(buf, entry).toString('utf8'))
+  }
+  if (ext === '.pptx') {
+    const slides = [...entries.keys()]
+      .filter((name) => /^ppt\/slides\/slide\d+\.xml$/.test(name))
+      .sort((a, b) => {
+        const na = Number.parseInt(a.replace(/\D+/g, ''), 10)
+        const nb = Number.parseInt(b.replace(/\D+/g, ''), 10)
+        return na - nb
+      })
+    if (slides.length === 0) throw new Error('pptx: 未找到幻灯片')
+    return slides
+      .map((name) => xmlToText(readZipEntry(buf, entries.get(name)).toString('utf8')))
+      .filter((text) => text !== '')
+      .join('\n\n')
+  }
+  if (ext === '.xlsx') {
+    const entry = entries.get('xl/sharedStrings.xml')
+    if (entry === undefined) throw new Error('xlsx: 缺少共享字符串表')
+    return xmlToText(readZipEntry(buf, entry).toString('utf8'))
+  }
+  throw new Error(`不支持的 OOXML 扩展名 ${ext}`)
+}
 
 /**
  * 构造附件段落（供收件箱解析的同步 / 流式两条路径复用）。
@@ -141,11 +280,19 @@ export async function buildFileSection(item) {
   const ext = path.extname(file.name).toLowerCase()
   const isText =
     TEXT_EXTS.has(ext) || (typeof file.mime === 'string' && file.mime.startsWith('text/'))
-  if (!isText || file.size > FILE_EXCERPT_MAX_BYTES) {
+  const isOffice = OOXML_EXTS.has(ext)
+  if ((!isText && !isOffice) || file.size > FILE_EXCERPT_MAX_BYTES) {
     return `【附件】${meta}${FILE_UNREADABLE_HINT}`
   }
+  const filePath = path.join(DATA_DIR, 'files', `${item.id}-${file.name}`)
   try {
-    const raw = await fs.readFile(path.join(DATA_DIR, 'files', `${item.id}-${file.name}`), 'utf8')
+    if (isOffice) {
+      const buf = await fs.readFile(filePath)
+      const extracted = extractOfficeText(ext, buf)
+      if (extracted === '') return `【附件】${meta}${FILE_UNREADABLE_HINT}`
+      return `【附件】${meta}\n内容摘录（前 ${FILE_EXCERPT_CHARS} 字）：\n${extracted.slice(0, FILE_EXCERPT_CHARS)}`
+    }
+    const raw = await fs.readFile(filePath, 'utf8')
     return `【附件】${meta}\n内容摘录（前 ${FILE_EXCERPT_CHARS} 字）：\n${raw.slice(0, FILE_EXCERPT_CHARS)}`
   } catch {
     return `【附件】${meta}${FILE_UNREADABLE_HINT}`

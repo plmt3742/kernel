@@ -4,6 +4,17 @@
 
 ## [Unreleased]
 
+### 收件箱修复包 2 · Slice J（已完成 · 2026-10-03）
+以 owner 两条反馈为规格：①「批量 AI 解析后切页再回来，一切回到原始状态」（好像没解析过）；②「内置 opencode 为什么连文件都阅读不来」（投递 `.docx` 后 AI 只说「无法读取 / 仅凭文件名判断」）。`npm run build`（tsc strict + vite）通过；服务端冒烟 **14/14** + 浏览器 E2E **16/16**；零数据写入（前后快照计数一致、trash 0、i-0009/i-0010 JSON 完全未变）；控制台零 error；证据 `.qa/v26/`。
+
+- **AI 解析状态提升到模块级（新 `src/lib/inboxAi.ts`）**：新增收件箱 AI 解析 store（`subscribeInboxAi` / `getInboxAiSnapshot` + `useSyncExternalStore`）——批量任务 `{running,current,total,activeId,phase,stage,text,reasoning,result,error}`、流式增量 ~100ms 节流、单条建议缓存（原 `Inbox.tsx` 模块 Map 迁入）全部跨路由切换存活；导出 `startBatchAi` / `runSingleAi` / `clearInboxAiActive` / `reconcileInboxAiCache` / `takeInboxAiCompletion` / `takeInboxAiFailures`。解析仍**零写入**（`data/` 不变，reload 丢失属预期）。
+- **返回即见真实状态**：切页期间批量继续跑；回 `Inbox` 后进度条按真实 `running` 显示，活跃条目行显示「解析中…」并恢复实时过程面板（自动展开 + 轻柔滚入），已完成条目行显示安静 token 标记「AI 建议就绪」（无需再次点击；展开即命中缓存）。
+- **防重复启动**：内联批量条与 E2.5 侧挂 dock 的全部批量动作（批量 AI 解析 / 批量 → 任务 / 批量丢弃 / 取消选择）据模块 `running` 禁用——切页回来再勾选仍禁用。
+- **完成播报一次**：切页期间完成 → 回收件箱补播一次安静 toast「AI 解析完成 · N 条建议已就绪」；失败汇总为一次「N 条失败，已跳过」（绝不刷屏）。缓存命中点击「AI 解析」直接展开就绪卡（不重解析），强制重试走「重新解析 / 重试」。
+- **OOXML 文本抽取（`server/ai.mjs`）**：无新依赖的最小 ZIP 读取器（EOCD + 中央目录；method 8 → `inflateRawSync`，method 0 原文，`maxOutputLength` 防爆内存）→ `.docx`（`word/document.xml`）、`.pptx`（`ppt/slides/slide*.xml` 数字排序）、`.xlsx`（`xl/sharedStrings.xml`）；剥标签 + 解 XML 实体 + 段落 `<w:p>/</a:p>/</si>` 转行 + 归一空白 → 沿用既有 8000 字摘录与「内容摘录」格式。任何失败 → 维持既有 `FILE_UNREADABLE_HINT` 回退 + 5MB 上限；同步 / 流式两路共用受益。系统提示「附件不可读时更保守」规则未动（docx 现在可读）。
+- **验证**：`.qa/v26/smoke-j.mjs` **14/14**（合成 docx method 8/0 + 探针「KERNEL-DOCX-PROBE-42」命中 + 实体解码 + `buildFileSection` 摘录 + 伪 docx 回退 + `data/files/` 零残留）；所有者真实 `示例文档.docx`（i-0009 / i-0010，只读）抽取 **1118 字**，不含不可读提示，条目 JSON 未动；`.qa/v26/slice-j-verify.py` **16/16**（选 2 条 → 批量 AI 解析 → SPA 切 `/tasks` → 回 `/inbox`：状态未重置、运行中批量全禁用、返回后重选仍禁用、两条目均出「AI 建议就绪」、展开缓存命中 3ms、点击「AI 解析」无过程面板、控制台 0、移动 390 运行 / 完成两态零横溢、零写入、i-0009/i-0010 完全未变）。
+- **记录**：ADR-0008 §4 修订（批量状态持久化 + OOXML 抽取）；`docs/05`（`inboxAi.ts`）；`AGENTS.md`。
+
 ### 使用指南同步 · Slice I（已完成 · 2026-10-03）
 将自包含中文使用指南 `public/guide.html` 同步到 Slice D–H 的现状（指南此前停在上一个版本）。仍是单文件、内联 CSS/JS、零外部请求，`file://` 双击与 `http://localhost:5173/guide.html` 均可用；沿用既有「柔暗夜色」token，不引入新视觉语言。
 

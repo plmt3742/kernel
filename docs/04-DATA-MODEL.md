@@ -61,7 +61,7 @@
 | note? | string | |
 | file? | `{ name, size, mime? }` | 文件投递附件元数据；二进制存 `data/files/<id>-<name>`（不进 git；见 ADR-0008） |
 
-> **文件投递（v0.5 · Slice D）**：`source:'file'` 的条目由 `POST /api/inbox/upload` 创建，`content` 取 caption（无则文件名）。二进制**不**进 JSON，仅存于 `data/files/`（`.gitignore`）；AI 解析时按「文本白名单 + ≤5MB → 前 8000 字摘录，否则仅元数据」注入提示。删除条目经 `POST /api/inbox/:id/remove`（已澄清条目 409，需先 revert）。详见 ADR-0008。
+> **文件投递（v0.5 · Slice D）**：`source:'file'` 的条目由 `POST /api/inbox/upload` 创建，`content` 取 caption（无则文件名）。二进制**不**进 JSON，仅存于 `data/files/`（`.gitignore`）；AI 解析时按「文本白名单 **或 Office Open XML（`.docx/.pptx/.xlsx`，Slice J）** + ≤5MB → 前 8000 字摘录，否则仅元数据」注入提示。删除条目经 `POST /api/inbox/:id/remove`（已澄清条目 409，需先 revert）。详见 ADR-0008。
 
 ### 4.2 task（`t-`）
 

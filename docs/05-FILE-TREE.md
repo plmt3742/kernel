@@ -71,7 +71,7 @@ kernel/
 │  │  ├─ shell/                 # 应用壳（RailNav / TopBar / StatusBar / AppLayout）
 │  │  └─ charts/                # 图表（TrendLine / EnergyBars）
 │  ├─ context/                  # React Context（Theme / Toast / Palette）
-│  ├─ lib/                      # 数据访问与工具（data 可变快照 / api 客户端 / mutations 写入动作 / derive / relations 互链派生 / date / format / motion / focus / hooks）
+│  ├─ lib/                      # 数据访问与工具（data 可变快照 / api 客户端 / mutations 写入动作 / inboxAi 收件箱 AI 解析状态 / derive / relations 互链派生 / date / format / motion / focus / hooks）
 │  └─ styles/                   # 全局样式与 token（tokens / base / shell / components / views）
 │
 ├─ design-drafts/               # 设计选型稿（v1 视觉方向 a/b/c；v2 页面排版多版本 29 方案 + 选型页 index.html + 三版对比页 _sheets/）
@@ -130,7 +130,7 @@ kernel/
 | `src/views/` | 八个视图页面，一一对应宪法 §4 的视图规格 |
 | `src/components/` | 可复用组件（含 `shell/` 与 `charts/` 子目录），命名遵循设计系统签名词汇 |
 | `src/context/` | React Context：主题、Toast、命令面板开关 |
-| `src/lib/` | 数据访问与写入动作（data 可变快照 / api 客户端 / mutations / derive / relations 实体互链）、日期、格式化、动效常量、焦点工具、共享 hooks |
+| `src/lib/` | 数据访问与写入动作（data 可变快照 / api 客户端 / mutations / inboxAi 收件箱 AI 解析模块级状态 / derive / relations 实体互链）、日期、格式化、动效常量、焦点工具、共享 hooks |
 | `src/styles/` | 全局样式、CSS 变量 token、主题定义（唯一事实源 `tokens.css`） |
 
 ## 5. 维护规则

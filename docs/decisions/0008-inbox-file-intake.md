@@ -47,10 +47,11 @@ Slice A–C 已把「文件即数据库 / opencode 即大脑」落在收件箱�
 - 实测（本机）：上传 → 同步解析建议含 `projectId / areaId / tags`；`inbox.upload` / `inbox.remove` 审计齐全；浏览器端到端 12/12（居中 / chip / 文件行 / 自动建议卡 / 拖拽 chip / 零残留 / 零控制台错误）。
 - 证据：`.qa/v16/smoke-upload.mjs`（+`.log`）与 `.qa/v16/slice-d-verify.py`（+`d-composer.png` / `d-file-row.png` / `d-suggestion.png` / `.log`）。
 - **Slice E1 修订（2026-10-03，owner 反馈修复包）**：①编辑器回位（去居中，见 §2.7）；②「批量 → 任务」复现并强化反馈（目标感知 toast / 成功后收敛选中态，服务端流程无 bug）；③新增单条 AI 建议缓存（收起不丢、命中即就绪卡、「重新解析」强制覆盖）；④新增「批量 AI 解析」（顺序解析 + 进度播报，绝不自动应用）。证据：`.qa/v17/slice-e1-verify.py`（+`e1-composer.png` / `e1-batch-ai.png` / `.log`）。
+- **Slice J 修订（2026-10-03，收件箱修复包 2）**：①**OOXML 文本抽取**——`buildFileSection` 除文本白名单外，对 `.docx`（`word/document.xml`）、`.pptx`（`ppt/slides/slide*.xml` 数字排序）、`.xlsx`（`xl/sharedStrings.xml`）以**无依赖最小 ZIP 读取器**（EOCD + 中央目录；method 8 → `inflateRawSync` + `maxOutputLength`，method 0 原文）抽取正文，剥标签 + 解 XML 实体（含数字引用）+ 段落 `<w:p>/</a:p>/</si>` 转行 + 归一空白；沿用 8000 字摘录 / 5MB 上限 / 失败回退 `FILE_UNREADABLE_HINT`，同步与流式两路共用。§2.5 的「纯文本或仅元数据」边界据此扩展为「文本 + Office Open XML（docx/pptx/xlsx）」，PDF 仍仅元数据。②**批量解析状态持久化**——AI 解析的批量任务 / 活跃面板 / 建议缓存提升到前端模块级 store（新 `src/lib/inboxAi.ts` + `useSyncExternalStore`），跨路由切换存活；返回收件箱见真实进度 + 活跃项「解析中」+ 完成项「AI 建议就绪」标记，模块级 `running` 守卫全部批量动作防重复启动，完成播报一次；解析仍零写入（`data/` 不变）。证据：`.qa/v26/smoke-j.mjs`（14/14）、`.qa/v26/slice-j-verify.py`（16/16），所有者真实 docx 只读抽取 1118 字。
 
 ## 5. 非目标
 
-- **深度解析**（PDF/Office/图片 OCR 抽取正文）——后续增量；本切片为「文本摘录或仅元数据」。
+- **深度解析**（PDF / 图片 OCR、Office 表格结构抽取）——PDF 仍仅元数据；`.docx/.pptx/.xlsx` 正文抽取已于 Slice J 支持（轻量、无依赖；xlsx 仅共享字符串表、pptx 按 slide 序号拼接文本）。
 - 多文件合并为一个条目 / 附件与条目分离管理——本切片一文件一条目。
 - 文件预览（图片 / PDF 内嵌查看）——仅「查看文件」新标签打开。
 - 上传进度条 / 断点续传 / 分片——本地单文件直传，够用即止。
