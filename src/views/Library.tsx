@@ -5,21 +5,37 @@ import ReactMarkdown from 'react-markdown'
 import { clsx } from 'clsx'
 import { Panel } from '@/components/Panel'
 import { Drawer } from '@/components/Drawer'
+import { EntityEditForm, type EditFieldSpec } from '@/components/EntityEditForm'
 import { TagPill } from '@/components/TagPill'
 import { EmptyState } from '@/components/EmptyState'
 import { Relations } from '@/components/Relations'
-import { getAreaById, getBacklinks, getNotes, getResources, getTags } from '@/lib/data'
+import { useToast } from '@/context/ToastContext'
 import {
+  getAreaById,
+  getAreas,
+  getBacklinks,
+  getNotes,
+  getResources,
+  getSnapshot,
+  getTags,
+} from '@/lib/data'
+import { restoreEntity, revealPath, trashEntity, updateEntity } from '@/lib/mutations'
+import { errorText } from '@/lib/api'
+import {
+  DISTILL_LEVEL_DEF,
+  DISTILL_LEVEL_LABEL,
+  DISTILL_LEVELS,
   NOTE_TYPE_EN,
   NOTE_TYPE_LABEL,
   RESOURCE_KIND_EN,
   RESOURCE_KIND_LABEL,
+  RESOURCE_STATUS_DEF,
   RESOURCE_STATUS_LABEL,
   tagLabel,
 } from '@/lib/format'
 import { formatRelative } from '@/lib/date'
 import { useNow } from '@/lib/hooks'
-import type { NoteType, ResourceKind, ResourceStatus } from '@/types'
+import type { NoteType, ResourceKind, ResourceStatus, TrashKind } from '@/types'
 
 type Tab = 'all' | 'notes' | 'resources'
 
@@ -41,6 +57,14 @@ export function Library() {
   const [resourceStatus, setResourceStatus] = useState<ResourceStatus | ''>('')
   const [tag, setTag] = useState('')
   const [target, setTarget] = useState<DrawerTarget | null>(null)
+  const { toast } = useToast()
+  const [editing, setEditing] = useState(false)
+  const [saving, setSaving] = useState(false)
+
+  // 切换抽屉目标时退出编辑态
+  useEffect(() => {
+    setEditing(false)
+  }, [target])
 
   const notes = getNotes()
   const resources = getResources()
@@ -88,6 +112,167 @@ export function Library() {
   const selectedNote = target?.kind === 'note' ? notes.find((n) => n.id === target.id) : undefined
   const selectedResource =
     target?.kind === 'resource' ? resources.find((r) => r.id === target.id) : undefined
+
+  const noteFields: EditFieldSpec[] = [
+    { key: 'title', label: '标题', type: 'text' },
+    {
+      key: 'type',
+      label: '类型',
+      type: 'select',
+      options: NOTE_TYPES.map((type) => ({ value: type, label: NOTE_TYPE_LABEL[type] })),
+    },
+    {
+      key: 'areaId',
+      label: '区域',
+      type: 'select',
+      clearable: true,
+      options: getAreas().map((area) => ({ value: area.id, label: area.title })),
+    },
+    {
+      key: 'projectId',
+      label: '项目',
+      type: 'select',
+      clearable: true,
+      options: getSnapshot().projects.map((project) => ({
+        value: project.id,
+        label: project.title,
+      })),
+    },
+    { key: 'body', label: '正文', type: 'textarea' },
+    { key: 'tags', label: '标签（逗号分隔）', type: 'list' },
+  ]
+
+  const resourceFields: EditFieldSpec[] = [
+    { key: 'title', label: '标题', type: 'text' },
+    {
+      key: 'kind',
+      label: '类型',
+      type: 'select',
+      options: RESOURCE_KINDS.map((kind) => ({ value: kind, label: RESOURCE_KIND_LABEL[kind] })),
+    },
+    {
+      key: 'status',
+      label: '状态',
+      type: 'select',
+      options: RESOURCE_STATUSES.map((status) => ({
+        value: status,
+        label: RESOURCE_STATUS_LABEL[status],
+      })),
+    },
+    {
+      key: 'areaId',
+      label: '区域',
+      type: 'select',
+      clearable: true,
+      options: getAreas().map((area) => ({ value: area.id, label: area.title })),
+    },
+    { key: 'url', label: '链接', type: 'text', clearable: true },
+    { key: 'path', label: '文件位置', type: 'text', clearable: true, placeholder: '如 G:\\…\\file.pdf' },
+    { key: 'tags', label: '标签（逗号分隔）', type: 'list' },
+    { key: 'note', label: '备注', type: 'textarea' },
+  ]
+
+  const handleSave = (patch: Record<string, unknown>): void => {
+    if (target === null) return
+    const kind: TrashKind = target.kind === 'note' ? 'notes' : 'resources'
+    const id = target.id
+    setSaving(true)
+    void (async () => {
+      try {
+        await updateEntity(kind, id, patch)
+        setEditing(false)
+        toast('已保存')
+      } catch (err) {
+        toast(`保存失败：${errorText(err)}`, { tone: 'error' })
+      } finally {
+        setSaving(false)
+      }
+    })()
+  }
+
+  const handleDelete = (): void => {
+    if (target === null) return
+    const kind: TrashKind = target.kind === 'note' ? 'notes' : 'resources'
+    const id = target.id
+    void (async () => {
+      try {
+        await trashEntity(kind, id)
+        closeDrawer()
+        toast('已移入回收站 · 撤销', {
+          action: {
+            label: '撤销',
+            onClick: () => {
+              void restoreEntity(kind, id).catch((err) => {
+                toast(`撤销失败：${errorText(err)}`, { tone: 'error' })
+              })
+            },
+          },
+        })
+      } catch (err) {
+        toast(`删除失败：${errorText(err)}`, { tone: 'error' })
+      }
+    })()
+  }
+
+  const handleReveal = (): void => {
+    const path = selectedResource?.path
+    if (path === undefined) return
+    void (async () => {
+      try {
+        await revealPath(path)
+      } catch (err) {
+        toast(`打开失败：${errorText(err)}`, { tone: 'error' })
+      }
+    })()
+  }
+
+  // 资料状态快捷设置（Slice H）：静默写入 → toast + 撤销回原状态
+  const handleSetResourceStatus = (status: ResourceStatus): void => {
+    if (selectedResource === undefined || selectedResource.status === status) return
+    const id = selectedResource.id
+    const prev = selectedResource.status
+    void (async () => {
+      try {
+        await updateEntity('resources', id, { status })
+        toast(`状态已设为「${RESOURCE_STATUS_LABEL[status]}」`, {
+          action: {
+            label: '撤销',
+            onClick: () => {
+              void updateEntity('resources', id, { status: prev }).catch((err) => {
+                toast(`撤销失败：${errorText(err)}`, { tone: 'error' })
+              })
+            },
+          },
+        })
+      } catch (err) {
+        toast(`设置失败：${errorText(err)}`, { tone: 'error' })
+      }
+    })()
+  }
+
+  // 笔记蒸馏层级快捷设置（Slice H）：静默写入 → toast + 撤销回原层级
+  const handleSetDistillLevel = (level: number): void => {
+    if (selectedNote === undefined || selectedNote.distillLevel === level) return
+    const id = selectedNote.id
+    const prev = selectedNote.distillLevel
+    void (async () => {
+      try {
+        await updateEntity('notes', id, { distillLevel: level })
+        toast(`蒸馏层级已设为 L${level}`, {
+          action: {
+            label: '撤销',
+            onClick: () => {
+              void updateEntity('notes', id, { distillLevel: prev }).catch((err) => {
+                toast(`撤销失败：${errorText(err)}`, { tone: 'error' })
+              })
+            },
+          },
+        })
+      } catch (err) {
+        toast(`设置失败：${errorText(err)}`, { tone: 'error' })
+      }
+    })()
+  }
 
   return (
     <div className="k-view">
@@ -269,9 +454,30 @@ export function Library() {
               : ''
         }
         title={selectedNote?.title ?? selectedResource?.title ?? ''}
+        footer={
+          (selectedNote !== undefined || selectedResource !== undefined) && !editing ? (
+            <div className="k-drawer__foot-actions">
+              <button type="button" className="k-btn k-btn--sm" onClick={() => setEditing(true)}>
+                编辑
+              </button>
+              <button type="button" className="k-btn k-btn--sm is-danger" onClick={handleDelete}>
+                删除
+              </button>
+            </div>
+          ) : undefined
+        }
       >
-        {selectedNote !== undefined && (
-          <div className="k-detail-grid">
+        {selectedNote !== undefined &&
+          (editing ? (
+            <EntityEditForm
+              fields={noteFields}
+              initial={selectedNote as unknown as Record<string, unknown>}
+              saving={saving}
+              onSubmit={handleSave}
+              onCancel={() => setEditing(false)}
+            />
+          ) : (
+            <div className="k-detail-grid">
             <dl className="k-dl">
               <dt>类型</dt>
               <dd>
@@ -282,6 +488,17 @@ export function Library() {
               <dt>更新</dt>
               <dd>{formatRelative(selectedNote.updatedAt, now)}</dd>
             </dl>
+            <QuickSegmented
+              label="蒸馏层级 · 判断标准"
+              value={selectedNote.distillLevel}
+              options={DISTILL_LEVELS.map((level) => ({
+                value: level,
+                label: `L${level} ${DISTILL_LEVEL_LABEL[level]}`,
+                def: DISTILL_LEVEL_DEF[level],
+              }))}
+              helper={DISTILL_LEVEL_DEF[selectedNote.distillLevel]}
+              onSelect={handleSetDistillLevel}
+            />
             {selectedNote.tags.length > 0 && (
               <div className="k-hstack">
                 {selectedNote.tags.map((item) => (
@@ -314,8 +531,17 @@ export function Library() {
             </div>
             <Relations kind="note" id={selectedNote.id} />
           </div>
-        )}
-        {selectedResource !== undefined && (
+          ))}
+        {selectedResource !== undefined &&
+          (editing ? (
+            <EntityEditForm
+              fields={resourceFields}
+              initial={selectedResource as unknown as Record<string, unknown>}
+              saving={saving}
+              onSubmit={handleSave}
+              onCancel={() => setEditing(false)}
+            />
+          ) : (
           <div className="k-detail-grid">
             <dl className="k-dl">
               <dt>类型</dt>
@@ -343,6 +569,32 @@ export function Library() {
               <dt>添加</dt>
               <dd>{formatRelative(selectedResource.addedAt, now)}</dd>
             </dl>
+            <QuickSegmented
+              label="状态 · 判断标准"
+              value={selectedResource.status}
+              options={RESOURCE_STATUSES.map((status) => ({
+                value: status,
+                label: RESOURCE_STATUS_LABEL[status],
+                def: RESOURCE_STATUS_DEF[status],
+              }))}
+              helper={RESOURCE_STATUS_DEF[selectedResource.status]}
+              onSelect={handleSetResourceStatus}
+            />
+            <div className="k-detail-block">
+              <span className="k-detail-block__label u-label">文件位置</span>
+              {selectedResource.path !== undefined ? (
+                <>
+                  <span className="k-file-path u-mono" title={selectedResource.path}>
+                    {selectedResource.path}
+                  </span>
+                  <button type="button" className="k-btn k-btn--sm" onClick={handleReveal}>
+                    在文件管理器中显示
+                  </button>
+                </>
+              ) : (
+                <p className="k-muted k-file-path__hint">未记录文件位置 · 可通过编辑补充</p>
+              )}
+            </div>
             {selectedResource.tags.length > 0 && (
               <div className="k-hstack">
                 {selectedResource.tags.map((item) => (
@@ -358,8 +610,53 @@ export function Library() {
             )}
             <Relations kind="resource" id={selectedResource.id} />
           </div>
-        )}
+          ))}
       </Drawer>
+    </div>
+  )
+}
+
+/* ---------------------------------------------------------------------------
+ * 快捷设置（Slice H）：安静的 segmented 选择器 + 判断标准 helper 文本。
+ * 复用 `.k-lib__seg` 轨道 + `TagPill` 选中反转，与资料筛选条视觉一致。
+ * ------------------------------------------------------------------------- */
+
+interface QuickOption<T extends string | number> {
+  value: T
+  label: string
+  /** 该选项的判断标准（按钮 title + 当前项 helper） */
+  def: string
+}
+
+function QuickSegmented<T extends string | number>({
+  label,
+  value,
+  options,
+  helper,
+  onSelect,
+}: {
+  label: string
+  value: T
+  options: QuickOption<T>[]
+  helper: string
+  onSelect: (value: T) => void
+}) {
+  return (
+    <div className="k-detail-block k-quickset">
+      <span className="k-detail-block__label u-label">{label}</span>
+      <div className="k-lib__seg k-quickset__seg" role="group" aria-label={label}>
+        {options.map((option) => (
+          <TagPill
+            key={String(option.value)}
+            selected={option.value === value}
+            title={option.def}
+            onClick={() => onSelect(option.value)}
+          >
+            {option.label}
+          </TagPill>
+        ))}
+      </div>
+      <p className="k-quickset__hint k-muted">{helper}</p>
     </div>
   )
 }

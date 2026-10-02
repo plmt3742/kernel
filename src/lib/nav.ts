@@ -10,6 +10,7 @@ import {
   RefreshCw,
   Settings,
   SlidersHorizontal,
+  Trash2,
 } from 'lucide-react'
 
 export interface NavItem {
@@ -34,6 +35,7 @@ export const NAV_ITEMS: NavItem[] = [
   { index: '06', path: '/library', en: 'LIBRARY', cn: '资料', icon: Library, secondary: true },
   { index: '07', path: '/review', en: 'REVIEW', cn: '回顾', icon: RefreshCw, secondary: true },
   { index: '08', path: '/settings', en: 'SETTINGS', cn: '设置', icon: Settings, secondary: true },
+  { index: '09', path: '/trash', en: 'TRASH', cn: '回收站', icon: Trash2, secondary: true },
 ]
 
 /** 按路径匹配导航项（精确匹配；未知路径返回 undefined） */

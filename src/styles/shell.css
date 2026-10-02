@@ -422,6 +422,74 @@
 }
 
 /* ---------------------------------------------------------------------------
+ * 弹窗 Modal（居中；fade + 微缩放；打开时锁定页面滚动）
+ * ------------------------------------------------------------------------- */
+
+.k-modal__scrim {
+  position: fixed;
+  inset: 0;
+  background: var(--scrim);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  z-index: var(--z-overlay);
+}
+.k-modal {
+  position: fixed;
+  inset: 0;
+  margin: auto;
+  width: min(560px, calc(100vw - 32px));
+  height: fit-content;
+  max-height: min(90vh, 860px);
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: var(--hairline) solid var(--outline);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-hover), var(--shadow-highlight);
+  z-index: calc(var(--z-overlay) + 1);
+  overflow: hidden;
+}
+/* 回顾报告弹窗：加宽以容纳指标 + 摘要 + 决策 */
+.k-modal--report {
+  width: min(720px, calc(100vw - 32px));
+}
+.k-modal__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-5);
+  border-bottom: var(--hairline) solid var(--outline);
+}
+.k-modal__kicker {
+  color: var(--muted);
+  display: block;
+  margin-bottom: var(--space-2);
+}
+.k-modal__title {
+  font-size: var(--text-h3);
+  line-height: var(--text-h3-leading);
+  letter-spacing: var(--text-h3-tracking);
+  font-weight: 600;
+}
+.k-modal__body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.k-modal__foot {
+  border-top: var(--hairline) solid var(--outline);
+  padding: var(--space-4) var(--space-5);
+  display: flex;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+/* ---------------------------------------------------------------------------
  * 命令面板 CommandPalette
  * ------------------------------------------------------------------------- */
 

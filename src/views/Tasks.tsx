@@ -2,23 +2,30 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
-import { AlertTriangle, ChevronRight, Plus } from 'lucide-react'
+import { AlertTriangle, ChevronRight, Plus, Sparkles, X } from 'lucide-react'
 import { clsx } from 'clsx'
 import { FilterBar, type FilterGroup } from '@/components/FilterBar'
 import { Checkbox } from '@/components/Checkbox'
 import { Drawer } from '@/components/Drawer'
+import { EntityEditForm, type EditFieldSpec } from '@/components/EntityEditForm'
 import { EmptyState } from '@/components/EmptyState'
 import { TagPill } from '@/components/TagPill'
-import { Relations } from '@/components/Relations'
+import { TaskDetail } from '@/components/TaskDetail'
 import { useToast } from '@/context/ToastContext'
 import { getAreaById, getAreas, getProjectById, getSnapshot, getTags } from '@/lib/data'
-import { createTask, isTaskDone } from '@/lib/mutations'
+import {
+  aiTaskDraft,
+  createTask,
+  isTaskDone,
+  restoreEntity,
+  trashEntity,
+  updateEntity,
+  type TaskDraftSuggestion,
+} from '@/lib/mutations'
 import { errorText } from '@/lib/api'
 import { ENERGY_LABEL, TASK_STATUS_LABEL, tagLabel } from '@/lib/format'
 import {
   endOfWeek,
-  formatDateTime,
-  formatRelative,
   humanizeDay,
   isPast,
   isSameDay,
@@ -27,7 +34,7 @@ import {
   toDate,
 } from '@/lib/date'
 import { useDataRevision, useNow, useUndoableToggle } from '@/lib/hooks'
-import { DUR, EASE_ENTER, EASE_EXIT, STAGGER, STAGGER_MAX } from '@/lib/motion'
+import { DUR, EASE_ENTER, STAGGER, STAGGER_MAX } from '@/lib/motion'
 import type { Task } from '@/types'
 
 type GroupMode = 'flat' | 'project' | 'context'
@@ -47,6 +54,89 @@ function byDueTask(a: Task, b: Task): number {
   return a.id.localeCompare(b.id)
 }
 
+/* ---------------------------------------------------------------------------
+ * 快速新建 AI 补全（Slice H）：创建后异步取建议，安静呈现，绝不自动应用
+ * ------------------------------------------------------------------------- */
+
+interface TaskDraftState {
+  taskId: string
+  title: string
+  status: 'loading' | 'ready' | 'error'
+  suggestion?: TaskDraftSuggestion
+}
+
+/** 建议是否含可应用字段（只有 reason 不算，不弹面板） */
+function draftHasFields(suggestion: TaskDraftSuggestion): boolean {
+  return (
+    suggestion.contexts.length > 0 ||
+    suggestion.energy !== undefined ||
+    suggestion.importance !== undefined ||
+    suggestion.estimateMin !== undefined ||
+    suggestion.dueAt !== undefined ||
+    suggestion.projectId !== undefined ||
+    suggestion.areaId !== undefined ||
+    suggestion.tags.length > 0
+  )
+}
+
+/** 建议 → updateEntity patch（只含有值的字段；空建议返回 {}） */
+function draftPatch(suggestion: TaskDraftSuggestion): Record<string, unknown> {
+  const patch: Record<string, unknown> = {}
+  if (suggestion.contexts.length > 0) patch.contexts = suggestion.contexts
+  if (suggestion.energy !== undefined) patch.energy = suggestion.energy
+  if (suggestion.importance !== undefined) patch.importance = suggestion.importance
+  if (suggestion.estimateMin !== undefined) patch.estimateMin = suggestion.estimateMin
+  if (suggestion.dueAt !== undefined) patch.dueAt = suggestion.dueAt
+  if (suggestion.projectId !== undefined) patch.projectId = suggestion.projectId
+  if (suggestion.areaId !== undefined) patch.areaId = suggestion.areaId
+  if (suggestion.tags.length > 0) patch.tags = suggestion.tags
+  return patch
+}
+
+interface DraftChip {
+  key: string
+  label: string
+  value: string
+}
+
+/** 建议 → 人类可读 chips（只列实际给出的字段） */
+function draftChips(suggestion: TaskDraftSuggestion): DraftChip[] {
+  const chips: DraftChip[] = []
+  if (suggestion.contexts.length > 0) {
+    chips.push({ key: 'ctx', label: '上下文', value: suggestion.contexts.map(tagLabel).join(' · ') })
+  }
+  if (suggestion.energy !== undefined) {
+    chips.push({ key: 'energy', label: '能量', value: ENERGY_LABEL[suggestion.energy] })
+  }
+  if (suggestion.importance !== undefined) {
+    chips.push({ key: 'importance', label: '重要性', value: `${suggestion.importance} / 3` })
+  }
+  if (suggestion.estimateMin !== undefined) {
+    chips.push({ key: 'estimate', label: '预估', value: `${suggestion.estimateMin} 分钟` })
+  }
+  if (suggestion.dueAt !== undefined) {
+    chips.push({ key: 'due', label: '截止', value: humanizeDay(suggestion.dueAt) })
+  }
+  if (suggestion.projectId !== undefined) {
+    chips.push({
+      key: 'project',
+      label: '项目',
+      value: getProjectById(suggestion.projectId)?.title ?? suggestion.projectId,
+    })
+  }
+  if (suggestion.areaId !== undefined) {
+    chips.push({
+      key: 'area',
+      label: '区域',
+      value: getAreaById(suggestion.areaId)?.title ?? suggestion.areaId,
+    })
+  }
+  if (suggestion.tags.length > 0) {
+    chips.push({ key: 'tags', label: '标签', value: suggestion.tags.map(tagLabel).join(' · ') })
+  }
+  return chips
+}
+
 export function Tasks() {
   useDataRevision()
   const toggleTask = useUndoableToggle()
@@ -61,6 +151,14 @@ export function Tasks() {
   const [quick, setQuick] = useState('')
   const [drawerId, setDrawerId] = useState<string | null>(null)
   const [pendingDone, setPendingDone] = useState<string[]>([])
+  const [editing, setEditing] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [draft, setDraft] = useState<TaskDraftState | null>(null)
+
+  // 切换抽屉时退出编辑态
+  useEffect(() => {
+    setEditing(false)
+  }, [drawerId])
 
   const allTasks = getSnapshot().tasks
 
@@ -227,22 +325,178 @@ export function Tasks() {
     if (!wasDone) setPendingDone((prev) => [...prev, id])
   }
 
+  // 异步取 AI 建议；只更新仍在对应该任务的面板（并发创建时以最新为准）
+  const runDraft = (taskId: string, title: string): void => {
+    void (async () => {
+      try {
+        const result = await aiTaskDraft(title)
+        setDraft((prev) =>
+          prev !== null && prev.taskId === taskId
+            ? { taskId, title, status: 'ready', suggestion: result.suggestion }
+            : prev,
+        )
+      } catch {
+        // 失败不阻断 / 不降级创建：仅在面板内安静提示 + 可重试
+        setDraft((prev) =>
+          prev !== null && prev.taskId === taskId ? { taskId, title, status: 'error' } : prev,
+        )
+      }
+    })()
+  }
+
   const handleQuickAdd = (): void => {
     const value = quick.trim()
     if (value === '') return
     void (async () => {
       try {
-        await createTask(value)
+        const task = await createTask(value)
         setQuick('')
         toast('已创建任务 · 写入 data/tasks')
+        // 创建即时完成；AI 建议随后异步到达（绝不自动应用）
+        setDraft({ taskId: task.id, title: task.title, status: 'loading' })
+        runDraft(task.id, task.title)
       } catch (err) {
         toast(`创建失败：${errorText(err)}`, { tone: 'error' })
       }
     })()
   }
 
+  const applyDraft = (): void => {
+    if (draft === null || draft.suggestion === undefined) return
+    const patch = draftPatch(draft.suggestion)
+    if (Object.keys(patch).length === 0) {
+      setDraft(null)
+      return
+    }
+    const taskId = draft.taskId
+    void (async () => {
+      try {
+        await updateEntity('tasks', taskId, patch)
+        setDraft(null)
+        toast('已应用 AI 建议')
+      } catch (err) {
+        toast(`应用失败：${errorText(err)}`, { tone: 'error' })
+      }
+    })()
+  }
+
+  const retryDraft = (): void => {
+    if (draft === null) return
+    const { taskId, title } = draft
+    setDraft({ taskId, title, status: 'loading' })
+    runDraft(taskId, title)
+  }
+
   const selected = drawerId !== null ? allTasks.find((task) => task.id === drawerId) : undefined
   const selectedDone = selected !== undefined && isTaskDone(selected)
+
+  const contextNames = getTags()
+    .filter((tag) => tag.namespace === 'context')
+    .map((tag) => tag.name)
+
+  const taskFields: EditFieldSpec[] = [
+    { key: 'title', label: '标题', type: 'text' },
+    {
+      key: 'status',
+      label: '状态',
+      type: 'select',
+      options: (Object.keys(TASK_STATUS_LABEL) as Task['status'][]).map((value) => ({
+        value,
+        label: TASK_STATUS_LABEL[value],
+      })),
+    },
+    {
+      key: 'energy',
+      label: '能量',
+      type: 'select',
+      options: (['low', 'medium', 'high'] as const).map((value) => ({
+        value,
+        label: ENERGY_LABEL[value],
+      })),
+    },
+    {
+      key: 'importance',
+      label: '重要性',
+      type: 'select',
+      numeric: true,
+      options: [0, 1, 2, 3].map((n) => ({ value: String(n), label: `${n} / 3` })),
+    },
+    {
+      key: 'contexts',
+      label: '上下文（逗号分隔）',
+      type: 'list',
+      placeholder: contextNames.join(', '),
+    },
+    { key: 'estimateMin', label: '预估（分钟）', type: 'number', clearable: true },
+    { key: 'dueAt', label: '截止', type: 'datetime' },
+    { key: 'deferUntil', label: '推迟至', type: 'datetime' },
+    {
+      key: 'projectId',
+      label: '项目',
+      type: 'select',
+      clearable: true,
+      options: getSnapshot().projects.map((project) => ({
+        value: project.id,
+        label: project.title,
+      })),
+    },
+    {
+      key: 'areaId',
+      label: '区域',
+      type: 'select',
+      clearable: true,
+      options: getAreas().map((area) => ({ value: area.id, label: area.title })),
+    },
+    { key: 'tags', label: '标签（逗号分隔）', type: 'list' },
+    { key: 'notes', label: '备注', type: 'textarea' },
+  ]
+
+  const handleSave = (patch: Record<string, unknown>): void => {
+    if (selected === undefined) return
+    setSaving(true)
+    void (async () => {
+      try {
+        await updateEntity('tasks', selected.id, patch)
+        setEditing(false)
+        toast('已保存')
+      } catch (err) {
+        toast(`保存失败：${errorText(err)}`, { tone: 'error' })
+      } finally {
+        setSaving(false)
+      }
+    })()
+  }
+
+  const handleDelete = (): void => {
+    if (selected === undefined) return
+    const id = selected.id
+    void (async () => {
+      try {
+        await trashEntity('tasks', id)
+        toast('已移入回收站 · 撤销', {
+          action: {
+            label: '撤销',
+            onClick: () => {
+              void restoreEntity('tasks', id).catch((err) => {
+                toast(`撤销失败：${errorText(err)}`, { tone: 'error' })
+              })
+            },
+          },
+        })
+      } catch (err) {
+        toast(`删除失败：${errorText(err)}`, { tone: 'error' })
+      }
+    })()
+  }
+
+  // 有可应用字段才展示建议面板（仅有 reason / 空建议不弹，避免噪声）
+  const draftVisible =
+    draft !== null &&
+    !(
+      draft.status === 'ready' &&
+      draft.suggestion !== undefined &&
+      !draftHasFields(draft.suggestion)
+    )
 
   return (
     <div className="k-view">
@@ -280,6 +534,60 @@ export function Tasks() {
           <span className="u-label k-muted">ENTER</span>
         </div>
       </div>
+
+      {/* 快速新建 AI 补全（Slice H）：创建即时完成，建议随后安静到达，绝不自动应用 */}
+      {draftVisible && draft !== null && (
+        <div className="k-ai-draft" role="status" aria-live="polite">
+          <div className="k-ai-draft__head">
+            <Sparkles size={14} strokeWidth={1.5} className="k-muted" aria-hidden />
+            <span className="u-label k-ai-draft__title">AI 建议 · {draft.title}</span>
+            <button
+              type="button"
+              className="k-iconbtn k-ai-draft__close"
+              onClick={() => setDraft(null)}
+              aria-label="忽略 AI 建议"
+            >
+              <X size={14} strokeWidth={1.5} aria-hidden />
+            </button>
+          </div>
+          {draft.status === 'loading' && (
+            <p className="k-ai-draft__line k-muted">正在补充建议…（已创建的任务不受影响）</p>
+          )}
+          {draft.status === 'error' && (
+            <div className="k-ai-draft__foot">
+              <span className="k-ai-draft__line k-muted">
+                AI 建议暂不可用（任务已创建，不受影响）。
+              </span>
+              <button type="button" className="k-btn k-btn--sm" onClick={retryDraft}>
+                重试
+              </button>
+            </div>
+          )}
+          {draft.status === 'ready' && draft.suggestion !== undefined && (
+            <>
+              <div className="k-hstack k-ai-draft__chips">
+                {draftChips(draft.suggestion).map((chip) => (
+                  <span className="k-ai-draft__chip" key={chip.key}>
+                    <span className="u-label k-muted">{chip.label}</span>
+                    <span>{chip.value}</span>
+                  </span>
+                ))}
+              </div>
+              {draft.suggestion.reason !== '' && (
+                <p className="k-ai-draft__reason k-muted">{draft.suggestion.reason}</p>
+              )}
+              <div className="k-ai-draft__foot">
+                <button type="button" className="k-btn k-btn--sm is-solid" onClick={applyDraft}>
+                  应用建议
+                </button>
+                <button type="button" className="k-btn k-btn--sm" onClick={() => setDraft(null)}>
+                  忽略
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
 
       {/* 筛选压缩为一行（状态 + 时间；结构不变，仅排版收敛） */}
       <div className="k-tasks__filters">
@@ -378,14 +686,9 @@ export function Tasks() {
                       return (
                         <motion.tr
                           key={task.id}
-                          layout
                           className={clsx('k-tasks__row', done && 'is-done')}
-                          initial={reduce === true ? { opacity: 0 } : { opacity: 0, y: 6 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={{
-                            opacity: 0,
-                            transition: { duration: DUR.base, ease: EASE_EXIT },
-                          }}
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
                           transition={{
                             duration: DUR.base,
                             ease: EASE_ENTER,
@@ -474,84 +777,54 @@ export function Tasks() {
         kicker={`任务 · ${selected?.id ?? ''}`}
         title={selected?.title ?? ''}
         footer={
-          selected !== undefined ? (
+          selected !== undefined && !editing ? (
             <>
-              <button
-                type="button"
-                className={selectedDone ? 'k-btn' : 'k-btn is-solid'}
-                onClick={() => handleToggle(selected.id)}
-              >
-                {selectedDone ? '取消完成' : '标记完成'}
-              </button>
-              {selected.projectId !== undefined && (
-                <Link
-                  to={`/projects?project=${selected.projectId}`}
-                  viewTransition
-                  className="k-btn"
+              <div className="k-drawer__foot-main">
+                <button
+                  type="button"
+                  className={selectedDone ? 'k-btn' : 'k-btn is-solid'}
+                  onClick={() => handleToggle(selected.id)}
                 >
-                  查看项目
-                </Link>
-              )}
+                  {selectedDone ? '取消完成' : '标记完成'}
+                </button>
+                {selected.projectId !== undefined && (
+                  <Link
+                    to={`/projects?project=${selected.projectId}`}
+                    viewTransition
+                    className="k-btn"
+                  >
+                    查看项目
+                  </Link>
+                )}
+              </div>
+              <div className="k-drawer__foot-actions">
+                <button type="button" className="k-btn k-btn--sm" onClick={() => setEditing(true)}>
+                  编辑
+                </button>
+                <button
+                  type="button"
+                  className="k-btn k-btn--sm is-danger"
+                  onClick={handleDelete}
+                >
+                  删除
+                </button>
+              </div>
             </>
           ) : undefined
         }
       >
-        {selected !== undefined && (
-          <div className="k-detail-grid">
-            {/* 主内容区：可读内容（备注）优先；无备注则不渲染，不造假数据 */}
-            {selected.notes !== undefined && (
-              <div className="k-detail-block">
-                <span className="k-detail-block__label u-label">备注</span>
-                <p className="k-detail-note">{selected.notes}</p>
-              </div>
-            )}
-            {/* 元数据区：2 列紧凑字段网格（dt/dd 成对） */}
-            <dl className="k-dl">
-              <dt>状态</dt>
-              <dd>{TASK_STATUS_LABEL[selected.status]}</dd>
-              <dt>能量</dt>
-              <dd>{ENERGY_LABEL[selected.energy]}</dd>
-              <dt>重要性</dt>
-              <dd>{selected.importance} / 3</dd>
-              <dt>上下文</dt>
-              <dd>{selected.contexts.map(tagLabel).join(' · ') || '—'}</dd>
-              <dt>区域</dt>
-              <dd>
-                {selected.areaId !== undefined
-                  ? (getAreaById(selected.areaId)?.title ?? selected.areaId)
-                  : '—'}
-              </dd>
-              <dt>项目</dt>
-              <dd>
-                {selected.projectId !== undefined
-                  ? (getProjectById(selected.projectId)?.title ?? selected.projectId)
-                  : '—'}
-              </dd>
-              <dt>截止</dt>
-              <dd>
-                {selected.dueAt !== undefined
-                  ? `${formatDateTime(selected.dueAt)} · ${humanizeDay(selected.dueAt)}`
-                  : '—'}
-              </dd>
-              <dt>预估</dt>
-              <dd>{selected.estimateMin !== undefined ? `${selected.estimateMin} 分钟` : '—'}</dd>
-              <dt>创建</dt>
-              <dd>{formatRelative(selected.createdAt)}</dd>
-            </dl>
-            {/* 标签区：主内容之后扫描 */}
-            {selected.tags.length > 0 && (
-              <div className="k-detail-block">
-                <span className="k-detail-block__label u-label">标签</span>
-                <div className="k-hstack">
-                  {selected.tags.map((tag) => (
-                    <TagPill key={tag}>{tagLabel(tag)}</TagPill>
-                  ))}
-                </div>
-              </div>
-            )}
-            <Relations kind="task" id={selected.id} />
-          </div>
-        )}
+        {selected !== undefined &&
+          (editing ? (
+            <EntityEditForm
+              fields={taskFields}
+              initial={selected as unknown as Record<string, unknown>}
+              saving={saving}
+              onSubmit={handleSave}
+              onCancel={() => setEditing(false)}
+            />
+          ) : (
+            <TaskDetail task={selected} />
+          ))}
       </Drawer>
     </div>
   )

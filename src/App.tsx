@@ -13,6 +13,7 @@ import { Calendar } from '@/views/Calendar'
 import { Projects } from '@/views/Projects'
 import { Review } from '@/views/Review'
 import { Settings } from '@/views/Settings'
+import { Trash } from '@/views/Trash'
 import { NotFound } from '@/views/NotFound'
 
 // 资料页依赖 react-markdown，按需加载以压缩首屏包体
@@ -34,6 +35,7 @@ export default function App() {
                   <Route path="projects" element={<Projects />} />
                   <Route path="library" element={<Library />} />
                   <Route path="review" element={<Review />} />
+                  <Route path="trash" element={<Trash />} />
                   <Route path="settings" element={<Settings />} />
                   <Route path="*" element={<NotFound />} />
                 </Route>
