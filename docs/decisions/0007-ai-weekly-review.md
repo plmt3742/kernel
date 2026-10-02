@@ -44,3 +44,19 @@ ADR-0005/0006 已把「opencode 即大脑」落在收件箱解析（分类 + 挂
 - 页内停滞项目的真实迁移 / 归档落盘 —— 仍为原型态按钮，另行切片。
 - 周回顾 SSE 过程流（本切片为同步草稿；`parse-stream` 复用留给后续）。
 - 任何无确认自动落盘。
+
+---
+
+## 6. 修订（2026-10-03 · Slice F：月回顾扩展 + 回顾页重构）
+
+**触发**：owner 指令「月回顾 AI 支持」+ 回顾页重构（周 / 月回顾卡并列一栏置于能量分析之上、点 AI 解析出报告、点开动画弹窗查阅、停滞项目独立一栏）。
+
+1. **月指标（§2.3 扩展）**：`server/ai.mjs` 新增 `computeMonthMetrics`——窗口为**本机时区 1 日 00:00 → now**；`captured` / `created` / `completed` / `overdue` 的判定口径与 `computeWeekMetrics` **完全一致**，仅替换窗口起点（月首 vs 周首）。`migrated` 同样刻意不产出。
+2. **月键**：新增 `monthKey(date)` = `YYYY-MM`（本地时区），与前端 `src/lib/date.ts` `toMonthKey` 同口径；周键 `isoWeekKey` 不变。
+3. **草稿端点参数化（§2.2 扩展）**：`POST /api/ai/review/draft` 接受 `{ period:'weekly'|'monthly' }`（非法值 400；缺省 weekly，周行为完全不变）；`generateReviewDraft(period)` 按周期选择窗口 / 指标 / `periodKey` / 摘要文案（`buildReviewDigest` / `buildReviewSystem` 参数化 `scope`）。单次重试、Zod、按实际停滞集合过滤臆造 id 的安全模式全部沿用。
+4. **写入路径参数化（§2.1 扩展）**：`POST /api/reviews` 接受 `{ type:'monthly' }` → `type:'monthly'` + `periodKey:'YYYY-MM'` + 月指标；缺省仍为 `weekly` + ISO 周 + 周指标。`reviewSchema` / `reviewDraftSchema` 已支持 `monthly`，**字段无需变更**；审计仍为 `review.create` / `review.remove`。
+5. **前端**：`generateReviewDraft(period)` / `saveReview(summary, decisions, type)`；回顾页周 / 月各一张卡、各一弹窗，均支持草稿编辑 → 保存 → 撤销删除；已保存回顾只读查阅。新增 `src/components/Modal.tsx`（居中动画弹窗；`trapTab` 焦点圈闭 + 关闭还原；ESC / 遮罩关闭；`role=dialog` / `aria-modal` / `aria-labelledby`；reduced-motion 降级）。
+
+**与 §5 非目标的差异**：§5 曾列「月回顾生成」为非目标；本修订将其纳入（周 / 月共用同一安全链路），其余非目标（编辑追踪 / 真实 `migrated`、SSE 过程流、自动落盘）不变。
+
+**证据**：`.qa/v22/smoke-f.mjs`（13/13，含 monthly 201 / `periodKey 2026-10` / 删除 / 零残留）、`.qa/v22/monthly-draft.json`（真实月度草稿 200）、`.qa/v22/slice-f-verify.py`（E2E 30/30）、`.qa/v22/slice-f-mobile.py`（移动 6/6）。
