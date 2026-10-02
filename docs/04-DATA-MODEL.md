@@ -63,6 +63,8 @@
 
 > **文件投递（v0.5 · Slice D）**：`source:'file'` 的条目由 `POST /api/inbox/upload` 创建，`content` 取 caption（无则文件名）。二进制**不**进 JSON，仅存于 `data/files/`（`.gitignore`）；AI 解析时按「文本白名单 **或 Office Open XML（`.docx/.pptx/.xlsx`，Slice J）** + ≤5MB → 前 8000 字摘录，否则仅元数据」注入提示。删除条目经 `POST /api/inbox/:id/remove`（已澄清条目 409，需先 revert）。附件**本机动作**（Slice J2）经 `POST /api/inbox/:id/open`（系统默认程序打开）/ `POST /api/inbox/:id/reveal`（文件管理器定位）——服务端解析 `data/files/<id>-<name>` 并做条目 / 元数据 / 磁盘三重校验，缺一 404；`{dryRun:true}`（`/api/inbox/:id/(open|reveal)` 与 `/api/open`）仅解析校验、绝不 spawn（自动化测试用）。详见 ADR-0008。
 
+> **生命周期闭合（v0.5 · Slice V，见 ADR-0008 §6）**：文本捕捉成功后**自动运行一次 AI 解析**（与文件投递后自动解析节奏一致；AI 离线静默跳过、绝不自动应用，手动「AI 解析」保留）。UI 提供完整出口——未澄清 / 已丢弃条目「删除」（`POST /api/inbox/:id/remove`，服务端一并清理附件；已澄清仍 409 保护）；已丢弃条目「恢复」与已澄清条目「撤回」均复用 `POST /api/inbox/:id/revert`（discarded 无产物仅重置 `status:'unprocessed'`；clarified 先删除 `linkedId` 产物再回退）；已澄清条目「查看产物」按 `linkedId` 前缀深链跳转（`t-`→`/tasks?task=`、`p-`→`/projects?project=`、`n-`→`/library?note=`、`r-`→`/library?resource=`）。字段应用矩阵见 §4.13。
+
 ### 4.2 task（`t-`）
 
 | 字段 | 类型 | 说明 |
@@ -250,14 +252,37 @@
 5. **级联不 bump `updatedAt`**：改名 / 合并只替换 `tags` 数组，不改实体更新时间，避免污染停滞项目与回顾「最近活动」口径。
 6. **计数**：使用数 = 在 `tasks / projects / notes / resources / events` 上出现的实体数（`events` 只读但计入）。
 
+### 4.13 澄清 target × 可应用字段矩阵（Slice V）
+
+AI 建议卡「编辑」与手工澄清 `POST /api/inbox/:id/clarify` 的 `details` 字段，**严格**按 target 落盘；UI 只渲染该 target 会应用的字段（`src/lib/aiForm.ts` `CLARIFY_FIELD_MATRIX`），服务端分支同源实现，**不存在「编辑了却被静默丢弃」**。
+
+| target | title | tags | contexts | energy | importance | estimateMin | dueAt | projectId | areaId |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
+| task | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| note | ✓ | ✓ | — | — | — | — | — | ✓ | ✓ |
+| resource | ✓ | ✓ | — | — | — | — | — | — | ✓ |
+| project | —（忽略 details，完成定义待整理） | — | — | — | — | — | — | — | — |
+| discard | —（无需字段） | — | — | — | — | — | — | — | — |
+
+- `projectId` / `areaId` 落盘前校验形状与存在性（臆造即 400）；note 首次支持 `projectId` / `areaId`（Slice V 修复）；resource 的 `title` 对**文件条目同样应用**（此前被强制用原文，属静默丢弃，Slice V 修复）。
+- `discard` 不产出 `details`。切换到 note / resource 时，表单保留仍相关字段的编辑值（title / tags / projectId / areaId），隐藏任务专属字段。
+
 ## 5. 生命周期与状态流
 
 ### 5.1 inboxItem
 
 ```text
 unprocessed ──澄清──> clarified（linkedId 指向新实体）
-     └────────丢弃──> discarded
+     │                    │
+     │                    └──撤回（revert：删除产物）──> unprocessed
+     │
+     └──丢弃──> discarded ──恢复（revert：无产物，仅重置 status）──> unprocessed
+     │
+     └──删除（remove，含附件清理）──> ∅
+discarded ──删除（remove）──> ∅
 ```
+
+> 删除对 `clarified` 条目返回 409（保护已联动实体），须先「撤回」；`revert` 对 `unprocessed` 幂等。见 §4.1 与 ADR-0008 §6。
 
 ### 5.2 task
 

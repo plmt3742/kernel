@@ -368,6 +368,38 @@
   color: var(--muted);
   font-size: var(--text-caption);
 }
+/* 生命周期动作（Slice V · F15/F34/F37）：已澄清 / 已丢弃行的查看产物 · 撤回 / 恢复 / 删除 */
+.k-inbox-item__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+/* 未澄清条目展开区的生命周期动作行（删除入口），与澄清目标芯片分开 */
+.ic-lifecycle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+/* 危险动作：复用 danger token；无渐变 / 发光 */
+button.k-pill.is-danger {
+  color: var(--danger-text);
+}
+button.k-pill.is-danger:hover {
+  background: var(--danger-bg);
+  color: var(--danger-text);
+}
+/* 内联二次确认（删除 / 撤回）：文本 + 确认 + 取消同一行，柔影无硬边 */
+.ic-confirm {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.ic-confirm__text {
+  color: var(--danger-text);
+}
 .k-clarify {
   display: flex;
   gap: var(--space-2);
@@ -650,6 +682,13 @@
 .ic-ai__dup {
   color: var(--muted);
   font-size: var(--text-caption);
+}
+/* 一键建项（Slice V · F16/F30）：建议新项目 + 「创建项目「X」」按钮同一行 */
+.ic-ai__newproject {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
 }
 
 /* 批量条侧挂 dock（Slice E2.5）：内联批量条滚出视口后的右侧浮动镜像。

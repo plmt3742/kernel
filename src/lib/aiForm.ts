@@ -28,6 +28,46 @@ export interface AiSuggestionFormValues {
   tags: string
 }
 
+/** 可编辑字段键（与 AiSuggestionForm 的渲染单元一一对应） */
+export type ClarifyFieldKey =
+  | 'title'
+  | 'contexts'
+  | 'tags'
+  | 'energy'
+  | 'importance'
+  | 'estimateMin'
+  | 'dueAt'
+  | 'projectId'
+  | 'areaId'
+
+/** 任务目标的完整字段集（表单默认） */
+export const ALL_CLARIFY_FIELDS: readonly ClarifyFieldKey[] = [
+  'title',
+  'contexts',
+  'tags',
+  'energy',
+  'importance',
+  'estimateMin',
+  'dueAt',
+  'projectId',
+  'areaId',
+]
+
+/**
+ * target × 可编辑字段矩阵（Slice V · F19/F31）——**与服务端 clarify 真正应用的字段严格一致**，
+ * 绝不在 UI 展示一个不会被落盘的输入框。服务端各目标落盘范围见 server/index.mjs clarifyInbox：
+ *   · task     → 全字段（title / contexts / energy / importance / estimateMin / dueAt / tags / projectId / areaId）
+ *   · note     → title / tags / projectId / areaId（笔记无 contexts / 能量 / 预估 / 截止结构）
+ *   · resource → title / tags / areaId（资料无 projectId / contexts / 能量…）
+ *   · discard  → 无字段
+ */
+export const CLARIFY_FIELD_MATRIX: Record<AiSuggestion['target'], readonly ClarifyFieldKey[]> = {
+  task: ALL_CLARIFY_FIELDS,
+  note: ['title', 'tags', 'projectId', 'areaId'],
+  resource: ['title', 'tags', 'areaId'],
+  discard: [],
+}
+
 export const EMPTY_AI_FORM: AiSuggestionFormValues = {
   title: '',
   contexts: '',

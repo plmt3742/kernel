@@ -57,3 +57,16 @@ Slice A–C 已把「文件即数据库 / opencode 即大脑」落在收件箱�
 - 文件预览（图片 / PDF 内嵌查看）——不做浏览器内预览；改以「打开文件」（系统默认程序）或「位置」（文件管理器定位）处理（Slice J2）。
 - 上传进度条 / 断点续传 / 分片——本地单文件直传，够用即止。
 - `data/files/` 的自动 GC / 孤儿清理——随条目删除即时清理；独立 GC 另行切片。
+
+---
+
+## 6. Slice V 修订（2026-10-03）：收件箱生命周期闭合 + 澄清字段矩阵
+
+以 owner 面向的「碎片化 / 摩擦」审计为规格：文本捕捉后不自动解析（文件投递却自动）、删除端点无 UI 入口、已丢弃 / 已澄清条目 toast 消失后无出口、`newProjectHint` 不能一键建项、AI 建议在 target=note/resource 时仍渲染任务专属字段且**编辑被静默丢弃**。本修订不新增任何端点，复用既有 `remove` / `revert` / `clarify`。
+
+1. **文本即解析（F2）**：文本捕捉成功后前端自动触发一次 AI 解析（与文件投递后的自动解析节奏一致）。先探活 `/api/ai/health`——AI 离线 / 探活失败**静默跳过**（不展开面板、不刷错误 toast）；在线则复用既有 `parse-stream` + 建议缓存路径；**绝不自动应用**，手动「AI 解析」入口保留。
+2. **删除入口（F34）**：`POST /api/inbox/:id/remove` 走 UI（未澄清展开区 / 已丢弃行），内联二次确认后删除并 toast；服务端一并清理附件文件；已澄清条目仍 409（保护联动实体）。
+3. **恢复 / 撤回（F15/F37）**：已丢弃行「恢复」与已澄清行「撤回」均复用 `revert`——**discarded 无产物，仅重置 `status:'unprocessed'`**；clarified 删除 `linkedId` 产物后回退。已澄清行「查看产物」按 `linkedId` 前缀深链（`t-/p-/n-/r-` → 对应页面查询参数，无产物禁用），闭合「不可点开产物、不可撤回」。
+4. **一键建项（F16/F30）**：建议卡在 `newProjectHint` 且目标为任务时显示「创建项目「X」」→ 复用 `POST /api/projects`；建成后 toast（可「查看」深链）并把新项目 id 自动填入建议编辑表单的 `projectId`（**仍需用户点「应用建议」才挂接，绝不自动应用条目**）。note / resource 目标不提供建项入口（其 `projectId` 不落盘，避免误导）。
+5. **澄清字段矩阵（F19/F31）**：`clarify` 的 `details` 严格按 target 落盘，UI 只渲染该 target 会应用的字段（`src/lib/aiForm.ts` `CLARIFY_FIELD_MATRIX`；矩阵见 `docs/04` §4.13）。服务端对齐：**note** 分支接受 `projectId` / `areaId`（真实存在校验）；**resource** 分支的 `title` 对文件条目同样应用（此前被强制用原文）且接受 `areaId`。任务专属字段（contexts / energy / importance / estimateMin / dueAt）对 note / resource 不再由 UI 送出。切换 target 保留仍相关字段的编辑值；`reason` 只读。
+6. **验证**：服务端冒烟 `.qa/v33/smoke-v.mjs` **43/43**（删除 / 附件清理往返、discarded 恢复往返、clarified 撤回往返、note/resource 字段矩阵真实落盘、已澄清 remove 409、零残留 + 所有者未动）；浏览器 E2E `.qa/v33/slice-v-verify.py` **29/29**（文本捕捉自动解析、删除确认离场、丢弃行恢复 / 删除、澄清行查看产物深链 / 撤回、newProjectHint 一键建项、target 字段矩阵、移动 390 零横溢、控制台 0、零残留 + 所有者未动）；`npm run build`（tsc strict + vite）通过。

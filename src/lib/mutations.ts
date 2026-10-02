@@ -229,11 +229,30 @@ export interface RevertResult {
   removed: { kind: CreatedKind; id: string } | null
 }
 
+/**
+ * 撤销澄清 / 恢复条目（Slice V · F15/F37）：服务端语义=
+ *   · clarified → 删除已联动产物（若有）并回到 unprocessed；
+ *   · discarded → 无产物，仅重置回 unprocessed（即「恢复」）；
+ *   · unprocessed → 幂等无操作。
+ * 前端同一函数承载「撤回」（澄清行）与「恢复」（丢弃行）两个入口。
+ */
 export async function revertInbox(id: string): Promise<RevertResult> {
   const result = await api.post<RevertResult>(`/api/inbox/${id}/revert`)
   upsertEntity('inbox', result.inbox)
   if (result.removed !== null) removeEntity(result.removed.kind, result.removed.id)
   return result
+}
+
+/**
+ * 删除收件箱条目（Slice V · F34）：服务端一并清理附件文件（data/files/<id>-<name>）。
+ * 已澄清条目服务端以 409 阻止（保护联动实体），需先经 revertInbox 撤回；调用方据此提示。
+ */
+export async function removeInbox(id: string): Promise<{ kind: 'inbox'; id: string }> {
+  const result = await api.post<{ removed: { kind: 'inbox'; id: string } }>(
+    `/api/inbox/${id}/remove`,
+  )
+  removeEntity('inbox', id)
+  return result.removed
 }
 
 /* ---------------------------------------------------------------------------

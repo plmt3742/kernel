@@ -4,6 +4,18 @@
 
 ## [Unreleased]
 
+### 收件箱生命周期闭合 + 澄清字段矩阵 · Slice V（已完成 · 2026-10-03）
+以 owner 面向的「碎片化 / 摩擦」审计为规格，修五组问题：①（F2）文本捕捉后不自动 AI 解析，与文件投递节奏不一致；②（F34）删除端点无 UI 入口、附件无法清理；③（F15/F37）已丢弃 / 已澄清条目 toast 消失后无「恢复 / 删除 / 撤回 / 查看产物」出口；④（F16/F30）`newProjectHint` 不能一键建项；⑤（F19/F31）target=note/resource 时仍渲染任务专属字段，**用户的编辑被静默丢弃**。不新增端点，复用既有 `remove` / `revert` / `clarify` / `projects`。`npm run build`（tsc strict + vite）通过；服务端冒烟 **43/43** + 浏览器 E2E **29/29**；零数据残留（inbox 回到基线 12 条；回收站 0；所有者 i-0009/i-0010、t-0061/t-0062、rev-0001/rev-0002 未动）；控制台零 error；证据 `.qa/v33/`。
+
+- **F2 捕捉即解析（前端 `src/views/Inbox.tsx`）**：`captureText` 捕捉成功后调用 `runParseSilent(item)`——先探活 `/api/ai/health`，离线 / 探活失败**静默跳过**（不展开面板、不刷错误 toast）；在线复用既有 `runParse` + `aiParseInboxStream` + `src/lib/inboxAi.ts` 缓存路径（与文件投递自动解析同节奏）；**绝不自动应用**，手动「AI 解析」保留。
+- **F34 删除入口（前端 + 既有端点）**：`src/lib/mutations.ts` 新增 `removeInbox(id)`（服务端 `POST /api/inbox/:id/remove` 已存在，一并清理附件）。未澄清条目展开动作区与已丢弃行提供「删除」，**内联二次确认**（`.ic-confirm`）后删除 + toast；已澄清条目服务端 409 保护（UI 只提供「撤回」）。
+- **F15/F37 生命周期闭合（复用 `revert`）**：已丢弃行「恢复」、已澄清行「撤回」均调 `revertInbox`——discarded 无产物仅重置 `unprocessed`；clarified 删除 `linkedId` 产物后回退（撤回带确认）。已澄清行新增「查看产物」，按 `linkedId` 前缀经新增 `src/lib/relations.ts` `deepLinkOfId()` 深链（`t-`→`/tasks?task=` / `p-`→`/projects?project=` / `n-`→`/library?note=` / `r-`→`/library?resource=`；无产物禁用）。
+- **F16/F30 一键建项（前端 `AiReadyCard`）**：`newProjectHint` 存在且目标为任务时显示「创建项目「X」」→ 复用 `POST /api/projects`；建成 toast（可「查看」深链）并把新项目 id 自动填入建议编辑表单的 `projectId`（仍需用户点「应用建议」才挂接，**绝不自动应用条目本身**）；note / resource 目标不提供入口（其 `projectId` 不落盘）。
+- **F19/F31 澄清字段矩阵（前端 + `server/index.mjs`）**：新增 `src/lib/aiForm.ts` `CLARIFY_FIELD_MATRIX`（target × 可编辑字段，服务端同源）——task 全字段；note→title/tags/projectId/areaId；resource→title/tags/areaId；discard→无。`AiSuggestionForm` 增 `fields` 属性按 target 条件渲染；`AiReadyCard` 阅读态亦按 target 条件呈现元信息；`toClarifyDetails` 改为按 target 只挑会应用的字段。服务端对齐：`clarify` 的 note 分支接受 `projectId` / `areaId`（真实存在校验），resource 分支的 `title` 对**文件条目同样应用**并接受 `areaId`——结束「编辑被静默丢弃」。切换 target 保留仍相关字段编辑值。
+- **样式（`src/styles/views.css`）**：新增 `.k-inbox-item__actions` / `.ic-lifecycle` / `.ic-confirm` / `.ic-confirm__text` / `button.k-pill.is-danger` / `.ic-ai__newproject`，全部 token-only、无渐变 / 发光。
+- **验证**：`.qa/v33/smoke-v.mjs` **43/43**（remove 往返 + 附件 `GET /api/files` 由 200→404、discarded 恢复往返、clarified 撤回往返 + 已澄清 remove 409、note/resource target 字段矩阵真实落盘、resource 文件条目 title 覆盖、零残留 + 所有者未动）；`.qa/v33/slice-v-verify.py` **29/29**（文本捕捉自动解析启动 / 就绪卡、删除内联确认 → 离场 → 计数复原、丢弃行恢复 / 删除、澄清行查看产物深链 `/library?note=` + 撤回、`newProjectHint` 一键建项 → 快照出现新项目 → 清理归零、target 字段可见性矩阵、移动 390 零横溢、控制台 0、零残留 + 所有者数据未动）；截图 4 张（字段矩阵 / 一键建项 / 澄清深链 / 移动）。
+- **记录**：ADR-0008 §6 修订（收件箱生命周期：文本即解析 / 删除入口 / 恢复 / 产物链接 / 字段矩阵）；`docs/02`（Slice V 增补）；`docs/04` §4.1 / §4.13 / §5.1；`docs/README.md`（ADR-0008 索引）；`public/guide.html`；`AGENTS.md`、`TASK_BOOK.md`。
+
 ### 回顾报告可读性 · 同期口径 · 去重 · Slice U（已完成 · 2026-10-03）
 以 owner 反馈「生成的报告可读性太差」为规格：截图显示七段正文被塞进一个大 textarea 当一整块密文；进行中的月回顾拿「本月 3 天」去比「上月整月」（苹果对橘子，如「窗口仅 3 天，本月完成 2 项…上月 59」）；「下期行动」段与决策列表逐字重复。本切片把报告弹窗默认改为**阅读视图**（七段分节、舒适行距、可「编辑」切换），把环比对照改为**同期等长窗口**，并把第 6 段改为**指针去重**；归档 / 保存更新同条语义不变。`npm run build`（tsc strict + vite）通过；服务端冒烟 **23/23** + 纯函数单测 **25/25** + 浏览器 E2E **32/32**；零数据残留（回顾回到基线 2 条，所有者 rev-0001/rev-0002、t-0061/t-0062、i-0009/i-0010 未动）；控制台零 error；证据 `.qa/v32/`。
 

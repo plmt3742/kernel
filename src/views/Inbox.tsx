@@ -10,10 +10,12 @@ import {
   type ReactNode,
 } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
+import { useNavigate } from 'react-router-dom'
 import {
   ArrowUp,
   Bell,
   ChevronRight,
+  ExternalLink,
   FileText,
   FolderOpen,
   Mic,
@@ -32,7 +34,9 @@ import { getAreaById, getInbox, getProjectById, getTaskById } from '@/lib/data'
 import {
   captureInbox,
   clarifyInbox,
+  createProject,
   openInboxFile,
+  removeInbox,
   revealInboxFile,
   revertInbox,
   uploadInboxFile,
@@ -54,10 +58,12 @@ import {
 } from '@/lib/inboxAi'
 import {
   applyFormToSuggestion,
+  CLARIFY_FIELD_MATRIX,
   suggestionToForm,
   type AiSuggestionFormValues,
 } from '@/lib/aiForm'
-import { errorText } from '@/lib/api'
+import { deepLinkOfId } from '@/lib/relations'
+import { api, errorText } from '@/lib/api'
 import { useDataRevision, useNow } from '@/lib/hooks'
 import { ENERGY_LABEL, humanSize, INBOX_SOURCE_LABEL, tagLabel } from '@/lib/format'
 import {
@@ -107,32 +113,41 @@ const AI_STAGE_TEXT: Record<AiStage, string> = {
   validating: '校验通过',
 }
 
-/** 由 AI 建议构造澄清覆盖字段（discard 无需 details；仅取已定义字段） */
-function toClarifyDetails(suggestion: AiSuggestion): ClarifyDetails | undefined {
-  if (suggestion.target === 'discard') return undefined
-  const details: ClarifyDetails = {
-    energy: suggestion.energy,
-    importance: suggestion.importance,
-  }
+/**
+ * 由 AI 建议构造澄清覆盖字段（Slice V · F19/F31）：**严格按 target 只挑服务端会应用的字段**，
+ * 与 src/lib/aiForm.ts 的 CLARIFY_FIELD_MATRIX 同源；目标之外的字段一律不发，杜绝「编辑了却被静默丢弃」。
+ * discard 无需 details，返回 undefined。
+ */
+function toClarifyDetails(
+  suggestion: AiSuggestion,
+  target: AiSuggestion['target'],
+): ClarifyDetails | undefined {
+  if (target === 'discard') return undefined
+  const fields = CLARIFY_FIELD_MATRIX[target]
+  const has = (key: (typeof fields)[number]): boolean => fields.includes(key)
+  const details: ClarifyDetails = {}
   // 标题为空时省略，回退服务端用条目原文（编辑时用户可清空）
-  if (suggestion.title !== '') details.title = suggestion.title
-  if (suggestion.contexts.length > 0) details.contexts = suggestion.contexts
-  // 标签（Slice T）：AI 建议的标签（含新标签）随澄清应用落盘，服务端登记 origin:'ai'
-  if (suggestion.tags.length > 0) details.tags = suggestion.tags
-  if (suggestion.estimateMin !== undefined) details.estimateMin = suggestion.estimateMin
-  if (suggestion.dueAt !== undefined) details.dueAt = suggestion.dueAt
-  // 关联建议仅对任务目标生效（服务端对非 task 忽略 projectId / areaId）
-  if (suggestion.target === 'task') {
-    if (suggestion.projectId !== undefined) details.projectId = suggestion.projectId
-    if (suggestion.areaId !== undefined) details.areaId = suggestion.areaId
+  if (has('title') && suggestion.title !== '') details.title = suggestion.title
+  // 标签（Slice T）：任务 / 笔记 / 资料均落盘，服务端按 origin:'ai' 登记
+  if (has('tags') && suggestion.tags.length > 0) details.tags = suggestion.tags
+  if (has('contexts') && suggestion.contexts.length > 0) details.contexts = suggestion.contexts
+  if (has('energy')) details.energy = suggestion.energy
+  if (has('importance')) details.importance = suggestion.importance
+  if (has('estimateMin') && suggestion.estimateMin !== undefined) {
+    details.estimateMin = suggestion.estimateMin
   }
+  if (has('dueAt') && suggestion.dueAt !== undefined) details.dueAt = suggestion.dueAt
+  if (has('projectId') && suggestion.projectId !== undefined) details.projectId = suggestion.projectId
+  if (has('areaId') && suggestion.areaId !== undefined) details.areaId = suggestion.areaId
   return details
 }
 
 /**
- * AI 就绪建议卡（Slice O）：应用 / 重新解析 / 忽略 + 「编辑」——展开后可用统一字段表单
- * 修改全部建议字段（目标 / 标题 / 上下文 / 能量 / 重要性 / 预估 / 截止 / 项目 / 区域 / 标签）。
- * 应用时提交「当前（可能编辑过的）值」，仍走既有 clarify 路径（details + ai 审计）。
+ * AI 就绪建议卡（Slice O；Slice V 增强）：
+ *   · 应用 / 重新解析 / 忽略 + 「编辑」——编辑态只渲染该 target 服务端会应用的字段（CLARIFY_FIELD_MATRIX）；
+ *   · newProjectHint 存在且目标为任务时，提供「创建项目「X」」一键建项（F16/F30），
+ *     建成后自动填入 projectId 便于随后「应用建议」挂接（绝不自动应用条目本身）；
+ *   · 阅读态按 target 条件呈现元信息（note / resource 不展示任务专属轴）。
  * 关联信息按 id 查快照，仅提示不自动合并；编辑为纯客户端态，直到应用才落盘。
  */
 function AiReadyCard({
@@ -142,6 +157,7 @@ function AiReadyCard({
   onRetry,
   retryDisabled,
   onClear,
+  onCreateProject,
 }: {
   suggestion: AiSuggestion
   now: Date
@@ -150,16 +166,22 @@ function AiReadyCard({
   onRetry: () => void
   retryDisabled: boolean
   onClear: () => void
+  /** 一键新建项目（F16/F30）：返回新建项目供填入 projectId；失败由上层 toast（本组件静默） */
+  onCreateProject: (hint: string) => Promise<{ id: string; title: string }>
 }): ReactNode {
+  const navigate = useNavigate()
   const [editing, setEditing] = useState(false)
   const [target, setTarget] = useState<AiSuggestion['target']>(suggestion.target)
   const [values, setValues] = useState<AiSuggestionFormValues>(() => suggestionToForm(suggestion))
+  const [creatingProject, setCreatingProject] = useState(false)
+  const [createdProject, setCreatedProject] = useState<{ id: string; title: string } | null>(null)
 
   // 建议变化（重新解析 / 缓存切换）→ 重置为全新建议的编辑态
   useEffect(() => {
     setEditing(false)
     setTarget(suggestion.target)
     setValues(suggestionToForm(suggestion))
+    setCreatedProject(null)
   }, [suggestion])
 
   const patchValues = (patch: Partial<AiSuggestionFormValues>): void => {
@@ -172,12 +194,40 @@ function AiReadyCard({
   const duplicate =
     suggestion.duplicateOf !== undefined ? getTaskById(suggestion.duplicateOf) : undefined
   const newProjectHint = suggestion.newProjectHint
+  // 只要 AI 提出「建议新项目」就提供一键建项入口（F16/F30）
+  const showCreateProject = newProjectHint !== undefined
+  const formFields = CLARIFY_FIELD_MATRIX[target]
+  const showProjectLink = project !== undefined && target !== 'resource'
+  const showDuplicate = target === 'task' && duplicate !== undefined
   const hasLinks =
-    project !== undefined ||
-    area !== undefined ||
-    duplicate !== undefined ||
-    newProjectHint !== undefined ||
-    suggestion.tags.length > 0
+    target !== 'discard' &&
+    (showProjectLink || area !== undefined || showDuplicate || suggestion.tags.length > 0)
+
+  // 一键建项（F16/F30）：首次点击创建；已创建后按钮变为「查看项目」深链。绝不自动应用条目。
+  const handleCreateProject = (): void => {
+    if (createdProject !== null) {
+      navigate(`/projects?project=${createdProject.id}`, { viewTransition: true })
+      return
+    }
+    if (newProjectHint === undefined) return
+    setCreatingProject(true)
+    void (async () => {
+      try {
+        const created = await onCreateProject(newProjectHint)
+        setCreatedProject(created)
+        // 自动填入表单 projectId（供「应用建议」把条目挂到新项目；仍需用户点应用才落盘）。
+        // 仅 task / note 会应用 projectId（resource 无此字段、discard 无需字段），避免产生「填了不生效」的假象。
+        if (target === 'task' || target === 'note') {
+          setValues((prev) => ({ ...prev, projectId: created.id }))
+        }
+      } catch {
+        /* 失败提示由上层 onCreateProject 统一 toast，此处静默 */
+      } finally {
+        setCreatingProject(false)
+      }
+    })()
+  }
+
   return (
     <>
       <div className="ic-ai__head">
@@ -194,6 +244,33 @@ function AiReadyCard({
           {editing ? '收起编辑' : '编辑'}
         </button>
       </div>
+
+      {showCreateProject && (
+        <div className="ic-ai__newproject">
+          {createdProject !== null ? (
+            <>
+              <span className="k-pill is-ghost">已创建项目「{createdProject.title}」</span>
+              <button type="button" className="k-pill" onClick={handleCreateProject}>
+                <ExternalLink size={12} strokeWidth={1.5} aria-hidden />
+                查看项目
+              </button>
+            </>
+          ) : (
+            <>
+              <span className="k-pill">建议新项目：{newProjectHint}</span>
+              <button
+                type="button"
+                className="k-pill"
+                disabled={creatingProject}
+                onClick={handleCreateProject}
+                title="按建议名在项目页新建一个项目"
+              >
+                {creatingProject ? '创建中…' : `创建项目「${newProjectHint}」`}
+              </button>
+            </>
+          )}
+        </div>
+      )}
 
       {editing ? (
         <>
@@ -215,41 +292,37 @@ function AiReadyCard({
           {target === 'discard' ? (
             <p className="ic-ai__reason">将按 AI 建议丢弃该条目（无需填写字段）。</p>
           ) : (
-            <AiSuggestionForm values={values} onChange={patchValues} />
+            <AiSuggestionForm values={values} onChange={patchValues} fields={formFields} />
           )}
         </>
       ) : (
         <>
-          <div className="ic-ai__meta">
-            {suggestion.contexts.map((ctx) => (
-              <TagPill key={ctx}>{ctx}</TagPill>
-            ))}
-            <span className="k-pill">{ENERGY_LABEL[suggestion.energy]}能</span>
-            <span className="k-pill">重要性 {suggestion.importance}/3</span>
-            {suggestion.estimateMin !== undefined && (
-              <span className="k-pill">≈{suggestion.estimateMin} 分钟</span>
-            )}
-            {suggestion.dueAt !== undefined && (
-              <span className="k-pill">
-                截止 {humanizeDay(suggestion.dueAt, now)} {formatTime(suggestion.dueAt)}
-              </span>
-            )}
-          </div>
+          {target === 'task' && (
+            <div className="ic-ai__meta">
+              {suggestion.contexts.map((ctx) => (
+                <TagPill key={ctx}>{ctx}</TagPill>
+              ))}
+              <span className="k-pill">{ENERGY_LABEL[suggestion.energy]}能</span>
+              <span className="k-pill">重要性 {suggestion.importance}/3</span>
+              {suggestion.estimateMin !== undefined && (
+                <span className="k-pill">≈{suggestion.estimateMin} 分钟</span>
+              )}
+              {suggestion.dueAt !== undefined && (
+                <span className="k-pill">
+                  截止 {humanizeDay(suggestion.dueAt, now)} {formatTime(suggestion.dueAt)}
+                </span>
+              )}
+            </div>
+          )}
           <p className="ic-ai__reason">{suggestion.reason}</p>
           {hasLinks && (
             <div className="ic-ai__links">
-              {project !== undefined && <span className="k-pill">建议挂到 {project.title}</span>}
-              {newProjectHint !== undefined && (
-                <>
-                  <span className="k-pill">建议新项目：{newProjectHint}</span>
-                  <span className="ic-ai__dup">可到项目页新建</span>
-                </>
-              )}
+              {showProjectLink && <span className="k-pill">建议挂到 {project.title}</span>}
               {area !== undefined && <span className="k-pill">建议归入 {area.title}</span>}
               {suggestion.tags.map((tag) => (
                 <TagPill key={tag}>{tagLabel(tag)}</TagPill>
               ))}
-              {duplicate !== undefined && (
+              {showDuplicate && (
                 <span className="ic-ai__dup">疑似与「{duplicate.title}」重复</span>
               )}
             </div>
@@ -297,6 +370,7 @@ function groupOf(item: InboxItem, now: Date): GroupKey {
 export function Inbox() {
   const revision = useDataRevision()
   const { toast } = useToast()
+  const navigate = useNavigate()
   const now = useNow()
   const reduce = useReducedMotion()
   const inputRef = useRef<HTMLInputElement>(null)
@@ -318,6 +392,11 @@ export function Inbox() {
   // 批量条侧挂 dock（Slice E2.5）：内联批量条滚出视口时为 true；dock 镜像其状态与动作
   const batchBarRef = useRef<HTMLDivElement>(null)
   const [barVisible, setBarVisible] = useState(true)
+  // 生命周期二次确认（Slice V · F34/F37）：删除 / 撤回走内联确认，避免原生对话框打断与误操作
+  const [pendingConfirm, setPendingConfirm] = useState<{
+    id: string
+    action: 'remove' | 'revert'
+  } | null>(null)
 
   useEffect(() => {
     inputRef.current?.focus()
@@ -443,9 +522,13 @@ export function Inbox() {
     if (value === '') return
     void (async () => {
       try {
-        await captureInbox(value)
+        const item = await captureInbox(value)
         setDraft('')
         toast('已捕捉 · 待澄清')
+        // Slice V（F2）：文本捕捉成功后自动跑一次 AI 解析，与文件投递后的自动解析节奏一致。
+        // 绝不自动应用（仍只出建议，落盘经 clarify）；AI 离线 / 失败静默跳过（不产生错误 toast），
+        // 手动「AI 解析」入口保留。后台执行，不阻塞捕捉。
+        runParseSilent(item)
       } catch (err) {
         toast(`捕捉失败：${errorText(err)}`, { tone: 'error' })
       }
@@ -544,6 +627,77 @@ export function Inbox() {
     void runSingleAi(item).catch(() => {})
   }
 
+  // 捕捉后自动解析（Slice V · F2）：先探活，AI 离线 / 探活失败即静默跳过（不展开面板、不 toast）；
+  // 在线则走与手动 / 文件投递同一流式路径（runParse）。任何失败都不冒泡成错误 toast。
+  const runParseSilent = (item: InboxItem): void => {
+    void api
+      .get<{ available: boolean }>('/api/ai/health')
+      .then((health) => {
+        if (!health.available) return
+        void runParse(item).catch(() => {})
+      })
+      .catch(() => {})
+  }
+
+  // 一键建项（F16/F30）：由建议卡 newProjectHint 触发；成功后 toast（可「查看」深链）。
+  // 只创建项目，绝不自动应用收件箱条目本身。
+  const createProjectForHint = async (hint: string): Promise<{ id: string; title: string }> => {
+    try {
+      const project = await createProject(hint)
+      toast(`已创建项目「${project.title}」`, {
+        action: {
+          label: '查看',
+          onClick: () => navigate(`/projects?project=${project.id}`, { viewTransition: true }),
+        },
+      })
+      return project
+    } catch (err) {
+      toast(`创建项目失败：${errorText(err)}`, { tone: 'error' })
+      throw err
+    }
+  }
+
+  // 删除条目（F34）：二次确认后经 removeInbox（服务端一并清理附件）；已澄清由服务端 409 保护，UI 不提供。
+  const removeEntry = (item: InboxItem): void => {
+    setPendingConfirm(null)
+    void (async () => {
+      try {
+        await removeInbox(item.id)
+        if (expandedId === item.id) setExpandedId(null)
+        clearInboxAiActive()
+        toast('已删除条目')
+      } catch (err) {
+        toast(`删除失败：${errorText(err)}`, { tone: 'error' })
+      }
+    })()
+  }
+
+  // 恢复已丢弃条目（F15/F37）：复用 revert（discarded 无产物，仅重置回 unprocessed）。
+  // 恢复是安全操作，无需二次确认。
+  const restoreEntry = (item: InboxItem): void => {
+    void (async () => {
+      try {
+        await revertInbox(item.id)
+        toast('已恢复到未澄清')
+      } catch (err) {
+        toast(`恢复失败：${errorText(err)}`, { tone: 'error' })
+      }
+    })()
+  }
+
+  // 撤回已澄清条目（F37）：二次确认后 revert（删除联动产物并回到 unprocessed）。
+  const revertEntry = (item: InboxItem): void => {
+    setPendingConfirm(null)
+    void (async () => {
+      try {
+        await revertInbox(item.id)
+        toast('已撤回澄清')
+      } catch (err) {
+        toast(`撤回失败：${errorText(err)}`, { tone: 'error' })
+      }
+    })()
+  }
+
   // 批量 AI 解析（Slice E1 + E2.6 + J）：模块级顺序解析、进度可见、失败续跑；绝不自动应用。
   const runBatchAi = (): void => {
     const ids = [...selected]
@@ -591,7 +745,7 @@ export function Inbox() {
 
   // 应用 AI 建议：复用单条澄清的 toast + 撤销路径（ai 审计标记 + details 覆盖）
   const applyAi = (item: InboxItem, suggestion: AiSuggestion): void => {
-    const details = toClarifyDetails(suggestion)
+    const details = toClarifyDetails(suggestion, suggestion.target)
     const label = suggestion.target === 'discard' ? '已按 AI 建议丢弃' : '已按 AI 建议创建'
     void (async () => {
       try {
@@ -983,6 +1137,41 @@ export function Inbox() {
                                   </TagPill>
                                 ))}
                               </div>
+                              {/* 生命周期（Slice V · F34）：删除条目（含附件清理），二次确认 */}
+                              <div className="ic-lifecycle">
+                                {pendingConfirm !== null &&
+                                pendingConfirm.id === item.id &&
+                                pendingConfirm.action === 'remove' ? (
+                                  <span className="ic-confirm">
+                                    <span className="ic-confirm__text u-label">
+                                      确认删除该条目？附件将一并清理。
+                                    </span>
+                                    <button
+                                      type="button"
+                                      className="k-pill is-danger"
+                                      onClick={() => removeEntry(item)}
+                                    >
+                                      删除
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="k-pill is-ghost"
+                                      onClick={() => setPendingConfirm(null)}
+                                    >
+                                      取消
+                                    </button>
+                                  </span>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    className="k-pill is-ghost is-danger"
+                                    onClick={() => setPendingConfirm({ id: item.id, action: 'remove' })}
+                                    title="永久删除该收件箱条目（附件一并清理）"
+                                  >
+                                    删除
+                                  </button>
+                                )}
+                              </div>
                               {showPanel && (
                                 <div
                                   key={panelPhase}
@@ -1037,6 +1226,7 @@ export function Inbox() {
                                       onRetry={() => forceParse(item)}
                                       retryDisabled={running}
                                       onClear={clearInboxAiActive}
+                                      onCreateProject={createProjectForHint}
                                     />
                                   )}
                                 </div>
@@ -1067,15 +1257,65 @@ export function Inbox() {
           </button>
           {showClarified && (
             <div>
-              {clarified.map((item) => (
-                <div className="k-inbox-item" key={item.id}>
-                  <span className="k-inbox-item__content k-muted">{item.content}</span>
-                  <span className="k-inbox-item__meta">
-                    <span className="k-mono">{formatRelative(item.capturedAt, now)}</span>
-                    <span className="k-mono">{item.linkedId ?? item.id}</span>
-                  </span>
-                </div>
-              ))}
+              {/* 生命周期闭合（Slice V · F37）：查看产物深链 + 撤回（删除产物并回到未澄清，二次确认） */}
+              {clarified.map((item) => {
+                const link = item.linkedId !== undefined ? deepLinkOfId(item.linkedId) : null
+                return (
+                  <div className="k-inbox-item" key={item.id}>
+                    <span className="k-inbox-item__content k-muted">{item.content}</span>
+                    <span className="k-inbox-item__meta">
+                      <span className="k-mono">{formatRelative(item.capturedAt, now)}</span>
+                      <span className="k-mono">{item.linkedId ?? item.id}</span>
+                    </span>
+                    <span className="k-inbox-item__actions">
+                      <button
+                        type="button"
+                        className="k-pill is-ghost"
+                        disabled={link === null}
+                        onClick={() => {
+                          if (link !== null) navigate(link, { viewTransition: true })
+                        }}
+                        title={link === null ? '该条目没有可跳转的产物' : '跳转查看澄清产物'}
+                      >
+                        <ExternalLink size={12} strokeWidth={1.5} aria-hidden />
+                        查看产物
+                      </button>
+                      {pendingConfirm !== null &&
+                      pendingConfirm.id === item.id &&
+                      pendingConfirm.action === 'revert' ? (
+                        <span className="ic-confirm">
+                          <span className="ic-confirm__text u-label">
+                            确认撤回？将删除已创建的产物。
+                          </span>
+                          <button
+                            type="button"
+                            className="k-pill is-danger"
+                            onClick={() => revertEntry(item)}
+                          >
+                            撤回
+                          </button>
+                          <button
+                            type="button"
+                            className="k-pill is-ghost"
+                            onClick={() => setPendingConfirm(null)}
+                          >
+                            取消
+                          </button>
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          className="k-pill is-ghost is-danger"
+                          onClick={() => setPendingConfirm({ id: item.id, action: 'revert' })}
+                          title="撤回澄清：删除已创建的产物并回到未澄清"
+                        >
+                          撤回
+                        </button>
+                      )}
+                    </span>
+                  </div>
+                )
+              })}
             </div>
           )}
         </div>
@@ -1094,12 +1334,52 @@ export function Inbox() {
           </button>
           {showDiscarded && (
             <div>
+              {/* 生命周期闭合（Slice V · F15）：恢复（回到未澄清，安全操作）+ 删除（二次确认） */}
               {discarded.map((item) => (
                 <div className="k-inbox-item" key={item.id}>
                   <span className="k-inbox-item__content k-muted">{item.content}</span>
                   <span className="k-inbox-item__meta">
                     <span className="k-mono">{formatRelative(item.capturedAt, now)}</span>
                     <span className="k-mono">{item.id}</span>
+                  </span>
+                  <span className="k-inbox-item__actions">
+                    <button
+                      type="button"
+                      className="k-pill is-ghost"
+                      onClick={() => restoreEntry(item)}
+                      title="恢复到未澄清"
+                    >
+                      恢复
+                    </button>
+                    {pendingConfirm !== null &&
+                    pendingConfirm.id === item.id &&
+                    pendingConfirm.action === 'remove' ? (
+                      <span className="ic-confirm">
+                        <span className="ic-confirm__text u-label">确认删除该条目？</span>
+                        <button
+                          type="button"
+                          className="k-pill is-danger"
+                          onClick={() => removeEntry(item)}
+                        >
+                          删除
+                        </button>
+                        <button
+                          type="button"
+                          className="k-pill is-ghost"
+                          onClick={() => setPendingConfirm(null)}
+                        >
+                          取消
+                        </button>
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        className="k-pill is-ghost is-danger"
+                        onClick={() => setPendingConfirm({ id: item.id, action: 'remove' })}
+                      >
+                        删除
+                      </button>
+                    )}
                   </span>
                 </div>
               ))}

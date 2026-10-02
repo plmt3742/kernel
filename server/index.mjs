@@ -515,12 +515,28 @@ async function clarifyInbox(id, body) {
       createdAt: now,
       updatedAt: now,
     }
+    // Slice V（F19/F31）：笔记也支持归属建议（note 实体本身有 projectId / areaId）；
+    // 真实存在才接受，避免 UI 可编辑字段被静默丢弃。contexts / energy / 等任务专属字段对
+    // 笔记无对应结构，UI 不再展示（见 src/lib/aiForm.ts 的 target × 字段矩阵）。
+    if (details.projectId !== undefined) {
+      if (!validId('projects', details.projectId) || (await readEntity('projects', details.projectId)) === null) {
+        throw Object.assign(new Error('项目不存在'), { status: 400 })
+      }
+      record.projectId = details.projectId
+    }
+    if (details.areaId !== undefined) {
+      if (!validId('areas', details.areaId) || (await readEntity('areas', details.areaId)) === null) {
+        throw Object.assign(new Error('区域不存在'), { status: 400 })
+      }
+      record.areaId = details.areaId
+    }
   } else {
     // 资源：文件投递澄清为资料时记录附件绝对路径（Slice E2）；非文件条目行为不变
     const isFile = item.file !== undefined && item.file !== null
     record = {
       id: await nextId('resources'),
-      title: isFile ? item.content : (details.title ?? item.content),
+      // Slice V（F19/F31）：标题对文件条目同样应用用户编辑（此前文件条目被强制用原文，属静默丢弃）
+      title: details.title ?? item.content,
       kind: isFile ? 'file' : 'article',
       status: 'unread',
       tags: detailTags,
@@ -528,6 +544,13 @@ async function clarifyInbox(id, body) {
     }
     if (isFile) {
       record.path = path.join(FILES_DIR, `${item.id}-${item.file.name}`)
+    }
+    // 资料仅有 areaId 归属（无 projectId）；真实存在才接受
+    if (details.areaId !== undefined) {
+      if (!validId('areas', details.areaId) || (await readEntity('areas', details.areaId)) === null) {
+        throw Object.assign(new Error('区域不存在'), { status: 400 })
+      }
+      record.areaId = details.areaId
     }
   }
   const savedRecord = await commit(kind, record, {

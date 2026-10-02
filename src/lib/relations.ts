@@ -158,6 +158,31 @@ function resourceRelations(resource: Resource): EntityRelations {
   return { outbound, inbound: [] }
 }
 
+/**
+ * 实体 id → 详情深链（与 Relations 的 PATH_OF 同口径）。
+ * 无独立页面（area / goal）或未知前缀返回 null。供收件箱「查看产物」等跨页跳转复用。
+ */
+export function deepLinkOfId(id: string): string | null {
+  const dash = id.indexOf('-')
+  const prefix = dash === -1 ? id : id.slice(0, dash)
+  switch (prefix) {
+    case 't':
+      return `/tasks?task=${id}`
+    case 'p':
+      return `/projects?project=${id}`
+    case 'n':
+      return `/library?note=${id}`
+    case 'r':
+      return `/library?resource=${id}`
+    case 'e':
+      return `/calendar?event=${id}`
+    case 'i':
+      return '/inbox'
+    default:
+      return null
+  }
+}
+
 /** 按实体类型与 id 派生关联（实体不存在时返回空） */
 export function getRelations(kind: RelationKind, id: string): EntityRelations {
   const s = getSnapshot()
