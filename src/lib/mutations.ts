@@ -12,7 +12,10 @@ import type {
   Resource,
   Review,
   ReviewMetrics,
+  ReviewType,
   Task,
+  TrashItem,
+  TrashKind,
 } from '@/types'
 
 /* ---------------------------------------------------------------------------
@@ -77,12 +80,67 @@ export async function createTask(title: string): Promise<Task> {
   return task
 }
 
+/** 新建项目（Slice E2.5）：title 非空；默认 active + 区域 a-0001；成功后 upsert 本地快照 */
+export async function createProject(title: string, areaId?: string): Promise<Project> {
+  const body = areaId === undefined ? { title } : { title, areaId }
+  const { project } = await api.post<{ project: Project }>('/api/projects', body)
+  upsertEntity('projects', project)
+  return project
+}
+
 /* ---------------------------------------------------------------------------
  * 收件箱
  * ------------------------------------------------------------------------- */
 
 export async function captureInbox(content: string): Promise<InboxItem> {
   const { inbox } = await api.post<{ inbox: InboxItem }>('/api/inbox', { content })
+  upsertEntity('inbox', inbox)
+  return inbox
+}
+
+/**
+ * 文件投递（Slice D）：RAW body 上传，服务端流式落盘 data/files/ 并生成 source:'file' 条目。
+ * 失败抛出可读错误（沿用 api.ts 的错误文案策略）。
+ */
+export async function uploadInboxFile(file: File, caption?: string): Promise<InboxItem> {
+  const params = new URLSearchParams()
+  params.set('name', file.name)
+  if (file.type !== '') params.set('type', file.type)
+  const trimmed = caption?.trim() ?? ''
+  if (trimmed !== '') params.set('caption', trimmed)
+  let response: Response
+  try {
+    response = await fetch(`/api/inbox/upload?${params.toString()}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/octet-stream' },
+      body: file,
+    })
+  } catch {
+    throw new Error('数据服务不可用（确认 npm run dev 已启动数据服务）')
+  }
+  const text = await response.text()
+  let data: unknown = null
+  if (text !== '') {
+    try {
+      data = JSON.parse(text)
+    } catch {
+      data = null
+    }
+  }
+  if (!response.ok) {
+    if (response.status >= 500 && data === null) {
+      throw new Error('数据服务不可用（确认 npm run dev 已启动数据服务）')
+    }
+    const message =
+      data !== null &&
+      typeof data === 'object' &&
+      'error' in data &&
+      typeof (data as { error: unknown }).error === 'string'
+        ? (data as { error: string }).error
+        : `上传失败（HTTP ${response.status}）`
+    throw new Error(message)
+  }
+  const inbox = (data as { inbox: InboxItem }).inbox
   upsertEntity('inbox', inbox)
   return inbox
 }
@@ -160,6 +218,8 @@ export interface AiSuggestion {
   tags: string[]
   /** 疑似重复的既有任务 id */
   duplicateOf?: string
+  /** 建议新建的项目名（Slice E2.5；与 projectId 互斥，≤40 字；仅提示，不自动创建） */
+  newProjectHint?: string
   reason: string
 }
 
@@ -272,6 +332,35 @@ export async function aiParseInboxStream(
 }
 
 /* ---------------------------------------------------------------------------
+ * 任务快速新建 AI 补全（v0.5 · Slice H：只填标题 → 建议；绝不自动落盘）
+ * ------------------------------------------------------------------------- */
+
+/** AI 任务补全建议（对应服务端 taskDraftSchema；全部可选，拿不准则缺省） */
+export interface TaskDraftSuggestion {
+  contexts: string[]
+  energy?: Task['energy']
+  importance?: number
+  estimateMin?: number
+  dueAt?: string
+  /** 关联建议（服务端已按快照过滤，保证 id / 标签真实存在） */
+  projectId?: string
+  areaId?: string
+  tags: string[]
+  reason: string
+}
+
+export interface TaskDraftResult {
+  suggestion: TaskDraftSuggestion
+  model: string | null
+  ms: number
+}
+
+/** 请求 AI 为「只填标题」的新任务补全可推断字段；不写数据（失败抛出由调用方安静处理） */
+export async function aiTaskDraft(title: string): Promise<TaskDraftResult> {
+  return api.post<TaskDraftResult>('/api/ai/task/draft', { title })
+}
+
+/* ---------------------------------------------------------------------------
  * 周回顾（v0.5 · Slice C：AI 只出草稿；确认后经 /api/reviews 落盘；撤销即删除）
  * ------------------------------------------------------------------------- */
 
@@ -293,14 +382,22 @@ export interface ReviewDraft {
   ms: number
 }
 
-/** 请求 AI 生成周回顾草稿；不写数据（失败抛出由调用方提示） */
-export async function generateReviewDraft(): Promise<ReviewDraft> {
-  return api.post<ReviewDraft>('/api/ai/review/draft')
+/** 请求 AI 生成回顾草稿（周 / 月，Slice F）；不写数据（失败抛出由调用方提示） */
+export async function generateReviewDraft(period: ReviewType = 'weekly'): Promise<ReviewDraft> {
+  return api.post<ReviewDraft>('/api/ai/review/draft', { period })
 }
 
-/** 保存周回顾：服务端计算 id / 周期 / 指标 / 停滞项目；返回落盘记录 */
-export async function saveReview(summary: string, decisions: string[]): Promise<Review> {
-  const { review } = await api.post<{ review: Review }>('/api/reviews', { summary, decisions })
+/** 保存回顾：服务端计算 id / 周期 / 指标 / 停滞项目；返回落盘记录（type 缺省周，行为不变） */
+export async function saveReview(
+  summary: string,
+  decisions: string[],
+  type: ReviewType = 'weekly',
+): Promise<Review> {
+  const { review } = await api.post<{ review: Review }>('/api/reviews', {
+    summary,
+    decisions,
+    type,
+  })
   upsertEntity('reviews', review)
   return review
 }
@@ -309,4 +406,91 @@ export async function saveReview(summary: string, decisions: string[]): Promise<
 export async function removeReview(id: string): Promise<void> {
   await api.post<{ removed: { kind: 'reviews'; id: string } }>(`/api/reviews/${id}/remove`)
   removeEntity('reviews', id)
+}
+
+/* ---------------------------------------------------------------------------
+ * 详情操作 · 编辑 / 回收站 / 文件位置（v0.5 · Slice E2，见 ADR-0009）
+ * ------------------------------------------------------------------------- */
+
+/** 可编辑 / 可回收实体记录 */
+export type EditableRecord = Task | Project | Note | Resource
+
+/** 编辑实体：只提交 patch 中提供的白名单字段；成功后 upsert 本地快照 */
+export async function updateEntity(
+  kind: TrashKind,
+  id: string,
+  patch: Record<string, unknown>,
+): Promise<EditableRecord> {
+  const { record } = await api.post<{ record: EditableRecord }>(`/api/${kind}/${id}/update`, patch)
+  upsertEntity(kind, record)
+  return record
+}
+
+/** 移入回收站：成功后从本地快照移除（撤销走 restoreEntity） */
+export async function trashEntity(kind: TrashKind, id: string): Promise<void> {
+  await api.post<{ trashed: { kind: TrashKind; id: string } }>(`/api/${kind}/${id}/trash`)
+  removeEntity(kind, id)
+}
+
+/** 从回收站恢复：成功后 upsert 回本地快照 */
+export async function restoreEntity(kind: TrashKind, id: string): Promise<EditableRecord> {
+  const { record } = await api.post<{ kind: TrashKind; record: EditableRecord }>(
+    `/api/trash/${kind}/${id}/restore`,
+  )
+  upsertEntity(kind, record)
+  return record
+}
+
+/** 彻底删除回收站记录 */
+export async function purgeEntity(kind: TrashKind, id: string): Promise<void> {
+  await api.post<{ purged: { kind: TrashKind; id: string } }>(`/api/trash/${kind}/${id}/purge`)
+}
+
+/** 读取回收站列表（按移入时间倒序） */
+export async function fetchTrash(): Promise<TrashItem[]> {
+  const { items } = await api.get<{ items: TrashItem[] }>('/api/trash')
+  return items
+}
+
+/** 在文件管理器中显示本地文件 / 目录（仅本机；失败抛出由调用方提示） */
+export async function revealPath(path: string): Promise<void> {
+  await api.post<{ ok: true }>('/api/reveal', { path })
+}
+
+/* ---------------------------------------------------------------------------
+ * AI 对话 · 归档为笔记（v0.5 · Slice G）
+ * ------------------------------------------------------------------------- */
+
+/** 一轮对话消息（user = 我 / assistant = KERNEL） */
+export interface AiChatMessage {
+  role: 'user' | 'assistant'
+  content: string
+}
+
+export interface AiChatResult {
+  reply: string
+  model: string | null
+  ms: number
+}
+
+/**
+ * 与本地 AI 对话：客户端携带有界历史（服务端再裁剪）；读当前数据快照作答。
+ * 不写数据；失败抛出由调用方提示（对话由调用方本地保留）。
+ */
+export async function chatWithAi(messages: AiChatMessage[]): Promise<AiChatResult> {
+  return api.post<AiChatResult>('/api/ai/chat', { messages })
+}
+
+export interface CreateNoteInput {
+  title: string
+  body: string
+  type?: Note['type']
+  tags?: string[]
+}
+
+/** 新建笔记（通用创建端点 `POST /api/notes`；成功后 upsert 本地快照） */
+export async function createNote(input: CreateNoteInput): Promise<Note> {
+  const { note } = await api.post<{ note: Note }>('/api/notes', input)
+  upsertEntity('notes', note)
+  return note
 }

@@ -46,6 +46,14 @@ export const inboxItemSchema = z
     status: inboxStatus,
     linkedId: z.string().optional(),
     note: z.string().optional(),
+    // 文件投递（v0.5 · Slice D）：附件元数据；二进制存 data/files/<id>-<name>（不进 git）
+    file: z
+      .object({
+        name: z.string().min(1),
+        size: z.number().int().min(0),
+        mime: z.string().optional(),
+      })
+      .optional(),
   })
   .catchall(z.unknown())
 
@@ -70,6 +78,8 @@ export const resourceSchema = z
     id: z.string().regex(/^r-\d{4}$/),
     title: z.string().min(1),
     url: z.string().optional(),
+    // 本地文件绝对路径（Slice E2）：文件投递澄清为资料时写入；可用于「在文件管理器中显示」
+    path: z.string().min(1).optional(),
     kind: resourceKind,
     status: resourceStatus,
     tags: z.array(z.string()),
@@ -162,6 +172,25 @@ export const aiSuggestionSchema = z.object({
   projectId: z.union([z.string(), z.null()]).optional(),
   areaId: z.union([z.string(), z.null()]).optional(),
   duplicateOf: z.union([z.string(), z.null()]).optional(),
+  // 新事务提示（Slice E2.5）：与 projectId 互斥；≤40 字；仅提示，不自动创建
+  newProjectHint: z.union([z.string(), z.null()]).optional(),
+  tags: z.array(z.string().min(1)).max(5).default([]),
+  reason: z.string().max(300).default(''),
+})
+
+/**
+ * AI 任务快速新建草稿（v0.5 · Slice H）：「只填标题」新建的任务 → AI 补全建议。
+ * 全部字段可选：模型拿不准就不返回该键；前端按实际返回字段呈现「应用 / 忽略」。
+ * 关联 id / 标签经 postValidate 按快照过滤（防臆造）；绝不自动落盘。
+ */
+export const taskDraftSchema = z.object({
+  contexts: z.array(z.string().min(1)).max(5).default([]),
+  energy: energy.optional(),
+  importance: z.number().int().min(1).max(3).optional(),
+  estimateMin: z.number().int().min(1).max(600).optional(),
+  dueAt: z.union([iso, z.null()]).optional(),
+  projectId: z.union([z.string(), z.null()]).optional(),
+  areaId: z.union([z.string(), z.null()]).optional(),
   tags: z.array(z.string().min(1)).max(5).default([]),
   reason: z.string().max(300).default(''),
 })

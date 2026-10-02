@@ -66,6 +66,22 @@ export type ResourceStatus =
 /** 回顾类型 */
 export type ReviewType = 'weekly' | 'monthly'
 
+/* ---------------------------------------------------------------------------
+ * 回收站（Slice E2）：可回收的实体类型与条目
+ * ------------------------------------------------------------------------- */
+
+/** 可回收实体类型 */
+export type TrashKind = 'tasks' | 'projects' | 'notes' | 'resources'
+
+/** 回收站中的记录（原记录 + 移入时间戳） */
+export type TrashRecord = (Task | Project | Note | Resource) & { trashedAt?: string }
+
+/** 回收站条目：kind + 原记录 */
+export interface TrashItem {
+  kind: TrashKind
+  record: TrashRecord
+}
+
 /** 标签命名空间（有界分类，Johnny.Decimal 精神） */
 export type TagNamespace = 'role' | 'context' | 'topic'
 
@@ -91,6 +107,12 @@ export interface InboxItem {
   status: InboxStatus
   linkedId?: string
   note?: string
+  /** 文件投递附件元数据（二进制存 data/files/<id>-<name>，不进 git；见 ADR-0008） */
+  file?: {
+    name: string
+    size: number
+    mime?: string
+  }
 }
 
 /** 任务 · t- */
@@ -220,6 +242,8 @@ export interface Resource {
   id: string
   title: string
   url?: string
+  /** 本地文件绝对路径（文件投递澄清为资料时写入；Slice E2） */
+  path?: string
   kind: ResourceKind
   status: ResourceStatus
   tags: string[]

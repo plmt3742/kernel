@@ -36,3 +36,6 @@ pnpm-debug.log*
 # typescript
 *.tsbuildinfo
 node_modules/.tmp
+
+# 附件二进制（文件投递；见 docs/decisions/0008-inbox-file-intake.md）
+data/files/
