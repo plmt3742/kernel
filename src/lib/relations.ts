@@ -176,6 +176,12 @@ export function deepLinkOfId(id: string): string | null {
       return `/library?resource=${id}`
     case 'e':
       return `/calendar?event=${id}`
+    case 'a':
+      // 区域深链到设置页「区域」分区并打开编辑（Slice X · F8）
+      return `/settings?section=areas&area=${id}`
+    case 'g':
+      // 目标深链到设置页「目标」分区并打开编辑（Slice X · F8）
+      return `/settings?section=goals&goal=${id}`
     case 'i':
       return '/inbox'
     default:

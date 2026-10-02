@@ -6,7 +6,10 @@ import { getTaskById, removeEntity, replaceSnapshot, setDataSource, upsertEntity
 import { toISODateTime } from '@/lib/date'
 import type {
   AppConfig,
+  Area,
   CalendarEvent,
+  Goal,
+  Habit,
   InboxItem,
   KernelSnapshot,
   Note,
@@ -162,6 +165,123 @@ export async function createEvent(input: EventCreateInput): Promise<CalendarEven
 export async function removeEvent(id: string): Promise<void> {
   await api.post<{ trashed: { kind: 'events'; id: string } }>(`/api/events/${id}/remove`)
   removeEntity('events', id)
+}
+
+/* ---------------------------------------------------------------------------
+ * 区域 / 目标 / 习惯（v0.5 · Slice X，见 ADR-0019）：关闭最后三个只读结构。
+ * 创建 / 编辑 / 删除（回收站，撤销走 restoreEntity）；习惯另有幂等打卡 / 取消打卡。
+ * 区域与目标删除带服务端引用护栏（被引用 → 409，可读计数）。
+ * ------------------------------------------------------------------------- */
+
+/** 区域创建入参：title 必填；standard / cadence / status 可选（服务端补缺省） */
+export interface AreaCreateInput {
+  title: string
+  standard?: string
+  cadence?: Area['cadence']
+  status?: Area['status']
+}
+
+export async function createArea(input: AreaCreateInput): Promise<Area> {
+  const { area } = await api.post<{ area: Area }>('/api/areas', input)
+  upsertEntity('areas', area)
+  return area
+}
+
+/** 编辑区域（白名单 title / standard / cadence / status；成功后 upsert） */
+export async function updateArea(id: string, patch: Record<string, unknown>): Promise<Area> {
+  const { record } = await api.post<{ record: Area }>(`/api/areas/${id}/update`, patch)
+  upsertEntity('areas', record)
+  return record
+}
+
+/** 删除区域（被引用 → 服务端 409；未引用 → 回收站，撤销走 restoreEntity('areas', id)） */
+export async function removeArea(id: string): Promise<void> {
+  await api.post<{ trashed: { kind: 'areas'; id: string } }>(`/api/areas/${id}/remove`)
+  removeEntity('areas', id)
+}
+
+/** 目标创建入参：title 必填；horizon / areaId / status / targetDate 可选（keyResults 本期留空） */
+export interface GoalCreateInput {
+  title: string
+  horizon?: Goal['horizon']
+  areaId?: string
+  status?: Goal['status']
+  targetDate?: string
+}
+
+export async function createGoal(input: GoalCreateInput): Promise<Goal> {
+  const { goal } = await api.post<{ goal: Goal }>('/api/goals', input)
+  upsertEntity('goals', goal)
+  return goal
+}
+
+/** 编辑目标（白名单 title / horizon / areaId / status / targetDate；keyResults 不开放） */
+export async function updateGoal(id: string, patch: Record<string, unknown>): Promise<Goal> {
+  const { record } = await api.post<{ record: Goal }>(`/api/goals/${id}/update`, patch)
+  upsertEntity('goals', record)
+  return record
+}
+
+/** 删除目标（被项目 / 子目标引用 → 409；未引用 → 回收站） */
+export async function removeGoal(id: string): Promise<void> {
+  await api.post<{ trashed: { kind: 'goals'; id: string } }>(`/api/goals/${id}/remove`)
+  removeEntity('goals', id)
+}
+
+/** 习惯创建入参：title 必填；cadence / metric / target / trigger / areaId 可选；log 空数组 */
+export interface HabitCreateInput {
+  title: string
+  cadence?: Habit['cadence']
+  metric?: Habit['metric']
+  target?: number
+  trigger?: string
+  areaId?: string
+}
+
+export async function createHabit(input: HabitCreateInput): Promise<Habit> {
+  const { habit } = await api.post<{ habit: Habit }>('/api/habits', input)
+  upsertEntity('habits', habit)
+  return habit
+}
+
+/** 编辑习惯（白名单 title / cadence / metric / target / trigger / areaId；log 由打卡端点维护） */
+export async function updateHabit(id: string, patch: Record<string, unknown>): Promise<Habit> {
+  const { record } = await api.post<{ record: Habit }>(`/api/habits/${id}/update`, patch)
+  upsertEntity('habits', record)
+  return record
+}
+
+/** 删除习惯（无引用护栏 → 回收站，撤销走 restoreEntity('habits', id)） */
+export async function removeHabit(id: string): Promise<void> {
+  await api.post<{ trashed: { kind: 'habits'; id: string } }>(`/api/habits/${id}/remove`)
+  removeEntity('habits', id)
+}
+
+/** 打卡结果：changed=false 表示幂等无变化（已打卡 / 无该记录） */
+export interface HabitCheckinResult {
+  habit: Habit
+  changed: boolean
+  date: string
+}
+
+/** 打卡（缺省今天；服务端幂等：已存在则不重复写） */
+export async function checkinHabit(id: string, date?: string): Promise<HabitCheckinResult> {
+  const result = await api.post<HabitCheckinResult>(
+    `/api/habits/${id}/checkin`,
+    date !== undefined ? { date } : {},
+  )
+  upsertEntity('habits', result.habit)
+  return result
+}
+
+/** 取消打卡（缺省今天；无该日期则幂等无操作） */
+export async function uncheckinHabit(id: string, date?: string): Promise<HabitCheckinResult> {
+  const result = await api.post<HabitCheckinResult>(
+    `/api/habits/${id}/uncheckin`,
+    date !== undefined ? { date } : {},
+  )
+  upsertEntity('habits', result.habit)
+  return result
 }
 
 /* ---------------------------------------------------------------------------
@@ -757,7 +877,15 @@ export async function removeReview(id: string): Promise<void> {
  * ------------------------------------------------------------------------- */
 
 /** 可编辑 / 可回收实体记录 */
-export type EditableRecord = Task | Project | Note | Resource | CalendarEvent
+export type EditableRecord =
+  | Task
+  | Project
+  | Note
+  | Resource
+  | CalendarEvent
+  | Area
+  | Goal
+  | Habit
 
 /** 编辑实体：只提交 patch 中提供的白名单字段；成功后 upsert 本地快照 */
 export async function updateEntity(

@@ -2099,6 +2099,89 @@ button.k-pill.is-danger:hover {
     justify-content: flex-start;
   }
 }
+/* ---------------------------------------------------------------------------
+ * 区域 / 目标 / 习惯管理（Slice X）：与标签管理同构的安静列表；token-only。
+ * ------------------------------------------------------------------------- */
+.k-mgr__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.k-mgr__list {
+  display: flex;
+  flex-direction: column;
+  border-top: var(--hairline) solid var(--outline);
+}
+.k-mgr__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    'main meta'
+    'ops  ops';
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  padding: var(--space-3) var(--space-2);
+  border-bottom: var(--hairline) solid var(--outline);
+}
+.k-mgr__main {
+  grid-area: main;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  min-width: 0;
+}
+.k-mgr__label {
+  color: var(--ink);
+  font-size: var(--text-body-sm);
+  font-weight: 600;
+}
+.k-mgr__id {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.k-mgr__meta {
+  grid-area: meta;
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-content: flex-end;
+}
+.k-mgr__ops {
+  grid-area: ops;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.k-mgr__kr {
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.k-mgr__kr li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  font-size: var(--text-body-sm);
+}
+@media (max-width: 767px) {
+  .k-mgr__row {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      'main'
+      'meta'
+      'ops';
+  }
+  .k-mgr__meta {
+    justify-content: flex-start;
+  }
+}
 .k-table {
   width: 100%;
   border-collapse: collapse;

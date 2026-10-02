@@ -27,7 +27,9 @@ import {
   getUpcomingNextActions,
   getWeeklyCompletionSeries,
 } from '@/lib/derive'
-import { isTaskDone } from '@/lib/mutations'
+import { isTaskDone, checkinHabit, uncheckinHabit } from '@/lib/mutations'
+import { errorText } from '@/lib/api'
+import { useToast } from '@/context/ToastContext'
 import { useDataRevision, useNow, useUndoableToggle } from '@/lib/hooks'
 import { formatTime, humanizeDay, isPast, toDate } from '@/lib/date'
 
@@ -80,7 +82,9 @@ export function Overview() {
   useDataRevision()
   const navigate = useNavigate()
   const toggleTask = useUndoableToggle()
+  const { toast } = useToast()
   const now = useNow()
+  const [habitBusy, setHabitBusy] = useState(false)
 
   // 就地详情弹窗（Slice G）：URL 保持在 "/"，不跳转（owner 反馈：跳转后无高亮、不知在哪）
   const [taskModalId, setTaskModalId] = useState<string | null>(null)
@@ -116,6 +120,36 @@ export function Overview() {
     streak.gaps.length === 0
       ? `近 14 天命中 ${streak.hits} · 无缺口`
       : `近 14 天命中 ${streak.hits} · 缺口 ${streak.gaps.join(' / ')}`
+
+  // 今日打卡切换（Slice X）：point 态反映今天的 log；点击幂等打卡 / 取消打卡 + toast 撤销
+  const toggleHabitToday = (): void => {
+    const habitId = streak.habitId
+    if (habitId === null || habitBusy) return
+    const wasHit = streak.todayHit
+    const label =
+      streak.habitTitle.length > 12 ? `${streak.habitTitle.slice(0, 12)}…` : streak.habitTitle
+    setHabitBusy(true)
+    void (async () => {
+      try {
+        if (wasHit) await uncheckinHabit(habitId)
+        else await checkinHabit(habitId)
+        toast(wasHit ? `已取消今日打卡 · ${label}` : `今日已打卡 · ${label}`, {
+          action: {
+            label: '撤销',
+            onClick: () => {
+              void (wasHit ? checkinHabit(habitId) : uncheckinHabit(habitId)).catch((err) => {
+                toast(`撤销失败：${errorText(err)}`, { tone: 'error' })
+              })
+            },
+          },
+        })
+      } catch (err) {
+        toast(`打卡失败：${errorText(err)}`, { tone: 'error' })
+      } finally {
+        setHabitBusy(false)
+      }
+    })()
+  }
 
   const completionSum = completionSeries.reduce((sum, day) => sum + day.value, 0)
   // 周起点为周一：索引 5、6 即周六、周日
@@ -280,7 +314,7 @@ export function Overview() {
 
             <div className="r3c-block">
               <div className="r3c-head">
-                <span className="r3c-head__t">连续刷题</span>
+                <span className="r3c-head__t">{streak.habitTitle !== '' ? streak.habitTitle : '习惯打卡'}</span>
                 <span className="r3c-head__v k-mono">{streak.current} 天</span>
               </div>
               <div className="k-streak" role="img" aria-label="近 14 天打卡点阵">
@@ -291,7 +325,18 @@ export function Overview() {
                   />
                 ))}
               </div>
-              <span className="k-meter__foot">{streakFoot}</span>
+              <div className="k-streak__actions">
+                <button
+                  type="button"
+                  className={streak.todayHit ? 'k-btn k-btn--sm is-solid' : 'k-btn k-btn--sm'}
+                  aria-pressed={streak.todayHit}
+                  disabled={habitBusy || streak.habitId === null}
+                  onClick={toggleHabitToday}
+                >
+                  {streak.todayHit ? '今日已打卡' : '今日打卡'}
+                </button>
+                <span className="k-meter__foot">{streakFoot}</span>
+              </div>
             </div>
 
             <div className="r3c-block">

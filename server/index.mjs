@@ -29,10 +29,14 @@ import {
   updateConfig,
 } from './store.mjs'
 import {
+  areaCreateSchema,
   clarifyDetailsSchema,
   clusterApplySchema,
   clusterUnapplySchema,
   configUpdateSchema,
+  goalCreateSchema,
+  habitCheckinSchema,
+  habitCreateSchema,
   ID_PATTERNS,
   inboxApplySchema,
   taskCreateFieldsSchema,
@@ -72,10 +76,23 @@ const FILES_DIR = path.join(DATA_DIR, 'files')
 /** 澄清目标 → 实体 kind */
 const CLARIFY_KINDS = { task: 'tasks', project: 'projects', note: 'notes', resource: 'resources' }
 
-/** 可编辑 / 可回收的实体 kind 白名单 */
+/** 可编辑 / 可回收的实体 kind 白名单（通用 /update · /trash 路由；areas/goals/habits 走专属路由） */
 const EDITABLE_KINDS = ['tasks', 'projects', 'notes', 'resources', 'events']
+/** 可回收实体 kind（Slice X：areas / goals / habits 亦可恢复 / 彻底删除；回收站路由组） */
+const TRASHABLE_KINDS = [...EDITABLE_KINDS, 'areas', 'goals', 'habits']
 /** kind → 审计用单数名 */
-const SINGULAR = { tasks: 'task', projects: 'project', notes: 'note', resources: 'resource', events: 'event' }
+const SINGULAR = {
+  tasks: 'task',
+  projects: 'project',
+  notes: 'note',
+  resources: 'resource',
+  events: 'event',
+  areas: 'area',
+  goals: 'goal',
+  habits: 'habit',
+}
+/** 无 createdAt / updatedAt 的实体（对齐既有形状；编辑时不 bump updatedAt） */
+const NO_TIMESTAMP_KINDS = new Set(['events', 'areas', 'goals', 'habits'])
 /** 任务创建可携带的可选字段顺序（Slice O；用于审计 detail.fields） */
 const CREATE_FIELD_KEYS = [
   'contexts', 'energy', 'importance', 'estimateMin', 'dueAt', 'projectId', 'areaId', 'parentTaskId', 'tags',
@@ -91,6 +108,10 @@ const EDITABLE_FIELDS = {
   resources: ['title', 'kind', 'status', 'url', 'path', 'areaId', 'tags', 'note'],
   // 日程（Slice W）：repeatRule 仅展示保留，不开放编辑（见 ADR-0018）
   events: ['title', 'startAt', 'endAt', 'allDay', 'location', 'status', 'projectId', 'areaId', 'tags', 'notes'],
+  // 区域 / 目标 / 习惯（Slice X，见 ADR-0019）：字段白名单；keyResults 不开放编辑（写入延后）
+  areas: ['title', 'standard', 'cadence', 'status'],
+  goals: ['title', 'horizon', 'areaId', 'status', 'targetDate'],
+  habits: ['title', 'cadence', 'metric', 'target', 'trigger', 'areaId'],
 }
 
 function send(res, status, data) {
@@ -472,6 +493,232 @@ async function createEvent(body) {
   })
   if (tags.length > 0) await ensureTags(tags, { origin: 'manual', firstUsedIn: saved.id })
   return { event: saved }
+}
+
+/* ---------------------------------------------------------------------------
+ * 区域 / 目标 / 习惯（v0.5 · Slice X，见 ADR-0019）
+ * 关闭最后三个只读结构：创建 / 编辑（通用白名单）/ 删除（回收站）。
+ * 区域与目标删除带「引用护栏」：被其它实体引用时 409（可读计数），未引用才可入回收站。
+ * ------------------------------------------------------------------------- */
+
+/** 区域引用扫描清单（kind + 中文名）；goals / habits 的 areaId 亦计入 */
+const AREA_REF_KINDS = [
+  ['tasks', '任务'],
+  ['projects', '项目'],
+  ['notes', '笔记'],
+  ['resources', '资料'],
+  ['events', '日程'],
+  ['goals', '目标'],
+  ['habits', '习惯'],
+]
+
+/** 统计区域被引用数（返回总数 + 可读明细，如「任务 3 · 项目 1」） */
+async function countAreaRefs(areaId) {
+  const snapshot = await readSnapshot()
+  let total = 0
+  const parts = []
+  for (const [kind, cn] of AREA_REF_KINDS) {
+    const count = (snapshot[kind] ?? []).filter((record) => record.areaId === areaId).length
+    if (count > 0) {
+      total += count
+      parts.push(`${cn} ${count}`)
+    }
+  }
+  return { total, text: parts.join(' · ') }
+}
+
+/** 统计目标被引用数（项目 goalId + 子目标 parentGoalId） */
+async function countGoalRefs(goalId) {
+  const snapshot = await readSnapshot()
+  const projects = (snapshot.projects ?? []).filter((p) => p.goalId === goalId).length
+  const children = (snapshot.goals ?? []).filter((g) => g.parentGoalId === goalId).length
+  const parts = []
+  if (projects > 0) parts.push(`项目 ${projects}`)
+  if (children > 0) parts.push(`子目标 ${children}`)
+  return { total: projects + children, text: parts.join(' · ') }
+}
+
+/** 创建区域（Slice X）：title 必填；standard / cadence / status 可选（缺省标准待补充 / weekly / active） */
+async function createArea(body) {
+  const parsed = areaCreateSchema.parse(body)
+  const title = parsed.title.trim()
+  if (title === '') throw Object.assign(new Error('区域名不能为空'), { status: 400 })
+  const standard = parsed.standard !== undefined ? parsed.standard.trim() : ''
+  const area = {
+    id: await nextId('areas'),
+    title,
+    standard: standard !== '' ? standard.slice(0, 200) : '标准待补充',
+    cadence: parsed.cadence ?? 'weekly',
+    status: parsed.status ?? 'active',
+  }
+  const saved = await commit('areas', area, {
+    action: 'area.create',
+    entity: 'area',
+    id: area.id,
+    detail: { title },
+  })
+  return { area: saved }
+}
+
+/** 创建目标（Slice X）：title 必填；areaId 须真实存在；keyResults 本切片留空（写入延后） */
+async function createGoal(body) {
+  const parsed = goalCreateSchema.parse(body)
+  const title = parsed.title.trim()
+  if (title === '') throw Object.assign(new Error('目标名不能为空'), { status: 400 })
+  if (parsed.areaId !== undefined && (await readEntity('areas', parsed.areaId)) === null) {
+    throw Object.assign(new Error('区域不存在'), { status: 400 })
+  }
+  const goal = {
+    id: await nextId('goals'),
+    title,
+    horizon: parsed.horizon ?? 'term',
+    keyResults: [],
+    status: parsed.status ?? 'active',
+  }
+  const fields = []
+  if (parsed.areaId !== undefined) {
+    goal.areaId = parsed.areaId
+    fields.push('areaId')
+  }
+  if (parsed.targetDate !== undefined) {
+    goal.targetDate = parsed.targetDate
+    fields.push('targetDate')
+  }
+  if (parsed.horizon !== undefined) fields.push('horizon')
+  if (parsed.status !== undefined) fields.push('status')
+  const saved = await commit('goals', goal, {
+    action: 'goal.create',
+    entity: 'goal',
+    id: goal.id,
+    detail: { title, fields },
+  })
+  return { goal: saved }
+}
+
+/** 创建习惯（Slice X）：title 必填；areaId 须真实存在；log 空数组（打卡另经 check-in 端点） */
+async function createHabit(body) {
+  const parsed = habitCreateSchema.parse(body)
+  const title = parsed.title.trim()
+  if (title === '') throw Object.assign(new Error('习惯名不能为空'), { status: 400 })
+  if (parsed.areaId !== undefined && (await readEntity('areas', parsed.areaId)) === null) {
+    throw Object.assign(new Error('区域不存在'), { status: 400 })
+  }
+  const habit = {
+    id: await nextId('habits'),
+    title,
+    cadence: parsed.cadence ?? 'daily',
+    metric: parsed.metric ?? 'count',
+    target: parsed.target ?? 1,
+    log: [],
+  }
+  const fields = []
+  if (parsed.trigger !== undefined && parsed.trigger.trim() !== '') {
+    habit.trigger = parsed.trigger.trim().slice(0, 200)
+    fields.push('trigger')
+  }
+  if (parsed.areaId !== undefined) {
+    habit.areaId = parsed.areaId
+    fields.push('areaId')
+  }
+  if (parsed.cadence !== undefined) fields.push('cadence')
+  if (parsed.metric !== undefined) fields.push('metric')
+  if (parsed.target !== undefined) fields.push('target')
+  const saved = await commit('habits', habit, {
+    action: 'habit.create',
+    entity: 'habit',
+    id: habit.id,
+    detail: { title, fields },
+  })
+  return { habit: saved }
+}
+
+/** 本地时区「今天」（YYYY-MM-DD） */
+function todayDateKey() {
+  return nowIso().slice(0, 10)
+}
+
+/**
+ * 打卡（Slice X）：向 habit.log 幂等加入 {date, value:1}（缺省今天）。
+ * 已存在且 value>0 视为已打卡 → 不重复写、不审计；否则写入并审计 habit.checkin。
+ */
+async function checkinHabit(id, body) {
+  const parsed = habitCheckinSchema.parse(body ?? {})
+  const date = parsed.date ?? todayDateKey()
+  const habit = await readEntity('habits', id)
+  if (habit === null) throw Object.assign(new Error('习惯不存在'), { status: 404 })
+  const log = Array.isArray(habit.log) ? [...habit.log] : []
+  const index = log.findIndex((entry) => entry.date === date)
+  if (index !== -1 && log[index].value > 0) {
+    return { habit, changed: false, date }
+  }
+  if (index !== -1) log[index] = { date, value: 1 }
+  else log.push({ date, value: 1 })
+  log.sort((a, b) => String(a.date).localeCompare(String(b.date)))
+  const saved = await commit('habits', { ...habit, log }, {
+    action: 'habit.checkin',
+    entity: 'habit',
+    id,
+    detail: { date },
+  })
+  return { habit: saved, changed: true, date }
+}
+
+/**
+ * 取消打卡（Slice X）：从 habit.log 移除指定日期（缺省今天）；无该日期则幂等无操作（不审计）。
+ */
+async function uncheckinHabit(id, body) {
+  const parsed = habitCheckinSchema.parse(body ?? {})
+  const date = parsed.date ?? todayDateKey()
+  const habit = await readEntity('habits', id)
+  if (habit === null) throw Object.assign(new Error('习惯不存在'), { status: 404 })
+  const before = Array.isArray(habit.log) ? habit.log : []
+  const log = before.filter((entry) => entry.date !== date)
+  if (log.length === before.length) return { habit, changed: false, date }
+  const saved = await commit('habits', { ...habit, log }, {
+    action: 'habit.uncheckin',
+    entity: 'habit',
+    id,
+    detail: { date },
+  })
+  return { habit: saved, changed: true, date }
+}
+
+/** 删除区域：引用中 → 409（可读计数）；未引用 → 移入回收站（审计 area.remove） */
+async function removeArea(id) {
+  const area = await readEntity('areas', id)
+  if (area === null) throw Object.assign(new Error('区域不存在'), { status: 404 })
+  const refs = await countAreaRefs(id)
+  if (refs.total > 0) {
+    throw Object.assign(
+      new Error(`该区域正被 ${refs.total} 条记录引用（${refs.text}），不能删除；请先解除引用`),
+      { status: 409 },
+    )
+  }
+  const record = await moveToTrash('areas', id, { action: 'area.remove', entity: 'area', id })
+  return { trashed: { kind: 'areas', id }, record }
+}
+
+/** 删除目标：引用中（项目 / 子目标）→ 409；未引用 → 移入回收站（审计 goal.remove） */
+async function removeGoal(id) {
+  const goal = await readEntity('goals', id)
+  if (goal === null) throw Object.assign(new Error('目标不存在'), { status: 404 })
+  const refs = await countGoalRefs(id)
+  if (refs.total > 0) {
+    throw Object.assign(
+      new Error(`该目标正被 ${refs.total} 条记录引用（${refs.text}），不能删除；请先解除引用`),
+      { status: 409 },
+    )
+  }
+  const record = await moveToTrash('goals', id, { action: 'goal.remove', entity: 'goal', id })
+  return { trashed: { kind: 'goals', id }, record }
+}
+
+/** 删除习惯：无引用护栏（区域只是其出链），直接移入回收站（审计 habit.remove） */
+async function removeHabit(id) {
+  const habit = await readEntity('habits', id)
+  if (habit === null) throw Object.assign(new Error('习惯不存在'), { status: 404 })
+  const record = await moveToTrash('habits', id, { action: 'habit.remove', entity: 'habit', id })
+  return { trashed: { kind: 'habits', id }, record }
 }
 
 /**
@@ -1216,8 +1463,8 @@ async function updateEntity(kind, id, body) {
     }
   }
   // 空 patch = 「touch」（Slice E2.5 回顾页「迁移」）：仍 bump updatedAt，审计 <singular>.touch
-  // 日程无 updatedAt 字段（对齐既有事件形状），仅审计、不加时间戳
-  if (kind !== 'events') next.updatedAt = nowIso()
+  // 日程 / 区域 / 目标 / 习惯无 updatedAt 字段（对齐既有形状），仅审计、不加时间戳
+  if (!NO_TIMESTAMP_KINDS.has(kind)) next.updatedAt = nowIso()
   const saved = await commit(kind, next, {
     action: hasField ? `${SINGULAR[kind]}.update` : `${SINGULAR[kind]}.touch`,
     entity: SINGULAR[kind],
@@ -1333,8 +1580,15 @@ const EDITABLE_GROUP = EDITABLE_KINDS.join('|')
 const ENTITY_ACTION_RE = new RegExp(`^/api/(${EDITABLE_GROUP})/([^/]+)/(update|trash)$`)
 /** 日程删除（Slice W）：/api/events/<id>/remove（审计 event.remove；与通用 /trash 同语义） */
 const EVENT_REMOVE_RE = /^\/api\/events\/([^/]+)\/remove$/
-/** 回收站恢复 / 彻底删除：/api/trash/<kind>/<id>/(restore|purge) */
-const TRASH_ITEM_RE = new RegExp(`^/api/trash/(${EDITABLE_GROUP})/([^/]+)/(restore|purge)$`)
+/** 区域 / 目标 / 习惯（Slice X）：/api/<kind>/<id>/(update|remove) —— remove 带引用护栏 */
+const AREA_ACTION_RE = /^\/api\/areas\/([^/]+)\/(update|remove)$/
+const GOAL_ACTION_RE = /^\/api\/goals\/([^/]+)\/(update|remove)$/
+const HABIT_ACTION_RE = /^\/api\/habits\/([^/]+)\/(update|remove)$/
+/** 习惯打卡（Slice X）：/api/habits/<id>/(checkin|uncheckin) */
+const HABIT_CHECKIN_RE = /^\/api\/habits\/([^/]+)\/(checkin|uncheckin)$/
+/** 回收站恢复 / 彻底删除：/api/trash/<kind>/<id>/(restore|purge)（含 areas/goals/habits） */
+const TRASHABLE_GROUP = TRASHABLE_KINDS.join('|')
+const TRASH_ITEM_RE = new RegExp(`^/api/trash/(${TRASHABLE_GROUP})/([^/]+)/(restore|purge)$`)
 /** 标签管理（Slice T）：/api/tags/<id>/(update|merge|remove) */
 const TAG_ACTION_RE = /^\/api\/tags\/([^/]+)\/(update|merge|remove)$/
 
@@ -1620,6 +1874,66 @@ const server = http.createServer(async (req, res) => {
       send(res, 200, result)
       return
     }
+    // 区域 / 目标 / 习惯 编辑 / 删除（Slice X）：remove 带引用护栏（区域 / 目标），未引用入回收站
+    const areaActionMatch = AREA_ACTION_RE.exec(pathname)
+    if (method === 'POST' && areaActionMatch !== null) {
+      const id = decodeURIComponent(areaActionMatch[1])
+      if (!validId('areas', id)) return fail(res, 400, '区域 id 格式不正确')
+      if (areaActionMatch[2] === 'update') {
+        const result = await updateEntity('areas', id, await readBody(req))
+        console.log(`[data] area.update ${id}`)
+        send(res, 200, result)
+        return
+      }
+      const result = await removeArea(id)
+      console.log(`[data] area.remove ${id}`)
+      send(res, 200, result)
+      return
+    }
+    const goalActionMatch = GOAL_ACTION_RE.exec(pathname)
+    if (method === 'POST' && goalActionMatch !== null) {
+      const id = decodeURIComponent(goalActionMatch[1])
+      if (!validId('goals', id)) return fail(res, 400, '目标 id 格式不正确')
+      if (goalActionMatch[2] === 'update') {
+        const result = await updateEntity('goals', id, await readBody(req))
+        console.log(`[data] goal.update ${id}`)
+        send(res, 200, result)
+        return
+      }
+      const result = await removeGoal(id)
+      console.log(`[data] goal.remove ${id}`)
+      send(res, 200, result)
+      return
+    }
+    const habitActionMatch = HABIT_ACTION_RE.exec(pathname)
+    if (method === 'POST' && habitActionMatch !== null) {
+      const id = decodeURIComponent(habitActionMatch[1])
+      if (!validId('habits', id)) return fail(res, 400, '习惯 id 格式不正确')
+      if (habitActionMatch[2] === 'update') {
+        const result = await updateEntity('habits', id, await readBody(req))
+        console.log(`[data] habit.update ${id}`)
+        send(res, 200, result)
+        return
+      }
+      const result = await removeHabit(id)
+      console.log(`[data] habit.remove ${id}`)
+      send(res, 200, result)
+      return
+    }
+    // 习惯打卡 / 取消打卡（Slice X）：幂等；date 缺省今天
+    const habitCheckinMatch = HABIT_CHECKIN_RE.exec(pathname)
+    if (method === 'POST' && habitCheckinMatch !== null) {
+      const id = decodeURIComponent(habitCheckinMatch[1])
+      if (!validId('habits', id)) return fail(res, 400, '习惯 id 格式不正确')
+      const action = habitCheckinMatch[2]
+      const result =
+        action === 'checkin'
+          ? await checkinHabit(id, await readBody(req))
+          : await uncheckinHabit(id, await readBody(req))
+      console.log(`[data] habit.${action} ${id} ${result.date}${result.changed === false ? '（已是最新）' : ''}`)
+      send(res, 200, result)
+      return
+    }
     // 编辑 / 移入回收站（Slice E2）
     const entityActionMatch = ENTITY_ACTION_RE.exec(pathname)
     if (method === 'POST' && entityActionMatch !== null) {
@@ -1698,6 +2012,25 @@ const server = http.createServer(async (req, res) => {
     if (method === 'POST' && pathname === '/api/events') {
       const result = await createEvent(await readBody(req))
       console.log(`[data] event.create ${result.event.id}`)
+      send(res, 201, result)
+      return
+    }
+    // 新建区域 / 目标 / 习惯（Slice X）：见 ADR-0019
+    if (method === 'POST' && pathname === '/api/areas') {
+      const result = await createArea(await readBody(req))
+      console.log(`[data] area.create ${result.area.id}`)
+      send(res, 201, result)
+      return
+    }
+    if (method === 'POST' && pathname === '/api/goals') {
+      const result = await createGoal(await readBody(req))
+      console.log(`[data] goal.create ${result.goal.id}`)
+      send(res, 201, result)
+      return
+    }
+    if (method === 'POST' && pathname === '/api/habits') {
+      const result = await createHabit(await readBody(req))
+      console.log(`[data] habit.create ${result.habit.id}`)
       send(res, 201, result)
       return
     }

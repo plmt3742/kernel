@@ -11,7 +11,9 @@ KERNEL 的任务台账与迭代记录。记录当前迭代目标、未来待办�
 > **新会话处理入口**：先读 `AGENTS.md` → 本清单 → 按序处理。每项均附上下文与落点。
 > 状态：v0.4.0 已交付（数据服务 + 前端写入改造 + 审阅 P0 六项 + 路由滚动记忆）；页面排版选型已落地 10/10；**v0.5 首个切片（收件箱「AI 解析」）已交付**；**互联 Slice A（深链 + 关联区块）、AI 澄清升级 Slice B（上下文注入 + 挂接建议 + SSE 过程可视）与 AI 周回顾 Slice C（草稿 → 编辑 → 确认落盘 / 撤销）已交付**（验收：A 20/20、B E2E 13/13、C 冒烟 PASS + E2E 13/13，证据 `.qa/v14/`）；**使用指南 HTML（`public/guide.html`，自包含单文件，三态 25/25，证据 `.qa/v15/`）已交付**；**收件箱升级 Slice D（文件投递 + 居中编辑器 + AI 先读）已交付**（冒烟 PASS + E2E 12/12，证据 `.qa/v16/`）；**收件箱修复包 Slice E1（编辑器回位 + 「批量 → 任务」反馈加固 + AI 结果缓存 + 批量 AI 解析）已交付**（E2E 24/24，证据 `.qa/v17/`）；**详情操作 + 回收站 Slice E2（通用编辑 / 软删除回收站 / 资源文件位置 + reveal）已交付**（冒烟 34/34 + E2E 19/19 + 全站 smoke PASS，证据 `.qa/v18/`）；**动效与布局稳定 Slice E2.6（批量解析过程可视 + 流式节流 + 定高 + 间距 + 换行 + 零重叠）与趋势图数据点裁切修复 Slice E2.7 已交付**（E2E 22/22 + 像素级 8/8，证据 `.qa/v20/`、`.qa/v21/`）；**回顾页重构 Slice F（周 / 月回顾卡并列一栏 + 动画弹窗报告 + 月回顾 AI 支持 + 停滞项目独立栏）已交付**（服务端冒烟 13/13 + E2E 30/30 + 移动 6/6，证据 `.qa/v22/`）；**总览升级 Slice G（AI 对话盒 + 状态条重做 + 就地详情弹窗）已交付**（E2E **42/42** + 构建通过，零残留，证据 `.qa/v23/`）；**状态贯通 Slice H（资料状态 / 笔记蒸馏判断标准 + 快捷设置 + 白名单扩充 + 任务快速新建 AI 补全）已交付**（服务端冒烟 21/21 + E2E 28/28 + 构建通过，零残留，证据 `.qa/v24/`）；**使用指南同步 Slice I（`public/guide.html` 对齐 Slice D–H，三态 65/65，证据 `.qa/v25/`）已完成**；**收件箱修复包 2 Slice J（批量 AI 解析状态跨路由存活 + OOXML `.docx/.pptx/.xlsx` 文本抽取）已完成**（服务端冒烟 14/14 + E2E 16/16 + 零写入，证据 `.qa/v26/`）；**收件箱附件「打开文件 / 位置」Slice J2（去掉浏览器下载，改默认程序打开 / 文件管理器定位；新增 `/api/open` + `/api/inbox/:id/(open|reveal)` 带 `dryRun` 测试通道）已完成**（服务端冒烟 33/33 + E2E 21/21 + 零写入，证据 `.qa/v27/`）；数据服务运行于 `127.0.0.1:4097`；**全部切片（D–J2）已交付、验证（J2 待批次提交）**；**「先确认后写入」Slice O（任务快速新建草稿确认弹窗 + 收件箱建议卡可编辑 + 全站同类审计）已完成**（服务端冒烟 35/35 + E2E 31/31 + 构建通过，零残留，证据 `.qa/v28/`）；**全站详情「居中弹窗」统一 + 操作统一 + 日历遮罩柔化 Slice K 已完成**（五类详情从 Drawer 迁居中 Modal、任务 / 项目详情组件化保证操作一致、底栏统一、日历吸顶条渐隐柔化、删除 Drawer 死代码；E2E **109/109** + 构建通过，零残留，证据 `.qa/v29/`）；**回顾报告升级 + 自动归档 Slice L 已完成**（七段结构正文 + 环比 / 阈值 / 带 id 清单 + 数字落地护栏；生成即自动归档 + 报告历史 + update 同条；服务端冒烟 40/40 + 护栏单测 6/6 + E2E 32/32 + 构建通过，零残留，证据 `.qa/v30/`）；**标签生命周期 Slice T 已完成**（录入即生成 + 自动登记 origin/createdAt/firstUsedIn + AI 可提议新标签 + 管理（重命名 / 合并 / 删除 / backfill）+ 筛选条按使用排序不截断；服务端冒烟 54/54 + 护栏单测 14/14 + E2E 41/41 + 构建通过，零残留，证据 `.qa/v31/`）；**收件箱生命周期闭合 + 澄清字段矩阵 Slice V 已完成**（文本即解析 / 删除入口 / 丢弃恢复 / 澄清撤回与产物深链 / `newProjectHint` 一键建项 / target×字段矩阵杜绝静默丢弃；服务端冒烟 43/43 + E2E 29/29 + 构建通过，零残留，证据 `.qa/v33/`）。**Slice U（回顾报告可读性）见下方专节**。
 
-> **最新（Slice W · 2026-10-03）**：事件（日程）转为可写实体——新建（先确认后写入）/ 编辑 / 删除（回收站可撤销）/ 文档状态流可执行 + 迷你月历日格可点。验收：服务端冒烟 **33/33** + 浏览器 E2E **27/27**，零残留、所有者 20 条事件字节不变，证据 `.qa/v38/`。至此 **task / project / note / resource / event 五类实体全部可写**（`repeatRule` 仍仅展示，延后）。
+> **最新（Slice X · 2026-10-03）**：区域 / 目标 / 习惯转为可管理实体——设置页三管理区 + 创建 / 编辑 / 删除（回收站）+ 区域 / 目标**引用护栏**（被引用 → 409 可读计数）；习惯补齐**打卡**（`checkin`/`uncheckin`，缺省今天、幂等）与总览「今日打卡」切换（撤销）；修复 `h-0002` 硬编码（改取首个习惯 + 显示其标题）；area/goal 关联芯片可点（F8）；项目区域默认显式化（F23）。验收：服务端冒烟 **62/62** + 浏览器 E2E **45/45**，零残留、所有者 157 个数据文件字节不变，证据 `.qa/v39/`。至此 **task / project / note / resource / event / area / goal / habit 八类实体全部可管理**（`goal.keyResults` 与 `repeatRule` 仍仅展示保留，延后）。
+
+> **上一个（Slice W · 2026-10-03）**：事件（日程）转为可写实体——新建（先确认后写入）/ 编辑 / 删除（回收站可撤销）/ 文档状态流可执行 + 迷你月历日格可点。验收：服务端冒烟 **33/33** + 浏览器 E2E **27/27**，零残留、所有者 20 条事件字节不变，证据 `.qa/v38/`。
 
 ### A. 验收（所有者）
 
@@ -32,6 +34,21 @@ KERNEL 的任务台账与迭代记录。记录当前迭代目标、未来待办�
 
 - [ ] 种子数据以 2026-10-02 为"现在"；时间久了用 `npm run seed -- --force` 重置演示数据。
 - [ ] `design-drafts/`（三份设计稿 + 选型页）保留作方向参考；`.qa/` 证据归档保留（体积小）。
+
+---
+
+## 区域 / 目标 / 习惯可管理 + 打卡 · Slice X（已完成 · 2026-10-03）
+
+审计 F7 / F8 / F23 + 习惯打卡缺口：`data/areas` / `data/goals` / `data/habits` 是最后三个只读结构——有种子、有选择器 / 关联芯片 / 统计，却无 schema / 路由 / UI 可创建 / 编辑 / 删除；总览「连续刷题」条读冻结的 `habit.log` 且 `derive.ts` 硬编码 `h-0002`，无打卡写入路径。本切片把三类并入可管理 / 可回收族（含区域 / 目标**引用护栏**），补齐习惯**打卡闭环**，让 area/goal 关联芯片可点（F8），并显式化项目区域默认（F23）。`npm run build` 退出 0；服务端冒烟 **62/62** + 浏览器 E2E **45/45**；零数据残留（areas 7 / goals 7 / habits 5 等全部回基线；所有者 157 个数据文件**字节不变**，含 20 事件 / 区域 / 目标 / 习惯种子与 `h-0002` log）；控制台零 error；证据 `.qa/v39/`。
+
+- [x] Deliverable A · 区域（`server/{schemas,store,index}.mjs` + `src/components/DimensionManagers.tsx`）：`areaSchema` + `SCHEMAS.areas`（保留 `ID_PATTERNS.areas`）+ `nextId` 增 `a` + `TRASH_KINDS` 增 areas；`POST /api/areas` · `/:id/update` · `/:id/remove`（删除带引用护栏 → 409 可读计数）；审计 `area.*`；设置页「区域」管理区 + 删除预判护栏。Relations 区域芯片可点（F8）。
+- [x] Deliverable B · 目标（同上）：`goalSchema` + `ID_PATTERNS.goals` + `SCHEMAS.goals` + `nextId` 增 `g` + trash；创建 / 编辑 / 删除（护栏 = 项目 `goalId` + 子目标 `parentGoalId`）；`keyResults` **只读保留**（写入延后）；审计 `goal.*`；设置页「目标」管理区。Relations 目标芯片可点。
+- [x] Deliverable C · 习惯（`server/*` + `src/views/Overview.tsx` + `DimensionManagers.tsx`）：`habitSchema` + `ID_PATTERNS.habits` + `SCHEMAS.habits` + `nextId` 增 `h` + trash；创建 / 编辑 / 删除（无护栏）；**打卡** `POST /api/habits/:id/checkin {date?}` / `uncheckin`（缺省今天、**幂等**、写 `{date,value:1}`）；审计 `habit.create/update/remove/checkin/uncheckin`；总览打卡条改首个习惯标题 + quiet「今日打卡」切换（撤销）；设置页「习惯」管理区。
+- [x] Deliverable D · F23（`src/components/ProjectDraftModal.tsx`）：项目草稿区域下拉默认首个区域 id、移除「—」空选项——归属显式；服务端 `a-0001` 兜底保留（旧调用 / AI 路径）。
+- [x] 修复 `h-0002` 硬编码（`src/lib/derive.ts`）：`getCodingStreak` / `getCodingStreakDetail` 确定性取 `habits[0]`；新增 `habitId` / `habitTitle` / `todayHit`。
+- [x] 样式（`src/styles/views.css` / `components.css`）：`.k-mgr__*`（列表 + KR 只读）与 `.k-streak__actions`，token-only；回收站新增区域 / 目标 / 习惯分组（`Trash.tsx`）；类型 / mutations 扩展。
+- [x] 验证：`.qa/v39/server-smoke.mjs` 62/62（三类 CRUD 往返 + restore/purge；`nextId` a-0008/g-0008/h-0006；空标题 400；臆造 areaId 400；区域 / 目标被引用删除 409 含计数；checkin/uncheckin 幂等；缺省今天；trigger 清空 + log 保留；审计全覆盖；零残留 + 所有者 157 文件字节不变）；`.qa/v39/verify-x.py` 45/45（区域 / 目标 新建 / 重命名 / 删除护栏 / 未引用删除回收站；芯片深链设置自动打开编辑；总览打卡 + 点阵 / 连击 + 撤销；390 零横溢；控制台 0 error；零残留 + 所有者字节不变）。
+- [x] 记录：新增 ADR-0019；`docs/02`；`docs/04` §4.4–4.6 / §5.4b / §4.3；`docs/README.md`；`public/guide.html`；`CHANGELOG.md`、`AGENTS.md`。
 
 ---
 

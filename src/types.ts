@@ -70,11 +70,28 @@ export type ReviewType = 'weekly' | 'monthly'
  * 回收站（Slice E2）：可回收的实体类型与条目
  * ------------------------------------------------------------------------- */
 
-/** 可回收实体类型（Slice W：日程 events 并入可写 / 可回收族） */
-export type TrashKind = 'tasks' | 'projects' | 'notes' | 'resources' | 'events'
+/** 可回收实体类型（Slice W：日程 events；Slice X：区域 areas / 目标 goals / 习惯 habits） */
+export type TrashKind =
+  | 'tasks'
+  | 'projects'
+  | 'notes'
+  | 'resources'
+  | 'events'
+  | 'areas'
+  | 'goals'
+  | 'habits'
 
 /** 回收站中的记录（原记录 + 移入时间戳） */
-export type TrashRecord = (Task | Project | Note | Resource | CalendarEvent) & {
+export type TrashRecord = (
+  | Task
+  | Project
+  | Note
+  | Resource
+  | CalendarEvent
+  | Area
+  | Goal
+  | Habit
+) & {
   trashedAt?: string
 }
 

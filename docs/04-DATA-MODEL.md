@@ -111,7 +111,7 @@
 | createdAt | ISO | |
 | updatedAt | ISO | |
 
-> **创建可选字段（v0.5 · Slice R1，见 ADR-0015）**：`POST /api/projects` 除 `title`（必填）外接受可选 `outcome` / `areaId` / `tags`（项目快速新建草稿确认后一次性提交；`areaId` 须真实存在，否则 400）。缺省行为不变：`status:'active'`、`areaId:'a-0001'`、`outcome:'完成定义待整理'`、`tags:[]`。请求带 `ai:true` → 新标签 `origin:'ai'`；审计 `project.create` · `detail.fields`。
+> **创建可选字段（v0.5 · Slice R1，见 ADR-0015）**：`POST /api/projects` 除 `title`（必填）外接受可选 `outcome` / `areaId` / `tags`（项目快速新建草稿确认后一次性提交；`areaId` 须真实存在，否则 400）。缺省行为不变：`status:'active'`、`areaId:'a-0001'`、`outcome:'完成定义待整理'`、`tags:[]`。请求带 `ai:true` → 新标签 `origin:'ai'`；审计 `project.create` · `detail.fields`。**F23（Slice X，见 ADR-0019 §2.6）**：`ProjectDraftModal` 的区域下拉默认改为**首个区域 id**（移除「—」空选项），使归属显式可见、可改；服务端 `a-0001` 兜底保留以兼容旧调用 / AI 路径。
 
 ### 4.4 area（`a-`）
 
@@ -121,7 +121,7 @@
 | title | string | |
 | standard | string | 标准声明，如"作业不过夜" |
 | cadence | `weekly` \| `monthly` \| `quarterly` | |
-| status | string | |
+| status | `active` \| `archived` | |
 
 ### 4.5 goal（`g-`）
 
@@ -132,8 +132,8 @@
 | horizon | `term` \| `quarter` \| `year` | |
 | areaId? | string | |
 | parentGoalId? | string | |
-| keyResults | array | `[{text, target, current, unit?}]` |
-| status | string | |
+| keyResults | array | `[{text, target, current, unit?}]`（**仅展示保留**，不开放编辑，见 ADR-0019 §2.7） |
+| status | `active` \| `achieved` \| `dropped` \| `someday` | |
 | targetDate? | ISO | |
 
 ### 4.6 habit（`h-`）
@@ -142,12 +142,14 @@
 |---|---|---|
 | id | string | |
 | title | string | |
-| cadence | string | |
+| cadence | `daily` \| `weekly` \| `monthly` | |
 | trigger | string | 实施意图 |
 | metric | `count` \| `minutes` \| `bool` | |
 | target | number | |
 | areaId? | string | |
-| log | array | `[{date, value}]` |
+| log | array | `[{date, value}]`；由打卡端点维护（见下） |
+
+> **区域 / 目标 / 习惯可管理 + 打卡（v0.5 · Slice X，见 ADR-0019）**：三类由只读种子转为可管理实体。创建 `POST /api/areas` / `/api/goals` / `/api/habits`（`title` 必填，空 → 400；`areaId` 须真实存在）；编辑 `POST /api/<kind>/:id/update`（白名单——`areas`：`title/standard/cadence/status`；`goals`：`title/horizon/areaId/status/targetDate`；`habits`：`title/cadence/metric/target/trigger/areaId`）；删除 `POST /api/<kind>/:id/remove`（进回收站，可 `restore` / `purge`）。**引用护栏**：区域被任务/项目/笔记/资料/日程/目标/习惯的 `areaId` 引用时、目标被项目 `goalId` 或子目标 `parentGoalId` 引用时，删除返回 **409**（含可读计数），未引用才可删；习惯无护栏。三类**无 `createdAt`/`updatedAt`**（编辑不 bump）。审计 `area.*` / `goal.*` / `habit.*`。**打卡**：`POST /api/habits/:id/checkin {date?}`（缺省今天；**幂等**——该日已有 `value>0` 则不重复写；否则写 `{date,value:1}`，审计 `habit.checkin`）与 `POST /api/habits/:id/uncheckin {date?}`（无该日则无操作；否则移除，审计 `habit.uncheckin`）。`log` 不在管理表内编辑。`keyResults` 本期只读保留。
 
 ### 4.7 event（`e-`）
 
@@ -354,7 +356,7 @@ unread ──> reading ──> read ──> reference ──> archived
                                         └──彻底删除──> 不可恢复
 ```
 
-五种可写实体（task / project / note / resource / event）的删除均为**软删除**：先写回收站副本再删正册文件（原子、串行）。恢复写回正册并删副本；彻底删除仅删副本。`nextId` 同时扫描正册与回收站，避免回收后 id 复用导致恢复冲突。回收站不出现在 `/api/snapshot` 中，单独经 `GET /api/trash` 读取（见 ADR-0009；事件并入见 ADR-0018）。
+八种可写 / 可回收实体（task / project / note / resource / event / area / goal / habit）的删除均为**软删除**：先写回收站副本再删正册文件（原子、串行）。恢复写回正册并删副本；彻底删除仅删副本。`nextId` 同时扫描正册与回收站，避免回收后 id 复用导致恢复冲突。回收站不出现在 `/api/snapshot` 中，单独经 `GET /api/trash` 读取（见 ADR-0009；事件并入见 ADR-0018；区域 / 目标 / 习惯并入见 ADR-0019，其删除前另有引用护栏，见 §4.4–4.6）。
 
 ### 5.5 event
 
@@ -443,5 +445,6 @@ confirmed ──取消──> cancelled
 - 审计动作新增：`note.update` / `resource.update` / `project.update` 的 `detail.fields` 记录变更键；`task.update` 同。
 - **回顾报告归档（v0.5 · Slice L，见 ADR-0013）**：`POST /api/ai/review/draft` 成功后自动 `commit('reviews', …)`（`source:'ai'`，审计 `review.create` · `detail.auto`）；`POST /api/reviews/:id/update` 编辑归档报告（白名单 `summary` / `decisions`，递增 `updatedAt`，审计 `review.update` · `detail.fields`）；`POST /api/reviews/:id/remove` 删除（审计 `review.remove`）。前端回顾页「报告历史」按 `date` 倒序查阅。
 - **标签生命周期（v0.5 · Slice T，见 ADR-0014 / §4.12）**：标签名写入前规格化（裸名 → `topic:` 等）；任意携带 `tags` 的写入后 `ensureTags()` **自动登记**未注册名（`origin` / `createdAt` / `firstUsedIn`，审计 `tag.create`）；AI 可在无合适已有标签时提议新标签（`postValidate` 规格化保留，应用时以 `origin:'ai'` 登记）；新增管理端点 `POST /api/tags/:id/update`（重命名级联，`tag.rename`）、`…/merge`（合并级联 + 去重，`tag.merge`）、`…/remove`（使用中 409 阻止，`tag.remove`）、`POST /api/tags/backfill`（扫描登记存量，`tag.backfill`）；设置页新增「标签管理」区；资料库标签条按使用计数降序、不再截断前 12。
+- **区域 / 目标 / 习惯可管理 + 打卡（v0.5 · Slice X，见 ADR-0019 / §4.4–4.6）**：三类只读结构转为可管理——创建 `POST /api/areas` · `/api/goals` · `/api/habits`、编辑 `POST /api/<kind>/:id/update`（白名单）、删除 `POST /api/<kind>/:id/remove`（入回收站，区域 / 目标带**引用护栏**：被引用 → 409 含可读计数）；习惯打卡 `POST /api/habits/:id/checkin` · `/uncheckin`（缺省今天、幂等、写 `{date,value:1}`）；审计 `area.*` / `goal.*` / `habit.*`。设置页新增「区域 / 目标 / 习惯」三管理区；总览「习惯打卡」条取首个习惯并支持「今日打卡」切换；关联 area/goal 芯片深链到设置分区（F8）。`keyResults` 与 `habit.log` 的精细编辑延后。
 - schema 预留实体（`timeLog` / `person` / `journalEntry`）在 v1.0 前评估是否实现。
 - 字段演进必须同步更新本篇，并通过 ADR 记录重大结构变更。

@@ -23,6 +23,9 @@ const GROUPS: TrashGroupSpec[] = [
   { kind: 'notes', cn: '笔记', en: 'NOTES' },
   { kind: 'resources', cn: '资料', en: 'RESOURCES' },
   { kind: 'events', cn: '日程', en: 'EVENTS' },
+  { kind: 'areas', cn: '区域', en: 'AREAS' },
+  { kind: 'goals', cn: '目标', en: 'GOALS' },
+  { kind: 'habits', cn: '习惯', en: 'HABITS' },
 ]
 
 const itemKey = (item: TrashItem): string => `${item.kind}:${item.record.id}`
@@ -103,7 +106,7 @@ export function Trash() {
   return (
     <div className="k-view">
       <p className="k-view__intro">
-        删除不会立即消失：任务、项目、笔记、资料与日程会先移入回收站。可随时恢复；「彻底删除」不可撤销，需点两次确认。
+        删除不会立即消失：任务、项目、笔记、资料、日程、区域、目标与习惯会先移入回收站。可随时恢复；「彻底删除」不可撤销，需点两次确认。
       </p>
 
       {loading ? (

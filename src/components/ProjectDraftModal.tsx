@@ -29,7 +29,8 @@ export function ProjectDraftModal({
 }: ProjectDraftModalProps): ReactNode {
   const [title, setTitle] = useState(initialTitle)
   const [outcome, setOutcome] = useState('')
-  const [areaId, setAreaId] = useState('')
+  // F23（Slice X）：项目必须有区域——默认选中首个区域（显式可见），不再留空后由服务端静默默认 a-0001
+  const [areaId, setAreaId] = useState(() => getAreas()[0]?.id ?? '')
   const [tags, setTags] = useState('')
   const [aiState, setAiState] = useState<AiState>('loading')
   const [aiNote, setAiNote] = useState('')
@@ -72,7 +73,7 @@ export function ProjectDraftModal({
     if (!open) return
     setTitle(initialTitle)
     setOutcome('')
-    setAreaId('')
+    setAreaId(getAreas()[0]?.id ?? '')
     setTags('')
     setAiState('loading')
     setAiNote('')
@@ -190,7 +191,6 @@ export function ProjectDraftModal({
               setAreaId(event.target.value)
             }}
           >
-            <option value="">—</option>
             {areas.map((area) => (
               <option key={area.id} value={area.id}>
                 {area.title}

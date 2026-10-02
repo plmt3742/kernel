@@ -78,7 +78,7 @@ lucide-react  react-markdown  @fontsource-variable/inter  @fontsource/jetbrains-
 
 - **单写者**：所有写入经同一服务串行化（进程内写队列），消除并发写文件的风险。
 - **原子写入**：`write-file-atomic`，避免写入中断产生半截文件。
-- **Schema 校验**：Zod 定义可写实体（task / inboxItem / note / resource / project）的 schema，写入前全量校验；校验失败返回 400 与可读原因。
+- **Schema 校验**：Zod 定义各可写实体（task / inboxItem / note / resource / project / event / area / goal / habit）的 schema，写入前全量校验；校验失败返回 400 与可读原因。
 - **审计日志**：`data/activity.jsonl` 记录每一次变更，可追溯（重新打开任务即从审计还原先前状态）。
 - **写入路径收口**：浏览器（含手机经 Vite 代理）写入一律经 `/api`；服务仅监听 `127.0.0.1:4097`，永不暴露局域网。
 - **前端水合**：首帧使用构建期 seed；挂载与窗口聚焦时经 `/api/snapshot` 重水合（多标签同步由聚焦刷新承担，实时通道留待 v0.5）。
@@ -100,6 +100,8 @@ v0.5 增补（Slice R1，见 ADR-0015）：**AI 全链 · 多实体一揽子处�
 v0.5 增补（Slice R2，见 ADR-0016）：**项目诞生 · 聚类立项 + AI 自动化档位**。新增 `POST /api/ai/cluster/draft`——扫描「无 `projectId` 的未完成任务（≤50）+ 未澄清收件箱」，用**确定性预分组**（共享标签 ≥3 / 标题关键词 ≥3）成组，AI 按**组号**命名并写 `outcome` / `reason`（成员 id 由服务端展开，模型无法编造），后校验（≥3 成员、须含任务、不得与现有项目同名、`areaId` 真实）后返回 0–3 条提案 `{ title, outcome?, reason, taskIds[], inboxIds[], areaId?, tags[] }`；AI 命名失败 / 未覆盖时以确定性名兜底。应用 `POST /api/projects/cluster-apply { title, outcome?, areaId?, tags?, taskIds[] }`——一次写入：建项目（`project.create` · `via:'cluster'`）+ 归入无归属任务（逐条 `task.update` · `via:'cluster'`）+ 标签 `origin:'ai'` 登记，项目上记 `clusterTaskIds` / `clusterTagIds`；撤销 `POST /api/projects/cluster-unapply { projectId }`——清任务 `projectId` + `pruneTags` + 项目入回收站，**精确复原**。收件箱条目无 `projectId` 结构，仅作命名参考，不被应用改写。配置端点 `POST /api/config { aiAutomation: 'confirm' | 'auto' }`（白名单 + `config.update` 审计），档位 `auto` 时前端在自动解析完成后自动 `apply` 本次动作（仅创建类，可撤销；见 ADR-0016 §2.3 能力边界）。
 
 v0.5 增补（Slice W，见 ADR-0018）：**事件可写（日程）**——第五类可写 / 可回收实体。`eventSchema` / `ID_PATTERNS.events`（`e-`）+ `SCHEMAS.events`；`nextId` 增 `e` 前缀，`TRASH_KINDS` 增 `events`；`EDITABLE_KINDS` / `EDITABLE_FIELDS.events`（`title/startAt/endAt/allDay/location/status/projectId/areaId/tags/notes`；`repeatRule` 不开放）接入通用 `POST /api/events/:id/update` · `/trash` 与 `/api/trash/events/:id/(restore|purge)`。新增 `POST /api/events`（201）——`title` + `startAt` 必填；`endAt` 可选（缺省不写 = 单点；早于 `startAt` → 400）、`allDay` 缺省 `false`、`status` 缺省 `confirmed`、`projectId`/`areaId` 真实存在校验、标签规格化 + 登记；审计 `event.create`。新增 `POST /api/events/:id/remove`（审计 `event.remove`；与通用 `/trash` 同语义）。`updateEntity` 对 events 追加 `end < start` → 400 且不 bump `updatedAt`（事件无该字段）。前端日历新增「新建日程」确认弹窗（`EventDraftModal`，无 AI）、事件详情 `EventDetailModal`（编辑 / 删除 / 状态快捷切换 `已确认↔待定↔已取消`）、迷你月历日格可点（选中 + 滚动议程到该日）；`endAt` 可选，全部消费点以 `?? startAt` 兜底。
+
+v0.5 增补（Slice X，见 ADR-0019）：**区域 / 目标 / 习惯可管理 + 打卡**——关闭最后三个只读结构。`areaSchema` / `goalSchema` / `habitSchema` + `SCHEMAS`；`ID_PATTERNS` 增 `goals`（`g-`）/`habits`（`h-`）；`nextId` 增 `a`/`g`/`h` 前缀，`TRASH_KINDS` 增三类。新增创建 `POST /api/areas` · `/api/goals` · `/api/habits`（201；`title` 必填，空 → 400；`areaId` 真实存在校验）与专属编辑 / 删除 `POST /api/<kind>/:id/update` · `POST /api/<kind>/:id/remove`；回收站 `POST /api/trash/<kind>/:id/(restore|purge)`（`TRASHABLE_KINDS` 扩展）。区域 / 目标删除带**引用护栏**——被引用（区域：任务/项目/笔记/资料/日程/目标/习惯的 `areaId`；目标：项目 `goalId` + 子目标 `parentGoalId`）→ **409** 并给可读计数；未引用才入回收站。三类均**无 `createdAt`/`updatedAt`**（编辑不 bump），审计 `area.*` / `goal.*` / `habit.*`。习惯打卡：`POST /api/habits/:id/checkin {date?}` / `uncheckin`（`date` 缺省今天；**幂等**；写 `{date, value:1}`；审计 `habit.checkin` / `habit.uncheckin`）。前端设置页新增「区域 / 目标 / 习惯」三管理区；总览「习惯打卡」条改为首个习惯标题 + quiet「今日打卡」切换（撤销）；关联 area/goal 芯片可点（深链 `/settings?section=…` 并自动打开编辑）。
 
 派生值纪律在数据服务阶段依然适用：进度、计数、聚合必须运行时计算，不落盘。
 

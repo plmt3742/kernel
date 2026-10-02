@@ -1,6 +1,6 @@
 // KERNEL · 派生查询（运行时计算，禁止落库）
 // 组合 src/lib/data.ts 的 getter，产出各视图所需的口径与几何布局。
-import type { CalendarEvent, Energy, KernelSnapshot, Task } from '@/types'
+import type { CalendarEvent, Energy, Habit, KernelSnapshot, Task } from '@/types'
 import { getHabitStreak, getSnapshot } from '@/lib/data'
 import {
   addDays,
@@ -112,14 +112,28 @@ export function getEnergyDistribution(
   }))
 }
 
-/** 连续打卡天数（默认取"每日一题算法" h-0002） */
+/**
+ * 总览「习惯打卡」条所选习惯：取快照中排序后的首个习惯（id 升序；种子为 h-0001）。
+ * v0.5 · Slice X 修复此前硬编码 h-0002 的问题——改为确定性选择首个习惯，标题随之为该习惯标题
+ * （见 ADR-0019）。无习惯时返回 undefined。
+ */
+function getFeaturedHabit(): Habit | undefined {
+  return getSnapshot().habits[0]
+}
+
+/** 连续打卡天数（默认取首个习惯；见 getFeaturedHabit） */
 export function getCodingStreak(now: Date = new Date()): number {
-  const habits = getSnapshot().habits
-  const habit = habits.find((h) => h.id === 'h-0002') ?? habits[0]
+  const habit = getFeaturedHabit()
   return habit ? getHabitStreak(habit.id, now) : 0
 }
 
 export interface CodingStreakDetail {
+  /** 所选习惯 id（无习惯为 null） */
+  habitId: string | null
+  /** 所选习惯标题（供监视柱标签；无习惯为空串） */
+  habitTitle: string
+  /** 今天是否已打卡（供「今日打卡」按钮态） */
+  todayHit: boolean
   /** 当前连续天数（与 getCodingStreak 同口径） */
   current: number
   /** 近 14 天点阵，oldest → newest（末位为今天）；key 为 MM-DD */
@@ -130,10 +144,9 @@ export interface CodingStreakDetail {
   gaps: string[]
 }
 
-/** 连续刷题明细：默认取"每日一题算法" h-0002（回退 habits[0]），供点阵与缺口排版 */
+/** 连续打卡明细：默认取首个习惯（见 getFeaturedHabit），供点阵与缺口排版 */
 export function getCodingStreakDetail(now: Date = new Date()): CodingStreakDetail {
-  const habits = getSnapshot().habits
-  const habit = habits.find((h) => h.id === 'h-0002') ?? habits[0]
+  const habit = getFeaturedHabit()
   const byDate = new Map((habit?.log ?? []).map((entry) => [entry.date, entry.value]))
   // 近 14 天：从 13 天前至今（含端点），oldest → newest
   const days = upcomingDays(14, addDays(now, -13))
@@ -143,7 +156,12 @@ export function getCodingStreakDetail(now: Date = new Date()): CodingStreakDetai
     return { key: iso.slice(5), hit: value !== undefined && value > 0 }
   })
   const gaps = window.filter((cell) => !cell.hit).map((cell) => cell.key)
+  const todayKey = toISODateString(now)
+  const todayValue = byDate.get(todayKey)
   return {
+    habitId: habit?.id ?? null,
+    habitTitle: habit?.title ?? '',
+    todayHit: todayValue !== undefined && todayValue > 0,
     current: getCodingStreak(now),
     window,
     hits: window.filter((cell) => cell.hit).length,

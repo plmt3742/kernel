@@ -4,13 +4,15 @@ import { useNavigate } from 'react-router-dom'
 import { TagPill } from '@/components/TagPill'
 import { getRelations, type RefKind, type RelationKind } from '@/lib/relations'
 
-/** 关联目标 → 路由；area / goal 无独立页面，渲染为静态芯片 */
+/** 关联目标 → 路由；区域 / 目标无独立页面，深链到设置页对应分区并打开其编辑弹窗（Slice X · F8） */
 const PATH_OF: Partial<Record<RefKind, (id: string) => string>> = {
   task: (id) => `/tasks?task=${id}`,
   project: (id) => `/projects?project=${id}`,
   note: (id) => `/library?note=${id}`,
   resource: (id) => `/library?resource=${id}`,
   event: (id) => `/calendar?event=${id}`,
+  area: (id) => `/settings?section=areas&area=${id}`,
+  goal: (id) => `/settings?section=goals&goal=${id}`,
   inbox: () => '/inbox',
 }
 

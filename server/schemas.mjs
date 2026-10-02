@@ -14,6 +14,15 @@ export const resourceKind = z.enum(['article', 'course', 'book', 'tool', 'paper'
 export const resourceStatus = z.enum(['unread', 'reading', 'read', 'reference', 'archived'])
 /** 日程状态（v0.5 · Slice W）：tentative → confirmed → cancelled（见 ADR-0018） */
 export const eventStatus = z.enum(['confirmed', 'tentative', 'cancelled'])
+/** 区域审视节奏 / 状态（v0.5 · Slice X，见 ADR-0019） */
+export const areaCadence = z.enum(['weekly', 'monthly', 'quarterly'])
+export const areaStatus = z.enum(['active', 'archived'])
+/** 目标时间视野 / 状态（v0.5 · Slice X） */
+export const goalHorizon = z.enum(['term', 'quarter', 'year'])
+export const goalStatus = z.enum(['active', 'achieved', 'dropped', 'someday'])
+/** 习惯节奏 / 度量方式（v0.5 · Slice X） */
+export const habitCadence = z.enum(['daily', 'weekly', 'monthly'])
+export const habitMetric = z.enum(['count', 'minutes', 'bool'])
 
 export const taskSchema = z
   .object({
@@ -114,6 +123,68 @@ export const eventSchema = z
   })
   .catchall(z.unknown())
 
+/**
+ * 区域 · a-（v0.5 · Slice X，见 ADR-0019）：标准式领域，此前种子只读，现转为可管理。
+ * 字段对齐既有 data/areas/*.json（title / standard / cadence / status）；无 createdAt/updatedAt。
+ */
+export const areaSchema = z
+  .object({
+    id: z.string().regex(/^a-\d{4}$/),
+    title: z.string().min(1),
+    standard: z.string().optional(),
+    cadence: areaCadence.optional(),
+    status: areaStatus.optional(),
+  })
+  .catchall(z.unknown())
+
+/** 关键结果（目标下，display-only：v1 只在既有记录上展示，不开放编辑，见 ADR-0019 边界） */
+export const keyResultSchema = z.object({
+  text: z.string().min(1),
+  target: z.number(),
+  current: z.number(),
+  unit: z.string().optional(),
+})
+
+/**
+ * 目标 · g-（v0.5 · Slice X）：字段对齐既有 data/goals/*.json；`keyResults` 保留展示，
+ * 本切片不开放编辑（写入延后，见 ADR-0019 边界）。无 createdAt/updatedAt。
+ */
+export const goalSchema = z
+  .object({
+    id: z.string().regex(/^g-\d{4}$/),
+    title: z.string().min(1),
+    horizon: goalHorizon.optional(),
+    areaId: z.string().optional(),
+    parentGoalId: z.string().optional(),
+    keyResults: z.array(keyResultSchema).optional(),
+    status: goalStatus.optional(),
+    targetDate: iso.optional(),
+  })
+  .catchall(z.unknown())
+
+/** 习惯打卡记录（date 为 YYYY-MM-DD，value 为当日度量值） */
+export const habitLogEntrySchema = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  value: z.number(),
+})
+
+/**
+ * 习惯 · h-（v0.5 · Slice X）：字段对齐既有 data/habits/*.json；`log` 由 check-in / uncheck-in
+ * 端点维护（见 ADR-0019）。无 createdAt/updatedAt。
+ */
+export const habitSchema = z
+  .object({
+    id: z.string().regex(/^h-\d{4}$/),
+    title: z.string().min(1),
+    cadence: habitCadence.optional(),
+    trigger: z.string().optional(),
+    metric: habitMetric.optional(),
+    target: z.number().optional(),
+    areaId: z.string().optional(),
+    log: z.array(habitLogEntrySchema).optional(),
+  })
+  .catchall(z.unknown())
+
 export const projectStatus = z.enum(['active', 'onHold', 'someday', 'done', 'archived'])
 
 /** 回顾类型（周 / 月） */
@@ -171,6 +242,9 @@ export const SCHEMAS = {
   projects: projectSchema,
   reviews: reviewSchema,
   events: eventSchema,
+  areas: areaSchema,
+  goals: goalSchema,
+  habits: habitSchema,
 }
 
 /** 实体 kind → id 模式（防目录穿越；与 docs/04 ID 约定一致） */
@@ -181,10 +255,49 @@ export const ID_PATTERNS = {
   resources: /^r-\d{4}$/,
   projects: /^p-\d{4}$/,
   areas: /^a-\d{4}$/,
+  goals: /^g-\d{4}$/,
+  habits: /^h-\d{4}$/,
   reviews: /^rev-\d{4}$/,
   tags: /^tag-\d{3,}$/,
   events: /^e-\d{4}$/,
 }
+
+/* ---------------------------------------------------------------------------
+ * 区域 / 目标 / 习惯 · 创建入参（v0.5 · Slice X，见 ADR-0019）
+ * 更新走通用白名单（index.mjs EDITABLE_FIELDS）；此处只校验创建与打卡入参。
+ * ------------------------------------------------------------------------- */
+
+export const areaCreateSchema = z.object({
+  title: z.string().max(60),
+  standard: z.string().max(200).optional(),
+  cadence: areaCadence.optional(),
+  status: areaStatus.optional(),
+})
+
+export const goalCreateSchema = z.object({
+  title: z.string().max(120),
+  horizon: goalHorizon.optional(),
+  areaId: z.string().min(1).optional(),
+  status: goalStatus.optional(),
+  targetDate: iso.optional(),
+})
+
+export const habitCreateSchema = z.object({
+  title: z.string().max(120),
+  cadence: habitCadence.optional(),
+  metric: habitMetric.optional(),
+  target: z.number().min(0).max(100000).optional(),
+  trigger: z.string().max(200).optional(),
+  areaId: z.string().min(1).optional(),
+})
+
+/** 打卡 / 取消打卡入参：date 缺省为服务端「今天」（本地时区） */
+export const habitCheckinSchema = z.object({
+  date: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
+})
 
 /* ---------------------------------------------------------------------------
  * 标签注册表（v0.5 · Slice T）：data/meta/tags.json
