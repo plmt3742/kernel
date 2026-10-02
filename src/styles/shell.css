@@ -358,13 +358,7 @@
   background: var(--outline);
   display: inline-block;
 }
-.k-proto {
-  border: var(--hairline) solid var(--accent);
-  color: var(--accent-text);
-  background: var(--accent-veil);
-  padding: 1px 7px;
-  border-radius: var(--radius-pill);
-}
+/* 数据服务状态胶囊样式见 components.css `.k-svc-pill` */
 
 /* ---------------------------------------------------------------------------
  * 抽屉 Drawer
@@ -562,12 +556,34 @@
   box-shadow: var(--shadow-card), var(--shadow-highlight);
 }
 .k-toast__tag {
-  color: var(--accent-text);
+  color: var(--muted);
   flex: 0 0 auto;
+}
+/* 错误态：危险色描边 + 标签提示（如「错误」） */
+.k-toast.is-error {
+  border-color: var(--danger);
+}
+.k-toast.is-error .k-toast__tag {
+  color: var(--danger-text);
 }
 .k-toast__msg {
   font-size: var(--text-body-sm);
   color: var(--ink);
+}
+/* 内嵌动作（如「撤销」）：强调色小胶囊，悬停描边提示可点 */
+.k-toast__action {
+  flex: 0 0 auto;
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  border: var(--hairline) solid transparent;
+  color: var(--accent-text);
+  background: var(--accent-veil);
+  font-size: var(--text-caption);
+  line-height: 1.35;
+  transition: border-color var(--dur-fast) var(--ease-standard);
+}
+.k-toast__action:hover {
+  border-color: var(--accent);
 }
 .k-toast__close {
   display: grid;

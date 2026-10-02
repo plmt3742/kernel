@@ -21,7 +21,7 @@ export function RailNav({ collapsed, onToggle, onMore }: RailNavProps) {
         </span>
         <span className="k-rail__brandtext">
           <b>KERNEL</b>
-          <span className="u-label k-muted">v0.3.0</span>
+          <span className="u-label k-muted">v0.4.0</span>
         </span>
       </div>
 

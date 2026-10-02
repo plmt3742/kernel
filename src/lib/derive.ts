@@ -25,10 +25,10 @@ export interface TaskScope {
   dueToday: number
 }
 
-/** 今日焦点口径：今日到期 ∪ 逾期未完成；doneSet 为原型态完成集合（可选） */
-export function getTodayTaskScope(now: Date = new Date(), doneSet?: Set<string>): TaskScope {
+/** 今日焦点口径：今日到期 ∪ 逾期未完成（v0.4：完成即落盘 status==='done'） */
+export function getTodayTaskScope(now: Date = new Date()): TaskScope {
   const dayEnd = endOfDay(now)
-  const isDone = (t: Task): boolean => t.status === 'done' || (doneSet?.has(t.id) ?? false)
+  const isDone = (t: Task): boolean => t.status === 'done'
   const scoped = getSnapshot().tasks.filter(
     (t) => t.status !== 'dropped' && t.dueAt !== undefined && toDate(t.dueAt) <= dayEnd,
   )

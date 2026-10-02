@@ -817,6 +817,27 @@ button.k-pill.is-selected:hover {
 }
 
 /* ---------------------------------------------------------------------------
+ * 数据服务状态胶囊（状态条与设置页共用）
+ * 在线（成功）/ 离线（危险）/ 连接中（静默）
+ * ------------------------------------------------------------------------- */
+
+.k-svc-pill {
+  border: var(--hairline) solid var(--outline-strong);
+  color: var(--muted);
+  padding: 1px 7px;
+  border-radius: var(--radius-pill);
+}
+.k-svc-pill.is-ok {
+  border-color: var(--success);
+  color: var(--success);
+}
+.k-svc-pill.is-off {
+  border-color: var(--danger);
+  color: var(--danger-text);
+  background: var(--danger-bg);
+}
+
+/* ---------------------------------------------------------------------------
  * 蒸馏度指示 / Tabs / 杂项
  * ------------------------------------------------------------------------- */
 

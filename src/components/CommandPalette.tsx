@@ -151,13 +151,13 @@ export function CommandPalette() {
                   </Command.Item>
                 </Command.Group>
 
-                <Command.Group heading="原型标注 · PROTOTYPE" className="k-palette__group">
+                <Command.Group heading="AI · 待接入" className="k-palette__group">
                   <Command.Item
                     className="k-palette__item"
                     value="AI 指令 待接入 v0.5"
                     onSelect={() =>
                       run(() => {
-                        toast('原型态：AI 集成计划于 v0.5 接入')
+                        toast('AI 集成计划于 v0.5 接入')
                         navigate('/settings', { viewTransition: true })
                       })
                     }

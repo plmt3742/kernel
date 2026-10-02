@@ -9,6 +9,7 @@ import { StatusBar } from '@/components/shell/StatusBar'
 import { CommandPalette } from '@/components/CommandPalette'
 import { usePalette } from '@/context/PaletteContext'
 import { navByPath } from '@/lib/nav'
+import { hydrateFromServer } from '@/lib/mutations'
 import { DUR, EASE_ENTER } from '@/lib/motion'
 
 function readCollapsed(): boolean {
@@ -57,6 +58,23 @@ export function AppLayout() {
     }
     document.documentElement.setAttribute('data-rail', collapsed ? 'collapsed' : 'expanded')
   }, [collapsed])
+
+  // 数据服务水合（首屏后拉取最新快照）+ 窗口聚焦刷新（多标签页同步）
+  useEffect(() => {
+    void hydrateFromServer()
+    const onFocus = (): void => {
+      void hydrateFromServer()
+    }
+    const onVisibility = (): void => {
+      if (document.visibilityState === 'visible') void hydrateFromServer()
+    }
+    window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      window.removeEventListener('focus', onFocus)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
+  }, [])
 
   // 文档标题
   useEffect(() => {
