@@ -96,6 +96,30 @@ export const RESOURCE_STATUS_EN: Record<ResourceStatus, string> = {
   reference: 'REFERENCE',
   archived: 'ARCHIVED',
 }
+/** 资料状态 · 判断标准（安静 helper 文本；术语与 docs/04 §4.9 一致，Slice H） */
+export const RESOURCE_STATUS_DEF: Record<ResourceStatus, string> = {
+  unread: '收进资料库，尚未开始阅读。',
+  reading: '正在读，有明确推进。',
+  read: '已完整读完。',
+  reference: '不打算通读，仅备查引用（数据 / 规范 / 手册）。',
+  archived: '已处理完，退出主动视野。',
+}
+
+/* 笔记蒸馏层级（渐进蒸馏 L0–L3；Slice H：可显示亦可设置） */
+export const DISTILL_LEVELS = [0, 1, 2, 3] as const
+export const DISTILL_LEVEL_LABEL: Record<number, string> = {
+  0: '原文',
+  1: '划线',
+  2: '摘要',
+  3: '永久',
+}
+/** 蒸馏层级 · 判断标准（安静 helper 文本；与 docs/04 §4.8 一致） */
+export const DISTILL_LEVEL_DEF: Record<number, string> = {
+  0: '原始摘录 / 未加工。',
+  1: '已标出关键句。',
+  2: '已用自己的话压缩成摘要。',
+  3: '已提炼为可复用的永久笔记。',
+}
 
 export const EVENT_STATUS_LABEL: Record<EventStatus, string> = {
   confirmed: '已确认',
@@ -137,6 +161,20 @@ export const AREA_CADENCE_LABEL: Record<AreaCadence, string> = {
 export const REVIEW_TYPE_LABEL: Record<ReviewType, string> = {
   weekly: '周回顾',
   monthly: '月回顾',
+}
+
+/* ---------------------------------------------------------------------------
+ * 文件大小（人可读；文件投递 chips / 行元数据用）
+ * ------------------------------------------------------------------------- */
+
+/** 字节 → 人可读（B / KB / MB）；非法输入回退 '—' */
+export function humanSize(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 0) return '—'
+  if (bytes < 1024) return `${bytes} B`
+  const kb = bytes / 1024
+  if (kb < 1024) return `${kb < 10 ? kb.toFixed(1) : String(Math.round(kb))} KB`
+  const mb = kb / 1024
+  return `${mb < 10 ? mb.toFixed(1) : String(Math.round(mb))} MB`
 }
 
 /* ---------------------------------------------------------------------------
