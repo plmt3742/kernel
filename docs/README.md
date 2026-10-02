@@ -62,6 +62,7 @@ KERNEL 的完整文档集。本文件是导航中心，说明每份文档的职�
 | `decisions/0015-ai-full-chain-multi-action.md` | ADR | AI 全链 · 多实体一揽子处置（Slice R1）：多动作抽取（≤6，含新项目）+ 一次确认批量应用（建项目 / 挂接 / 标签登记）+ 精确撤销（产物 + 注册表）+ 项目草稿端点；默认仍先确认后写入；Slice R2.5 修订（§5）：文件条目 = 资料 + 简介（不拆分），文本条目保留多动作 + 反过拆 |
 | `decisions/0016-cluster-project-and-ai-automation.md` | ADR | 项目诞生：聚类立项 + AI 自动化档位（Slice R2）：连续累积相似任务 → 确定性预分组 + AI 命名（按组引用、抗幻觉）+ 一次建项归入 / 精确撤销；`aiAutomation` 档位（默认 confirm）+ 自动化能力边界表 + AI 动态 feed |
 | `decisions/0017-subtasks-and-project-actions.md` | ADR | 子任务全链路 + 项目内操作（Slice R3）：`parentTaskId` 一等写入字段（创建 / 编辑 + 自引用 / 成环 / 存在性服务端护栏）；任务详情「子任务」区块 + 就地打开 + quick-add 继承父项目；项目任务行就地打开 + 按项目预填新建（草稿确认）；替换式覆盖层 |
+| `decisions/0018-events-writable.md` | ADR | 事件可写（日程 · Slice W）：events 并入可写 / 可回收实体族（schema + `e-` id + `EDITABLE_FIELDS` + `POST /api/events` / `:id/remove` + 回收站）；`endAt` 可选 + `end ≥ start` 服务端校验；文档状态流（tentative→confirmed→cancelled）可执行；日历新建（先确认后写入）+ 详情编辑 / 删除 / 状态快捷切换 + 迷你月历日格可点；`repeatRule` 仅展示延后 |
 
 ## 根目录文档（不在本目录）
 

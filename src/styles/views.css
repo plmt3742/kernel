@@ -1180,6 +1180,18 @@ button.k-pill.is-danger:hover {
 .k-minical__d.is-void {
   color: transparent;
 }
+/* 可点日格（Slice W）：悬停 / 选中；今日与选中可叠加，仍保今日反色 */
+.k-minical__d:not(.is-void):not(.is-today):hover {
+  background: var(--surface-hover);
+  color: var(--ink);
+}
+.k-minical__d.is-selected {
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+  color: var(--accent-text);
+}
+.k-minical__d.is-today.is-selected {
+  color: var(--bg);
+}
 .k-cal-c__legend {
   display: flex;
   align-items: center;
@@ -2355,6 +2367,21 @@ button.k-pill.is-danger:hover {
 }
 .k-field__label {
   color: var(--muted);
+}
+/* 布尔字段（Slice W）：全天等；与字段标签同排，勾选图形走强调色 */
+.k-field__check {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--ink-2);
+  font-size: var(--text-body-sm);
+  cursor: pointer;
+}
+.k-field__check input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+  cursor: pointer;
 }
 .k-input,
 .k-select,

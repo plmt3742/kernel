@@ -1,15 +1,19 @@
 // KERNEL · 日程 CALENDAR：议程流（下一项高亮 + 今天/明天/本周/下周/更远 分组 + 迷你月历）
+// Slice W（见 ADR-0018）：日程由只读转为可写——新建（先确认后写入）+ 点击详情（编辑 /
+// 删除 / 状态快捷切换）+ 迷你月历日格可点（选中并滚动议程到该日）。
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { RefObject } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { Panel } from '@/components/Panel'
-import { Modal } from '@/components/Modal'
-import { TagPill } from '@/components/TagPill'
+import { EventDetailModal } from '@/components/EventDetailModal'
+import { EventDraftModal } from '@/components/EventDraftModal'
 import { EmptyState } from '@/components/EmptyState'
-import { Relations } from '@/components/Relations'
-import { getAreaById, getEventById, getEvents, getProjectById } from '@/lib/data'
-import { EVENT_STATUS_LABEL, tagLabel } from '@/lib/format'
+import { useToast } from '@/context/ToastContext'
+import { getEvents } from '@/lib/data'
+import { removeEvent } from '@/lib/mutations'
+import { errorText } from '@/lib/api'
+import { EVENT_STATUS_LABEL } from '@/lib/format'
 import {
   addDays,
   daysFromToday,
@@ -21,6 +25,7 @@ import {
   isSameDay,
   startOfWeek,
   toDate,
+  toISODateTime,
 } from '@/lib/date'
 import { useDataRevision, useNow } from '@/lib/hooks'
 import type { CalendarEvent } from '@/types'
@@ -54,6 +59,11 @@ const BUCKET_ORDER: BucketKey[] = ['today', 'tomorrow', 'thisWeek', 'nextWeek', 
 
 /** 迷你月历星期表头（周一为一周起点） */
 const WEEKDAY_HEADER = ['一', '二', '三', '四', '五', '六', '日']
+
+/** 事件结束时刻（endAt 可选；缺省视作与开始同刻） */
+function eventEnd(event: CalendarEvent): string {
+  return event.endAt ?? event.startAt
+}
 
 /** 事件 → 分组桶 */
 function bucketOf(event: CalendarEvent, now: Date): BucketKey {
@@ -90,10 +100,15 @@ function groupMeta(bucket: Bucket): string {
   return `${formatMonthDay(first)} 起 · ${count}`
 }
 
-/** 行内时间：当天写「08:00–09:40」，跨天补星期「周一 15:00–16:00」 */
+/** 行内时间：当天写「08:00–09:40」，跨天补星期「周一 15:00–16:00」；无结束则仅开始 */
+function rowRange(event: CalendarEvent): string {
+  return event.endAt !== undefined
+    ? `${formatTime(event.startAt)}–${formatTime(event.endAt)}`
+    : formatTime(event.startAt)
+}
+
 function rowTime(event: CalendarEvent, now: Date): string {
-  const range = `${formatTime(event.startAt)}–${formatTime(event.endAt)}`
-  return isSameDay(event.startAt, now) ? range : `${formatWeekdayShort(event.startAt)} ${range}`
+  return isSameDay(event.startAt, now) ? rowRange(event) : `${formatWeekdayShort(event.startAt)} ${rowRange(event)}`
 }
 
 /** 相对日：今天 / 明天 / 周X */
@@ -126,19 +141,26 @@ interface MiniCell {
 export function Calendar() {
   const now = useNow()
   const revision = useDataRevision()
+  const { toast } = useToast()
   const [searchParams, setSearchParams] = useSearchParams()
   const [drawerId, setDrawerId] = useState<string | null>(null)
+  // 新建弹窗：null = 关闭；否则为预填开始时刻（ISO）
+  const [draftStartAt, setDraftStartAt] = useState<string | null>(null)
+  // 迷你月历选中日（点击日格；用于高亮 + 预填新建开始时刻）
+  const [selectedDay, setSelectedDay] = useState<Date | null>(null)
   const [monthCursor, setMonthCursor] = useState(() => new Date())
   const heroRef = useRef<HTMLElement>(null)
   const todayRef = useRef<HTMLElement>(null)
+  // 事件行 DOM 引用（按事件 id）：迷你月历点击后滚动到该日首个事件
+  const eventRefs = useRef<Map<string, HTMLButtonElement>>(new Map())
 
   // 深链直达事件抽屉：/calendar?event=e-0003
   useEffect(() => {
     const id = searchParams.get('event')
-    if (id !== null && getEventById(id) !== undefined) {
+    if (id !== null && getEvents().some((event) => event.id === id)) {
       setDrawerId(id)
     }
-  }, [searchParams])
+  }, [searchParams, revision])
 
   const closeDrawer = (): void => {
     setDrawerId(null)
@@ -158,7 +180,7 @@ export function Calendar() {
   const upcoming = useMemo(
     () =>
       getEvents()
-        .filter((e) => e.status !== 'cancelled' && toDate(e.endAt).getTime() >= now.getTime())
+        .filter((e) => e.status !== 'cancelled' && toDate(eventEnd(e)).getTime() >= now.getTime())
         .sort((a, b) => toDate(a.startAt).getTime() - toDate(b.startAt).getTime()),
     [now, revision],
   )
@@ -228,6 +250,7 @@ export function Calendar() {
         )}`
 
   const shiftMonth = (delta: number): void => {
+    setSelectedDay(null)
     setMonthCursor((prev) => new Date(prev.getFullYear(), prev.getMonth() + delta, 1))
   }
 
@@ -236,7 +259,47 @@ export function Calendar() {
   // 「回到现在」= 滚到下一项卡（顶部锚点）
   const goNow = (): void => scrollToRef(heroRef)
 
-  const selectedEvent = drawerId !== null ? getEventById(drawerId) : undefined
+  /** 迷你月历日格点击（F10）：选中该日 + 滚动议程到该日首个未结束事件 */
+  const handleDayClick = (day: number): void => {
+    const date = new Date(year, month, day)
+    setSelectedDay(date)
+    const target = upcoming.find((event) => isSameDay(event.startAt, date))
+    const el = target !== undefined ? eventRefs.current.get(target.id) : undefined
+    if (el === undefined) return
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    el.scrollIntoView({ block: 'center', behavior: reduce ? 'auto' : 'smooth' })
+  }
+
+  /** 新建日程预填开始时刻：选中日 09:00；否则下一整点 */
+  const defaultStartForCreate = (): string => {
+    if (selectedDay !== null) {
+      const d = new Date(selectedDay)
+      d.setHours(9, 0, 0, 0)
+      return toISODateTime(d)
+    }
+    const d = new Date(now)
+    d.setMinutes(0, 0, 0)
+    d.setHours(d.getHours() + 1)
+    return toISODateTime(d)
+  }
+
+  const handleCreate = (): void => setDraftStartAt(defaultStartForCreate())
+
+  // 创建成功：关闭弹窗 + toast 撤销（删除走回收站，经 event.remove）
+  const handleCreated = (event: CalendarEvent): void => {
+    setDraftStartAt(null)
+    setSelectedDay(null)
+    toast(`已创建日程「${event.title}」`, {
+      action: {
+        label: '撤销',
+        onClick: () => {
+          void removeEvent(event.id).catch((err) => {
+            toast(`撤销失败：${errorText(err)}`, { tone: 'error' })
+          })
+        },
+      },
+    })
+  }
 
   return (
     <div className="k-view k-cal-c">
@@ -248,6 +311,9 @@ export function Calendar() {
           </span>
         </div>
         <div className="k-cal__nav">
+          <button type="button" className="k-btn" onClick={handleCreate}>
+            新建日程
+          </button>
           <button type="button" className="k-btn" onClick={goToday}>
             今天
           </button>
@@ -264,7 +330,7 @@ export function Calendar() {
             <h2 className="k-cal-c__next-title">{next.title}</h2>
             <span className="k-cal-c__next-meta">
               {relativeDay(next.startAt, now)} · {formatFullDate(next.startAt)} ·{' '}
-              {formatTime(next.startAt)}–{formatTime(next.endAt)}
+              {rowRange(next)}
               {next.location !== undefined ? ` · ${next.location}` : ''}
             </span>
           </div>
@@ -285,7 +351,7 @@ export function Calendar() {
       <div className="k-cal-c__layout">
         <div className="k-cal-c__stream">
           {upcoming.length === 0 ? (
-            <EmptyState title="接下来没有安排" hint="空档适合安排深工作或休息。" />
+            <EmptyState title="接下来没有安排" hint="空档适合安排深工作或休息。可点「新建日程」添加一场。" />
           ) : (
             buckets.map((bucket) =>
               bucket.events.length === 0 ? null : (
@@ -303,6 +369,10 @@ export function Calendar() {
                       type="button"
                       key={event.id}
                       className="k-lib-row"
+                      ref={(el) => {
+                        if (el !== null) eventRefs.current.set(event.id, el)
+                        else eventRefs.current.delete(event.id)
+                      }}
                       onClick={() => setDrawerId(event.id)}
                     >
                       <span className="k-lib-row__kind k-mono">{rowTime(event, now)}</span>
@@ -357,18 +427,27 @@ export function Calendar() {
                     ·
                   </span>
                 ) : (
-                  <span
+                  <button
+                    type="button"
                     key={cell.key}
                     className={[
                       'k-minical__d',
                       cell.isToday ? 'is-today' : '',
                       cell.hasEvent ? 'is-event' : '',
+                      selectedDay !== null && isSameDay(new Date(year, month, cell.day), selectedDay)
+                        ? 'is-selected'
+                        : '',
                     ]
                       .filter(Boolean)
                       .join(' ')}
+                    aria-label={`${month + 1}月${cell.day}日`}
+                    aria-pressed={
+                      selectedDay !== null && isSameDay(new Date(year, month, cell.day), selectedDay)
+                    }
+                    onClick={() => handleDayClick(cell.day as number)}
                   >
                     {cell.day}
-                  </span>
+                  </button>
                 ),
               )}
             </div>
@@ -395,57 +474,16 @@ export function Calendar() {
         </aside>
       </div>
 
-      {/* 日程详情居中弹窗（Slice K）：日程当前为只读实体，暂无编辑 / 删除
-          （结构性缺口，见 ADR-0012 / TASK_BOOK）。 */}
-      <Modal
-        open={selectedEvent !== undefined}
-        onClose={closeDrawer}
-        kicker={`日程 · ${selectedEvent?.id ?? ''}`}
-        title={selectedEvent?.title ?? ''}
-        className="k-modal--detail"
-      >
-        {selectedEvent !== undefined && (
-          <div className="k-detail-grid">
-            <dl className="k-dl">
-              <dt>时间</dt>
-              <dd>
-                {formatTime(selectedEvent.startAt)}–{formatTime(selectedEvent.endAt)}
-              </dd>
-              <dt>日期</dt>
-              <dd>{formatFullDate(selectedEvent.startAt)}</dd>
-              <dt>全天</dt>
-              <dd>{selectedEvent.allDay ? '是' : '否'}</dd>
-              <dt>地点</dt>
-              <dd>{selectedEvent.location ?? '—'}</dd>
-              <dt>状态</dt>
-              <dd>{EVENT_STATUS_LABEL[selectedEvent.status]}</dd>
-              <dt>区域</dt>
-              <dd>
-                {selectedEvent.areaId !== undefined
-                  ? (getAreaById(selectedEvent.areaId)?.title ?? selectedEvent.areaId)
-                  : '—'}
-              </dd>
-              <dt>项目</dt>
-              <dd>
-                {selectedEvent.projectId !== undefined
-                  ? (getProjectById(selectedEvent.projectId)?.title ?? selectedEvent.projectId)
-                  : '—'}
-              </dd>
-            </dl>
-            {selectedEvent.tags.length > 0 && (
-              <div className="k-detail-block">
-                <span className="k-detail-block__label u-label">标签</span>
-                <div className="k-hstack">
-                  {selectedEvent.tags.map((tag) => (
-                    <TagPill key={tag}>{tagLabel(tag)}</TagPill>
-                  ))}
-                </div>
-              </div>
-            )}
-            <Relations kind="event" id={selectedEvent.id} />
-          </div>
-        )}
-      </Modal>
+      {/* 日程详情（Slice W）：编辑 / 删除 / 状态快捷切换，由 EventDetailModal 承载 */}
+      <EventDetailModal eventId={drawerId} onClose={closeDrawer} />
+
+      {/* 新建日程（先确认后写入，无 AI）：确认前零落盘 */}
+      <EventDraftModal
+        open={draftStartAt !== null}
+        initialStartAt={draftStartAt ?? ''}
+        onClose={() => setDraftStartAt(null)}
+        onCreated={handleCreated}
+      />
     </div>
   )
 }

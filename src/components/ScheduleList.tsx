@@ -24,14 +24,14 @@ export function ScheduleList({ events, now, onSelect, ended }: ScheduleListProps
           ? '全天'
           : ended === true
             ? formatTime(event.startAt)
-            : `${formatTime(event.startAt)}–${formatTime(event.endAt)}`
+            : `${formatTime(event.startAt)}–${formatTime(event.endAt ?? event.startAt)}`
         // 已结束：正文补完整时段与状态；默认（沿用既有调用）：仅地点
         const meta =
           ended === true
             ? [
                 event.allDay
                   ? undefined
-                  : `${formatTime(event.startAt)}–${formatTime(event.endAt)}`,
+                  : `${formatTime(event.startAt)}–${formatTime(event.endAt ?? event.startAt)}`,
                 event.location,
                 '已结束',
               ]

@@ -156,14 +156,17 @@
 | id | string | |
 | title | string | |
 | startAt | ISO | |
-| endAt | ISO | |
-| allDay | boolean | |
+| endAt? | ISO | 可选；缺省 = 单点日程（无结束） |
+| allDay? | boolean | 缺省 false |
 | location? | string | |
 | areaId? | string | |
 | projectId? | string | |
 | tags | string[] | |
 | status | `confirmed` \| `tentative` \| `cancelled` | |
-| repeatRule? | string | |
+| notes? | string | 备注（可编辑） |
+| repeatRule? | string | 重复规则，**仅展示保留**（展开 / 编辑延后，见 ADR-0018） |
+
+> **事件可写（v0.5 · Slice W，见 ADR-0018）**：事件是第五类可写 / 可回收实体。创建 `POST /api/events`（`title` + `startAt` 必填；`endAt` 可选且须 ≥ `startAt`，否则 400）；编辑 `POST /api/events/:id/update`（白名单：`title/startAt/endAt/allDay/location/status/projectId/areaId/tags/notes`；`endAt` 置空 = 清除）；删除 `POST /api/events/:id/remove`（审计 `event.remove`，进回收站，可 `restore` / `purge`）；审计 `event.create` / `event.update` / `event.remove`。事件**无 `createdAt` / `updatedAt`**（对齐既有形状，更新不 bump 时间戳）。标签同样 `ensureTags` 登记。写入全程经单写者 + Zod + 原子写 + 审计。
 
 ### 4.8 note（`n-`）
 
@@ -351,7 +354,7 @@ unread ──> reading ──> read ──> reference ──> archived
                                         └──彻底删除──> 不可恢复
 ```
 
-四种可写实体（task / project / note / resource）的删除均为**软删除**：先写回收站副本再删正册文件（原子、串行）。恢复写回正册并删副本；彻底删除仅删副本。`nextId` 同时扫描正册与回收站，避免回收后 id 复用导致恢复冲突。回收站不出现在 `/api/snapshot` 中，单独经 `GET /api/trash` 读取（见 ADR-0009）。
+五种可写实体（task / project / note / resource / event）的删除均为**软删除**：先写回收站副本再删正册文件（原子、串行）。恢复写回正册并删副本；彻底删除仅删副本。`nextId` 同时扫描正册与回收站，避免回收后 id 复用导致恢复冲突。回收站不出现在 `/api/snapshot` 中，单独经 `GET /api/trash` 读取（见 ADR-0009；事件并入见 ADR-0018）。
 
 ### 5.5 event
 
@@ -359,6 +362,8 @@ unread ──> reading ──> read ──> reference ──> archived
 tentative ──确认──> confirmed
 confirmed ──取消──> cancelled
 ```
+
+> **状态流可执行（v0.5 · Slice W，见 ADR-0018）**：日程详情弹窗内 quiet segmented 直接切换 `已确认 / 待定 / 已取消`（`POST /api/events/:id/update`，审计 `event.update`），toast 可撤销。此前该状态流仅见于文档、无执行入口。
 
 ### 5.6 迁移即重决策
 

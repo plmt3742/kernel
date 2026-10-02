@@ -4,7 +4,7 @@
 import { useState, type FormEvent } from 'react'
 import { toDate, toISODateTime } from '@/lib/date'
 
-export type EditFieldType = 'text' | 'textarea' | 'number' | 'select' | 'datetime' | 'list'
+export type EditFieldType = 'text' | 'textarea' | 'number' | 'select' | 'datetime' | 'list' | 'boolean'
 
 export interface EditFieldOption {
   value: string
@@ -29,6 +29,8 @@ interface EntityEditFormProps {
   saving: boolean
   onSubmit: (patch: Record<string, unknown>) => void
   onCancel: () => void
+  /** 提交按钮文案（缺省「保存」；新建流可传「创建」类文案） */
+  submitLabel?: string
 }
 
 /** ISO → datetime-local 值（本机时区，精确到分钟） */
@@ -47,6 +49,7 @@ function listToText(value: unknown): string {
 
 function initialFieldValue(field: EditFieldSpec, source: Record<string, unknown>): string {
   const value = source[field.key]
+  if (field.type === 'boolean') return value === true ? 'true' : 'false'
   if (field.type === 'list') return listToText(value)
   if (field.type === 'datetime') return toLocalInput(value)
   if (value === undefined || value === null) return ''
@@ -59,6 +62,7 @@ export function EntityEditForm({
   saving,
   onSubmit,
   onCancel,
+  submitLabel,
 }: EntityEditFormProps) {
   const [values, setValues] = useState<Record<string, string>>(() => {
     const out: Record<string, string> = {}
@@ -75,6 +79,10 @@ export function EntityEditForm({
     const patch: Record<string, unknown> = {}
     for (const field of fields) {
       const raw = values[field.key] ?? ''
+      if (field.type === 'boolean') {
+        patch[field.key] = raw === 'true'
+        continue
+      }
       if (field.type === 'list') {
         patch[field.key] = raw
           .split(',')
@@ -112,54 +120,68 @@ export function EntityEditForm({
         const value = values[field.key] ?? ''
         return (
           <div className="k-field" key={field.key}>
-            <label className="k-field__label u-label" htmlFor={id}>
-              {field.label}
-            </label>
-            {field.type === 'textarea' ? (
-              <textarea
-                id={id}
-                className="k-textarea"
-                value={value}
-                rows={5}
-                placeholder={field.placeholder}
-                onChange={(event) => setValue(field.key, event.target.value)}
-              />
-            ) : field.type === 'select' ? (
-              <select
-                id={id}
-                className="k-select"
-                value={value}
-                onChange={(event) => setValue(field.key, event.target.value)}
-              >
-                {field.clearable === true && <option value="">—</option>}
-                {(field.options ?? []).map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
+            {field.type === 'boolean' ? (
+              <label className="k-field__check" htmlFor={id}>
+                <input
+                  id={id}
+                  type="checkbox"
+                  checked={value === 'true'}
+                  onChange={(event) => setValue(field.key, event.target.checked ? 'true' : 'false')}
+                />
+                <span>{field.label}</span>
+              </label>
             ) : (
-              <input
-                id={id}
-                className="k-input"
-                type={
-                  field.type === 'number'
-                    ? 'number'
-                    : field.type === 'datetime'
-                      ? 'datetime-local'
-                      : 'text'
-                }
-                value={value}
-                placeholder={field.placeholder}
-                onChange={(event) => setValue(field.key, event.target.value)}
-              />
+              <>
+                <label className="k-field__label u-label" htmlFor={id}>
+                  {field.label}
+                </label>
+                {field.type === 'textarea' ? (
+                  <textarea
+                    id={id}
+                    className="k-textarea"
+                    value={value}
+                    rows={5}
+                    placeholder={field.placeholder}
+                    onChange={(event) => setValue(field.key, event.target.value)}
+                  />
+                ) : field.type === 'select' ? (
+                  <select
+                    id={id}
+                    className="k-select"
+                    value={value}
+                    onChange={(event) => setValue(field.key, event.target.value)}
+                  >
+                    {field.clearable === true && <option value="">—</option>}
+                    {(field.options ?? []).map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    id={id}
+                    className="k-input"
+                    type={
+                      field.type === 'number'
+                        ? 'number'
+                        : field.type === 'datetime'
+                          ? 'datetime-local'
+                          : 'text'
+                    }
+                    value={value}
+                    placeholder={field.placeholder}
+                    onChange={(event) => setValue(field.key, event.target.value)}
+                  />
+                )}
+              </>
             )}
           </div>
         )
       })}
       <div className="k-form__actions">
         <button type="submit" className="k-btn is-solid" disabled={saving}>
-          {saving ? '保存中…' : '保存'}
+          {saving ? '保存中…' : (submitLabel ?? '保存')}
         </button>
         <button type="button" className="k-btn" onClick={onCancel} disabled={saving}>
           取消

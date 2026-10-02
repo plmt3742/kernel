@@ -93,7 +93,7 @@ export function Overview() {
 
   const nextEvent = getNextEvent(now)
   const todayEvents = getTodayEvents(now)
-  const endedEvents = todayEvents.filter((event) => isPast(event.endAt, now))
+  const endedEvents = todayEvents.filter((event) => isPast(event.endAt ?? event.startAt, now))
   // 行动列：即将到期的下一步行动（按截止升序，逾期已排除）
   const flow = getUpcomingNextActions(5, now)
   const streak = getCodingStreakDetail(now)

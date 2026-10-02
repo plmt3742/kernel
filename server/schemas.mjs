@@ -12,6 +12,8 @@ export const energy = z.enum(['low', 'medium', 'high'])
 export const noteType = z.enum(['fleeting', 'literature', 'permanent', 'meeting', 'memo'])
 export const resourceKind = z.enum(['article', 'course', 'book', 'tool', 'paper', 'file'])
 export const resourceStatus = z.enum(['unread', 'reading', 'read', 'reference', 'archived'])
+/** 日程状态（v0.5 · Slice W）：tentative → confirmed → cancelled（见 ADR-0018） */
+export const eventStatus = z.enum(['confirmed', 'tentative', 'cancelled'])
 
 export const taskSchema = z
   .object({
@@ -89,6 +91,29 @@ export const resourceSchema = z
   })
   .catchall(z.unknown())
 
+/**
+ * 日程 · e-（v0.5 · Slice W，见 ADR-0018）：最末一个只读实体转为可写。
+ * 字段对齐既有 data/events/*.json；`endAt` / `allDay` 可缺省（结束可选 / 缺省非全天），
+ * `repeatRule` 仅展示保留（重复规则 UI 与写入延后，见 ADR-0018 §边界）。无 createdAt/updatedAt，
+ * 与既有事件形状保持一致。
+ */
+export const eventSchema = z
+  .object({
+    id: z.string().regex(/^e-\d{4}$/),
+    title: z.string().min(1),
+    startAt: iso,
+    endAt: iso.optional(),
+    allDay: z.boolean().optional(),
+    location: z.string().optional(),
+    areaId: z.string().optional(),
+    projectId: z.string().optional(),
+    tags: z.array(z.string()),
+    status: eventStatus,
+    notes: z.string().optional(),
+    repeatRule: z.string().optional(),
+  })
+  .catchall(z.unknown())
+
 export const projectStatus = z.enum(['active', 'onHold', 'someday', 'done', 'archived'])
 
 /** 回顾类型（周 / 月） */
@@ -145,6 +170,7 @@ export const SCHEMAS = {
   resources: resourceSchema,
   projects: projectSchema,
   reviews: reviewSchema,
+  events: eventSchema,
 }
 
 /** 实体 kind → id 模式（防目录穿越；与 docs/04 ID 约定一致） */
@@ -157,6 +183,7 @@ export const ID_PATTERNS = {
   areas: /^a-\d{4}$/,
   reviews: /^rev-\d{4}$/,
   tags: /^tag-\d{3,}$/,
+  events: /^e-\d{4}$/,
 }
 
 /* ---------------------------------------------------------------------------

@@ -19,7 +19,7 @@ const CONFIG_FILE = path.join(DATA_DIR, 'meta', 'config.json')
 /** 带 tags 数组、参与标签级联 / 计数 / 登记的实体目录（events 只读但同样级联，见 ADR-0014） */
 const TAG_ENTITY_KINDS = ['tasks', 'projects', 'notes', 'resources', 'events']
 /** 可回收实体类型（与 index.mjs 路由白名单一致） */
-const TRASH_KINDS = ['tasks', 'projects', 'notes', 'resources']
+const TRASH_KINDS = ['tasks', 'projects', 'notes', 'resources', 'events']
 
 /* ---------------------------------------------------------------------------
  * 时间戳：本地时区 ISO 8601 带偏移（对齐 docs/04 §1.2）
@@ -681,7 +681,7 @@ async function appendActivity(entry) {
 
 /** 下一个顺序 id：t-0001 → t-0002（扫描目录 + 回收站取最大值 +1，防回收后 id 复用） */
 export async function nextId(kind) {
-  const prefix = { tasks: 't', inbox: 'i', notes: 'n', resources: 'r', projects: 'p', reviews: 'rev' }[kind]
+  const prefix = { tasks: 't', inbox: 'i', notes: 'n', resources: 'r', projects: 'p', reviews: 'rev', events: 'e' }[kind]
   if (!prefix) throw new Error(`未知实体类型：${kind}`)
   const list = await readKind(kind)
   const trashed = await readDirRecords(path.join(TRASH_DIR, kind))

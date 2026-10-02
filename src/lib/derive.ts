@@ -64,7 +64,9 @@ export function getUpcomingNextActions(limit = 5, now: Date = new Date()): Task[
 /** 下一场事件（尚未结束、未取消） */
 export function getNextEvent(now: Date = new Date()): CalendarEvent | undefined {
   return getSnapshot()
-    .events.filter((e) => e.status !== 'cancelled' && toDate(e.endAt).getTime() >= now.getTime())
+    .events.filter(
+      (e) => e.status !== 'cancelled' && toDate(e.endAt ?? e.startAt).getTime() >= now.getTime(),
+    )
     .sort((a, b) => toDate(a.startAt).getTime() - toDate(b.startAt).getTime())[0]
 }
 
@@ -197,11 +199,11 @@ export function layoutOverlaps(events: CalendarEvent[]): LaidOutEvent[] {
 
   for (const event of sorted) {
     const start = toDate(event.startAt).getTime()
-    const end = toDate(event.endAt).getTime()
+    const end = toDate(event.endAt ?? event.startAt).getTime()
     if (cluster.length > 0 && start >= clusterEnd) flush()
     const occupied = new Set(
       cluster
-        .filter((item) => toDate(item.event.endAt).getTime() > start)
+        .filter((item) => toDate(item.event.endAt ?? item.event.startAt).getTime() > start)
         .map((item) => item.col),
     )
     let col = 0

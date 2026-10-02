@@ -11,6 +11,8 @@ KERNEL 的任务台账与迭代记录。记录当前迭代目标、未来待办�
 > **新会话处理入口**：先读 `AGENTS.md` → 本清单 → 按序处理。每项均附上下文与落点。
 > 状态：v0.4.0 已交付（数据服务 + 前端写入改造 + 审阅 P0 六项 + 路由滚动记忆）；页面排版选型已落地 10/10；**v0.5 首个切片（收件箱「AI 解析」）已交付**；**互联 Slice A（深链 + 关联区块）、AI 澄清升级 Slice B（上下文注入 + 挂接建议 + SSE 过程可视）与 AI 周回顾 Slice C（草稿 → 编辑 → 确认落盘 / 撤销）已交付**（验收：A 20/20、B E2E 13/13、C 冒烟 PASS + E2E 13/13，证据 `.qa/v14/`）；**使用指南 HTML（`public/guide.html`，自包含单文件，三态 25/25，证据 `.qa/v15/`）已交付**；**收件箱升级 Slice D（文件投递 + 居中编辑器 + AI 先读）已交付**（冒烟 PASS + E2E 12/12，证据 `.qa/v16/`）；**收件箱修复包 Slice E1（编辑器回位 + 「批量 → 任务」反馈加固 + AI 结果缓存 + 批量 AI 解析）已交付**（E2E 24/24，证据 `.qa/v17/`）；**详情操作 + 回收站 Slice E2（通用编辑 / 软删除回收站 / 资源文件位置 + reveal）已交付**（冒烟 34/34 + E2E 19/19 + 全站 smoke PASS，证据 `.qa/v18/`）；**动效与布局稳定 Slice E2.6（批量解析过程可视 + 流式节流 + 定高 + 间距 + 换行 + 零重叠）与趋势图数据点裁切修复 Slice E2.7 已交付**（E2E 22/22 + 像素级 8/8，证据 `.qa/v20/`、`.qa/v21/`）；**回顾页重构 Slice F（周 / 月回顾卡并列一栏 + 动画弹窗报告 + 月回顾 AI 支持 + 停滞项目独立栏）已交付**（服务端冒烟 13/13 + E2E 30/30 + 移动 6/6，证据 `.qa/v22/`）；**总览升级 Slice G（AI 对话盒 + 状态条重做 + 就地详情弹窗）已交付**（E2E **42/42** + 构建通过，零残留，证据 `.qa/v23/`）；**状态贯通 Slice H（资料状态 / 笔记蒸馏判断标准 + 快捷设置 + 白名单扩充 + 任务快速新建 AI 补全）已交付**（服务端冒烟 21/21 + E2E 28/28 + 构建通过，零残留，证据 `.qa/v24/`）；**使用指南同步 Slice I（`public/guide.html` 对齐 Slice D–H，三态 65/65，证据 `.qa/v25/`）已完成**；**收件箱修复包 2 Slice J（批量 AI 解析状态跨路由存活 + OOXML `.docx/.pptx/.xlsx` 文本抽取）已完成**（服务端冒烟 14/14 + E2E 16/16 + 零写入，证据 `.qa/v26/`）；**收件箱附件「打开文件 / 位置」Slice J2（去掉浏览器下载，改默认程序打开 / 文件管理器定位；新增 `/api/open` + `/api/inbox/:id/(open|reveal)` 带 `dryRun` 测试通道）已完成**（服务端冒烟 33/33 + E2E 21/21 + 零写入，证据 `.qa/v27/`）；数据服务运行于 `127.0.0.1:4097`；**全部切片（D–J2）已交付、验证（J2 待批次提交）**；**「先确认后写入」Slice O（任务快速新建草稿确认弹窗 + 收件箱建议卡可编辑 + 全站同类审计）已完成**（服务端冒烟 35/35 + E2E 31/31 + 构建通过，零残留，证据 `.qa/v28/`）；**全站详情「居中弹窗」统一 + 操作统一 + 日历遮罩柔化 Slice K 已完成**（五类详情从 Drawer 迁居中 Modal、任务 / 项目详情组件化保证操作一致、底栏统一、日历吸顶条渐隐柔化、删除 Drawer 死代码；E2E **109/109** + 构建通过，零残留，证据 `.qa/v29/`）；**回顾报告升级 + 自动归档 Slice L 已完成**（七段结构正文 + 环比 / 阈值 / 带 id 清单 + 数字落地护栏；生成即自动归档 + 报告历史 + update 同条；服务端冒烟 40/40 + 护栏单测 6/6 + E2E 32/32 + 构建通过，零残留，证据 `.qa/v30/`）；**标签生命周期 Slice T 已完成**（录入即生成 + 自动登记 origin/createdAt/firstUsedIn + AI 可提议新标签 + 管理（重命名 / 合并 / 删除 / backfill）+ 筛选条按使用排序不截断；服务端冒烟 54/54 + 护栏单测 14/14 + E2E 41/41 + 构建通过，零残留，证据 `.qa/v31/`）；**收件箱生命周期闭合 + 澄清字段矩阵 Slice V 已完成**（文本即解析 / 删除入口 / 丢弃恢复 / 澄清撤回与产物深链 / `newProjectHint` 一键建项 / target×字段矩阵杜绝静默丢弃；服务端冒烟 43/43 + E2E 29/29 + 构建通过，零残留，证据 `.qa/v33/`）。**Slice U（回顾报告可读性）见下方专节**。
 
+> **最新（Slice W · 2026-10-03）**：事件（日程）转为可写实体——新建（先确认后写入）/ 编辑 / 删除（回收站可撤销）/ 文档状态流可执行 + 迷你月历日格可点。验收：服务端冒烟 **33/33** + 浏览器 E2E **27/27**，零残留、所有者 20 条事件字节不变，证据 `.qa/v38/`。至此 **task / project / note / resource / event 五类实体全部可写**（`repeatRule` 仍仅展示，延后）。
+
 ### A. 验收（所有者）
 
 - [x] **浏览器验收**（2026-10-02 修复轮已由 AI 全量复核：8 视图 × 1280/1920/390 + 折叠/滚动/抽屉/命令面板）。
@@ -30,6 +32,20 @@ KERNEL 的任务台账与迭代记录。记录当前迭代目标、未来待办�
 
 - [ ] 种子数据以 2026-10-02 为"现在"；时间久了用 `npm run seed -- --force` 重置演示数据。
 - [ ] `design-drafts/`（三份设计稿 + 选型页）保留作方向参考；`.qa/` 证据归档保留（体积小）。
+
+---
+
+## 事件可写（日程）· Slice W（已完成 · 2026-10-03）
+
+审计 F6 / F9 / F10 / F38：事件是最后一个只读实体——有种子、在日历渲染、详情可看，却无 schema / 路由 / 创建 / 编辑 / 删除（`docs/04 §5.5` 状态流无法执行，迷你月历日格 inert）。本切片把 events 并入与 task/project/note/resource 同构的**可写 / 可回收实体族**，并让日历可操作。`npm run build` 退出 0；服务端冒烟 **33/33** + 浏览器 E2E **27/27**；零数据残留（events 20 / tasks 62 / notes 16 / resources 12 / projects 10 / inbox 12 / reviews 4；标签注册表回基线 27；所有者 i-0009..0012、t-0061/0062、rev-0001..0004、n-0016 与 20 条事件**字节不变**）；控制台零 error；证据 `.qa/v38/`。
+
+- [x] Deliverable A · 服务端 schema + 存储（`server/schemas.mjs` / `store.mjs`）：`eventStatus` + `eventSchema`（`id/title/startAt/endAt?/allDay?/location?/areaId?/projectId?/tags/status/notes?/repeatRule?`，对齐既有形状、无 `createdAt/updatedAt`）+ `SCHEMAS.events` + `ID_PATTERNS.events`；`nextId` 增 `e` 前缀 + 回收站扫描；`TRASH_KINDS` 增 events。
+- [x] Deliverable A · 服务端路由（`server/index.mjs`）：`EDITABLE_KINDS` / `SINGULAR` / `EDITABLE_FIELDS.events`（白名单含 `notes`，`repeatRule` 不开放）+ 通用 update/trash + restore/purge；新增 `POST /api/events`（title + startAt 必填、`end ≥ start` 400、projectId/areaId 存在校验、标签登记、审计 `event.create`）与 `POST /api/events/:id/remove`（审计 `event.remove`）；`updateEntity` 对 events 加 `end < start` 400 且不 bump `updatedAt`。
+- [x] Deliverable B · 日历可操作（`src/components/EventDraftModal.tsx` / `EventDetailModal.tsx` / `EntityEditForm.tsx` / `src/views/Calendar.tsx`）：新建确认弹窗（先确认后写入、无 AI、toast 撤销）；详情编辑 / 删除（回收站 + 撤销）/ 状态快捷切换（已确认 / 待定 / 已取消，quiet segmented）；`EntityEditForm` 增 `boolean` 字段类型（全天）+ `submitLabel`；**F10 迷你月历日格可点**（选中 + 滚动议程到该日，reduced-motion aware）。
+- [x] Deliverable B · 可选结束防御（`src/types.ts` / `Calendar` / `DaySpine` / `ScheduleList` / `Overview` / `data.ts` / `derive.ts` / `mutations.ts` / `Trash.tsx`）：`endAt?` / `notes?`；消费点 `event.endAt ?? event.startAt`；`TrashKind` / `TrashRecord` / `EditableRecord` 增 events；回收站新增「日程」分组。
+- [x] 样式（`src/styles/views.css`）：`.k-minical__d` 可点态（悬停 / `.is-selected`）、`.k-field__check`（布尔字段），token-only。
+- [x] 验证：`.qa/v38/server-smoke.mjs` 33/33（create 单点 / 完整往返、`end<start` 400、title/startAt 空 400、臆造 projectId/areaId 400、update 白名单 + 白名单外忽略、update `end<start` 400、审计 `event.create/update/remove`、remove → 回收站 → restore → purge、`nextId` 无碰撞、owner 20 条字节不变、零残留）；`.qa/v38/verify-w.py` 27/27（UI 新建 → 议程 + 月历圆点；详情编辑标题 / 时间；状态切换；删除 → 回收站（UI）恢复；日格点击滚动议程；390 零横溢；控制台 0 error；零残留 + 所有者记录字节不变）。
+- [x] 记录：新增 ADR-0018（`docs/decisions/0018-events-writable.md`）；`docs/02`；`docs/04` §4.7 / §5.5 / §5.4；`docs/README.md`；`public/guide.html`；`CHANGELOG.md`、`AGENTS.md`。
 
 ---
 

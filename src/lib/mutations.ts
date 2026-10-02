@@ -6,6 +6,7 @@ import { getTaskById, removeEntity, replaceSnapshot, setDataSource, upsertEntity
 import { toISODateTime } from '@/lib/date'
 import type {
   AppConfig,
+  CalendarEvent,
   InboxItem,
   KernelSnapshot,
   Note,
@@ -129,6 +130,38 @@ export async function createProject(
   const { project } = await api.post<{ project: Project }>('/api/projects', body)
   upsertEntity('projects', project)
   return project
+}
+
+/* ---------------------------------------------------------------------------
+ * 日程（v0.5 · Slice W，见 ADR-0018）：最末一个只读实体转为可写。
+ * 创建 = 「先确认后写入」（无 AI）；删除走回收站（审计 event.remove），撤销即恢复。
+ * ------------------------------------------------------------------------- */
+
+/** 日程创建入参：title / startAt 必填；endAt 可选（服务端校验 end ≥ start） */
+export interface EventCreateInput {
+  title: string
+  startAt: string
+  endAt?: string
+  allDay?: boolean
+  location?: string
+  status?: CalendarEvent['status']
+  projectId?: string
+  areaId?: string
+  tags?: string[]
+  notes?: string
+}
+
+/** 新建日程（成功后 upsert 本地快照） */
+export async function createEvent(input: EventCreateInput): Promise<CalendarEvent> {
+  const { event } = await api.post<{ event: CalendarEvent }>('/api/events', input)
+  upsertEntity('events', event)
+  return event
+}
+
+/** 删除日程（移入回收站；服务端审计 event.remove）。撤销走 restoreEntity('events', id) */
+export async function removeEvent(id: string): Promise<void> {
+  await api.post<{ trashed: { kind: 'events'; id: string } }>(`/api/events/${id}/remove`)
+  removeEntity('events', id)
 }
 
 /* ---------------------------------------------------------------------------
@@ -724,7 +757,7 @@ export async function removeReview(id: string): Promise<void> {
  * ------------------------------------------------------------------------- */
 
 /** 可编辑 / 可回收实体记录 */
-export type EditableRecord = Task | Project | Note | Resource
+export type EditableRecord = Task | Project | Note | Resource | CalendarEvent
 
 /** 编辑实体：只提交 patch 中提供的白名单字段；成功后 upsert 本地快照 */
 export async function updateEntity(

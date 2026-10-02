@@ -70,11 +70,13 @@ export type ReviewType = 'weekly' | 'monthly'
  * 回收站（Slice E2）：可回收的实体类型与条目
  * ------------------------------------------------------------------------- */
 
-/** 可回收实体类型 */
-export type TrashKind = 'tasks' | 'projects' | 'notes' | 'resources'
+/** 可回收实体类型（Slice W：日程 events 并入可写 / 可回收族） */
+export type TrashKind = 'tasks' | 'projects' | 'notes' | 'resources' | 'events'
 
 /** 回收站中的记录（原记录 + 移入时间戳） */
-export type TrashRecord = (Task | Project | Note | Resource) & { trashedAt?: string }
+export type TrashRecord = (Task | Project | Note | Resource | CalendarEvent) & {
+  trashedAt?: string
+}
 
 /** 回收站条目：kind + 原记录 */
 export interface TrashItem {
@@ -205,18 +207,20 @@ export interface Habit {
   log: HabitLogEntry[]
 }
 
-/** 事件 · e- */
+/** 事件 · e-（Slice W：可写实体；endAt 可选=单点日程，notes 可编辑） */
 export interface CalendarEvent {
   id: string
   title: string
   startAt: string
-  endAt: string
+  endAt?: string
   allDay: boolean
   location?: string
   areaId?: string
   projectId?: string
   tags: string[]
   status: EventStatus
+  notes?: string
+  /** 重复规则：仅展示保留，本期不开放编辑（见 ADR-0018） */
   repeatRule?: string
 }
 

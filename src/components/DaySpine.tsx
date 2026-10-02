@@ -46,7 +46,7 @@ export function DaySpine({ events, date, now, onSelect }: DaySpineProps) {
         ))}
         {laid.map(({ event, col, cols }) => {
           const top = (minutesOfDay(event.startAt) / 1440) * 100
-          const bottom = (minutesOfDay(event.endAt) / 1440) * 100
+          const bottom = (minutesOfDay(event.endAt ?? event.startAt) / 1440) * 100
           const height = Math.max(1.2, bottom - top)
           const left = (col / cols) * 100
           const width = 100 / cols
@@ -62,11 +62,11 @@ export function DaySpine({ events, date, now, onSelect }: DaySpineProps) {
                 left: `${left}%`,
                 width: `calc(${width}% - 2px)`,
               }}
-              title={`${formatTime(event.startAt)}–${formatTime(event.endAt)} ${event.title}`}
+              title={`${formatTime(event.startAt)}–${formatTime(event.endAt ?? event.startAt)} ${event.title}`}
             >
               <span className="k-spine__event-title">{event.title}</span>
               <span className="k-spine__event-meta">
-                {formatTime(event.startAt)}–{formatTime(event.endAt)}
+                {formatTime(event.startAt)}–{formatTime(event.endAt ?? event.startAt)}
                 {event.location !== undefined ? ` · ${event.location}` : ''}
               </span>
             </button>

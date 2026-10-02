@@ -281,7 +281,7 @@ export function getUpcomingEvents(days: number, now: Date = new Date()): Calenda
   return state.events
     .filter((e) => {
       if (e.status === 'cancelled') return false
-      const diff = daysFromToday(e.endAt, now)
+      const diff = daysFromToday(e.endAt ?? e.startAt, now)
       const startDiff = daysFromToday(e.startAt, now)
       return startDiff >= 0 && diff <= days
     })

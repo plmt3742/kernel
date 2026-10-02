@@ -73,9 +73,9 @@ const FILES_DIR = path.join(DATA_DIR, 'files')
 const CLARIFY_KINDS = { task: 'tasks', project: 'projects', note: 'notes', resource: 'resources' }
 
 /** 可编辑 / 可回收的实体 kind 白名单 */
-const EDITABLE_KINDS = ['tasks', 'projects', 'notes', 'resources']
+const EDITABLE_KINDS = ['tasks', 'projects', 'notes', 'resources', 'events']
 /** kind → 审计用单数名 */
-const SINGULAR = { tasks: 'task', projects: 'project', notes: 'note', resources: 'resource' }
+const SINGULAR = { tasks: 'task', projects: 'project', notes: 'note', resources: 'resource', events: 'event' }
 /** 任务创建可携带的可选字段顺序（Slice O；用于审计 detail.fields） */
 const CREATE_FIELD_KEYS = [
   'contexts', 'energy', 'importance', 'estimateMin', 'dueAt', 'projectId', 'areaId', 'parentTaskId', 'tags',
@@ -89,6 +89,8 @@ const EDITABLE_FIELDS = {
   projects: ['title', 'outcome', 'status', 'areaId', 'goalId', 'nextActionId', 'dueAt', 'tags'],
   notes: ['title', 'type', 'body', 'areaId', 'projectId', 'tags', 'distillLevel'],
   resources: ['title', 'kind', 'status', 'url', 'path', 'areaId', 'tags', 'note'],
+  // 日程（Slice W）：repeatRule 仅展示保留，不开放编辑（见 ADR-0018）
+  events: ['title', 'startAt', 'endAt', 'allDay', 'location', 'status', 'projectId', 'areaId', 'tags', 'notes'],
 }
 
 function send(res, status, data) {
@@ -401,6 +403,75 @@ async function createProject(body) {
   })
   if (tags.length > 0) await ensureTags(tags, { origin, firstUsedIn: saved.id })
   return { project: saved }
+}
+
+/**
+ * 新建日程（v0.5 · Slice W，见 ADR-0018）：title + startAt 必填（400）；endAt 可选，
+ * 缺省不写（单点日程）；endAt 早于 startAt → 400。全天缺省 false，状态缺省 confirmed
+ * （可显式 tentative / cancelled）。关联 projectId / areaId 须真实存在（同 createTask 口径）；
+ * 标签规格化并登记（origin manual）。审计 event.create（detail.fields 记录携带的可选字段）。
+ * 不写 createdAt / updatedAt，与既有事件形状保持一致。
+ */
+async function createEvent(body) {
+  const title = typeof body.title === 'string' ? body.title.trim() : ''
+  if (title === '') throw Object.assign(new Error('标题不能为空'), { status: 400 })
+  const startAt = typeof body.startAt === 'string' ? body.startAt.trim() : ''
+  if (startAt === '') throw Object.assign(new Error('开始时间不能为空'), { status: 400 })
+  const rawEnd = typeof body.endAt === 'string' ? body.endAt.trim() : ''
+  const endAt = rawEnd === '' ? undefined : rawEnd
+  if (endAt !== undefined && new Date(endAt).getTime() < new Date(startAt).getTime()) {
+    throw Object.assign(new Error('结束时间不能早于开始时间'), { status: 400 })
+  }
+  const tags = normalizeTagList(body.tags)
+  const explicitStatus = body.status === 'tentative' || body.status === 'cancelled' ? body.status : null
+  const event = {
+    id: await nextId('events'),
+    title,
+    startAt,
+    allDay: body.allDay === true,
+    status: explicitStatus ?? 'confirmed',
+    tags,
+  }
+  const fields = []
+  if (endAt !== undefined) {
+    event.endAt = endAt
+    fields.push('endAt')
+  }
+  if (body.allDay === true) fields.push('allDay')
+  if (explicitStatus !== null) fields.push('status')
+  const rawLocation = typeof body.location === 'string' ? body.location.trim() : ''
+  if (rawLocation !== '') {
+    event.location = rawLocation
+    fields.push('location')
+  }
+  const rawNotes = typeof body.notes === 'string' ? body.notes.trim() : ''
+  if (rawNotes !== '') {
+    event.notes = rawNotes
+    fields.push('notes')
+  }
+  if (typeof body.projectId === 'string' && body.projectId !== '') {
+    if (!validId('projects', body.projectId) || (await readEntity('projects', body.projectId)) === null) {
+      throw Object.assign(new Error('项目不存在'), { status: 400 })
+    }
+    event.projectId = body.projectId
+    fields.push('projectId')
+  }
+  if (typeof body.areaId === 'string' && body.areaId !== '') {
+    if (!validId('areas', body.areaId) || (await readEntity('areas', body.areaId)) === null) {
+      throw Object.assign(new Error('区域不存在'), { status: 400 })
+    }
+    event.areaId = body.areaId
+    fields.push('areaId')
+  }
+  if (tags.length > 0) fields.push('tags')
+  const saved = await commit('events', event, {
+    action: 'event.create',
+    entity: 'event',
+    id: event.id,
+    detail: { title, fields },
+  })
+  if (tags.length > 0) await ensureTags(tags, { origin: 'manual', firstUsedIn: saved.id })
+  return { event: saved }
 }
 
 /**
@@ -1138,8 +1209,15 @@ async function updateEntity(kind, id, body) {
     next[key] = value
     if (before !== JSON.stringify(value)) fields.push(key)
   }
+  // 日程跨字段校验（Slice W）：endAt 早于 startAt → 400；endAt 置空 = 清除结束（单点日程）
+  if (kind === 'events' && next.startAt !== undefined && next.endAt !== undefined) {
+    if (new Date(next.endAt).getTime() < new Date(next.startAt).getTime()) {
+      throw Object.assign(new Error('结束时间不能早于开始时间'), { status: 400 })
+    }
+  }
   // 空 patch = 「touch」（Slice E2.5 回顾页「迁移」）：仍 bump updatedAt，审计 <singular>.touch
-  next.updatedAt = nowIso()
+  // 日程无 updatedAt 字段（对齐既有事件形状），仅审计、不加时间戳
+  if (kind !== 'events') next.updatedAt = nowIso()
   const saved = await commit(kind, next, {
     action: hasField ? `${SINGULAR[kind]}.update` : `${SINGULAR[kind]}.touch`,
     entity: SINGULAR[kind],
@@ -1253,6 +1331,8 @@ const REVIEW_UPDATE_RE = /^\/api\/reviews\/([^/]+)\/update$/
 /** 编辑 / 移入回收站（Slice E2）：/api/<kind>/<id>/(update|trash) */
 const EDITABLE_GROUP = EDITABLE_KINDS.join('|')
 const ENTITY_ACTION_RE = new RegExp(`^/api/(${EDITABLE_GROUP})/([^/]+)/(update|trash)$`)
+/** 日程删除（Slice W）：/api/events/<id>/remove（审计 event.remove；与通用 /trash 同语义） */
+const EVENT_REMOVE_RE = /^\/api\/events\/([^/]+)\/remove$/
 /** 回收站恢复 / 彻底删除：/api/trash/<kind>/<id>/(restore|purge) */
 const TRASH_ITEM_RE = new RegExp(`^/api/trash/(${EDITABLE_GROUP})/([^/]+)/(restore|purge)$`)
 /** 标签管理（Slice T）：/api/tags/<id>/(update|merge|remove) */
@@ -1561,6 +1641,16 @@ const server = http.createServer(async (req, res) => {
       send(res, 200, { trashed: { kind, id }, record })
       return
     }
+    // 日程删除（Slice W）：/api/events/<id>/remove → 回收站（审计 event.remove）
+    const eventRemoveMatch = EVENT_REMOVE_RE.exec(pathname)
+    if (method === 'POST' && eventRemoveMatch !== null) {
+      const id = decodeURIComponent(eventRemoveMatch[1])
+      if (!validId('events', id)) return fail(res, 400, '日程 id 格式不正确')
+      const record = await moveToTrash('events', id, { action: 'event.remove', entity: 'event', id })
+      console.log(`[data] event.remove ${id}`)
+      send(res, 200, { trashed: { kind: 'events', id }, record })
+      return
+    }
     // 回收站恢复 / 彻底删除（Slice E2）
     const trashItemMatch = TRASH_ITEM_RE.exec(pathname)
     if (method === 'POST' && trashItemMatch !== null) {
@@ -1602,6 +1692,13 @@ const server = http.createServer(async (req, res) => {
     }
     if (method === 'POST' && pathname === '/api/tasks') {
       send(res, 201, await createTask(await readBody(req)))
+      return
+    }
+    // 新建日程（Slice W）：title + startAt 必填；endAt 可选（早于 startAt → 400）
+    if (method === 'POST' && pathname === '/api/events') {
+      const result = await createEvent(await readBody(req))
+      console.log(`[data] event.create ${result.event.id}`)
+      send(res, 201, result)
       return
     }
     // 聚类立项 · 应用 / 撤销（Slice R2）：一次写入建项 + 归入任务；撤销精确复原
