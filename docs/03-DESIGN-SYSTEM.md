@@ -82,7 +82,7 @@
 
 - 间距：4px 基线；微步（4/8/12/16）固定，大步（≥24）流体 `clamp`（390→1440 锚点）；φ 层级 inner : element : section : page = 1 : φ : φ² : φ³。
 - 网格：12 列；左索引轨道 96px（收起 64px）；版心居中 `--content-max: 1240px`；页面边距流体（20→44px）；正文 measure ≤65ch。
-- 容器查询：组件内部自适应走具名容器（route / stat / task / pcard / drawer）；shell 级（轨道 / 顶栏 / 移动底栏）仍用媒体查询。
+- 容器查询：组件内部自适应走具名容器（route / stat / task / pcard / modal）；shell 级（轨道 / 顶栏 / 移动底栏）仍用媒体查询。
 - 形状：圆角 16（卡片）/ 12（内部件）/ 全圆（胶囊）；边缘至多 `rgba(255,255,255,.06)`（暗）或 `#EDE9E3`（亮），不用硬发际线。
 - 深度：**静置**时卡片/面板/瓦片带柔影（大模糊、低透明度）+ 顶部微弱高光；**交互**时 `translateY(-2px)` + 更深更广柔影 + 边缘微亮，180–240ms。
 - 移动端：单列堆叠，轨道变底部栏，状态条精简。
@@ -114,7 +114,9 @@
 
 命名与形态统一，组件语义固定：
 
-`CommandPalette` / `StatusBar` / `RailNav` / `TopBar` / `Panel` / `StatTile` / `TagPill` / `DaySpine` / `ScheduleList` / `TaskRow` / `TaskBoard` / `Drawer` / `FilterBar` / `MeterBar` / `EnergyBars` / `TrendLine` / `EmptyState` / `Skeleton` / `Toast`
+`CommandPalette` / `StatusBar` / `RailNav` / `TopBar` / `Panel` / `StatTile` / `TagPill` / `DaySpine` / `ScheduleList` / `TaskRow` / `TaskBoard` / `Modal`（含 `TaskDetailModal` / `ProjectDetailModal`）/ `FilterBar` / `MeterBar` / `EnergyBars` / `TrendLine` / `EmptyState` / `Skeleton` / `Toast`
+
+> **详情承载统一（v0.5 · Slice K）**：任务 / 项目 / 笔记 / 资料 / 日程的详情一律由居中 `Modal`（`.k-modal--detail`）承载，不再使用右侧抽屉；底栏统一为主操作区（`.k-modal__foot-main`，左）+ 安静动作区（`.k-modal__foot-actions`，右：编辑 / 删除）。见 ADR-0012。
 
 要点：
 
@@ -154,7 +156,7 @@
 ## 9. 无障碍要求
 
 - 动效：`MotionConfig reducedMotion="user"` + CSS `prefers-reduced-motion`。
-- 焦点：焦点环 2px 柔和色，带 offset；命令面板与抽屉实现焦点圈闭（Tab 循环）并在关闭后还原焦点到触发元素。
+- 焦点：焦点环 2px 柔和色，带 offset；命令面板与详情弹窗实现焦点圈闭（Tab 循环）并在关闭后还原焦点到触发元素。
 - 键盘：全键盘可达。
 - 色彩：语义色必须伴随图标或文字，禁止仅靠颜色传达信息（WCAG 1.4.1）；强调色文字用 AA 变体。
 - 对比度：正文 ≥7:1，UI ≥4.5:1，构建后验证。

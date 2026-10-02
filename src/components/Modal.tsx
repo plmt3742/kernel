@@ -1,8 +1,10 @@
 // KERNEL · Modal（居中弹窗，240ms 淡入 + 微缩放；ESC / 点击遮罩关闭；焦点圈闭 + 还原；打开时锁定页面滚动）
-// 视觉取自 public/guide.html 的任务详情演示弹窗；焦点管理与 Drawer / CommandPalette 一致（trapTab + 关闭还原）。
+// 视觉取自 public/guide.html 的任务详情演示弹窗；焦点管理与 CommandPalette 一致（trapTab + 关闭还原）。
+// Slice K 起，全站所有实体详情（任务 / 项目 / 笔记 / 资料 / 日程）统一由本组件承载，见 ADR-0012。
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { X } from 'lucide-react'
 import { useEffect, useId, useRef, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { DUR, EASE_ENTER, EASE_EXIT } from '@/lib/motion'
 import { trapTab } from '@/lib/focus'
 
@@ -36,7 +38,7 @@ export function Modal({ open, onClose, kicker, title, children, footer, classNam
       if (panelRef.current !== null) trapTab(panelRef.current, event)
     }
     window.addEventListener('keydown', onKey)
-    // 等入场动画开始后把焦点送入弹窗（与 Drawer 一致）
+    // 等入场动画开始后把焦点送入弹窗（与命令面板一致）
     const timer = window.setTimeout(() => closeRef.current?.focus(), 80)
     const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
@@ -49,7 +51,10 @@ export function Modal({ open, onClose, kicker, title, children, footer, classNam
     }
   }, [open])
 
-  return (
+  // Portal 到 body：详情弹窗可能挂在具名容器（如 .k-route 的 container-type: inline-size，
+  // 含 layout containment）之下——那会把 position: fixed 的包含块改成该祖先，导致滚动 / 重载时
+  // 弹窗不再相对视口居中。挂到 body 后，fixed 语义稳定为视口。
+  return createPortal(
     <AnimatePresence>
       {open && (
         <>
@@ -104,6 +109,7 @@ export function Modal({ open, onClose, kicker, title, children, footer, classNam
           </motion.div>
         </>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body,
   )
 }

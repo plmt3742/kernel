@@ -4,7 +4,7 @@ import { useSearchParams } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import { clsx } from 'clsx'
 import { Panel } from '@/components/Panel'
-import { Drawer } from '@/components/Drawer'
+import { Modal } from '@/components/Modal'
 import { EntityEditForm, type EditFieldSpec } from '@/components/EntityEditForm'
 import { TagPill } from '@/components/TagPill'
 import { EmptyState } from '@/components/EmptyState'
@@ -456,7 +456,7 @@ export function Library() {
         </Panel>
       )}
 
-      <Drawer
+      <Modal
         open={selectedNote !== undefined || selectedResource !== undefined}
         onClose={closeDrawer}
         kicker={
@@ -467,9 +467,10 @@ export function Library() {
               : ''
         }
         title={selectedNote?.title ?? selectedResource?.title ?? ''}
+        className="k-modal--detail"
         footer={
           (selectedNote !== undefined || selectedResource !== undefined) && !editing ? (
-            <div className="k-drawer__foot-actions">
+            <div className="k-modal__foot-actions">
               <button type="button" className="k-btn k-btn--sm" onClick={() => setEditing(true)}>
                 编辑
               </button>
@@ -629,7 +630,7 @@ export function Library() {
             <Relations kind="resource" id={selectedResource.id} />
           </div>
           ))}
-      </Drawer>
+      </Modal>
     </div>
   )
 }

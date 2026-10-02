@@ -1,14 +1,13 @@
 // KERNEL · 总览 OVERVIEW（P0）——「工作台（Workbench）」：状态条 + AI 对话 + 左工作区（日程/行动交织）+ 右粘性监视柱 + 项目推进
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { clsx } from 'clsx'
 import { Panel } from '@/components/Panel'
 import { TaskRow } from '@/components/TaskRow'
 import { ScheduleList } from '@/components/ScheduleList'
 import { EmptyState } from '@/components/EmptyState'
-import { Modal } from '@/components/Modal'
-import { TaskDetail } from '@/components/TaskDetail'
-import { ProjectDetail } from '@/components/ProjectDetail'
+import { TaskDetailModal } from '@/components/TaskDetailModal'
+import { ProjectDetailModal } from '@/components/ProjectDetailModal'
 import { OverviewChat } from '@/components/OverviewChat'
 import { TrendLine } from '@/components/charts/TrendLine'
 import {
@@ -17,7 +16,6 @@ import {
   getProjectById,
   getProjectProgress,
   getReviews,
-  getTaskById,
   getTodayEvents,
 } from '@/lib/data'
 import {
@@ -32,7 +30,6 @@ import {
 import { isTaskDone } from '@/lib/mutations'
 import { useDataRevision, useNow, useUndoableToggle } from '@/lib/hooks'
 import { formatTime, humanizeDay, isPast, toDate } from '@/lib/date'
-import { PROJECT_STATUS_LABEL } from '@/lib/format'
 
 /* 水位容量 / 阈值与 WIP 上限：与 StatusBar 口径一致（capacity 12 · threshold 8） */
 const INBOX_CAPACITY = 12
@@ -100,10 +97,6 @@ export function Overview() {
   // 行动列：即将到期的下一步行动（按截止升序，逾期已排除）
   const flow = getUpcomingNextActions(5, now)
   const streak = getCodingStreakDetail(now)
-
-  // 就地弹窗目标（按 id 查全量快照，完成任务后仍可停留查看）
-  const taskModal = taskModalId !== null ? getTaskById(taskModalId) : undefined
-  const projectModal = projectModalId !== null ? getProjectById(projectModalId) : undefined
 
   const completionSeries = getWeeklyCompletionSeries(now)
   const dueLoadSeries = getDueLoadSeries(now)
@@ -378,54 +371,10 @@ export function Overview() {
         )}
       </Panel>
 
-      {/* 就地任务详情弹窗（Slice G）：复用 Tasks 抽屉的 TaskDetail；完成任务 / 查看项目可用 */}
-      <Modal
-        open={taskModal !== undefined}
-        onClose={() => setTaskModalId(null)}
-        kicker={taskModal !== undefined ? `任务 · ${taskModal.id}` : ''}
-        title={taskModal?.title ?? ''}
-        footer={
-          taskModal !== undefined ? (
-            <div className="k-drawer__foot-main">
-              <button
-                type="button"
-                className={isTaskDone(taskModal) ? 'k-btn' : 'k-btn is-solid'}
-                onClick={() => toggleTask(taskModal)}
-              >
-                {isTaskDone(taskModal) ? '取消完成' : '标记完成'}
-              </button>
-              {taskModal.projectId !== undefined && (
-                <Link
-                  to={`/projects?project=${taskModal.projectId}`}
-                  viewTransition
-                  className="k-btn"
-                  onClick={() => setTaskModalId(null)}
-                >
-                  查看项目
-                </Link>
-              )}
-            </div>
-          ) : undefined
-        }
-      >
-        {taskModal !== undefined && <TaskDetail task={taskModal} />}
-      </Modal>
-
-      {/* 就地项目详情弹窗（Slice G）：复用 Projects 抽屉的 ProjectDetail */}
-      <Modal
-        open={projectModal !== undefined}
-        onClose={() => setProjectModalId(null)}
-        kicker={
-          projectModal !== undefined
-            ? `项目 · ${projectModal.id} · ${PROJECT_STATUS_LABEL[projectModal.status]}`
-            : ''
-        }
-        title={projectModal?.title ?? ''}
-      >
-        {projectModal !== undefined && (
-          <ProjectDetail project={projectModal} onToggleTask={toggleTask} />
-        )}
-      </Modal>
+      {/* 就地详情弹窗（Slice K）：与 Tasks / Projects 页共用同一居中详情组件，
+          任务与项目均补齐「编辑 / 删除」常规操作，全站动作一致。URL 保持 "/"。 */}
+      <TaskDetailModal taskId={taskModalId} onClose={() => setTaskModalId(null)} />
+      <ProjectDetailModal projectId={projectModalId} onClose={() => setProjectModalId(null)} />
     </div>
   )
 }

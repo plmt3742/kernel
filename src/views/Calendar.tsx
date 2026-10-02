@@ -4,7 +4,7 @@ import type { RefObject } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { Panel } from '@/components/Panel'
-import { Drawer } from '@/components/Drawer'
+import { Modal } from '@/components/Modal'
 import { TagPill } from '@/components/TagPill'
 import { EmptyState } from '@/components/EmptyState'
 import { Relations } from '@/components/Relations'
@@ -395,11 +395,14 @@ export function Calendar() {
         </aside>
       </div>
 
-      <Drawer
+      {/* 日程详情居中弹窗（Slice K）：日程当前为只读实体，暂无编辑 / 删除
+          （结构性缺口，见 ADR-0012 / TASK_BOOK）。 */}
+      <Modal
         open={selectedEvent !== undefined}
         onClose={closeDrawer}
         kicker={`日程 · ${selectedEvent?.id ?? ''}`}
         title={selectedEvent?.title ?? ''}
+        className="k-modal--detail"
       >
         {selectedEvent !== undefined && (
           <div className="k-detail-grid">
@@ -442,7 +445,7 @@ export function Calendar() {
             <Relations kind="event" id={selectedEvent.id} />
           </div>
         )}
-      </Drawer>
+      </Modal>
     </div>
   )
 }

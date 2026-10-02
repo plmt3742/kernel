@@ -2,17 +2,15 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Plus } from 'lucide-react'
-import { Drawer } from '@/components/Drawer'
-import { EntityEditForm, type EditFieldSpec } from '@/components/EntityEditForm'
+import { ProjectDetailModal } from '@/components/ProjectDetailModal'
 import { MeterBar } from '@/components/MeterBar'
 import { TagPill } from '@/components/TagPill'
 import { EmptyState } from '@/components/EmptyState'
-import { ProjectDetail } from '@/components/ProjectDetail'
 import { useToast } from '@/context/ToastContext'
-import { getAreaById, getAreas, getProjectProgress, getSnapshot, getTaskById } from '@/lib/data'
-import { createProject, restoreEntity, trashEntity, updateEntity } from '@/lib/mutations'
+import { getAreaById, getProjectProgress, getSnapshot, getTaskById } from '@/lib/data'
+import { createProject, trashEntity } from '@/lib/mutations'
 import { errorText } from '@/lib/api'
-import { useDataRevision, useUndoableToggle } from '@/lib/hooks'
+import { useDataRevision } from '@/lib/hooks'
 import { PROJECT_STATUS_EN, PROJECT_STATUS_LABEL, tagLabel } from '@/lib/format'
 import { humanizeDay } from '@/lib/date'
 import type { Project } from '@/types'
@@ -36,16 +34,13 @@ const GROUPS: ProjectGroupSpec[] = [
 
 export function Projects() {
   useDataRevision()
-  const toggleTask = useUndoableToggle()
   const { toast } = useToast()
   const [searchParams, setSearchParams] = useSearchParams()
   const [drawerId, setDrawerId] = useState<string | null>(null)
-  const [editing, setEditing] = useState(false)
-  const [saving, setSaving] = useState(false)
   const [quick, setQuick] = useState('')
   const projects = getSnapshot().projects
 
-  // 深链直达项目抽屉：/projects?project=p-0002
+  // 深链直达项目弹窗：/projects?project=p-0002
   useEffect(() => {
     const id = searchParams.get('project')
     if (id !== null && projects.some((project) => project.id === id)) {
@@ -53,95 +48,11 @@ export function Projects() {
     }
   }, [searchParams, projects])
 
-  // 切换抽屉时退出编辑态
-  useEffect(() => {
-    setEditing(false)
-  }, [drawerId])
-
   const closeDrawer = (): void => {
     setDrawerId(null)
     if (searchParams.get('project') !== null) {
       setSearchParams({}, { replace: true })
     }
-  }
-
-  const selected = drawerId !== null ? projects.find((p) => p.id === drawerId) : undefined
-
-  const projectFields: EditFieldSpec[] = [
-    { key: 'title', label: '标题', type: 'text' },
-    { key: 'outcome', label: '完成定义', type: 'textarea' },
-    {
-      key: 'status',
-      label: '状态',
-      type: 'select',
-      options: (Object.keys(PROJECT_STATUS_LABEL) as Project['status'][]).map((value) => ({
-        value,
-        label: PROJECT_STATUS_LABEL[value],
-      })),
-    },
-    {
-      key: 'areaId',
-      label: '区域',
-      type: 'select',
-      clearable: true,
-      options: getAreas().map((area) => ({ value: area.id, label: area.title })),
-    },
-    {
-      key: 'nextActionId',
-      label: '下一步',
-      type: 'select',
-      clearable: true,
-      options: getSnapshot()
-        .tasks.filter((task) => task.status !== 'done' && task.status !== 'dropped')
-        .map((task) => ({ value: task.id, label: task.title })),
-    },
-    {
-      key: 'goalId',
-      label: '目标',
-      type: 'select',
-      clearable: true,
-      options: getSnapshot().goals.map((goal) => ({ value: goal.id, label: goal.title })),
-    },
-    { key: 'dueAt', label: '截止', type: 'datetime' },
-    { key: 'tags', label: '标签（逗号分隔）', type: 'list' },
-  ]
-
-  const handleSave = (patch: Record<string, unknown>): void => {
-    if (selected === undefined) return
-    setSaving(true)
-    void (async () => {
-      try {
-        await updateEntity('projects', selected.id, patch)
-        setEditing(false)
-        toast('已保存')
-      } catch (err) {
-        toast(`保存失败：${errorText(err)}`, { tone: 'error' })
-      } finally {
-        setSaving(false)
-      }
-    })()
-  }
-
-  const handleDelete = (): void => {
-    if (selected === undefined) return
-    const id = selected.id
-    void (async () => {
-      try {
-        await trashEntity('projects', id)
-        toast('已移入回收站 · 撤销', {
-          action: {
-            label: '撤销',
-            onClick: () => {
-              void restoreEntity('projects', id).catch((err) => {
-                toast(`撤销失败：${errorText(err)}`, { tone: 'error' })
-              })
-            },
-          },
-        })
-      } catch (err) {
-        toast(`删除失败：${errorText(err)}`, { tone: 'error' })
-      }
-    })()
   }
 
   // 快速新建项目（镜像任务页 quick-add）：回车创建 → toast；撤销走回收站
@@ -244,37 +155,8 @@ export function Projects() {
         </div>
       )}
 
-      <Drawer
-        open={selected !== undefined}
-        onClose={closeDrawer}
-        kicker={`项目 · ${selected?.id ?? ''} · ${selected !== undefined ? PROJECT_STATUS_LABEL[selected.status] : ''}`}
-        title={selected?.title ?? ''}
-        footer={
-          selected !== undefined && !editing ? (
-            <div className="k-drawer__foot-actions">
-              <button type="button" className="k-btn k-btn--sm" onClick={() => setEditing(true)}>
-                编辑
-              </button>
-              <button type="button" className="k-btn k-btn--sm is-danger" onClick={handleDelete}>
-                删除
-              </button>
-            </div>
-          ) : undefined
-        }
-      >
-        {selected !== undefined &&
-          (editing ? (
-            <EntityEditForm
-              fields={projectFields}
-              initial={selected as unknown as Record<string, unknown>}
-              saving={saving}
-              onSubmit={handleSave}
-              onCancel={() => setEditing(false)}
-            />
-          ) : (
-            <ProjectDetail project={selected} onToggleTask={toggleTask} />
-          ))}
-      </Drawer>
+      {/* 项目详情居中弹窗（Slice K）：与总览就地弹窗共用同一组件，动作一致 */}
+      <ProjectDetailModal projectId={drawerId} onClose={closeDrawer} />
     </div>
   )
 }

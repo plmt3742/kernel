@@ -653,7 +653,7 @@
 }
 
 /* 批量条侧挂 dock（Slice E2.5）：内联批量条滚出视口后的右侧浮动镜像。
-   固定右缘、纵向居中；位于抽屉层级之下（--z-drawer - 1）；≤767px 隐藏。 */
+   固定右缘、纵向居中；位于遮罩层级之下（--z-overlay - 1，弹窗打开时被盖住）；≤767px 隐藏。 */
 .ic-dock {
   position: fixed;
   right: var(--space-4);
@@ -662,7 +662,7 @@
   margin-block: auto;
   height: max-content;
   width: 172px;
-  z-index: calc(var(--z-drawer) - 1);
+  z-index: calc(var(--z-overlay) - 1);
   pointer-events: none;
 }
 .ic-dock__panel {
@@ -947,6 +947,19 @@
     top: var(--topbar-h);
     z-index: calc(var(--z-sticky) - 2);
     background: var(--bg);
+  }
+  /* 底缘柔化（Slice K）：吸顶条正下方叠一段向下淡出的 --bg 渐变，
+     让滚上来的面板自然浮现，替代原本「一刀切」的硬横线；
+     仅视觉层，`pointer-events: none` 不拦截交互。 */
+  .k-cal__bar::after {
+    content: '';
+    position: absolute;
+    left: calc(-1 * var(--page-margin));
+    right: calc(-1 * var(--page-margin));
+    top: 100%;
+    height: var(--space-4);
+    background: linear-gradient(to bottom, var(--bg), transparent);
+    pointer-events: none;
   }
 }
 .k-cal__nav {
@@ -1945,20 +1958,20 @@
   text-align: left;
 }
 
-/* 抽屉内字段网格：dt/dd 成对铺成 2 列（阅读顺序 内容 → 元数据）
- * 基础 .k-dl 为单列 label/value；此处限定抽屉，升级为 4 列 = 每行两对。
+/* 弹窗内字段网格：dt/dd 成对铺成 2 列（阅读顺序 内容 → 元数据）
+ * 基础 .k-dl 为单列 label/value；此处限定详情弹窗，升级为 4 列 = 每行两对。
  * 列序：label · value · label · value，故 max-content 逐个贴合各自标签。 */
-.k-drawer .k-dl {
+.k-modal .k-dl {
   grid-template-columns: max-content 1fr max-content 1fr;
   gap: var(--space-3) var(--space-5);
 }
 /* 长值（项目完成定义 / 资源链接等）跨后三列独占整行，避免挤压 */
-.k-drawer .k-dl dd.k-dl__wide {
+.k-modal .k-dl dd.k-dl__wide {
   grid-column: 2 / -1;
 }
 
 /* ---------------------------------------------------------------------------
- * 容器查询 · 组件内部按容器宽度自适应（route / drawer / stat / task）
+ * 容器查询 · 组件内部按容器宽度自适应（route / modal / stat / task）
  * 支持假设：container queries 为现代浏览器基线特性（Chrome 105+ / Safari 16+ / Firefox 110+）。
  * SHELL 级（rail / topbar / 移动底栏）仍用视口媒体查询（见 shell.css）。
  * CONTAINER MAP：
@@ -1966,7 +1979,7 @@
  *           回顾分区、设置栅格、过滤行、周条
  *   stat   = .k-stat            → 瓦片内大数字降级
  *   task   = .k-task            → 行内 meta 堆叠 / 收纳
- *   drawer = .k-drawer__body    → 抽屉内 dl / 说明行
+ *   modal  = .k-modal__body     → 弹窗内 dl / 说明行
  * ------------------------------------------------------------------------- */
 
 /* route < 900px：日脊+议程 / 回顾仪表盘 / 设置栅格 → 单列 */
@@ -2005,9 +2018,9 @@
     padding-top: 0;
   }
 }
-/* 抽屉内容按抽屉宽度自适应 */
-@container drawer (max-width: 400px) {
-  .k-drawer .k-dl {
+/* 弹窗内容按弹窗宽度自适应：窄容器下 dl 收为单列 label/value */
+@container modal (max-width: 560px) {
+  .k-modal .k-dl {
     grid-template-columns: max-content 1fr;
   }
 }
@@ -2016,19 +2029,8 @@
  * 详情操作 · 编辑表单 / 回收站 / 文件位置（v0.5 · Slice E2，见 ADR-0009）
  * ------------------------------------------------------------------------- */
 
-/* 抽屉底部：主操作区 + 右侧安静动作（编辑 / 删除） */
-.k-drawer__foot-main {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  flex-wrap: wrap;
-}
-.k-drawer__foot-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  margin-left: auto;
-}
+/* （Slice K）详情底栏统一：主操作区 / 安静动作（编辑 / 删除）样式已上移至 shell.css
+ * 的 `.k-modal__foot-main` / `.k-modal__foot-actions`，所有实体弹窗共用一套。 */
 .k-btn.is-danger {
   color: var(--danger-text);
 }
@@ -2153,7 +2155,7 @@
 }
 
 /* 窄容器：编辑表单动作竖排；回收站行动作沉到第二行 */
-@container drawer (max-width: 400px) {
+@container modal (max-width: 400px) {
   .k-form__actions {
     flex-direction: column;
   }
@@ -2429,7 +2431,4 @@
   }
 }
 
-/* 就地详情弹窗：动作区复用抽屉底栏样式（.k-drawer__foot-main 定义于本文件 Slice E2 段） */
-.k-modal__foot .k-drawer__foot-main {
-  width: 100%;
-}
+

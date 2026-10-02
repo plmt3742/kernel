@@ -1,20 +1,18 @@
 // KERNEL · 任务 TASKS（P0）：筛选（状态 + 时间）/ 分组 / 行内完成动效 / 详情抽屉 / 快速新建
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { useSearchParams } from 'react-router-dom'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { AlertTriangle, ChevronRight, Plus } from 'lucide-react'
 import { clsx } from 'clsx'
 import { FilterBar, type FilterGroup } from '@/components/FilterBar'
 import { Checkbox } from '@/components/Checkbox'
-import { Drawer } from '@/components/Drawer'
-import { EntityEditForm, type EditFieldSpec } from '@/components/EntityEditForm'
+import { TaskDetailModal } from '@/components/TaskDetailModal'
 import { EmptyState } from '@/components/EmptyState'
 import { TagPill } from '@/components/TagPill'
-import { TaskDetail } from '@/components/TaskDetail'
 import { TaskDraftModal } from '@/components/TaskDraftModal'
 import { useToast } from '@/context/ToastContext'
 import { getAreas, getProjectById, getSnapshot, getTags } from '@/lib/data'
-import { isTaskDone, restoreEntity, trashEntity, updateEntity } from '@/lib/mutations'
+import { isTaskDone, trashEntity } from '@/lib/mutations'
 import { errorText } from '@/lib/api'
 import { ENERGY_LABEL, TASK_STATUS_LABEL, tagLabel } from '@/lib/format'
 import {
@@ -66,16 +64,9 @@ export function Tasks() {
   const [quick, setQuick] = useState('')
   const [drawerId, setDrawerId] = useState<string | null>(null)
   const [pendingDone, setPendingDone] = useState<string[]>([])
-  const [editing, setEditing] = useState(false)
-  const [saving, setSaving] = useState(false)
   // 快速新建草稿确认弹窗（Slice O）：回车打开，确认前零写入
   const [composeOpen, setComposeOpen] = useState(false)
   const [composeTitle, setComposeTitle] = useState('')
-
-  // 切换抽屉时退出编辑态
-  useEffect(() => {
-    setEditing(false)
-  }, [drawerId])
 
   const allTasks = getSnapshot().tasks
 
@@ -264,108 +255,6 @@ export function Tasks() {
         },
       },
     })
-  }
-
-  const selected = drawerId !== null ? allTasks.find((task) => task.id === drawerId) : undefined
-  const selectedDone = selected !== undefined && isTaskDone(selected)
-
-  const contextNames = getTags()
-    .filter((tag) => tag.namespace === 'context')
-    .map((tag) => tag.name)
-
-  const taskFields: EditFieldSpec[] = [
-    { key: 'title', label: '标题', type: 'text' },
-    {
-      key: 'status',
-      label: '状态',
-      type: 'select',
-      options: (Object.keys(TASK_STATUS_LABEL) as Task['status'][]).map((value) => ({
-        value,
-        label: TASK_STATUS_LABEL[value],
-      })),
-    },
-    {
-      key: 'energy',
-      label: '能量',
-      type: 'select',
-      options: (['low', 'medium', 'high'] as const).map((value) => ({
-        value,
-        label: ENERGY_LABEL[value],
-      })),
-    },
-    {
-      key: 'importance',
-      label: '重要性',
-      type: 'select',
-      numeric: true,
-      options: [0, 1, 2, 3].map((n) => ({ value: String(n), label: `${n} / 3` })),
-    },
-    {
-      key: 'contexts',
-      label: '上下文（逗号分隔）',
-      type: 'list',
-      placeholder: contextNames.join(', '),
-    },
-    { key: 'estimateMin', label: '预估（分钟）', type: 'number', clearable: true },
-    { key: 'dueAt', label: '截止', type: 'datetime' },
-    { key: 'deferUntil', label: '推迟至', type: 'datetime' },
-    {
-      key: 'projectId',
-      label: '项目',
-      type: 'select',
-      clearable: true,
-      options: getSnapshot().projects.map((project) => ({
-        value: project.id,
-        label: project.title,
-      })),
-    },
-    {
-      key: 'areaId',
-      label: '区域',
-      type: 'select',
-      clearable: true,
-      options: getAreas().map((area) => ({ value: area.id, label: area.title })),
-    },
-    { key: 'tags', label: '标签（逗号分隔）', type: 'list' },
-    { key: 'notes', label: '备注', type: 'textarea' },
-  ]
-
-  const handleSave = (patch: Record<string, unknown>): void => {
-    if (selected === undefined) return
-    setSaving(true)
-    void (async () => {
-      try {
-        await updateEntity('tasks', selected.id, patch)
-        setEditing(false)
-        toast('已保存')
-      } catch (err) {
-        toast(`保存失败：${errorText(err)}`, { tone: 'error' })
-      } finally {
-        setSaving(false)
-      }
-    })()
-  }
-
-  const handleDelete = (): void => {
-    if (selected === undefined) return
-    const id = selected.id
-    void (async () => {
-      try {
-        await trashEntity('tasks', id)
-        toast('已移入回收站 · 撤销', {
-          action: {
-            label: '撤销',
-            onClick: () => {
-              void restoreEntity('tasks', id).catch((err) => {
-                toast(`撤销失败：${errorText(err)}`, { tone: 'error' })
-              })
-            },
-          },
-        })
-      } catch (err) {
-        toast(`删除失败：${errorText(err)}`, { tone: 'error' })
-      }
-    })()
   }
 
   return (
@@ -587,61 +476,15 @@ export function Tasks() {
         </>
       )}
 
-      <Drawer
-        open={selected !== undefined}
+      {/* 任务详情居中弹窗（Slice K）：与总览就地弹窗共用同一组件，动作一致。
+          行内完成后的塌缩动效经 onToggled 回传（未完成 → 已完成时短暂保留在列表中）。 */}
+      <TaskDetailModal
+        taskId={drawerId}
         onClose={closeDrawer}
-        kicker={`任务 · ${selected?.id ?? ''}`}
-        title={selected?.title ?? ''}
-        footer={
-          selected !== undefined && !editing ? (
-            <>
-              <div className="k-drawer__foot-main">
-                <button
-                  type="button"
-                  className={selectedDone ? 'k-btn' : 'k-btn is-solid'}
-                  onClick={() => handleToggle(selected.id)}
-                >
-                  {selectedDone ? '取消完成' : '标记完成'}
-                </button>
-                {selected.projectId !== undefined && (
-                  <Link
-                    to={`/projects?project=${selected.projectId}`}
-                    viewTransition
-                    className="k-btn"
-                  >
-                    查看项目
-                  </Link>
-                )}
-              </div>
-              <div className="k-drawer__foot-actions">
-                <button type="button" className="k-btn k-btn--sm" onClick={() => setEditing(true)}>
-                  编辑
-                </button>
-                <button
-                  type="button"
-                  className="k-btn k-btn--sm is-danger"
-                  onClick={handleDelete}
-                >
-                  删除
-                </button>
-              </div>
-            </>
-          ) : undefined
-        }
-      >
-        {selected !== undefined &&
-          (editing ? (
-            <EntityEditForm
-              fields={taskFields}
-              initial={selected as unknown as Record<string, unknown>}
-              saving={saving}
-              onSubmit={handleSave}
-              onCancel={() => setEditing(false)}
-            />
-          ) : (
-            <TaskDetail task={selected} />
-          )          )}
-      </Drawer>
+        onToggled={(task, wasDone) => {
+          if (!wasDone) setPendingDone((prev) => [...prev, task.id])
+        }}
+      />
 
       {/* 快速新建草稿确认弹窗（Slice O）：ESC / 遮罩 / 取消 → 零写入 */}
       <TaskDraftModal

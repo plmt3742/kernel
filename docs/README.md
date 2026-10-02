@@ -56,6 +56,7 @@ KERNEL 的完整文档集。本文件是导航中心，说明每份文档的职�
 | `decisions/0009-edit-trash-reveal.md` | ADR | 详情操作 + 回收站 + 资源文件位置（Slice E2）：更新端点 + 软删除 + explorer /select |
 | `decisions/0010-overview-ai-chat.md` | ADR | 总览升级（Slice G）：AI 读库对话（不落盘）+ 清空先归档为笔记 + 状态条重做 + 就地详情弹窗 |
 | `decisions/0011-state-coherence-and-task-draft.md` | ADR | 状态贯通（Slice H）：资料状态 / 笔记蒸馏判断标准 + 快捷设置 + 白名单扩充 + 任务快速新建 AI 补全（不落盘） |
+| `decisions/0012-unified-detail-modal.md` | ADR | 全站详情统一（Slice K）：所有实体详情改居中弹窗 + 统一操作矩阵 + 底栏统一 + 日历吸顶遮罩柔化；删除 Drawer |
 
 ## 根目录文档（不在本目录）
 

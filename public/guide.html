@@ -706,6 +706,9 @@ table.tbl td { color: var(--ink-2); }
 .kbtn:hover { background: var(--fill-secondary); color: var(--ink); }
 .kbtn--solid { background: var(--ink); color: var(--bg); box-shadow: var(--shadow-soft); }
 .kbtn--solid:hover { background: var(--ink); color: var(--bg); transform: translateY(-1px); box-shadow: var(--shadow-hover); }
+/* 详情弹窗底栏：主操作靠左、编辑 / 删除安静动作靠右（与 App 内 .k-modal__foot-* 同姿态） */
+.demo__foot-spacer { flex: 1 1 auto; }
+.demo__danger { color: var(--danger-text); }
 
 body.demo-locked { overflow: hidden; }
 
@@ -1003,7 +1006,7 @@ body.demo-locked { overflow: hidden; }
               <li>计数：未完成 / 逾期 / 今日</li>
               <li>筛选：状态 / 时间 / 更多（上下文 · 能量 · 区域 · 身份）；分组：平铺 / 按项目 / 按上下文</li>
               <li>快速新建：只填标题回车 → 弹窗预览 AI 补全，全部字段可编辑，点「创建任务」才写入</li>
-              <li class="signal">详情抽屉与总览就地弹窗共用同一份详情；可编辑 / 删除（撤销进回收站）</li>
+              <li class="signal">详情弹窗与总览就地弹窗共用同一份详情；可标记完成 / 查看项目 / 编辑 / 删除（撤销进回收站）</li>
             </ul>
             <button class="demo-trigger" type="button" data-demo-open aria-haspopup="dialog">点开看：任务详情面板</button>
           </article>
@@ -1025,7 +1028,7 @@ body.demo-locked { overflow: hidden; }
             <ul>
               <li>进行中 / 暂停 / 将来 / 已完成 分组列表</li>
               <li>每行有「下一步」与进度；输入标题回车即可快速新建</li>
-              <li class="signal">抽屉含任务清单，可标记完成并撤销；行可点开就地弹详情</li>
+              <li class="signal">详情弹窗含任务清单，可标记完成并撤销；行可点开就地弹详情，并可编辑 / 删除</li>
             </ul>
           </article>
 
@@ -1034,9 +1037,9 @@ body.demo-locked { overflow: hidden; }
             <p class="card__desc">知识的内存：笔记与资料。</p>
             <ul>
               <li>全部 / 笔记 / 资料；类型 / 状态 / 标签筛选</li>
-              <li>资料状态五档（未读 / 在读 / 读完 / 参考 / 归档）抽屉内快捷设置，每档附判断标准</li>
+              <li>资料状态五档（未读 / 在读 / 读完 / 参考 / 归档）弹窗内快捷设置，每档附判断标准</li>
               <li>笔记蒸馏层级 L0–L3 同样可设（L0 原文 → L3 永久）</li>
-              <li class="signal">阅读抽屉 +「关联」；文件类资料可在文件管理器中定位</li>
+              <li class="signal">阅读弹窗 +「关联」；文件类资料可打开文件 / 在文件管理器中定位；可编辑 / 删除</li>
             </ul>
           </article>
 
@@ -1110,13 +1113,13 @@ body.demo-locked { overflow: hidden; }
         <div class="sec__head">
           <span class="sec__kicker">06 — 联动</span>
           <h2 id="h-links">系统是连起来的</h2>
-          <p>系统和系统之间不是孤岛。每个详情抽屉的底部都有「关联」区块，显示<strong>我指向谁</strong>与<strong>谁指向我</strong>两组链接，点击可以互相跳转。</p>
+          <p>系统和系统之间不是孤岛。每个详情弹窗的底部都有「关联」区块，显示<strong>我指向谁</strong>与<strong>谁指向我</strong>两组链接，点击可以互相跳转。</p>
         </div>
 
-        <p>此外，地址栏支持深链，任何一条内容都能被直达，适合收藏或分享给未来的自己。关闭抽屉时会自动清掉参数。</p>
+        <p>此外，地址栏支持深链，任何一条内容都能被直达，适合收藏或分享给未来的自己。关闭弹窗时会自动清掉参数。</p>
 
         <div class="deep">
-          <div class="deep__row"><code class="inl">/tasks?task=…</code><span class="desc">直达某条任务的详情抽屉</span></div>
+          <div class="deep__row"><code class="inl">/tasks?task=…</code><span class="desc">直达某条任务的详情弹窗</span></div>
           <div class="deep__row"><code class="inl">/projects?project=…</code><span class="desc">直达某个项目</span></div>
           <div class="deep__row"><code class="inl">/library?note=…</code><span class="desc">直达某条笔记（AI 对话归档也走这里）</span></div>
           <div class="deep__row"><code class="inl">/library?resource=…</code><span class="desc">直达某份资料</span></div>
@@ -1156,7 +1159,7 @@ body.demo-locked { overflow: hidden; }
         <div class="keys">
           <div class="keyrow"><kbd class="k">c</kbd><span class="what">随时捕捉</span></div>
           <div class="keyrow"><kbd class="k">Ctrl / ⌘ + K</kbd><span class="what">命令面板（导航 / 新建任务 / 新建项目 / 收件箱捕捉 / 切换主题 / AI 解析）</span></div>
-          <div class="keyrow"><kbd class="k">ESC</kbd><span class="what">关闭抽屉、就地弹窗或报告弹窗</span></div>
+          <div class="keyrow"><kbd class="k">ESC</kbd><span class="what">关闭详情弹窗、就地弹窗或报告弹窗</span></div>
           <div class="keyrow"><kbd class="k">Enter</kbd><span class="what">对话盒发送（<kbd class="k">Shift + Enter</kbd> 换行）</span></div>
           <div class="keyrow"><kbd class="k">npm run dev -- --host</kbd><span class="what">手机经局域网访问，打开 <code class="inl">http://电脑IP:5173</code></span></div>
         </div>
@@ -1269,8 +1272,11 @@ body.demo-locked { overflow: hidden; }
     <footer class="demo__foot">
       <button class="kbtn kbtn--solid" type="button" title="演示按钮，无实际动作">标记完成</button>
       <button class="kbtn" type="button" title="演示按钮，无实际动作">查看项目</button>
+      <span class="demo__foot-spacer" aria-hidden></span>
+      <button class="kbtn" type="button" title="演示按钮，无实际动作">编辑</button>
+      <button class="kbtn demo__danger" type="button" title="演示按钮，无实际动作">删除</button>
     </footer>
-    <p class="demo__caption" id="demo-caption">这是任务详情面板的演示。在应用里它从右侧滑入（抽屉），这里为了并入指南，以居中弹窗呈现。</p>
+    <p class="demo__caption" id="demo-caption">这是任务详情弹窗的演示。在应用里它就是屏幕居中的弹窗，与这里呈现一致；底部为主操作 + 右侧安静的编辑 / 删除。</p>
   </div>
 </div>
 

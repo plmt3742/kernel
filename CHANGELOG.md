@@ -4,6 +4,18 @@
 
 ## [Unreleased]
 
+### 全站详情「居中弹窗」统一 + 操作统一 + 日历遮罩柔化 · Slice K（已完成 · 2026-10-03）
+以 owner 四条指令为规格：①「所有的卡片都是居中弹窗样式」（笔记等详情仍是侧边抽屉）；②「弹窗不是说要优化为屏幕居中弹窗详情页吗，怎么没优化」（日历事件详情仍是侧边抽屉）；③「除了标记为完成后，编辑、删除按钮等没有出现，不能进行常规操作，全系统统一审阅后处理」（总览就地弹窗缺常规操作）；④「这个地方遮罩不太自然，优化一下」（日历吸顶日期条）。纯前端切片（服务端零改动、无新增端点）。`npm run build`（tsc strict + vite）通过；浏览器 E2E **109/109**；零数据残留（计数回到基线：收件箱 10 / 任务 62 / 项目 10 / 笔记 15 / 资料 12 / 回顾 2 / 回收站 0；所有者 t-0061/t-0062 与 i-0009/i-0010 未动）；控制台零 error；证据 `.qa/v29/`。
+
+- **五类详情从右侧 `Drawer` 迁到居中 `Modal`（Deliverable 1）**：任务（Tasks）/ 项目（Projects）/ 笔记 · 资料（Library）/ 日程（Calendar）统一由 `src/components/Modal.tsx` 承载，新增尺寸变体 `.k-modal--detail`（`width: min(660px, 100vw-32px)`、`max-height: min(85vh, 900px)`、内容在 `.k-modal__body` 内滚动、≤640px 全宽 16px 边距）。打开触发（行点击 + 全部深链 `?task= / ?project= / ?note= / ?resource= / ?event=`）、ESC / 遮罩关闭、焦点圈闭 + 还原、关闭清挂载参数等语义不变；详情身体（TaskDetail / ProjectDetail / 笔记内联 / 资料内联 / 日程字段网格 + Relations）原样渲染。
+- **操作矩阵统一（Deliverable 2）**：抽出 `src/components/TaskDetailModal.tsx`（任务：标记完成 / 取消完成 · 查看项目 · 编辑 · 删除）与 `src/components/ProjectDetailModal.tsx`（项目：编辑 · 删除），Tasks / Projects 页与总览就地弹窗**共用同一组件**——两处动作一致由构造保证（此前总览缺口述：任务弹窗无编辑 / 删除，项目弹窗无任何动作）。笔记（编辑 / 删除 / 蒸馏快捷设置）、资料（编辑 / 删除 / 状态快捷设置 / 打开文件 · 位置）保留既有能力；删除沿用回收站 + 撤销 toast，编辑沿用 `EntityEditForm`；日程保持只读（结构性缺口，见 ADR-0012 §5）。
+- **底栏统一（Deliverable 3）**：详情底栏统一为 `.k-modal__foot-main`（靠左，主操作，`margin-right:auto`）+ `.k-modal__foot-actions`（靠右，安静动作：编辑 / 删除），样式集中到 `shell.css`；删除 `.k-drawer__foot-*` 与总览借用抽屉类的补丁规则（`.k-modal__foot .k-drawer__foot-main`）。
+- **日历吸顶遮罩柔化（Deliverable 4）**：`.k-cal__bar` 保持吸顶（`top: var(--topbar-h)`），其下以 `::after` 叠一段 `--bg → transparent`、高 `--space-4` 的渐隐层（`pointer-events: none`）；滚动时面板在条底缘柔和浮现，替代原平铺色带的「一刀切」硬横线。
+- **关键修复（E2E 发现）**：`Modal` 改为 `createPortal` 到 `document.body`。根因：详情弹窗挂在 `.k-route`（`container-type: inline-size` 含 layout containment）之下，`position: fixed` 的包含块被改成该祖先——正常行点击场景侥幸居中，但深链整页加载 + Chrome 滚动恢复时不再相对视口（实测水平偏 48px、纵向越界）。Portal 到 body 后 `fixed` 语义稳定为视口。
+- **退役死代码（Deliverable 5）**：删除 `src/components/Drawer.tsx` 与全部 `.k-drawer*` 样式（含 `.k-drawer-scrim` / `.k-drawer__body` 具名容器）；容器名 `drawer → modal`（`docs/08` §5）；批条侧挂 dock `.ic-dock` 层级改挂 `--z-overlay - 1`；删除 `--drawer-w` / `--z-drawer` token。
+- **验证（Deliverable 6）**：`.qa/v29/slice-k-verify.py` **109/109**——每类表面（任务 / 项目 / 笔记 / 资料 / 日程）行点击 + 深链均打开 `role=dialog` 居中弹窗、DOM 无 `.k-drawer`、水平居中偏差 ≤2px、在视口内；ESC 关闭 + 焦点还原到触发行 + URL 参数清除；任务完成切换 / 编辑保存 / 删除 → 回收站 + 撤销恢复；项目编辑 / 删除 + 撤销；笔记 / 资料编辑 / 删除 + 撤销；资料状态快捷设置写入；资料文件动作（打开文件 / 定位）在有 `path` 时出现；总览任务弹窗含 标记完成/编辑/删除 且点编辑出表单、总览项目弹窗含 编辑/删除 且点编辑出表单；移动 390 弹窗零横溢 + 居中；日历吸顶条贴顶（y=104 = `--topbar-h`）+ before/after 对照截图；控制台 0；零残留 + 所有者数据未动。
+- **记录**：新增 ADR-0012（《全站详情统一为居中弹窗 + 统一操作矩阵》，含非目标 / 延后）；`docs/00 §5.6`、`docs/03 §5/§7/§9`、`docs/04`（抽屉 → 详情弹窗措辞）、`docs/05`（组件清单）、`docs/08 §5/§6`、`docs/README.md`（ADR 索引）；`public/guide.html`（抽屉 → 弹窗措辞 + 演示底栏补编辑 / 删除，保持自包含）；`AGENTS.md`。
+
 ### 先确认后写入 · Slice O（已完成 · 2026-10-03）
 以 owner 两条强制指令为规格：①「我输入你好后居然没经过 AI 建议我确认然后直接入库，这是不行的」——任务快速新建在用户确认前**绝不能写库**；②「AI 初步处理后需要给到我充足的编辑以及操作空间，每个类似的地方都要这样」——凡 AI 产出即须先可编辑、确认、再落盘。「先确认后写入」成为统一模式。`npm run build`（tsc strict + vite）通过；服务端冒烟 **35/35** + 浏览器 E2E **31/31**；零数据残留（计数回到基线：收件箱 10 / 任务 62 / 项目 10 / 笔记 15 / 资料 12 / 回顾 2 / 回收站 0；所有者 t-0061/t-0062 「你好」与 i-0009/i-0010 未动）；控制台零 error；证据 `.qa/v28/`。
 

@@ -67,7 +67,7 @@ kernel/
 │  ├─ main.tsx                  # 挂载入口（样式导入、字体自托管）
 │  ├─ App.tsx                   # 应用壳与路由
 │  ├─ views/                    # 八个视图（Overview/Inbox/Tasks/Calendar/Projects/Library/Review/Settings）
-│  ├─ components/               # 通用组件（Panel / Drawer / Modal / Toast / EntityEditForm / CommandPalette / TaskDetail / ProjectDetail / OverviewChat / AiSuggestionForm / TaskDraftModal …）
+│  ├─ components/               # 通用组件（Panel / Modal / Toast / EntityEditForm / CommandPalette / TaskDetail / TaskDetailModal / ProjectDetail / ProjectDetailModal / OverviewChat / AiSuggestionForm / TaskDraftModal …）
 │  │  ├─ shell/                 # 应用壳（RailNav / TopBar / StatusBar / AppLayout）
 │  │  └─ charts/                # 图表（TrendLine / EnergyBars）
 │  ├─ context/                  # React Context（Theme / Toast / Palette）

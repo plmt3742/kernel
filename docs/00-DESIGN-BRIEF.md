@@ -78,7 +78,7 @@
 ### 任务 TASKS（P0）
 - 筛选条：上下文 chips / 能量 / 区域 / 身份 / 状态
 - 列表：分组切换（按项目 | 按上下文 | 平铺）；行内快捷完成（动效：划线 + 塌缩）
-- 行内快速新建；详情抽屉（全字段展示，原型只读 + 演示）
+- 行内快速新建；详情居中弹窗（全字段展示 + 编辑 / 删除；见 ADR-0009 / 0012）
 
 ### 日程 CALENDAR（P0）
 - 日视图：垂直日脊（0–24h）+ 事件块 + 当前时间线（实时移动）
@@ -86,11 +86,11 @@
 
 ### 项目 PROJECTS（P1）
 - 看板 4 列：active / onHold / someday / done；卡片含 next action + 进度 + 区域标记（单色，图案区分而非彩色）
-- 详情抽屉：目标、下一步、任务清单
+- 详情居中弹窗：目标、下一步、任务清单
 
 ### 资料 LIBRARY（P1）
 - Notes + Resources 混合流；类型筛选；标签过滤（有界视觉）
-- 阅读抽屉：Markdown 渲染（react-markdown）
+- 阅读居中弹窗：Markdown 渲染（react-markdown）
 
 ### 回顾 REVIEW（P1）
 - 周回顾流程 UI（步骤：清空收件箱 → 审视项目 → 统计 → 决策 → 完成）
@@ -183,7 +183,7 @@
 
 ### 5.6 组件签名词汇（命名与形态统一）
 
-CommandPalette / StatusBar / RailNav / TopBar / Panel（柔影卡片）/ StatTile（柔影瓦片）/ TagPill（胶囊，选中=ink 填充+bg 文字）/ DaySpine / ScheduleList / TaskRow / TaskBoard / Drawer / FilterBar / MeterBar / EnergyBars / TrendBars / EmptyState / Skeleton / Toast（克制）
+CommandPalette / StatusBar / RailNav / TopBar / Panel（柔影卡片）/ StatTile（柔影瓦片）/ TagPill（胶囊，选中=ink 填充+bg 文字）/ DaySpine / ScheduleList / TaskRow / TaskBoard / Modal（详情居中弹窗，含 TaskDetailModal / ProjectDetailModal）/ FilterBar / MeterBar / EnergyBars / TrendBars / EmptyState / Skeleton / Toast（克制）
 
 ### 5.7 可读性纪律（柔暗风格陷阱防线，逐条对照）
 

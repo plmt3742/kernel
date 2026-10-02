@@ -138,7 +138,6 @@
   /* --- 层级 --- */
   --z-base: 0;
   --z-sticky: 100;
-  --z-drawer: 200;
   --z-overlay: 300;
   --z-palette: 400;
   --z-toast: 500;
@@ -148,7 +147,6 @@
   --statusbar-h: 34px;
   --tabbar-h: 58px;
   --topbar-h: 104px;
-  --drawer-w: 460px;
   --palette-w: 640px;
 }
 

@@ -98,7 +98,7 @@ inner : element : section : page  =  1 : φ : φ² : φ³  ≈  1 : 1.62 : 2.62 
 | `stat` | `.k-stat` | 瓦片内大数字 | ≤200px 数字降为 `--text-h2` |
 | `task` | `.k-task` | 行内 meta | ≤560 meta 换行更松；≤420 meta 竖排 + 收起 why |
 | `pcard` | `.k-pcard` | 看板卡标题/说明 | ≤220px 标题降为 body、说明降为 micro |
-| `drawer` | `.k-drawer__body` | 抽屉内 dl | ≤400px dl 收窄为 84px + 1fr |
+| `modal` | `.k-modal__body` | 详情弹窗内 dl | ≤560px dl 收为单列（max-content + 1fr） |
 
 **实测（`.qa/v05`）**：route 宽 350/891/1240 → stats 轨道数 **1 / 2 / 4**；task 行宽 308/645 → meta `flex-direction` **column / row** ✔
 
@@ -111,7 +111,7 @@ inner : element : section : page  =  1 : φ : φ² : φ³  ≈  1 : 1.62 : 2.62 
 | instant | `--dur-instant` / `DUR.instant` | 80ms / 0.08s | 颜色、描边（零位移） |
 | micro | `--dur-micro` | 120ms | 微状态（chip 反选、透明度） |
 | fast | `--dur-fast` | 180ms | 悬停/按压（translateY −2px、fade） |
-| base | `--dur-base` | 240ms | 入场、抽屉滑入 |
+| base | `--dur-base` | 240ms | 入场、弹窗淡入 + 微缩放 |
 | slow | `--dur-slow` | 400ms | 计量条宽度等长距离属性 |
 | page | `--dur-page` | 560ms | 路由级过渡 |
 

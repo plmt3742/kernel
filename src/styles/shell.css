@@ -361,68 +361,8 @@
 /* 数据服务状态胶囊样式见 components.css `.k-svc-pill` */
 
 /* ---------------------------------------------------------------------------
- * 抽屉 Drawer
- * ------------------------------------------------------------------------- */
-
-.k-drawer-scrim {
-  position: fixed;
-  inset: 0;
-  background: var(--scrim);
-  backdrop-filter: blur(2px);
-  -webkit-backdrop-filter: blur(2px);
-  z-index: var(--z-drawer);
-}
-.k-drawer {
-  position: fixed;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: var(--drawer-w);
-  max-width: 100vw;
-  display: flex;
-  flex-direction: column;
-  background: var(--surface);
-  border-left: var(--hairline) solid var(--outline);
-  box-shadow: var(--shadow-hover);
-  z-index: calc(var(--z-drawer) + 1);
-}
-.k-drawer__head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--space-4);
-  padding: var(--space-5);
-  border-bottom: var(--hairline) solid var(--outline);
-}
-.k-drawer__kicker {
-  color: var(--muted);
-  display: block;
-  margin-bottom: var(--space-2);
-}
-.k-drawer__title {
-  font-size: var(--text-h3);
-  line-height: var(--text-h3-leading);
-  letter-spacing: var(--text-h3-tracking);
-  font-weight: 600;
-}
-.k-drawer__body {
-  flex: 1 1 auto;
-  overflow-y: auto;
-  padding: var(--space-5);
-  /* 容器查询根：抽屉内容按自身宽度自适应 */
-  container-type: inline-size;
-  container-name: drawer;
-}
-.k-drawer__foot {
-  border-top: var(--hairline) solid var(--outline);
-  padding: var(--space-4) var(--space-5);
-  display: flex;
-  gap: var(--space-3);
-  flex-wrap: wrap;
-}
-
-/* ---------------------------------------------------------------------------
  * 弹窗 Modal（居中；fade + 微缩放；打开时锁定页面滚动）
+ * 全站所有实体详情统一由 Modal 承载（v0.5 · Slice K，见 ADR-0012）。
  * ------------------------------------------------------------------------- */
 
 .k-modal__scrim {
@@ -457,6 +397,12 @@
 .k-modal--compose {
   width: min(720px, calc(100vw - 32px));
 }
+/* 实体详情弹窗（Slice K）：任务 / 项目 / 笔记 / 资料 / 日程详情统一居中承载。
+ * 居中、留白、宽高同一（~85vh 上限），内容在内部滚动。 */
+.k-modal--detail {
+  width: min(660px, calc(100vw - 32px));
+  max-height: min(85vh, 900px);
+}
 .k-modal__head {
   display: flex;
   align-items: flex-start;
@@ -483,14 +429,32 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
+  /* 容器查询根：弹窗内容按自身宽度自适应（详情 dl 收窄等） */
+  container-type: inline-size;
+  container-name: modal;
 }
 .k-modal__foot {
   border-top: var(--hairline) solid var(--outline);
   padding: var(--space-4) var(--space-5);
   display: flex;
+  align-items: center;
   gap: var(--space-3);
   flex-wrap: wrap;
   justify-content: flex-end;
+}
+/* 详情底栏统一布局（Slice K）：主操作靠左、编辑/删除等安静动作靠右。
+ * 只有单组时自然贴右（justify-content 兜底）。 */
+.k-modal__foot-main {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin-right: auto;
+}
+.k-modal__foot-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
 }
 
 /* ---------------------------------------------------------------------------
@@ -775,9 +739,6 @@
     left: var(--space-4);
     right: var(--space-4);
     bottom: calc(var(--tabbar-h) + var(--statusbar-h) + var(--space-3));
-  }
-  .k-drawer {
-    width: 100vw;
   }
   .k-palette {
     top: 8vh;
