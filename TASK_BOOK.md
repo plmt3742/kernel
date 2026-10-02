@@ -33,6 +33,18 @@ KERNEL 的任务台账与迭代记录。记录当前迭代目标、未来待办�
 
 ---
 
+## 回顾报告可读性 · 同期口径 · 去重 · Slice U（已完成 · 2026-10-03）
+
+以 owner 反馈「生成的报告可读性太差」为规格：① 七段正文被塞进一个大 textarea 当一整块密文；② 进行中的月回顾拿「本月 3 天」比「上月整月」（苹果对橘子）；③「下期行动」段与决策列表逐字重复。`npm run build`（tsc strict + vite）通过；服务端冒烟 **23/23** + 纯函数单测 **25/25** + 浏览器 E2E **32/32**；零数据残留（回顾回到基线 2 条；所有者 rev-0001/rev-0002、t-0061/t-0062、i-0009/i-0010 未动）；控制台零 error；证据 `.qa/v32/`。
+
+- [x] Deliverable A1 · 分节解析：`src/lib/reviewReport.ts` `parseReviewSummary()` 拆七段（兼容「结论速览：」与「一、结论速览」；别名归一；无法识别时回退整段），与 `server/ai.mjs` 同源。
+- [x] Deliverable A2 · 阅读视图（默认）：`Review.tsx` 报告弹窗默认分节渲染（序号 + 标题 + 段落，行距 1.75 / 测度 68ch，纯文本无 HTML 注入）；底栏「编辑」→ textarea、「完成」→ 回阅读；保存 / 重新生成 / 报告历史只读复用同一视图；样式 token-only。
+- [x] Deliverable B1 · 同期口径：`reviewWindows()` + `computeSameWindowPrevMetrics()`——月 1..N ↔ 上月 1..N（短月截断）、周至今 ↔ 上周同期；`generateReviewDraft` 改用之，摘要标「上X同期」+ 窗口日期，`<7 天`追加【窗口说明】且禁止以「窗口仅 N 天」开场。
+- [x] Deliverable B2 · 去重：`dedupeActionSection()` 第 6 段替换为「见决策区（N 条）」指针，完整 if-then 仅在 `decisions`。
+- [x] Deliverable B3 · 可读性规则：`formatDelta()` 基准 ≥5 才出百分比；digest 清单「标题（id）」标题优先；prompt 增补标题优先 / id 仅 decisions 括号补充规则。
+- [x] 验证：`.qa/v32/guard-unit.mjs` 25/25、`smoke-u.mjs` 23/23（真实 monthly 一次）、`slice-u-verify.py` 32/32（默认阅读视图 / 编辑切换 / 保存更新同条 / 历史渲染 / 删除回基线 / 移动 390 / 控制台 0 / 零残留）；截图 4 张。
+- [x] 记录：ADR-0013 §6 修订；`docs/04` §4.10；`public/guide.html`；`CHANGELOG.md`、`TASK_BOOK.md`、`AGENTS.md`。
+
 ## 标签生命周期（录入即生成 · 自动登记 · 管理 / 合并 / 删除 · 筛选条修正）· Slice T（已完成 · 2026-10-03）
 
 以 owner 两条指令为规格：①「对于标签这种，没有生成由来，如果投入使用那不是用户使用体验崩塌吗」②「类似于标签你完全可以在录入任务的时候判断后生成标签，但是你却没有做这一步」。此前标签无生命周期：注册表只由 seed 写、运行时新标签只落实体不登记、AI 被禁止生标签、筛选条截断前 12、无管理入口。`npm run build`（tsc strict + vite）通过；服务端冒烟 **54/54** + 护栏单测 **14/14** + 浏览器 E2E **41/41**；零数据残留（inbox 10 / tasks 62 / projects 10 / notes 15 / resources 12 / tags 26；所有者 t-0001 未动）；控制台零 error；证据 `.qa/v31/`。

@@ -389,9 +389,10 @@
   z-index: calc(var(--z-overlay) + 1);
   overflow: hidden;
 }
-/* 回顾报告弹窗：加宽以容纳指标 + 摘要 + 决策 */
+/* 回顾报告弹窗：加宽以容纳指标 + 摘要 + 决策；长报告在弹窗内滚动、底栏常驻 */
 .k-modal--report {
   width: min(720px, calc(100vw - 32px));
+  max-height: min(88vh, 900px);
 }
 /* 任务草稿确认弹窗（Slice O）：加宽以容纳 AI 补全表单的两列字段 */
 .k-modal--compose {

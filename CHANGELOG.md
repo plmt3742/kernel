@@ -4,6 +4,15 @@
 
 ## [Unreleased]
 
+### 回顾报告可读性 · 同期口径 · 去重 · Slice U（已完成 · 2026-10-03）
+以 owner 反馈「生成的报告可读性太差」为规格：截图显示七段正文被塞进一个大 textarea 当一整块密文；进行中的月回顾拿「本月 3 天」去比「上月整月」（苹果对橘子，如「窗口仅 3 天，本月完成 2 项…上月 59」）；「下期行动」段与决策列表逐字重复。本切片把报告弹窗默认改为**阅读视图**（七段分节、舒适行距、可「编辑」切换），把环比对照改为**同期等长窗口**，并把第 6 段改为**指针去重**；归档 / 保存更新同条语义不变。`npm run build`（tsc strict + vite）通过；服务端冒烟 **23/23** + 纯函数单测 **25/25** + 浏览器 E2E **32/32**；零数据残留（回顾回到基线 2 条，所有者 rev-0001/rev-0002、t-0061/t-0062、i-0009/i-0010 未动）；控制台零 error；证据 `.qa/v32/`。
+
+- **阅读视图（默认）+ 编辑切换（前端）**：新增 `src/lib/reviewReport.ts` `parseReviewSummary()`——把 `summary` 拆成七段 `{label, body}`，兼容「结论速览：…」与「一、结论速览」两种标题写法，别名归一（本期数据解读 → 数据解读 / 趋势对比 → 趋势与对比），无法识别时回退整段渲染；规则与 `server/ai.mjs` 同源。`src/views/Review.tsx` 报告弹窗默认阅读视图（`.k-report__sections` 序号 + 标题行 + 正文段落），底栏「编辑」切到既有 textarea、「完成」切回；保存 / 重新生成流程不变；报告历史（只读）弹窗复用同一阅读视图。纯文本、无 `dangerouslySetInnerHTML`；样式 token-only（`views.css`；`shell.css` `.k-modal--report` 加 `max-height` 让长报告内滚、底栏常驻）。数字护栏 `auditNumbers` 为文本级、保持生效。
+- **同期口径（`server/ai.mjs`，核心修复）**：新增 `reviewWindows(now, monthly)` + `computeSameWindowPrevMetrics()`——进行中的周期对照上一周期**同等已走完长度**（月：本月 1..N 日 ↔ 上月 1..N 日，短月按上月末截断 `min(prevStart+elapsed, periodStart−1ms)`；周：本周至今 ↔ 上周同一星期数）。`generateReviewDraft` 弃用「`now` 落周期起点前 1ms 回退整周期」的旧算法；摘要 `prevLabel` 改「上X同期」并附对照窗口日期，`elapsedDays < 7` 时追加【窗口说明】（要求自然说明、禁止以「窗口仅 N 天」开场）。
+- **去重与可读性规则（`server/ai.mjs`）**：新增 `dedupeActionSection(summary, decisions)`——第 6 段「下期行动」整段替换为一行指针「下期行动：见决策区（N 条）。」，完整 if-then 只留 `decisions`（空 decisions 时不动原文），从构造上杜绝逐字重复；`formatDelta(cur, prev)`（原 `deltaText`）——基准 ≥5 才出百分比，基准 <5 只给绝对变化 + 基准；`buildReviewDigest` 清单改「标题（id）」标题优先，`buildReviewSystem` 增补「叙述优先标题 / id 仅 decisions 括号补充 / 百分比基准 / 窗口不完整自然说明」规则。
+- **验证**：`.qa/v32/guard-unit.mjs` **25/25**（同期窗口语义含短月截断与旧口径对照、分节 7 段与编号标题、去重指针与无逐字重复、百分比规则）；`.qa/v32/smoke-u.mjs` **23/23**（真实 monthly 一次：解析恰 7 段且标题齐全、第 6 段为指针、无 decisions 逐字原句、无小基准硬算百分比、结论不以「窗口仅 N 天」开场、自动归档 + 审计 `review.create` · auto + 零残留 + 所有者未动）；`.qa/v32/slice-u-verify.py` **32/32**（默认阅读视图无 textarea、七段分节、编辑 ↔ 完成、保存更新同条、历史阅读渲染、删除回基线、移动 390 零横溢、控制台 0、零残留 + 所有者数据未动）。
+- **记录**：ADR-0013 新增 §6（Slice U 修订）；`docs/04` §4.10；`public/guide.html`（回顾报告措辞：默认阅读视图 + 同期对照）；`CHANGELOG.md`、`TASK_BOOK.md`、`AGENTS.md`。
+
 ### 标签生命周期（录入即生成 · 自动登记 · 管理 / 合并 / 删除 · 筛选条修正）· Slice T（已完成 · 2026-10-03）
 以 owner 两条指令为规格：①「对于标签这种，没有生成由来，如果投入使用那不是用户使用体验崩塌吗」；②「类似于标签你完全可以在录入任务的时候判断后生成标签，但是你却没有做这一步」。修复标签全生命周期——注册表此前只由 seed 写入、运行时新标签从不登记、AI 被禁止生标签、筛选条只显示前 12 个、且没有任何管理入口。`npm run build`（tsc strict + vite）通过；服务端冒烟 **54/54** + 护栏单测 **14/14** + 浏览器 E2E **41/41**；零数据残留（inbox 10 / tasks 62 / projects 10 / notes 15 / resources 12 / tags 26；所有者 t-0001 未动）；控制台零 error；证据 `.qa/v31/`。
 

@@ -923,6 +923,28 @@ export function startOfPrevMonth(now = new Date()) {
   return d
 }
 
+/**
+ * 回顾窗口（Slice U）：本周期起点 + 上一周期**同等已走完长度**的对照窗口。
+ * 月：本月 1..N 日 ↔ 上月 1..N 日（短月按上月末截断）；周：本周至今 ↔ 上周同一星期数。
+ * 这样进行中的周期不会拿「3 天」去比「一整月」。见 ADR-0013 §6。
+ */
+export function reviewWindows(now = new Date(), monthly = false) {
+  const periodStart = monthly ? startOfMonth(now) : startOfWeekMonday(now)
+  const prevStart = monthly ? startOfPrevMonth(now) : startOfPrevWeek(now)
+  const elapsed = now.getTime() - periodStart.getTime()
+  const prevEndRaw = prevStart.getTime() + elapsed
+  // 短月 / 跨月截断：对照窗口不越过上一周期最后一刻（periodStart − 1ms）
+  const prevEnd = new Date(Math.min(prevEndRaw, periodStart.getTime() - 1))
+  const elapsedDays = Math.max(1, calendarDayDiff(now, periodStart) + 1)
+  return { periodStart, prevStart, prevEnd, elapsedDays }
+}
+
+/** 上一周期「同期」指标（与本节窗口等长；逾期参考时刻取对照窗口末端） */
+export function computeSameWindowPrevMetrics(snapshot, now = new Date(), monthly = false) {
+  const { prevStart, prevEnd } = reviewWindows(now, monthly)
+  return computeMetricsForWindow(snapshot, prevStart, prevEnd, prevEnd)
+}
+
 /** 停滞项目：active 且 updatedAt 距 now ≥ staleDays 个日历日（镜像前端 getStaleProjects） */
 export function staleProjects(snapshot, staleDays = 14, now = new Date()) {
   return (snapshot.projects ?? []).filter((p) => {
@@ -1030,12 +1052,114 @@ export function auditNumbers(summary, digest) {
   return { ok: offenders.length === 0, offenders: [...new Set(offenders)] }
 }
 
-/** 环比展示：cur 相对 prev 的增量与百分比（prev 为 0 时百分比记 —） */
-function deltaText(cur, prev) {
+/* ---------------------------------------------------------------------------
+ * 报告分节解析（Slice U）：把 summary 拆成七段，供服务端「下期行动」去重；
+ * 前端同规则解析见 src/lib/reviewReport.ts（两处刻意保持一致，勿单边改动）。
+ * 兼容「结论速览：…」与「一、结论速览」两种标题写法。
+ * ------------------------------------------------------------------------- */
+
+const REVIEW_SECTION_ALIASES = [
+  { label: '结论速览', aliases: ['结论速览'] },
+  { label: '数据解读', aliases: ['本期数据解读', '数据解读'] },
+  { label: '趋势与对比', aliases: ['趋势与对比', '趋势对比'] },
+  { label: '问题诊断', aliases: ['问题诊断'] },
+  { label: '值得保留', aliases: ['值得保留'] },
+  { label: '下期行动', aliases: ['下期行动'] },
+  { label: '风险预警', aliases: ['风险预警'] },
+]
+
+const REVIEW_ALIAS_INDEX = REVIEW_SECTION_ALIASES.flatMap((entry) =>
+  entry.aliases.map((alias) => ({ alias, label: entry.label })),
+).sort((a, b) => b.alias.length - a.alias.length)
+
+/** 去掉行首序号（「一、」「（二）」「1.」「1)」等） */
+function stripSectionNumbering(line) {
+  return line.replace(/^[（(]?(?:[一二三四五六七八九十]+|\d+)[）)]?\s*[、.．:：)）]?\s*/, '')
+}
+
+/** 识别分节标题行；返回 { label, body } 或 null */
+function matchReviewHeading(line) {
+  const raw = String(line ?? '').trim()
+  if (raw === '') return null
+  const stripped = stripSectionNumbering(raw).trim()
+  for (const { alias, label } of REVIEW_ALIAS_INDEX) {
+    if (!stripped.startsWith(alias)) continue
+    const rest = stripped.slice(alias.length)
+    if (rest === '') return { label, body: '' }
+    if (/^[：:]/.test(rest)) return { label, body: rest.slice(1).trim() }
+    if (/^[\s，,。.、（(]/.test(rest)) {
+      return { label, body: rest.replace(/^[\s，,。.、（(]+/, '').trim() }
+    }
+    return null
+  }
+  return null
+}
+
+/**
+ * 拆解报告正文为 { intro, sections }。intro 为第一个标题之前的文字；
+ * sections 为 `[{ label, body }]`（body 保留多行，行间以 \n 连接）。
+ */
+export function splitReportSections(summary) {
+  const lines = String(summary ?? '').split(/\r?\n/)
+  const sections = []
+  const intro = []
+  let current = null
+  for (const line of lines) {
+    const heading = matchReviewHeading(line)
+    if (heading !== null) {
+      current = { label: heading.label, body: heading.body }
+      sections.push(current)
+      continue
+    }
+    const text = line.trim()
+    if (text === '') continue
+    if (current === null) intro.push(text)
+    else current.body = current.body === '' ? text : `${current.body}\n${text}`
+  }
+  return { intro: intro.join('\n'), sections }
+}
+
+/**
+ * 「下期行动」去重（Slice U）：把 summary 第 6 段整段替换为一行指针
+ * 「下期行动：见决策区（N 条）。」，完整 if-then 只留在 decisions，杜绝逐字重复。
+ * decisions 为空时不动（避免把唯一的行动记录也抹掉）。
+ */
+export function dedupeActionSection(summary, decisions) {
+  const text = String(summary ?? '')
+  const count = (Array.isArray(decisions) ? decisions : [])
+    .map((d) => String(d ?? '').trim())
+    .filter((d) => d !== '').length
+  if (count === 0) return text
+  const lines = text.split(/\r?\n/)
+  let start = -1
+  let end = lines.length
+  for (let i = 0; i < lines.length; i += 1) {
+    const heading = matchReviewHeading(lines[i])
+    if (heading === null) continue
+    if (start === -1) {
+      if (heading.label === '下期行动') start = i
+    } else {
+      end = i
+      break
+    }
+  }
+  if (start === -1) return text
+  const pointer = `下期行动：见决策区（${count} 条）。`
+  return [...lines.slice(0, start), pointer, ...lines.slice(end)].join('\n')
+}
+
+/**
+ * 环比展示（Slice U 可读性规则）：基准 ≥5 才给百分比；基准 <5 时只给
+ * 绝对变化 + 基准（避免 0 / 1 基准下百分比失真）。
+ */
+export function formatDelta(cur, prev) {
   const delta = cur - prev
   const sign = delta > 0 ? '+' : ''
-  const pct = prev === 0 ? '—' : `${sign}${Math.round((delta / prev) * 100)}%`
-  return `${sign}${delta}（${pct}）`
+  if (prev >= 5) {
+    const pct = `${sign}${Math.round((delta / prev) * 100)}%`
+    return `${sign}${delta}（${pct}，基准 ${prev}）`
+  }
+  return `${sign}${delta}（基准 ${prev}）`
 }
 
 /** 日期短标签：M/D */
@@ -1049,15 +1173,25 @@ function shortDate(d) {
  * `prevMetrics` 为上一同等周期指标（调用方偏移窗口计算）——为报告提供
  * 「环比 / 与上周 / 上月对照」基准；每条清单带 id，便于报告引用具体对象。
  */
-async function buildReviewDigest(snapshot, metrics, now, periodStart, scope, prevMetrics, monthly) {
+async function buildReviewDigest(
+  snapshot,
+  metrics,
+  now,
+  periodStart,
+  scope,
+  prevMetrics,
+  monthly,
+  windowInfo,
+) {
   const label = `本${scope}`
-  const prevLabel = `上${scope}`
+  const prevLabel = `上${scope}同期`
   const daysLate = (due) => Math.max(0, calendarDayDiff(now, new Date(due)))
   const periodLabel = monthly ? monthKey(now) : isoWeekKey(now)
+  const { prevStart, prevEnd, elapsedDays } = windowInfo
 
   const completed = (snapshot.tasks ?? [])
     .filter((t) => inRange(t.doneAt, periodStart, now))
-    .map((t) => `${t.id} · ${t.title}`)
+    .map((t) => `${t.title}（${t.id}）`)
 
   const overdue = (snapshot.tasks ?? [])
     .filter(
@@ -1066,13 +1200,13 @@ async function buildReviewDigest(snapshot, metrics, now, periodStart, scope, pre
         new Date(t.dueAt).getTime() < now.getTime() &&
         ['next', 'waiting', 'scheduled'].includes(t.status),
     )
-    .map((t) => `${t.id} · ${t.title} · 逾期 ${daysLate(t.dueAt)} 天`)
+    .map((t) => `${t.title}（${t.id}）· 逾期 ${daysLate(t.dueAt)} 天`)
 
   const staleList = staleProjects(snapshot, 14, now)
   const stale = staleList.map((p) => {
     const staleDays = Math.abs(calendarDayDiff(new Date(p.updatedAt), now))
     const next = p.nextActionId === undefined ? '' : ` · 下一步 ${p.nextActionId}`
-    return `${p.id} · ${p.title} · 停滞 ${staleDays} 天 · 完成定义：${p.outcome}${next}`
+    return `${p.title}（${p.id}）· 停滞 ${staleDays} 天 · 完成定义：${p.outcome}${next}`
   })
 
   const habits = (snapshot.habits ?? []).map((h) => {
@@ -1092,19 +1226,25 @@ async function buildReviewDigest(snapshot, metrics, now, periodStart, scope, pre
     .sort((a, b) => b[1] - a[1])
     .map(([action, count]) => `${action} ×${count}`)
 
-  return [
-    `【周期】${label} ${periodLabel} · 窗口 ${shortDate(periodStart)} → ${shortDate(now)}（本机时区）`,
+  const lines = [
+    `【周期】本${scope} ${periodLabel} · 窗口 ${shortDate(periodStart)} → ${shortDate(now)}（已走完 ${elapsedDays} 天，本机时区）`,
     `【${label}指标】捕获 ${metrics.captured} · 新增 ${metrics.created} · 完成 ${metrics.completed} · 逾期 ${metrics.overdue}`,
-    `【${prevLabel}指标（对照）】捕获 ${prevMetrics.captured} · 新增 ${prevMetrics.created} · 完成 ${prevMetrics.completed} · 逾期 ${prevMetrics.overdue}`,
-    `【环比（本${scope}相对上${scope}）】捕获 ${deltaText(metrics.captured, prevMetrics.captured)} · 新增 ${deltaText(metrics.created, prevMetrics.created)} · 完成 ${deltaText(metrics.completed, prevMetrics.completed)} · 逾期 ${deltaText(metrics.overdue, prevMetrics.overdue)}`,
-    `【${label}完成（${completed.length}，含 id）】\n${completed.join('\n') || '（无）'}`,
+    `【${prevLabel}指标（对照 · 窗口 ${shortDate(prevStart)} → ${shortDate(prevEnd)}）】捕获 ${prevMetrics.captured} · 新增 ${prevMetrics.created} · 完成 ${prevMetrics.completed} · 逾期 ${prevMetrics.overdue}`,
+    `【环比（本${scope}相对${prevLabel} · 等长窗口）】捕获 ${formatDelta(metrics.captured, prevMetrics.captured)} · 新增 ${formatDelta(metrics.created, prevMetrics.created)} · 完成 ${formatDelta(metrics.completed, prevMetrics.completed)} · 逾期 ${formatDelta(metrics.overdue, prevMetrics.overdue)}`,
+    `【${label}完成（${completed.length}，标题优先 · 括号补 id）】\n${completed.join('\n') || '（无）'}`,
     `【当前逾期（${overdue.length}）】\n${overdue.join('\n') || '（无）'}`,
     `【停滞项目（≥14 天未更新，共 ${stale.length}）】\n${stale.join('\n') || '（无）'}`,
     `【可处置停滞项目 id】${staleList.map((p) => p.id).join(', ') || '（无）'}`,
     `【习惯（近 7 天 / 上 7 天 / 连续未达标周数）】\n${habits.join('\n') || '（无）'}`,
     `【${label}活动计数】\n${activityLines.join('\n') || '（无）'}`,
     `【阈值常量】逾期 = 任务截止时间已过且状态为 next/waiting/scheduled；停滞 = active 项目 ≥14 天未更新；习惯未达标 = 近 7 天命中数 < 目标数`,
-  ].join('\n\n')
+  ]
+  if (elapsedDays < 7) {
+    lines.push(
+      `【窗口说明】本期窗口尚未走完（已 ${elapsedDays} 天，未满 7 天）；对照为${prevLabel}（${shortDate(prevStart)} → ${shortDate(prevEnd)}）。请在「结论速览」或「风险预警」里自然说明窗口不完整、结论仅供参考，禁止以「窗口仅 N 天」作为结论开场。`,
+    )
+  }
+  return lines.join('\n\n')
 }
 
 /**
@@ -1118,13 +1258,13 @@ function buildReviewSystem(digest, scope) {
 
 - summary：中文纯文本，恰好 7 段，段与段之间用一个换行分隔。每段以「结论式标题」开头，标题后接「：」。全篇不超过 800 字。七段依次为：
   1. 结论速览：一句话结论 + 关键数字（数字必须带对比基准）
-  2. 本期数据解读：逐项数字 + 环比（与上${scope}对照）
+  2. 本期数据解读：逐项数字 + 环比（与上${scope}同期等长窗口对照）
   3. 趋势与对比：方向（上升 / 下降 / 持平）+ 连续周数（摘要中有则写，没有就写「数据不足」）
-  4. 问题诊断：一层因果（现象 → 原因）+ 数据证据（引用摘要中的具体 id 或数字）
+  4. 问题诊断：一层因果（现象 → 原因）+ 数据证据（优先引用摘要中的对象标题，必要时括号补 id）
   5. 值得保留：至少一条本${scope}在起作用的做法（带数据支撑）
-  6. 下期行动：1–3 条 if-then，格式「如果…，那么…」，每条写明 做什么 + 何时 + 完成标准，并绑定摘要中的任务 / 项目名或 id
-  7. 风险预警：越线阈值 + 触发对象（逾期任务 id / 停滞项目 id）
-- decisions：1–3 条中文 if-then 行动（与第 6 段一致，每条一行、含时间与完成标准）
+  6. 下期行动：只写一行指针，固定为「下期行动：见决策区（N 条）。」（N = decisions 条数，1–3）。完整 if-then 行动全部放进 decisions，正文此段不再重复。
+  7. 风险预警：越线阈值 + 触发对象（逾期任务 / 停滞项目，优先标题、必要时括号补 id）
+- decisions：1–3 条中文 if-then 行动（每条一行、含时间与完成标准；正文第 6 段只留指针，完整行动在此）
 - staleAdvice：数组，可空：{ projectId, action: 'archive'|'migrate'|'reactivate', reason }，仅针对摘要中列出的停滞项目
 
 【本${scope}数据摘要】
@@ -1132,17 +1272,20 @@ ${digest}
 
 硬性规则（违反即不合格）：
 1. 只能使用摘要中出现的数字、日期、标题、id；禁止编造任何数字或对象。
-2. 每个判断都要有具体数字或具体对象（id / 标题）作为证据。
-3. 任何绝对值都要带对比基准（环比 / 上${scope} / 目标）。
+2. 每个判断都要有具体数字或具体对象作为证据。
+3. 任何绝对值都要带对比基准（环比 / 上${scope}同期 / 目标）。
 4. 禁止套话：「显著 / 一定程度 / 多方面 / 持续发力 / 闭环 / 赋能 / 值得注意 / 综上所述 / 整体向好」等一律不许出现。
 5. 短句、主动语态；结论先行。
 6. 证据不足就写「数据不足」，不要硬凑。
-7. 行动必须 if-then，且含 何时 + 完成标准。
+7. 行动必须 if-then，且含 何时 + 完成标准（全部写在 decisions）。
 8. 允许（并鼓励）指出不确定性；不夸大。
+9. 叙述优先用对象标题（摘要清单已是「标题（id）」）；id 只在 decisions 的行动里为绑定对象时以括号补充，可选。
+10. 百分比只在基准 ≥5 时使用；基准 <5 时只写绝对变化并注明基准（如「+2（基准 0）」），禁止硬算百分比。
+11. 若摘要含【窗口说明】（窗口未满 7 天），在「结论速览」或「风险预警」里自然说明窗口不完整；禁止以「窗口仅 N 天」作为结论开场。
 
 对照示例（字母仅示形，写作时必须替换成摘要里的真实数字）：
 弱（禁止）："本${scope}整体推进顺利，效率显著提升，需持续发力。"
-强（合格）："完成 X 项，比上${scope} Y 项多 Z 项（+P%）；新增 M 项，比上${scope} N 项少 Q 项（-R%）。"
+强（合格）："完成 X 项，比上${scope}同期 Y 项多 Z 项。"（仅当基准 Y≥5 时才补「+P%」）
 
 staleAdvice.projectId 只能取「可处置停滞项目 id」中列出的 id；没有把握就返回空数组。`
 }
@@ -1236,13 +1379,11 @@ export async function generateReviewDraft(period = 'weekly') {
   const monthly = period === 'monthly'
   const scope = monthly ? '月' : '周'
   const snapshot = await loadSnapshot()
-  const periodStart = monthly ? startOfMonth(now) : startOfWeekMonday(now)
+  // 同期窗口（Slice U）：进行中的周期对照上一周期**同等已走完长度**——
+  // 月：本月 1..N 日 ↔ 上月 1..N 日；周：本周至今 ↔ 上周同期；短月按上月末截断。
+  const { periodStart, prevStart, prevEnd, elapsedDays } = reviewWindows(now, monthly)
   const metrics = monthly ? computeMonthMetrics(snapshot, now) : computeWeekMetrics(snapshot, now)
-  // 上一同等周期指标：把 now 落在本周期起点前 1ms，窗口即自动回退一个周期（周对周 / 月对月）
-  const prevRef = new Date(periodStart.getTime() - 1)
-  const prevMetrics = monthly
-    ? computeMonthMetrics(snapshot, prevRef)
-    : computeWeekMetrics(snapshot, prevRef)
+  const prevMetrics = computeSameWindowPrevMetrics(snapshot, now, monthly)
   const staleList = staleProjects(snapshot, 14, now)
   const staleIds = new Set(staleList.map((p) => p.id))
   const digest = await buildReviewDigest(
@@ -1253,6 +1394,7 @@ export async function generateReviewDraft(period = 'weekly') {
     scope,
     prevMetrics,
     monthly,
+    { prevStart, prevEnd, elapsedDays },
   )
   const system = buildReviewSystem(digest, scope)
   const created = pick(await getClient().session.create({ title: 'kernel:review-draft' }))
@@ -1267,6 +1409,8 @@ export async function generateReviewDraft(period = 'weekly') {
     digest,
   )
   const clean = postValidateDraft(draft, staleIds)
+  // 「下期行动」去重（Slice U）：第 6 段改为指针，完整行动只在 decisions（杜绝逐字重复）
+  const summary = dedupeActionSection(clean.summary, clean.decisions)
   const model = modelOf(res)
   const ms = Date.now() - t0
   console.log(
@@ -1276,7 +1420,7 @@ export async function generateReviewDraft(period = 'weekly') {
     periodKey: monthly ? monthKey(now) : isoWeekKey(now),
     metrics,
     prevMetrics,
-    summary: clean.summary,
+    summary,
     decisions: clean.decisions,
     staleAdvice: clean.staleAdvice,
     staleProjectIds: [...staleIds],

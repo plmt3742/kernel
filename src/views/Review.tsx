@@ -17,6 +17,7 @@ import { getEnergyDistribution, getWeeklyCompletionSeries } from '@/lib/derive'
 import { daysFromToday, formatDateTime, isoWeekKey, toMonthKey } from '@/lib/date'
 import { errorText } from '@/lib/api'
 import { useDataRevision } from '@/lib/hooks'
+import { parseReviewSummary, sectionParagraphs } from '@/lib/reviewReport'
 import {
   generateReviewDraft,
   hydrateFromServer,
@@ -104,27 +105,64 @@ function MetricTiles({ metrics, withFoot }: { metrics: ReviewMetrics; withFoot?:
 }
 
 /**
- * 报告正文渲染（纯文本，无 dangerouslySetInnerHTML）：
- * 按换行切段，每段若以「标题：」开头则把标题渲染为独立小标题行——
- * 让七段彼此成为清晰区块，而不是挤成一行。
+ * 报告正文·阅读视图（Slice U，纯文本，无 dangerouslySetInnerHTML）：
+ * 用 `parseReviewSummary` 拆成七段，渲染为「序号 + 标题行 + 正文段落」的安静分栏，
+ * 舒适行距与测度。无法识别分节（旧归档 / 手写正文）时回退为整段渲染。
  */
-function ReportText({ text }: { text: string }): ReactNode {
-  const paras = text
-    .split(/\n+/)
-    .map((para) => para.trim())
-    .filter((para) => para !== '')
-  return (
-    <div className="k-report__summary">
-      {paras.map((para, index) => {
-        const colon = para.indexOf('：')
-        const hasTitle = colon > 0 && colon <= 16
-        return (
+function ReportReadView({ text }: { text: string }): ReactNode {
+  const { intro, sections } = parseReviewSummary(text)
+  if (sections.length === 0) {
+    const paras = sectionParagraphs(text)
+    return (
+      <div className="k-report__summary">
+        {paras.map((para, index) => (
           <p className="k-report__para" key={`${index}-${para.slice(0, 6)}`}>
-            {hasTitle && <span className="k-report__para-title">{para.slice(0, colon)}</span>}
-            {hasTitle ? para.slice(colon + 1).trim() : para}
+            {para}
           </p>
+        ))}
+      </div>
+    )
+  }
+  return (
+    <div className="k-report__sections">
+      {intro !== '' && <p className="k-report__intro">{intro}</p>}
+      {sections.map((section, index) => {
+        const bodyParas = sectionParagraphs(section.body)
+        return (
+          <section className="k-report__section" key={`${index}-${section.label}`}>
+            <header className="k-report__section-head">
+              <span className="k-report__section-index u-mono">{String(index + 1).padStart(2, '0')}</span>
+              <h3 className="k-report__section-title">{section.label}</h3>
+            </header>
+            <div className="k-report__section-body">
+              {bodyParas.length === 0 ? (
+                <p className="k-report__para k-muted">（本段无内容）</p>
+              ) : (
+                bodyParas.map((para, pIndex) => (
+                  <p className="k-report__para" key={`${index}-${pIndex}-${para.slice(0, 6)}`}>
+                    {para}
+                  </p>
+                ))
+              )}
+            </div>
+          </section>
         )
       })}
+    </div>
+  )
+}
+
+/** 决策清单（阅读视图 / 只读弹窗共用）：安静编号 + 一行一条 if-then */
+function DecisionsList({ decisions }: { decisions: string[] }): ReactNode {
+  if (decisions.length === 0) return <p className="k-muted">本期无决策记录。</p>
+  return (
+    <div className="k-stack">
+      {decisions.map((decision, index) => (
+        <p className="k-decision" key={`${index}-${decision.slice(0, 6)}`}>
+          <span className="u-mono k-accent">{String(index + 1).padStart(2, '0')}</span>
+          {decision}
+        </p>
+      ))}
     </div>
   )
 }
@@ -137,6 +175,8 @@ export function Review() {
     monthly: IDLE_RUNTIME,
   })
   const [modal, setModal] = useState<ModalState>(null)
+  // 弹窗默认「阅读视图」；「编辑」进入编辑视图，「完成」回到阅读（Slice U）
+  const [editing, setEditing] = useState(false)
   const [editSummary, setEditSummary] = useState('')
   const [editDecisions, setEditDecisions] = useState('')
 
@@ -177,16 +217,19 @@ export function Review() {
     if ('draft' in preview) {
       setEditSummary(preview.draft.summary)
       setEditDecisions(preview.draft.decisions.join('\n'))
+      setEditing(false)
       setModal({ mode: 'edit', kind, reviewId: preview.draft.reviewId ?? null })
       return
     }
     setEditSummary(preview.saved.summary)
     setEditDecisions(preview.saved.decisions.join('\n'))
+    setEditing(false)
     setModal({ mode: 'edit', kind, reviewId: preview.saved.id })
   }
 
-  /** 只读查看某条归档报告（报告历史入口） */
+  /** 只读查看某条归档报告（报告历史入口）：与编辑弹窗共用阅读视图 */
   const openView = (reviewId: string): void => {
+    setEditing(false)
     setModal({ mode: 'view', reviewId })
   }
 
@@ -429,22 +472,11 @@ export function Review() {
               <MetricTiles metrics={review.metrics} withFoot />
               <div className="k-review__field">
                 <span className="k-review__label">报告正文 · REPORT（只读）</span>
-                <ReportText text={review.summary} />
+                <ReportReadView text={review.summary} />
               </div>
               <div className="k-review__field">
                 <span className="k-review__label">决策 · DECISIONS</span>
-                {review.decisions.length === 0 ? (
-                  <p className="k-muted">本期无决策记录。</p>
-                ) : (
-                  <div className="k-stack">
-                    {review.decisions.map((decision, index) => (
-                      <p className="k-decision" key={`${index}-${decision.slice(0, 6)}`}>
-                        <span className="u-mono k-accent">{String(index + 1).padStart(2, '0')}</span>
-                        {decision}
-                      </p>
-                    ))}
-                  </div>
-                )}
+                <DecisionsList decisions={review.decisions} />
               </div>
             </>
           )}
@@ -472,10 +504,13 @@ export function Review() {
             <button type="button" className="k-btn" onClick={() => setModal(null)}>
               关闭
             </button>
-          ) : (
+          ) : editing ? (
             <>
               <button type="button" className="k-btn" onClick={() => runDraft(kind)} disabled={saving}>
                 重新生成
+              </button>
+              <button type="button" className="k-btn" onClick={() => setEditing(false)}>
+                完成
               </button>
               <button
                 type="button"
@@ -484,6 +519,15 @@ export function Review() {
                 disabled={!canSave}
               >
                 {saving ? '保存中…' : '保存回顾'}
+              </button>
+            </>
+          ) : (
+            <>
+              <button type="button" className="k-btn" onClick={() => runDraft(kind)} disabled={saving}>
+                重新生成
+              </button>
+              <button type="button" className="k-btn is-solid" onClick={() => setEditing(true)}>
+                编辑
               </button>
             </>
           )
@@ -495,34 +539,54 @@ export function Review() {
           <>
             <MetricTiles metrics={report.metrics} withFoot />
 
-            <div className="k-review__field">
-              <label className="k-review__label" htmlFor={`review-summary-${kind}`}>
-                报告正文 · REPORT（七段：结论速览 → … → 风险预警，可编辑）
-              </label>
-              <textarea
-                id={`review-summary-${kind}`}
-                className="k-review__ta k-review__ta--report"
-                rows={14}
-                value={editSummary}
-                onChange={(event) => setEditSummary(event.target.value)}
-                placeholder="结论速览：…"
-                disabled={!editable}
-              />
-            </div>
+            {editing ? (
+              <>
+                <div className="k-review__field">
+                  <label className="k-review__label" htmlFor={`review-summary-${kind}`}>
+                    报告正文 · REPORT（七段：结论速览 → … → 风险预警，可编辑）
+                  </label>
+                  <textarea
+                    id={`review-summary-${kind}`}
+                    className="k-review__ta k-review__ta--report"
+                    rows={14}
+                    value={editSummary}
+                    onChange={(event) => setEditSummary(event.target.value)}
+                    placeholder="结论速览：…"
+                    disabled={!editable}
+                  />
+                </div>
 
-            <div className="k-review__field">
-              <label className="k-review__label" htmlFor={`review-decisions-${kind}`}>
-                决策 · DECISIONS（每行一条，1–3 条）
-              </label>
-              <textarea
-                id={`review-decisions-${kind}`}
-                className="k-review__ta"
-                rows={4}
-                value={editDecisions}
-                onChange={(event) => setEditDecisions(event.target.value)}
-                placeholder="如果…，那么…"
-              />
-            </div>
+                <div className="k-review__field">
+                  <label className="k-review__label" htmlFor={`review-decisions-${kind}`}>
+                    决策 · DECISIONS（每行一条，1–3 条）
+                  </label>
+                  <textarea
+                    id={`review-decisions-${kind}`}
+                    className="k-review__ta"
+                    rows={4}
+                    value={editDecisions}
+                    onChange={(event) => setEditDecisions(event.target.value)}
+                    placeholder="如果…，那么…"
+                  />
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="k-review__field">
+                  <span className="k-review__label">报告正文 · REPORT（七段）</span>
+                  <ReportReadView text={editSummary} />
+                </div>
+                <div className="k-review__field">
+                  <span className="k-review__label">决策 · DECISIONS</span>
+                  <DecisionsList
+                    decisions={editDecisions
+                      .split('\n')
+                      .map((line) => line.trim())
+                      .filter((line) => line !== '')}
+                  />
+                </div>
+              </>
+            )}
 
             {draft !== null && draft.staleAdvice.length > 0 && (
               <div className="k-review__field">

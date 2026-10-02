@@ -1719,6 +1719,55 @@
   color: var(--ink);
   margin-bottom: var(--space-1);
 }
+
+/* 阅读视图（Slice U）：七段各自成块——序号 + 标题行 + 正文段落，舒适测度与留白 */
+.k-report__sections {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+.k-report__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.k-report__section + .k-report__section {
+  padding-top: var(--space-4);
+  border-top: var(--hairline) solid var(--rule-soft);
+}
+.k-report__section-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+.k-report__section-index {
+  color: var(--muted);
+  font-size: var(--text-caption);
+}
+.k-report__section-title {
+  font-size: var(--text-h4);
+  line-height: var(--text-h4-leading);
+  letter-spacing: var(--text-h4-tracking);
+  font-weight: 600;
+  color: var(--ink);
+}
+.k-report__section-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-width: 68ch;
+}
+.k-report__intro {
+  max-width: 68ch;
+  color: var(--ink-2);
+  font-size: var(--text-body);
+  line-height: 1.75;
+}
+/* 阅读视图正文：舒适行距与测度（覆盖整段回退的默认行高） */
+.k-report__sections .k-report__para {
+  line-height: 1.75;
+}
+
 /* 编辑态报告正文：给足高度、行距，便于编辑七段 */
 .k-review__ta--report {
   min-height: 15rem;
