@@ -33,7 +33,10 @@ kernel/
 │     ├─ 0001-naming-kernel.md
 │     ├─ 0002-no-role-silos.md
 │     ├─ 0003-design-direction-v2.md
-│     └─ 0004-data-service-v0.4.md
+│     ├─ 0004-data-service-v0.4.md
+│     ├─ 0005-opencode-ai-v0.5.md
+│     ├─ 0006-ai-parse-upgrade.md
+│     └─ 0007-ai-weekly-review.md
 │
 ├─ data/                        # 数据源（一记录一文件；v0.4 起写入经数据服务）
 │  ├─ activity.jsonl            # 审计日志（每次变更追加；服务创建）
@@ -53,6 +56,7 @@ kernel/
 │
 ├─ server/                      # 数据服务（v0.4：单写者 · 原子写 · Zod 校验 · 审计；仅 127.0.0.1:4097）
 │  ├─ index.mjs                 # HTTP 入口与路由
+│  ├─ ai.mjs                    # AI 代理（opencode 接入：解析 / 挂接建议 / SSE 过程流）
 │  ├─ store.mjs                 # 存储层（读快照 / 串行写队列 / nextId / activity.jsonl）
 │  └─ schemas.mjs               # Zod schema（写入前校验的唯一事实源）
 │
@@ -62,9 +66,9 @@ kernel/
 │  ├─ views/                    # 八个视图（Overview/Inbox/Tasks/Calendar/Projects/Library/Review/Settings）
 │  ├─ components/               # 通用组件
 │  │  ├─ shell/                 # 应用壳（RailNav / TopBar / StatusBar / AppLayout）
-│  │  └─ charts/                # 图表（TrendBars / EnergyBars）
+│  │  └─ charts/                # 图表（TrendLine / EnergyBars）
 │  ├─ context/                  # React Context（Theme / Toast / Palette）
-│  ├─ lib/                      # 数据访问与工具（data 可变快照 / api 客户端 / mutations 写入动作 / derive / date / format / motion / focus / hooks）
+│  ├─ lib/                      # 数据访问与工具（data 可变快照 / api 客户端 / mutations 写入动作 / derive / relations 互链派生 / date / format / motion / focus / hooks）
 │  └─ styles/                   # 全局样式与 token（tokens / base / shell / components / views）
 │
 ├─ design-drafts/               # 设计选型稿（v1 视觉方向 a/b/c；v2 页面排版多版本 29 方案 + 选型页 index.html + 三版对比页 _sheets/）
@@ -72,6 +76,7 @@ kernel/
 │
 ├─ scripts/                     # 脚本
 │  ├─ dev.mjs                   # 开发启动器（数据服务 + Vite 一体启动；--preview 走 preview）
+│  ├─ spawn-bg.mjs              # 后台安全启动器（detached spawn + 日志重定向；防工具调用挂起）
 │  └─ seed.mjs                  # 种子数据生成
 └─ public/                      # 静态资源（字体、图标）
 ```
@@ -88,7 +93,7 @@ kernel/
 | `data/` | 数据源，一记录一文件 JSON；v0.4 起写入一律经 `server/` 数据服务（单写者） | 数据服务（唯一写者） |
 | `server/` | 数据服务：Zod 校验 + 原子写 + 审计日志；仅监听 127.0.0.1:4097 | 数据层实现方 |
 | `src/` | React + TypeScript 前端应用（只读数据经水合，写入经 API） | 前端实现方 |
-| `scripts/` | 开发启动器（`dev.mjs`）与种子数据生成（`seed.mjs`） | 工程 |
+| `scripts/` | 开发启动器（`dev.mjs`）、后台安全启动器（`spawn-bg.mjs`）与种子数据生成（`seed.mjs`） | 工程 |
 | `public/` | 静态资源：自托管字体、图标 | 前端实现方 |
 | 根目录 `*.md` | 门面与台账（README / AGENTS / CHANGELOG / TASK_BOOK） | 文档工程师 |
 
@@ -118,7 +123,7 @@ kernel/
 | `src/views/` | 八个视图页面，一一对应宪法 §4 的视图规格 |
 | `src/components/` | 可复用组件（含 `shell/` 与 `charts/` 子目录），命名遵循设计系统签名词汇 |
 | `src/context/` | React Context：主题、Toast、命令面板开关 |
-| `src/lib/` | 数据访问与写入动作（data 可变快照 / api 客户端 / mutations / derive）、日期、格式化、动效常量、焦点工具、共享 hooks |
+| `src/lib/` | 数据访问与写入动作（data 可变快照 / api 客户端 / mutations / derive / relations 实体互链）、日期、格式化、动效常量、焦点工具、共享 hooks |
 | `src/styles/` | 全局样式、CSS 变量 token、主题定义（唯一事实源 `tokens.css`） |
 
 ## 5. 维护规则

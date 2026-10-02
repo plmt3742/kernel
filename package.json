@@ -14,6 +14,7 @@
   "dependencies": {
     "@fontsource-variable/inter": "^5.1.0",
     "@fontsource/jetbrains-mono": "^5.1.0",
+    "@opencode-ai/sdk": "^1.18.34",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "date-fns": "^4.1.0",

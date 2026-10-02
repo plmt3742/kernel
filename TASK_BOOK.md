@@ -9,7 +9,7 @@ KERNEL 的任务台账与迭代记录。记录当前迭代目标、未来待办�
 ## 下一会话待办（Handoff · 2026-10-02 修订）
 
 > **新会话处理入口**：先读 `AGENTS.md` → 本清单 → 按序处理。每项均附上下文与落点。
-> 状态：v0.4.0 已交付（数据服务 + 前端写入改造 + 审阅 P0 六项 + 路由滚动记忆）；页面排版选型已落地 10/10（总览「工作台」已落地）；数据服务运行于 `127.0.0.1:4097`；近期改动未提交，待复核后提交。
+> 状态：v0.4.0 已交付（数据服务 + 前端写入改造 + 审阅 P0 六项 + 路由滚动记忆）；页面排版选型已落地 10/10；**v0.5 首个切片（收件箱「AI 解析」）已交付**；**互联 Slice A（深链 + 关联区块）、AI 澄清升级 Slice B（上下文注入 + 挂接建议 + SSE 过程可视）与 AI 周回顾 Slice C（草稿 → 编辑 → 确认落盘 / 撤销）已交付**（验收：A 20/20、B E2E 13/13、C 冒烟 PASS + E2E 13/13，证据 `.qa/v14/`）；数据服务运行于 `127.0.0.1:4097`；近期改动未提交，待复核后提交。
 
 ### A. 验收（所有者）
 
@@ -30,6 +30,60 @@ KERNEL 的任务台账与迭代记录。记录当前迭代目标、未来待办�
 
 - [ ] 种子数据以 2026-10-02 为"现在"；时间久了用 `npm run seed -- --force` 重置演示数据。
 - [ ] `design-drafts/`（三份设计稿 + 选型页）保留作方向参考；`.qa/` 证据归档保留（体积小）。
+
+---
+
+## v0.5 opencode AI 接入 · 首个切片（已完成 · 2026-10-02）
+
+所有者指令「走 opencode 的现有默认配置」；先以实证探针（`.qa/v13/probe1–5`）核对全部关键假设再落地：**收件箱「AI 解析」**（条目 → 结构化建议 → 确认 → 走既有澄清写入）。`tsc -b` + `npm run build` 通过；服务端冒烟 + UI 端到端（Playwright）全绿；测试后数据已复原（零残留）。
+
+- [x] 服务端：`server/ai.mjs`（SDK v2 代理；指令式 JSON + Zod + 单次重试 + 120s 超时 + 可选 Basic 认证）；`GET /api/ai/health`、`POST /api/ai/inbox/:id/parse`（404/409/503/502）。
+- [x] 写入：`clarifyInbox` 扩展 `details`（title/contexts/energy/importance/estimateMin/dueAt/tags）+ `ai` 审计标记（向后兼容；撤销沿用 revert）。
+- [x] 启动：`dev.mjs` 探测 4096，空闲则托管拉起 `opencode serve --port 4096`（已运行跳过；缺 CLI 仅告警）。
+- [x] 前端：收件箱「AI 解析」入口 + 建议卡（安静样式）；状态条 / 设置页 AI 实时状态（在线 / 离线）。
+- [x] 实证修正（ADR-0005）：serve 需显式 `--port 4096`；`format: json_schema` 在 thinking 模型被拒 → 指令式 JSON；`variant: 'low'` 4.4s vs 默认 236s。
+- [ ] 顺延：SSE 流式进度、命令面板 AI 入口、通知 / 文件投递解析（原始诉求完整体）。
+- 证据：`.qa/v13/`（probe1–5、smoke-ai、inbox-ai-*、settings-ai）。
+
+---
+
+## 结构互联 · Slice A（已完成 · 2026-10-02）
+
+把跨实体引用变为可见、可点击（为后续 AI 关联建议打底）。`npm run build`（tsc strict + vite）通过；行为级验收（Python Playwright）20/20 通过——深链直开 / 关联芯片跳转 / 下一步 / 查看项目 / ESC 清参 / 移动端 390 / 控制台零错误（证据 `.qa/v14/`）。
+
+- [x] `src/lib/relations.ts`：快照级线性扫描，返回 `{ kind, id, title, label }` 的出链 + 入链；任务（项目/区域/父任务/来源条目 · 子任务/作为下一步）、项目（区域/目标/下一步 · 任务/事件/笔记）、笔记（项目/区域/links · 反向链接）、事件（项目/区域）、资源（区域）。
+- [x] `src/components/Relations.tsx`：抽屉内「关联」区块，`TagPill` 芯片（label · title · id），路由映射 task/project/note/resource/event/inbox；area/goal 无页面 → 静态芯片；空则不渲染。
+- [x] 深链：`?project=`（Projects）/`?note=`、`?resource=`（Library）/`?event=`（Calendar），复用 `?task=` 的打开-关闭-replace 清参模式。
+- [x] 集成五类抽屉；笔记「反向链接」保留。
+- [x] 项目抽屉「下一步」字段；任务抽屉「查看项目」条件深链 / 无项目隐藏。
+- [x] 版本串 v0.4.0 → v0.5.0（RailNav / 设置）；命令面板 AI 组更新为「AI 解析（收件箱）→ /inbox」。
+
+---
+
+## AI 澄清升级 · Slice B（已完成 · 2026-10-02）
+
+收件箱 AI 解析升级：从「单点分类器」到「接入系统的连接器 + 过程可视」。服务端冒烟（SSE 帧）+ 浏览器 E2E 13/13 + `npm run build` 全通过；证据 `.qa/v14/`。
+
+- [x] 上下文注入：`buildDigest`（项目 / 区域 / 标签 / 近期未完成 ≤50，~4KB）注入系统提示；建议 schema 扩 `projectId / areaId / tags / duplicateOf`。
+- [x] 防臆造：`postValidate` 按快照过滤未知 id / 未注册标签；null 归一化。
+- [x] clarify 联动：`clarifyDetailsSchema` + `clarifyInbox` 支持 `projectId / areaId`（仅 task；存在性校验）。
+- [x] SSE 过程流：`POST /api/ai/inbox/:id/parse-stream`（`event.subscribe` 泵 + `status / delta / retry / suggestion / error` 帧 + 断开清理）；同步端点保留回退。
+- [x] 前端：`aiParseInboxStream` + 过程面板（阶段 + 240 字预览）+ 挂接 chips（绝不自动合并）。
+- [x] 工程：`scripts/spawn-bg.mjs` 后台安全启动器；AGENTS.md Windows 纪律修订（第三次卡死教训：`start` 方式挂起 → detached spawn）。
+- 实测：i-0001 建议挂接 `p-0006 + a-0002 + role:monitor`；冒烟 625 delta 帧 ≈4.9s；E2E 只读零写入。
+
+---
+
+## AI 周回顾 · Slice C（已完成 · 2026-10-02）
+
+AI 读整个系统生成周回顾草稿（指标 + 摘要 + 决策 + 停滞处置建议）→ 用户在回顾页编辑 → 确认后写入真实 `review` 记录（撤销即删除）；回顾页显示最新周 / 月回顾并移除该流程全部「原型态」文案。`npm run build` 通过；服务端冒烟 PASS + 浏览器 E2E 13/13；证据 `.qa/v14/`。
+
+- [x] 写入路径：`reviewSchema` / `reviewDraftSchema`（`server/schemas.mjs`）；`SCHEMAS.reviews` + `ID_PATTERNS.reviews`；`store.nextId` 增 `reviews:'rev'`。
+- [x] 服务端：`isoWeekKey` / `computeWeekMetrics` / `staleProjects`（`server/ai.mjs`，与前端口径严格一致）；`POST /api/reviews`（服务端算 id / periodKey / metrics / staleProjectIds；审计 `review.create`）、`POST /api/reviews/:id/remove`（审计 `review.remove`）、`POST /api/ai/review/draft`（503 / 502）。
+- [x] AI 草稿：紧凑中文摘要注入 + 指令式 JSON + Zod + 单次重试（`variant:'low'`，120s）；`staleAdvice` 按实际停滞集合过滤臆造 id；`migrated` 刻意不产出（无编辑追踪来源，UI 显示 '—'）。
+- [x] 前端：`mutations.ts`（`generateReviewDraft / saveReview / removeReview` + `ReviewDraft`）；`date.ts`（`isoWeekKey / monthLabel`）；`types.ts`（`migrated?`）；`Review.tsx`（最新回顾按 date 倒序 / 周期运行时计算 / 真实草稿流 idle-loading-draft-error-saving / toast 撤销）；`views.css`（安静 token-only 草稿样式）。
+- [x] 验证：冒烟（草稿形状 + 写入 / 删除往返 + 审计，零残留）；E2E（草稿 / 编辑保留 / 保存 toast / 撤销复原 / 零控制台错误，零残留）；构建通过。
+- [x] 文档：ADR-0007；`docs/04 §4.10`（`migrated` 可缺省）；`docs/05` / `docs/README` 收录 0007。
 
 ---
 
@@ -238,18 +292,20 @@ KERNEL 的任务台账与迭代记录。记录当前迭代目标、未来待办�
 - [x] 前端写入改造为经 API 调用，移除 localStorage 原型态。
 - [x] 数据迁移与备份策略：原子写 + 审计日志 + git 跟踪 `data/`（ADR-0004）。
 
-### v0.5 opencode AI 集成
+### v0.5 opencode AI 集成（首个切片已交付 · 2026-10-02）
 
-- [ ] 本地 Node 服务代理链路：网页 → 本地服务 → `opencode serve`（仅 localhost）。
-- [ ] 接入 `@opencode-ai/sdk`：`session.create` / `prompt` / `prompt_async`。
-- [ ] 经 `event.subscribe`（SSE）推进度与流式结果。
-- [ ] 结构化输出 `format: json_schema`，用于生成待办、摘要、澄清建议。
-- [ ] 结果写回 `data/`，敏感操作显式确认。
-- [ ] AI 建议卡从占位转为可用。
+- [x] 本地 Node 服务代理链路：网页 → 本地服务 → `opencode serve`（仅 localhost）——`server/ai.mjs` + `dev.mjs` 自动拉起。
+- [x] 接入 `@opencode-ai/sdk`（v2 客户端、扁平调用）：`session.create` / `prompt`。
+- [x] 经 `event.subscribe`（SSE）推进度与流式结果 —— Slice B 落地（`/api/ai/inbox/:id/parse-stream` + 过程面板）。
+- [x] AI 建议挂接（Slice B）：系统摘要注入 + `projectId / areaId / tags / duplicateOf` + clarify 关联字段。
+- [x] 结构化建议：`format: json_schema` 在 thinking 模型被拒（ADR-0005）→ 指令式 JSON + Zod 校验 + 单次重试。
+- [x] 结果写回 `data/`：AI 只出建议；确认后走 clarify（`details` + `ai` 审计标记），撤销沿用 revert。
+- [ ] AI 建议卡从占位转为可用 —— **形态演进**：收件箱「AI 解析」建议卡已上线；总览建议卡留待后续增量。
+- [ ] 后续增量：通知 / 文件投递解析（原始诉求完整体）、命令面板 AI 入口。
 
 ### v0.6+
 
-- [ ] 回顾流程自动化：自动汇总指标、生成停滞项目清单、建议迁移。
+- [ ] 回顾流程自动化（Slice C 已部分落地 · 2026-10-02）：自动汇总指标 + 生成停滞清单 + 处置建议已交付（`/api/ai/review/draft` → 确认落盘）；顺延——页内停滞项目迁移 / 归档真实落盘、月回顾生成、编辑追踪支撑真实 `migrated` 统计。
 - [ ] 习惯热力图与连续打卡统计。
 - [ ] 搜索与命令面板的深度整合。
 
@@ -265,6 +321,7 @@ KERNEL 的任务台账与迭代记录。记录当前迭代目标、未来待办�
 
 | 日期 | 版本 | 完成项 |
 |---|---|---|
+| 2026-10-02 | v0.5.0（切片） | opencode AI 接入 · 首个切片：收件箱「AI 解析」（server/ai.mjs 代理 + 指令式 JSON + Zod；clarify details + ai 审计标记；dev.mjs 自动拉起 serve；前端建议卡 + 状态条/设置 AI 状态）；ADR-0005 + docs/02 修正；实测解析 3–6s；行为级 + 构建通过；证据 `.qa/v13/` |
 | 2026-10-02 | v0.4.0 | 总览落地「工作台」（三轮 C 采纳，选型 10/10 完结）：左工作区（已结束日程→实时「现在」分界→按截止行动 TOP5 + 项目后缀）+ 右粘性监视柱（水位 12/8 · WIP 9/3 · 14 日点阵 · 完成趋势/到期负载 sparkline）+ 项目推进（真实计数 9 进行中 + W40 行）；`TrendLine` 增补可选属性、水位口径 12/8 统一、`.k-streak` 入组件库、AI 建议占位退役；行为级验证 + 构建通过；证据 `.qa/v12/` |
 | 2026-10-02 | v0.4.0 | 全站排版落地（设计选型采纳 9 项）：收件箱 C / 任务 C / 日程 C / 项目 B / 资料 A / 回顾 B / 设置 B（+细化）/ 侧边栏（无边框高亮 + 侧边线）/ 详情面板 B（两段式 + 2 列字段网格）；全站回归零错误；`tsc` + `npm run build` 通过；证据 `.qa/v10/` |
 | 2026-10-02 | v0.4.0 | 页面多版本设计稿 v2（29 方案 + 选型页 + 9 张三版对比页；真 CSS / 真数据；待所有者选型）+ 路由滚动记忆（各页独立恢复 / 首访回顶；日历配合「首访到现在、回访恢复」）；Playwright 实测 + `npm run build` 通过 |

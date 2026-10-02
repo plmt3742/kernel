@@ -190,7 +190,7 @@
 | type | `weekly` \| `monthly` | |
 | periodKey | string | 如 `2026-W40` |
 | date | ISO | |
-| metrics | object | `{captured, created, completed, overdue, migrated}` |
+| metrics | object | `{captured, created, completed, overdue, migrated?}` —— `migrated` 可缺省（生成流程暂不产出；编辑追踪落地后补，见 ADR-0007） |
 | decisions | string[] | |
 | summary | string | |
 | staleProjectIds? | string[] | |

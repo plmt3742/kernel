@@ -90,11 +90,11 @@ lucide-react  react-markdown  @fontsource-variable/inter  @fontsource/jetbrains-
 ### 4.1 事实基础（已调研）
 
 - opencode 项目组织已迁移至 **`anomalyco/opencode`**。
-- `opencode serve` 默认监听 **`127.0.0.1:4096`**。
+- `opencode serve` 以 **`--port 4096`** 显式启动（v1.18 默认端口为 0/随机）；仅监听 `127.0.0.1`。
 - OpenAPI 文档位于 `/doc`。
-- SDK：`@opencode-ai/sdk`，使用 `createOpencodeClient`；会话 API 含 `session.create` / `prompt` / `prompt_async`。
+- SDK：`@opencode-ai/sdk`（v2 客户端、扁平调用），使用 `createOpencodeClient`；会话 API 含 `session.create` / `prompt` / `promptAsync`。
 - 事件流：`event.subscribe` 为 SSE。
-- 结构化输出：`format: json_schema`。
+- 结构化输出：`format: json_schema`（仅 v2 类型暴露；thinking 模式模型可能拒绝强制 tool_choice——v0.5 首个切片改用「指令式 JSON + Zod 校验」，见 ADR-0005）。
 - 鉴权：`OPENCODE_SERVER_PASSWORD`。
 
 ### 4.2 目标链路
@@ -111,7 +111,7 @@ lucide-react  react-markdown  @fontsource-variable/inter  @fontsource/jetbrains-
 
 - **opencode 永不直接暴露到局域网**，仅监听 `127.0.0.1`。
 - 敏感操作需显式确认。
-- AI 当前仅做 UI 预留：AI 建议卡、命令面板入口，徽标标注「待接入 v0.5」。
+- AI 已接入（v0.5：收件箱「AI 解析」→ 升级切片：上下文注入 + 挂接建议 + SSE 过程可视，见 ADR-0005 / ADR-0006）；状态条 / 设置页显示 AI 在线状态；命令面板 AI 入口留待后续。
 - 本地服务与 opencode 之间使用 `OPENCODE_SERVER_PASSWORD` 保护（本机场景下的纵深防御）。
 
 ## 5. 托管拓扑（局域网）

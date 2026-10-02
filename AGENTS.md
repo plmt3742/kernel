@@ -33,7 +33,7 @@
 
 ```bash
 npm install          # 安装依赖（前端 + 数据服务）
-npm run dev          # 本地开发：数据服务(127.0.0.1:4097) + Vite，默认 http://localhost:5173
+npm run dev          # 本地开发：数据服务(4097) + opencode serve(4096，自动) + Vite，默认 http://localhost:5173
 npm run dev -- --host    # 允许局域网 / 手机访问
 npm run dev:web      # 只启动前端（数据服务离线则写入不可用）
 npm run server       # 单独启动数据服务
@@ -42,9 +42,9 @@ npm run preview -- --host   # 预览构建产物（含数据服务），默认 h
 npm run seed         # 生成并写入种子数据到 data/（绕过服务，仅维护用）
 ```
 
-技术栈固定：Vite + React 19 + TypeScript（strict）+ 原生 CSS（CSS 变量 token），不使用 UI 框架、不使用 Tailwind。前端依赖白名单见 `docs/02-ARCHITECTURE.md`；服务端依赖（zod / write-file-atomic）见 ADR-0004。
+技术栈固定：Vite + React 19 + TypeScript（strict）+ 原生 CSS（CSS 变量 token），不使用 UI 框架、不使用 Tailwind。前端依赖白名单见 `docs/02-ARCHITECTURE.md`；服务端依赖（zod / write-file-atomic / @opencode-ai/sdk）见 ADR-0004 与 ADR-0005。
 
-> **Windows 操作纪律（2026-10-02 事故记录）**：不要在一行 cmd 中组合 `for /f` 变量循环 + `&` 链接 + 嵌套引号——cmd 会重解析导致命令体被重复执行（曾造成服务被杀、启动流程混乱）。查端口/杀进程分两步：先 `netstat -ano | findstr :<PORT>` 取 PID，再 `taskkill /F /PID <字面量>`；后台启动服务用单独、简单的命令（`start "" /min cmd /c "..."`）；等待服务就绪 ≥6 秒后再断言。
+> **Windows 操作纪律（2026-10-02 事故记录）**：不要在一行 cmd 中组合 `for /f` 变量循环 + `&` 链接 + 嵌套引号——cmd 会重解析导致命令体被重复执行（曾造成服务被杀、启动流程混乱）。查端口/杀进程分两步：先 `netstat -ano | findstr :<PORT>` 取 PID，再 `taskkill /F /PID <字面量>`。**后台启动长驻服务一律用 `node scripts/spawn-bg.mjs <日志文件> "<命令>"`**（detached spawn + stdio 重定向日志 + unref，约 1 秒返回；例：`node scripts/spawn-bg.mjs .qa/logs/dev.log "npm run dev"`）——直接用 `start "" /min cmd /c "... > log 2>&1"` 仍可能挂起工具调用（2026-10-02 第三次卡死：服务实际已启动但调用不返回），未重定向的启动方式则必然挂起（前两次）。等待服务就绪 ≥6 秒后，用 netstat / HTTP 探活再断言。
 
 ## 4. 数据纪律
 
@@ -87,6 +87,10 @@ npm run seed         # 生成并写入种子数据到 data/（绕过服务，仅
 
 | 日期 | 版本 | 变更摘要 | 影响文件 |
 |---|---|---|---|
+| 2026-10-02 | v0.5.0（切片） | AI 周回顾 · Slice C：`reviewSchema` / `reviewDraftSchema` + `SCHEMAS.reviews` / `ID_PATTERNS.reviews` + `nextId` 增 `rev`；服务端 `isoWeekKey` / `computeWeekMetrics` / `staleProjects`（镜像前端口径；`migrated` 刻意不产出）+ `POST /api/reviews`（审计 `review.create`）/ `/api/reviews/:id/remove`（`review.remove`）/ `POST /api/ai/review/draft`；前端最新周 / 月回顾按 date 倒序 + 周期运行时计算 + 真实 AI 草稿抽屉流（编辑 → 保存 → toast 撤销，移除原型态文案）；冒烟 PASS + E2E 13/13 + 构建通过，证据 `.qa/v14/` | `server/{ai,index,schemas,store}.mjs`、`src/views/Review.tsx`、`src/lib/{mutations,date}.ts`、`src/types.ts`、`src/styles/views.css`、`docs/decisions/0007-ai-weekly-review.md`、`docs/04`、`docs/05`、`docs/README.md`、`CHANGELOG.md`、`TASK_BOOK.md` |
+| 2026-10-02 | v0.5.0（切片） | AI 澄清升级 · Slice B：解析上下文注入（项目 / 区域 / 标签 / 近期任务摘要）+ 挂接建议（`projectId / areaId / tags / duplicateOf`，服务端按快照过滤臆造）+ clarify 支持 `projectId / areaId` + SSE `parse-stream` 流式过程可视（事件泵 + 阶段 / 预览面板）；新增 `scripts/spawn-bg.mjs` 后台安全启动器 + Windows 纪律修订（`start` 挂起第三次事故）；冒烟 + E2E 13/13 + 构建通过；证据 `.qa/v14/` | `server/{ai,index,schemas}.mjs`、`src/views/Inbox.tsx`、`src/lib/mutations.ts`、`src/styles/views.css`、`scripts/spawn-bg.mjs`、`AGENTS.md`、`docs/decisions/0006-ai-parse-upgrade.md`、`CHANGELOG.md`、`TASK_BOOK.md` |
+| 2026-10-02 | v0.5.0（切片） | 结构互联 · Slice A：`src/lib/relations.ts` 运行时互链派生 + `src/components/Relations.tsx`「关联」区块 + 深链补全（`?project / ?note / ?resource / ?event`）+ 项目抽屉「下一步」+ 「查看项目」深链 + 版本串 / 命令面板旧文案修复；演示数据重置为全新种子（144 记录）；行为级 20/20 + 构建通过；证据 `.qa/v14/` | `src/lib/relations.ts`、`src/components/Relations.tsx`、`src/views/{Tasks,Projects,Library,Calendar}.tsx`、`src/components/{CommandPalette,TagPill}.tsx`、`src/components/shell/RailNav.tsx`、`src/views/Settings.tsx`、`src/styles/views.css`、`CHANGELOG.md`、`TASK_BOOK.md` |
+| 2026-10-02 | v0.5.0（切片） | opencode AI 接入 · 首个切片：收件箱「AI 解析」（`server/ai.mjs` 代理 + 指令式 JSON + Zod；clarify `details` + `ai` 审计标记；`dev.mjs` 自动拉起 serve；前端建议卡 + AI 状态）；ADR-0005 + docs/02 修正；实测解析 3–6s；行为级 + 构建通过，证据 `.qa/v13/` | `server/**`、`scripts/dev.mjs`、`src/views/{Inbox,Settings}.tsx`、`src/lib/{hooks,mutations}.ts`、`src/components/shell/StatusBar.tsx`、`src/styles/views.css`、`docs/decisions/0005-opencode-ai-v0.5.md`、`docs/02`、`package.json` |
 | 2026-10-02 | v0.4.0 | 总览落地「工作台」（三轮 C 采纳，选型 10/10 完结）：左工作区 + 右粘性监视柱 + 项目推进（9 进行中 + W40）；`TrendLine` 增补可选属性（默认不变）/ 水位口径 12+8 / `.k-streak` 点阵入 `components.css` / AI 建议占位退役；行为级验证 + `tsc`/构建通过，证据 `.qa/v12/` | `src/views/Overview.tsx`、`src/styles/{views,components}.css`、`src/lib/derive.ts`、`src/components/{charts/TrendLine,TaskRow,ScheduleList,shell/StatusBar}.tsx`、`CHANGELOG.md`、`TASK_BOOK.md` |
 | 2026-10-02 | v0.4.0 | 总览三轮组件修订（所有者反馈）：「连续刷题」打卡带（粗竖条 + 斜纹）AI 感重 → 安静圆点阵（实心 = 命中 · 空心 = 缺口；8px 圆点行内均布，对齐 `.k-meter` 行高）；`overview-a/b/c` + `charts-kit` 同步 + BRIEF 附录二规范 + 预览重渲染 | `design-drafts/v2/**`、`CHANGELOG.md`、`TASK_BOOK.md` |
 | 2026-10-02 | v0.4.0 | 全站排版落地（设计选型采纳 9/10）：收件箱 C「批量」/ 任务 C「表格」/ 日程 C「议程流」/ 项目 B「列表」/ 资料 A「列表」/ 回顾 B「仪表盘」/ 设置 B「侧导航」+ 侧边栏选中态（无边框高亮 + 侧边线）+ 详情面板 B（两段式）；全站回归 + `.qa/v10/` 证据；总览待选型 | `src/views/**`、`src/styles/views.css`、`src/styles/shell.css`、`TASK_BOOK.md`、`CHANGELOG.md` |
@@ -110,5 +114,5 @@ npm run seed         # 生成并写入种子数据到 data/（绕过服务，仅
 - opencode 服务仅监听 `127.0.0.1:4096`，**永不直接暴露到局域网**。
 - 数据服务（v0.4）仅监听 `127.0.0.1:4097`，经 Vite 代理接入，永不直接暴露到局域网。
 - 敏感操作需显式确认。
-- AI 能力现仅 UI 预留（AI 建议卡、命令面板入口），标记"待接入 v0.5"（原 v0.4，路线图重编号后顺延）。
+- AI 能力已接入（v0.5：收件箱「AI 解析」→ Slice B 升级为上下文注入 + 挂接建议 + SSE 过程可视；Slice C 增「AI 周回顾草稿」——读全系统生成草稿，确认后经 `/api/reviews` 落盘、撤销即删除；经本地 opencode serve，仅 127.0.0.1:4096；状态条 / 设置页显示在线状态）。
 - 本系统不发布公网，局域网访问仅限可信 WiFi。详见 `docs/07-DEPLOYMENT.md`。

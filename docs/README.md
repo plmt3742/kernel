@@ -48,6 +48,10 @@ KERNEL 的完整文档集。本文件是导航中心，说明每份文档的职�
 | `decisions/0001-naming-kernel.md` | ADR | 命名决策：KERNEL |
 | `decisions/0002-no-role-silos.md` | ADR | 不做身份/领域分区 |
 | `decisions/0003-design-direction-v2.md` | ADR | 视觉方向 v2：C 柔暗 + 柔影悬浮 |
+| `decisions/0004-data-service-v0.4.md` | ADR | 数据服务：Node 单写者 + 原子写 + 审计 |
+| `decisions/0005-opencode-ai-v0.5.md` | ADR | v0.5 opencode 接入：收件箱「AI 解析」首个切片 |
+| `decisions/0006-ai-parse-upgrade.md` | ADR | AI 解析升级：上下文注入 + 挂接建议 + SSE 过程流 |
+| `decisions/0007-ai-weekly-review.md` | ADR | AI 周回顾（Slice C）：写入路径 + 草稿端点 + 指标口径 + 撤销 |
 
 ## 根目录文档（不在本目录）
 
