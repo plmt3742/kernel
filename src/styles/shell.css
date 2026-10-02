@@ -103,12 +103,13 @@
 .k-rail__item::before {
   content: '';
   position: absolute;
-  left: -2px;
+  left: calc(-1 * var(--space-2)); /* 对齐轨道左缘（抵消列表横向内边距） */
   top: 22%;
   bottom: 22%;
   width: 3px;
   border-radius: var(--radius-pill);
   background: transparent;
+  transition: background var(--dur-fast) var(--ease-standard);
 }
 .k-rail__cn {
   white-space: nowrap;
@@ -124,9 +125,8 @@
   color: var(--ink);
 }
 .k-rail__item.is-active {
-  background: var(--fill-tag);
+  background: var(--fill-secondary); /* 无边框高亮：仅填充，无描边/阴影 */
   color: var(--ink);
-  box-shadow: var(--shadow-highlight);
 }
 .k-rail__item.is-active::before {
   background: var(--accent);
@@ -648,6 +648,9 @@
     top: auto;
     width: auto;
     height: 3px;
+  }
+  .k-rail__item.is-active {
+    background: var(--fill-tag); /* 底部标签栏：高亮 + 底部强调线 */
   }
   .k-app .k-rail__cn {
     display: block;

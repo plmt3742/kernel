@@ -4,7 +4,7 @@ import { getActiveProjects, getInboxCount, getSnapshot } from '@/lib/data'
 import { getDataRecordCount } from '@/lib/derive'
 import { useDataSource } from '@/lib/hooks'
 
-const INBOX_THRESHOLD = 10
+const INBOX_THRESHOLD = 8
 
 function pad(value: number): string {
   return String(value).padStart(2, '0')

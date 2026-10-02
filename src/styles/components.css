@@ -465,41 +465,92 @@ button.k-pill.is-selected:hover {
  * 图表（单色 / 图案；强调色不作数据系列 —— P7）
  * ------------------------------------------------------------------------- */
 
-.k-trend {
-  display: flex;
-  align-items: flex-end;
-  gap: var(--space-3);
-  height: 140px;
-  border-bottom: var(--hairline) solid var(--outline);
-  padding-bottom: var(--space-2);
-}
-.k-trend__col {
-  flex: 1 1 0;
+/* ---------------------------------------------------------------------------
+ * 折线趋势图（趋势类图表的新默认形式：折线 + 面积晕染 + 数据点）
+ * 说明：替代原「圆头柱」柱状（所有者 2026-10-02 否决——柱体大圆角呈现不佳）。
+ * 纪律：单一墨色数据系列（P7）；强调色仅作峰值信号环，不作数据系列。
+ * 实现：SVG viewBox 0 0 1000 100 随容器拉伸；描边一律 non-scaling-stroke 保持像素恒定；
+ *       数据点用「零长度路径 + 圆头端帽」绘制（拉伸不变形）。
+ * ------------------------------------------------------------------------- */
+
+.k-line {
+  position: relative;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: flex-end;
   gap: var(--space-2);
+}
+.k-line__plot {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  border-bottom: var(--hairline) solid var(--outline);
+}
+.k-line__svg {
+  display: block;
+  width: 100%;
   height: 100%;
 }
-.k-trend__value {
+.k-line__stroke {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.k-line__dot {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 7;
+  stroke-linecap: round;
+}
+.k-line__peak {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 11;
+  stroke-linecap: round;
+}
+.k-line__value {
+  position: absolute;
+  transform: translate(-50%, calc(-100% - 6px));
+  white-space: nowrap;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.k-line__value.is-peak {
+  color: var(--accent-text);
+}
+.k-line__axis {
+  position: relative;
+  height: 15px;
+}
+.k-line__label {
+  position: absolute;
+  transform: translateX(-50%);
+  white-space: nowrap;
   color: var(--muted);
 }
-.k-trend__bar {
-  width: 100%;
-  border-radius: var(--radius-pill) var(--radius-pill) 0 0;
-  background: linear-gradient(180deg, var(--ink), var(--ink-2));
-  min-height: 4px;
-  transform-origin: bottom;
+
+/* ---------------------------------------------------------------------------
+ * Streak —— 连续打卡点阵（实心=命中 · 空心=缺口；总览监视柱用）
+ * ------------------------------------------------------------------------- */
+
+.k-streak {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 3px;
 }
-.k-trend__bar.is-empty {
-  background: var(--rule-soft);
-  /* 0 值退化为细基线：与实值柱区分，不再呈现为孤立圆头短柱 */
-  min-height: 2px;
-  border-radius: 0;
+.k-streak__cell {
+  flex: 1 1 0;
+  min-width: 5px;
+  max-width: 8px;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: var(--ink-2);
 }
-.k-trend__label {
-  color: var(--muted);
+.k-streak__cell.is-miss {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--outline-strong);
 }
 
 .k-energy {

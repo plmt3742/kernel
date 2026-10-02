@@ -10,6 +10,8 @@ import {
   isSameDay,
   startOfWeek,
   toDate,
+  toISODateString,
+  upcomingDays,
 } from '@/lib/date'
 
 /* ---------------------------------------------------------------------------
@@ -51,6 +53,14 @@ export function getOverdueOpen(now: Date = new Date()): Task[] {
   )
 }
 
+/** 即将到期的下一步行动：status==='next'、有 dueAt 且未逾期，按截止升序（不含逾期） */
+export function getUpcomingNextActions(limit = 5, now: Date = new Date()): Task[] {
+  return getSnapshot()
+    .tasks.filter((t) => t.status === 'next' && t.dueAt !== undefined && !isPast(t.dueAt, now))
+    .sort((a, b) => toDate(a.dueAt as string).getTime() - toDate(b.dueAt as string).getTime())
+    .slice(0, limit)
+}
+
 /** 下一场事件（尚未结束、未取消） */
 export function getNextEvent(now: Date = new Date()): CalendarEvent | undefined {
   return getSnapshot()
@@ -71,6 +81,24 @@ export function getWeeklyCompletionSeries(
   })
 }
 
+/** 未来 7 天到期负载（含今天）：未完成且未丢弃的任务按 dueAt 落到天；index 0 标签为「今」 */
+export function getDueLoadSeries(now: Date = new Date()): Array<{ label: string; value: number }> {
+  const tasks = getSnapshot().tasks
+  const days = upcomingDays(7, now)
+  return days.map((day, index) => {
+    const value = tasks.filter(
+      (t) =>
+        t.status !== 'done' &&
+        t.status !== 'dropped' &&
+        t.dueAt !== undefined &&
+        isSameDay(t.dueAt, day),
+    ).length
+    // 今天用「今」，其余取单字星期（周六 → 六）
+    const label = index === 0 ? '今' : formatWeekdayShort(day).replace(/^周/, '')
+    return { label, value }
+  })
+}
+
 /** 能量分布（默认统计未完成任务） */
 export function getEnergyDistribution(
   tasks: Task[] = getSnapshot().tasks.filter((t) => t.status !== 'done' && t.status !== 'dropped'),
@@ -87,6 +115,38 @@ export function getCodingStreak(now: Date = new Date()): number {
   const habits = getSnapshot().habits
   const habit = habits.find((h) => h.id === 'h-0002') ?? habits[0]
   return habit ? getHabitStreak(habit.id, now) : 0
+}
+
+export interface CodingStreakDetail {
+  /** 当前连续天数（与 getCodingStreak 同口径） */
+  current: number
+  /** 近 14 天点阵，oldest → newest（末位为今天）；key 为 MM-DD */
+  window: Array<{ key: string; hit: boolean }>
+  /** 窗口内命中天数 */
+  hits: number
+  /** 窗口内缺口日期（MM-DD，按时间升序） */
+  gaps: string[]
+}
+
+/** 连续刷题明细：默认取"每日一题算法" h-0002（回退 habits[0]），供点阵与缺口排版 */
+export function getCodingStreakDetail(now: Date = new Date()): CodingStreakDetail {
+  const habits = getSnapshot().habits
+  const habit = habits.find((h) => h.id === 'h-0002') ?? habits[0]
+  const byDate = new Map((habit?.log ?? []).map((entry) => [entry.date, entry.value]))
+  // 近 14 天：从 13 天前至今（含端点），oldest → newest
+  const days = upcomingDays(14, addDays(now, -13))
+  const window = days.map((day) => {
+    const iso = toISODateString(day)
+    const value = byDate.get(iso)
+    return { key: iso.slice(5), hit: value !== undefined && value > 0 }
+  })
+  const gaps = window.filter((cell) => !cell.hit).map((cell) => cell.key)
+  return {
+    current: getCodingStreak(now),
+    window,
+    hits: window.filter((cell) => cell.hit).length,
+    gaps,
+  }
 }
 
 /** 数据记录总数：10 类实体记录 + 配置 + 标签注册表（共 146 = 144 + 2） */

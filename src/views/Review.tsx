@@ -1,8 +1,10 @@
 // KERNEL · 回顾 REVIEW（P1）：周期摘要 + 周回顾流程 + 单色图表 + 停滞项目重决策
+// v0.4 版式：按设计稿 B「仪表盘」落为双栏数据面板——左栏指标 + 图表，右栏回顾卡 + 停滞清单 + CTA。
 import { useState } from 'react'
+import type { ReactNode } from 'react'
 import { Panel } from '@/components/Panel'
 import { Drawer } from '@/components/Drawer'
-import { TrendBars } from '@/components/charts/TrendBars'
+import { TrendLine } from '@/components/charts/TrendLine'
 import { EnergyBars } from '@/components/charts/EnergyBars'
 import { EmptyState } from '@/components/EmptyState'
 import { useToast } from '@/context/ToastContext'
@@ -20,12 +22,18 @@ const STEPS: Array<{ num: string; title: string; desc: string }> = [
   { num: '⑤', title: '完成', desc: '写下本周摘要与下周聚焦' },
 ]
 
-const METRIC_LABELS: Array<{ key: keyof Review['metrics']; label: string; accent?: boolean }> = [
-  { key: 'captured', label: '捕获' },
-  { key: 'created', label: '新增' },
-  { key: 'completed', label: '完成' },
-  { key: 'overdue', label: '逾期', accent: true },
-  { key: 'migrated', label: '迁移' },
+// 指标瓦片定义：数值取自 getReviews() 周回顾 metrics；accent 仅用于「逾期」信号。
+const METRIC_LABELS: Array<{
+  key: keyof Review['metrics']
+  label: string
+  foot: string
+  accent?: boolean
+}> = [
+  { key: 'captured', label: '捕获', foot: '进入收件箱' },
+  { key: 'created', label: '新增', foot: '转任务 / 项目' },
+  { key: 'completed', label: '完成', foot: '本周闭环' },
+  { key: 'overdue', label: '逾期', foot: '需前置处理', accent: true },
+  { key: 'migrated', label: '迁移', foot: '改期 / 重决策' },
 ]
 
 export function Review() {
@@ -39,6 +47,7 @@ export function Review() {
   const staleProjects = getStaleProjects(14)
   const weeklySeries = getWeeklyCompletionSeries()
   const energy = getEnergyDistribution()
+  const energyTotal = energy.reduce((sum, item) => sum + item.value, 0)
 
   const finishFlow = (): void => {
     setFlowOpen(false)
@@ -48,92 +57,116 @@ export function Review() {
 
   return (
     <div className="k-view">
-      <div className="k-between">
+      {/* 顶栏：周期说明 + 当前周期胶囊 */}
+      <div className="k-review__top">
         <p className="k-view__intro">周回顾是系统的心跳：短、可视、可自动化。当前周期 2026-W40 · 9 月。</p>
-        <button type="button" className="k-btn is-solid" onClick={() => setFlowOpen(true)}>
-          开始周回顾
-        </button>
+        <div className="k-review__periods">
+          {weekly !== undefined && <span className="k-pill">{weekly.periodKey}</span>}
+          {monthly !== undefined && <span className="k-pill is-ghost">{monthly.periodKey}</span>}
+        </div>
       </div>
 
-      <div className="k-review__periods">
-        {weekly !== undefined && <ReviewCard review={weekly} />}
-        {monthly !== undefined && <ReviewCard review={monthly} />}
-        {weekly === undefined && monthly === undefined && (
-          <EmptyState index="00" title="暂无回顾记录" hint="完成一次周回顾后，摘要会出现在这里。" />
-        )}
-      </div>
-
-      <Panel index="03" title="本周指标" en="METRICS">
-        {weekly !== undefined ? (
-          <div className="k-review__metrics">
-            {METRIC_LABELS.map((metric) => (
-              <div className="k-met" key={metric.key}>
-                <span className={metric.accent === true ? 'k-met__num is-accent' : 'k-met__num'}>
-                  {weekly.metrics[metric.key]}
-                </span>
-                <span className="u-label k-muted">{metric.label}</span>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="k-muted">—</p>
-        )}
-      </Panel>
-
-      <div className="k-review__charts">
-        <Panel index="04" title="本周完成" en="COMPLETION">
-          <TrendBars data={weeklySeries} unit="" />
-        </Panel>
-        <Panel index="05" title="能量分布" en="ENERGY">
-          <EnergyBars data={energy} />
-          <p className="k-view__intro">
-            单色 + 图案区分：高能量为唯一强调序列，低能量为斜纹填充。
-          </p>
-        </Panel>
-      </div>
-
-      <Panel
-        index="06"
-        title="停滞项目"
-        en="STALE · ≥14 天未更新"
-        actions={<span className="u-label k-muted">{staleProjects.length}</span>}
-      >
-        {staleProjects.length === 0 ? (
-          <EmptyState index="06" title="无停滞项目" hint="所有活跃项目近期都有更新。" />
-        ) : (
-          <div className="k-stale">
-            {staleProjects.map((project) => {
-              const staleDays = Math.abs(daysFromToday(project.updatedAt))
-              return (
-                <div className="k-stale__row" key={project.id}>
-                  <div>
-                    <div>{project.title}</div>
-                    <div className="k-stale__meta k-mono">
-                      {project.id} · 已停滞 {staleDays} 天 · {project.outcome}
-                    </div>
-                  </div>
-                  <div className="k-view__actions">
-                    <button
-                      type="button"
-                      className="k-btn k-btn--sm"
-                      onClick={() => toast(`原型态：迁移「${project.title}」→ v0.6 起重决策落盘`)}
-                    >
-                      迁移
-                    </button>
-                    <button
-                      type="button"
-                      className="k-btn k-btn--sm"
-                      onClick={() => toast(`原型态：归档「${project.title}」→ v0.6 起重决策落盘`)}
-                    >
-                      归档
-                    </button>
-                  </div>
+      {/* 双栏仪表盘：左=指标 + 图表；右=回顾卡 + 停滞清单 + CTA。
+          窄 route 容器并作单列，左栏（指标/图表）在上、右栏（回顾）在下（见设计稿移动端说明）。 */}
+      <div className="k-review__dash">
+        <div className="k-review__col">
+          {weekly !== undefined && (
+            <div className="k-review__metrics">
+              {METRIC_LABELS.map((metric) => (
+                <div
+                  className={metric.accent === true ? 'k-stat k-stat--accent' : 'k-stat'}
+                  key={metric.key}
+                >
+                  <span className="k-stat__label">{metric.label}</span>
+                  <span className="k-stat__value">{weekly.metrics[metric.key]}</span>
+                  <span className="k-stat__foot">{metric.foot}</span>
                 </div>
-              )
-            })}
-          </div>
-        )}
-      </Panel>
+              ))}
+            </div>
+          )}
+
+          <Panel
+            title="本周完成"
+            en="COMPLETION"
+            actions={<span className="u-label k-muted">周一 → 周日</span>}
+          >
+            <TrendLine data={weeklySeries} />
+          </Panel>
+
+          <Panel
+            title="能量分布"
+            en="ENERGY"
+            actions={<span className="u-label k-muted">未完成 {energyTotal}</span>}
+          >
+            <EnergyBars data={energy} />
+            <p className="k-view__intro">
+              单色 + 图案区分：高能量为唯一强调序列，低能量为斜纹填充。
+            </p>
+          </Panel>
+        </div>
+
+        <div className="k-review__col">
+          {weekly !== undefined && (
+            <ReviewCard
+              review={weekly}
+              footer={
+                <div className="k-review__cta">
+                  <button type="button" className="k-btn is-solid" onClick={() => setFlowOpen(true)}>
+                    开始周回顾
+                  </button>
+                  <span className="u-label k-muted">原型态：v0.6 起自动汇总指标并落盘</span>
+                </div>
+              }
+            />
+          )}
+          {monthly !== undefined && <ReviewCard review={monthly} />}
+          {weekly === undefined && monthly === undefined && (
+            <EmptyState title="暂无回顾记录" hint="完成一次周回顾后，摘要会出现在这里。" />
+          )}
+
+          <Panel
+            title="停滞项目"
+            en="STALE · ≥14 天未更新"
+            actions={<span className="u-label k-muted">{staleProjects.length}</span>}
+          >
+            {staleProjects.length === 0 ? (
+              <EmptyState title="无停滞项目" hint="所有活跃项目近期都有更新。" />
+            ) : (
+              <div className="k-stale">
+                {staleProjects.map((project) => {
+                  const staleDays = Math.abs(daysFromToday(project.updatedAt))
+                  return (
+                    <div className="k-stale__row" key={project.id}>
+                      <div>
+                        <div>{project.title}</div>
+                        <div className="k-stale__meta k-mono">
+                          {project.id} · 已停滞 {staleDays} 天 · {project.outcome}
+                        </div>
+                      </div>
+                      <div className="k-view__actions">
+                        <button
+                          type="button"
+                          className="k-btn k-btn--sm"
+                          onClick={() => toast(`原型态：迁移「${project.title}」→ v0.6 起重决策落盘`)}
+                        >
+                          迁移
+                        </button>
+                        <button
+                          type="button"
+                          className="k-btn k-btn--sm"
+                          onClick={() => toast(`原型态：归档「${project.title}」→ v0.6 起重决策落盘`)}
+                        >
+                          归档
+                        </button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </Panel>
+        </div>
+      </div>
 
       <Drawer
         open={flowOpen}
@@ -196,7 +229,7 @@ export function Review() {
   )
 }
 
-function ReviewCard({ review }: { review: Review }) {
+function ReviewCard({ review, footer }: { review: Review; footer?: ReactNode }) {
   return (
     <div className="k-review__card">
       <div className="k-between">
@@ -217,6 +250,7 @@ function ReviewCard({ review }: { review: Review }) {
           ))}
         </div>
       </div>
+      {footer}
     </div>
   )
 }

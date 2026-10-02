@@ -20,30 +20,116 @@
 }
 
 /* ---------------------------------------------------------------------------
- * 总览 OVERVIEW
+ * 工作台 WORKBENCH（总览 OVERVIEW · 变体 C）
+ * 左工作区（日程 / 行动交织）+ 右粘性监视柱；窄容器自动落回单列。
  * ------------------------------------------------------------------------- */
 
-.k-overview__stats {
+/* 主体：工作区（左 2/3）+ 监视柱（右 1/3） */
+.r3c-body {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: var(--space-5);
-}
-.k-overview__split {
-  display: grid;
-  grid-template-columns: minmax(0, 1.35fr) minmax(280px, 1fr);
+  grid-template-columns: minmax(0, 2fr) minmax(300px, 1fr);
   gap: var(--space-5);
   align-items: start;
 }
-.k-overview__col {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-5);
-  min-width: 0;
-}
-.k-proj-mini {
+
+/* 工作区：日程与行动交织在同一列 */
+.r3c-flow {
   display: flex;
   flex-direction: column;
 }
+.r3c-now {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+}
+.r3c-now__line {
+  flex: 1 1 auto;
+  height: var(--hairline);
+  background: var(--rule-soft);
+}
+.r3c-now__label {
+  color: var(--accent-text);
+  white-space: nowrap;
+}
+
+/* 监视柱 */
+.r3c-rail {
+  position: sticky;
+  top: calc(var(--topbar-h) + var(--space-4));
+}
+.r3c-mon {
+  display: flex;
+  flex-direction: column;
+}
+.r3c-block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4) 0;
+}
+.r3c-block:first-child {
+  padding-top: 0;
+}
+.r3c-block + .r3c-block {
+  border-top: var(--hairline) solid var(--rule-soft);
+}
+.r3c-block .k-line {
+  height: 40px;
+}
+.r3c-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.r3c-head__t {
+  font-size: var(--text-body-sm);
+  color: var(--ink-2);
+}
+.r3c-head__v {
+  font-size: var(--text-body-sm);
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.r3c-head__v.is-accent {
+  color: var(--accent-text);
+}
+
+/* 底部项目推进条 */
+.r3c-proj {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+.r3c-proj .k-proj-mini__row {
+  background: var(--fill-subtle);
+}
+.r3c-proj .k-proj-mini__row + .k-proj-mini__row {
+  border-top: none;
+}
+.r3c-w40 {
+  margin-top: var(--space-4);
+}
+
+/* 窄容器：监视柱落回单列、项目条降列 */
+@container route (max-width: 980px) {
+  .r3c-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .r3c-rail {
+    position: static;
+  }
+  .r3c-proj {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@container route (max-width: 620px) {
+  .r3c-proj {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .k-proj-mini__row {
   display: flex;
   flex-direction: column;
@@ -76,47 +162,6 @@
   justify-content: space-between;
   color: var(--muted);
   font-size: var(--text-caption);
-}
-.k-aisug {
-  background: var(--surface);
-  border: var(--hairline) solid var(--outline);
-  border-radius: var(--radius-card);
-  box-shadow: var(--shadow-card), inset 3px 0 0 var(--accent), var(--shadow-highlight);
-  padding: var(--pad-card);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-.k-aisug__head {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  color: var(--accent-text);
-}
-.k-aisug__head .k-panel__cn {
-  color: var(--ink);
-}
-.k-aisug__badge {
-  border: var(--hairline) solid var(--accent);
-  border-radius: var(--radius-pill);
-  color: var(--accent-text);
-  background: var(--accent-veil);
-  padding: 2px 8px;
-}
-.k-aisug__list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-.k-aisug__line {
-  display: flex;
-  gap: var(--space-3);
-  color: var(--ink-2);
-  max-width: var(--measure);
-}
-.k-aisug__bullet {
-  color: var(--accent-text);
-  font-family: var(--font-mono);
 }
 
 /* ---------------------------------------------------------------------------
@@ -218,14 +263,149 @@
   color: var(--muted);
 }
 
+/* 变体 C「批量」：分组浏览 + 多选批量条（所有者选定布局） */
+.ic-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.ic-batchbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+.ic-batchbar__count {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-size: var(--text-body-sm);
+  color: var(--ink-2);
+}
+.ic-batchbar__count b {
+  color: var(--ink);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.ic-batchbar__actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+.ic-groups {
+  --ic-no-w: 20px; /* 行序号列宽（供缩进计算复用） */
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+/* 行包裹层：滚动/展开项之间统一顶部分隔（含已展开子行，避免相邻选择器断链） */
+.ic-item {
+  position: relative;
+}
+.ic-item + .ic-item {
+  border-top: var(--hairline) solid var(--rule-soft);
+}
+.ic-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--row-min);
+  padding: var(--space-3);
+  border-radius: var(--radius-inner);
+  transition: background var(--dur-fast) var(--ease-standard);
+}
+.ic-row:hover {
+  background: var(--surface-hover);
+}
+.ic-row.is-selected {
+  background: var(--fill-tag);
+}
+.ic-row__no {
+  flex: 0 0 auto;
+  width: var(--ic-no-w);
+  color: var(--muted);
+  font-size: var(--text-caption);
+}
+.ic-row__body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.ic-row__title {
+  color: var(--ink);
+  font-size: var(--text-body-sm);
+  line-height: 1.4;
+}
+.ic-row__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  color: var(--muted);
+  font-size: var(--text-caption);
+}
+.ic-row__tail {
+  margin-left: auto;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+/* 内联澄清子行：缩进对齐正文列（checkbox 1.2em + 序号 + 图标 + 行内间距，均取自组件度量） */
+.ic-subrow {
+  padding: 0 var(--space-3) var(--space-4)
+    calc(1.2em + var(--ic-no-w) + 26px + var(--space-3) * 4);
+}
+@container route (max-width: 640px) {
+  .ic-batchbar__actions {
+    margin-left: 0;
+    width: 100%;
+  }
+  .ic-row__no {
+    display: none;
+  }
+  .ic-subrow {
+    padding-left: var(--space-3);
+  }
+}
+
 /* ---------------------------------------------------------------------------
  * 任务 TASKS
  * ------------------------------------------------------------------------- */
 
+/* 工具条：计数 + 快速新建 同排（把纵向空间留给表格） */
+.k-tasks__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-5);
+  flex-wrap: wrap;
+}
+.k-tasks__toolbar .k-quickadd {
+  flex: 1 1 320px;
+  max-width: 620px;
+}
 .k-tasks__counts {
   display: flex;
   gap: var(--space-6);
   flex-wrap: wrap;
+}
+/* 筛选压缩：状态 + 时间 并排成一行（结构不变，仅排版收敛） */
+.k-tasks__filters .k-filterbar {
+  border-top: none;
+  padding: var(--space-2) 0;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3) var(--space-5);
+}
+.k-tasks__filters .k-filterrow {
+  align-items: center;
 }
 .k-tasks__groupbar {
   display: flex;
@@ -296,7 +476,132 @@
 }
 
 /* ---------------------------------------------------------------------------
- * 日程 CALENDAR
+ * 任务表格（变体 C「表格」）：稠密多列、吸顶表头、悬浮行；窄屏逐级收列
+ * ------------------------------------------------------------------------- */
+
+/* 表格骨架：固定列宽 + 吸顶表头（贴在顶栏之下；表头背景用 --bg 遮挡滚动内容） */
+.k-tasks__table {
+  table-layout: fixed;
+}
+.k-tasks__table thead th {
+  position: sticky;
+  top: var(--topbar-h);
+  z-index: calc(var(--z-sticky) - 2);
+  background: var(--bg);
+  border-bottom-color: var(--outline-strong);
+}
+.k-tasks__table th,
+.k-tasks__table td {
+  padding: var(--space-3) var(--space-4);
+  vertical-align: middle;
+}
+/* 表头不折行；勾选列（完成）收窄内边距并居中，避免「完成」竖排 */
+.k-tasks__table thead th {
+  white-space: nowrap;
+}
+.k-tasks__table th:first-child,
+.k-tasks__table td:first-child {
+  padding-inline: var(--space-2);
+  text-align: center;
+}
+/* 项目列保持左对齐（覆盖 .k-table 末列右对齐），便于纵向扫读项目名 */
+.k-tasks__table th.k-tasks__col--proj,
+.k-tasks__table td.k-tasks__col--proj {
+  text-align: left;
+}
+.k-tasks__row {
+  transition: background var(--dur-fast) var(--ease-standard);
+}
+.k-tasks__row:hover {
+  background: var(--surface-hover);
+}
+
+/* 列宽（结构性尺寸，4px 栅格） */
+.k-tasks__col--check {
+  width: 58px;
+}
+.k-tasks__col--ctx {
+  width: 116px;
+}
+.k-tasks__col--energy {
+  width: 86px;
+}
+.k-tasks__col--due {
+  width: 138px;
+}
+.k-tasks__col--proj {
+  width: 220px;
+}
+
+/* 标题单元格：整格按钮打开抽屉，长标题省略；沿用 k-task__strike 划线动效 */
+.k-tasks__title-btn {
+  flex-direction: row;
+  width: 100%;
+}
+.k-tasks__row .k-task__titlewrap {
+  max-width: 100%;
+}
+.k-tasks__row .k-task__title {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.k-tasks__row.is-done .k-task__title {
+  color: var(--muted);
+}
+.k-tasks__row.is-done .k-task__strike {
+  transform: scaleX(1);
+}
+
+/* 单元格内容 */
+.k-tasks__ctx {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+.k-tasks__due {
+  font-size: var(--text-caption);
+}
+.k-tasks__proj {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-caption);
+  color: var(--muted);
+}
+.k-tasks__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  color: var(--muted);
+}
+
+/* 容器查询（.k-route 即容器）：窄屏逐级收列，保留「完成 / 标题 / 截止」骨架 */
+@container route (max-width: 900px) {
+  .k-tasks__table .k-tasks__col--proj {
+    display: none;
+  }
+}
+@container route (max-width: 700px) {
+  .k-tasks__table .k-tasks__col--ctx,
+  .k-tasks__table .k-tasks__col--energy {
+    display: none;
+  }
+  .k-tasks__table th,
+  .k-tasks__table td {
+    padding: var(--space-3);
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * 日程 CALENDAR · 变体 C「议程流」
+ * 顶部高亮「下一项」+ 按 今天/明天/本周/下周/更远 分组的纵向事件流
+ * + 右侧迷你月历。颜色 / 圆角 / 阴影 / 字号只用 token；结构性尺寸可自由用 px。
  * ------------------------------------------------------------------------- */
 
 .k-cal__bar {
@@ -306,7 +611,7 @@
   gap: var(--space-4);
   flex-wrap: wrap;
 }
-/* 桌面端：日期标题条吸顶在顶栏之下——自动滚到「现在」后不丢失“今天/哪天”上下文 */
+/* 桌面端：日期标题条吸顶在顶栏之下，滚动后不丢失「今天 / 哪天」上下文 */
 @media (min-width: 768px) {
   .k-cal__bar {
     position: sticky;
@@ -325,148 +630,273 @@
   font-weight: 600;
   letter-spacing: var(--text-h2-tracking);
 }
-.k-weekstrip {
-  display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: var(--space-2);
-}
-.k-weekday {
-  background: var(--surface);
-  border: var(--hairline) solid var(--outline);
-  border-radius: var(--radius-inner);
-  box-shadow: var(--shadow-soft);
-  padding: var(--space-4);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  min-height: 104px;
-  text-align: left;
-  cursor: pointer;
-  transition: background var(--dur-fast) var(--ease-standard),
-    border-color var(--dur-fast) var(--ease-standard),
-    transform var(--dur-fast) var(--ease-standard),
-    box-shadow var(--dur-fast) var(--ease-standard);
-}
-.k-weekday:hover {
-  transform: translateY(-2px);
-  border-color: var(--outline-strong);
-  box-shadow: var(--shadow-card);
-}
-.k-weekday.is-active {
-  background: var(--ink);
-  color: var(--bg);
-  border-color: var(--ink);
-}
-.k-weekday.is-today .k-weekday__dow {
-  color: var(--accent-text);
-}
-.k-weekday.is-active .k-weekday__dow {
-  color: var(--accent-on-ink);
-}
-.k-weekday__dow {
-  display: flex;
-  justify-content: space-between;
+.k-cal__quiet {
   color: var(--muted);
 }
-.k-weekday__blocks {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  margin-top: auto;
-}
-.k-weekday__block {
-  height: 4px;
-  border-radius: var(--radius-pill);
-  background: var(--ink);
-}
-.k-weekday.is-active .k-weekday__block {
-  background: var(--bg);
-}
-.k-weekday__density {
-  font-family: var(--font-mono);
-  font-size: var(--text-micro);
-  color: var(--muted);
-}
-.k-weekday.is-active .k-weekday__density {
-  color: var(--bg);
-  opacity: 0.7;
-}
-.k-cal__body {
-  display: grid;
-  grid-template-columns: minmax(0, 1.5fr) minmax(300px, 1fr);
-  gap: var(--space-5);
-  align-items: start;
-}
-.k-allday {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  padding-bottom: var(--space-3);
-  margin-bottom: var(--space-3);
-}
-.k-cal__side {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-5);
-}
 
-/* ---------------------------------------------------------------------------
- * 项目 PROJECTS
- * ------------------------------------------------------------------------- */
-
-.k-kanban {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(230px, 1fr));
-  gap: var(--space-5);
-  align-items: start;
-}
-.k-kanban__col {
+/* 日期条左侧：主日期 + 安静统计行 */
+.k-cal-c__meta {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: 2px;
   min-width: 0;
 }
-.k-kanban__head {
+
+/* —— 下一项高亮卡（强调色仅作信号：3px 左信号条） —— */
+.k-cal-c__next {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
-  gap: var(--space-2);
-  border-bottom: var(--hairline) solid var(--outline);
-  padding-bottom: var(--space-2);
-}
-.k-pcard {
+  gap: var(--space-5);
+  padding: var(--pad-card);
   background: var(--surface);
   border: var(--hairline) solid var(--outline);
   border-radius: var(--radius-card);
-  box-shadow: var(--shadow-card), var(--shadow-highlight);
-  padding: var(--pad-card);
+  box-shadow: var(--shadow-card), inset 3px 0 0 var(--accent), var(--shadow-highlight);
+  flex-wrap: wrap;
+}
+.k-cal-c__next-body {
   display: flex;
   flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.k-cal-c__next-kicker {
+  color: var(--accent-text);
+}
+.k-cal-c__next-title {
+  font-size: var(--text-h3);
+  font-weight: 600;
+  letter-spacing: var(--text-h3-tracking);
+  line-height: 1.2;
+}
+.k-cal-c__next-meta {
+  color: var(--muted);
+  font-size: var(--text-body-sm);
+}
+.k-cal-c__next-side {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin-left: auto;
+}
+.k-cal-c__count {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+.k-cal-c__count b {
+  font-size: var(--text-h4);
+  font-weight: 600;
+  color: var(--accent-text);
+  font-variant-numeric: tabular-nums;
+}
+.k-cal-c__count span {
+  color: var(--muted);
+}
+
+/* —— 流 + 侧栏 —— */
+.k-cal-c__layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: var(--space-5);
+  align-items: start;
+}
+.k-cal-c__stream {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  min-width: 0;
+}
+.k-cal-c__side {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  position: sticky;
+  top: calc(var(--topbar-h) + var(--space-5));
+}
+
+/* 日分组 */
+.k-cal-c__group {
+  display: flex;
+  flex-direction: column;
+}
+.k-cal-c__grouphd {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
   gap: var(--space-3);
+  padding-bottom: var(--space-2);
+  border-bottom: var(--hairline) solid var(--outline);
+}
+.k-cal-c__grouphd h3 {
+  font-size: var(--text-h4);
+  font-weight: 600;
+  color: var(--ink);
+}
+.k-cal-c__grouphd .k-mono {
+  color: var(--muted);
+}
+.k-cal-c .k-lib-row__kind {
+  min-width: 116px;
+}
+.k-cal-c .k-lib-row__meta {
+  text-align: right;
+}
+
+/* —— 迷你月历 —— */
+.k-minical {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 2px;
+}
+.k-minical__dow {
+  text-align: center;
+  color: var(--muted);
+  font-size: var(--text-micro);
+  padding-bottom: var(--space-1);
+}
+.k-minical__d {
+  position: relative;
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1 / 1;
+  border-radius: var(--radius-inner);
+  color: var(--ink-2);
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+}
+.k-minical__d.is-today {
+  background: var(--ink);
+  color: var(--bg);
+  font-weight: 600;
+}
+.k-minical__d.is-event::after {
+  content: '';
+  position: absolute;
+  bottom: 3px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+.k-minical__d.is-today.is-event::after {
+  background: var(--bg);
+}
+.k-minical__d.is-void {
+  color: transparent;
+}
+.k-cal-c__legend {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin-top: var(--space-4);
+  color: var(--muted);
+  font-size: var(--text-caption);
+}
+.k-cal-c__legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.k-cal-c__legend i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+.k-cal-c__legend i.is-today {
+  background: var(--ink);
+}
+
+/* —— 窄容器：侧栏落到流之后（取消吸顶） —— */
+@container route (max-width: 900px) {
+  .k-cal-c__layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .k-cal-c__side {
+    position: static;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * 项目 PROJECTS · 变体 B「列表」
+ * 纵向一览：按状态分组、组头安静收敛；每项目一行
+ * （标题 + 状态/区域标签 / 完成定义 / 下一步 / 内联进度计 / 截止）。
+ * 非活跃分组更紧凑；交互行可悬停抬升（静态容器不抬升）。
+ * ------------------------------------------------------------------------- */
+
+.k-plist {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-7); /* φ² 区块间隙：组与组 */
+}
+/* 分组：复用全局 .k-group 头（标题 + 计数），组内更紧 */
+.k-group.k-plist__group {
+  gap: var(--space-1);
+}
+.k-plist__group .k-group__head {
+  padding-bottom: var(--space-2);
+}
+.k-plist__group .k-group__title .u-label {
+  margin-left: var(--space-2);
+}
+/* 行：左序号 → 中部主信息 → 右侧进度/截止 */
+.k-plist__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  width: 100%;
+  min-height: var(--row-min);
+  padding: var(--space-4) var(--space-3);
+  border-radius: var(--radius-inner);
   text-align: left;
   cursor: pointer;
-  transition: transform var(--dur-fast) var(--ease-standard),
-    border-color var(--dur-fast) var(--ease-standard),
+  transition: background var(--dur-fast) var(--ease-standard),
+    transform var(--dur-fast) var(--ease-standard),
     box-shadow var(--dur-fast) var(--ease-standard);
-  /* 看板卡自身为容器：内部排版按卡片宽度自适应 */
-  container-type: inline-size;
-  container-name: pcard;
 }
-.k-pcard:hover {
+.k-plist__row + .k-plist__row {
+  border-top: var(--hairline) solid var(--rule-soft);
+}
+.k-plist__row:hover {
+  background: var(--surface-hover);
   transform: translateY(-2px);
-  border-color: var(--outline-strong);
-  box-shadow: var(--shadow-hover), var(--shadow-highlight);
+  box-shadow: var(--shadow-soft);
 }
-.k-pcard__title {
+.k-plist__idx {
+  flex: 0 0 auto;
+  width: 32px;
+  font-size: var(--text-micro);
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.k-plist__main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.k-plist__titleline {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+.k-plist__title {
   font-size: var(--text-h4);
   font-weight: 600;
   line-height: 1.25;
 }
-.k-pcard__outcome {
+.k-plist__outcome {
   color: var(--muted);
   font-size: var(--text-caption);
 }
-.k-pcard__next {
+.k-plist__next {
   display: flex;
   gap: var(--space-2);
   align-items: flex-start;
@@ -476,35 +906,164 @@
   padding-left: var(--space-3);
 }
 /* 「下一步」标签不被正文挤压成竖排断字 */
-.k-pcard__next .u-label {
+.k-plist__next .u-label {
   flex: 0 0 auto;
   white-space: nowrap;
 }
-.k-pcard__foot {
+.k-plist__side {
+  flex: 0 0 auto;
+  width: min(220px, 24%);
   display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  flex-wrap: wrap;
-  color: var(--muted);
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-2);
+}
+.k-plist__meter {
+  width: 100%;
+}
+.k-plist__due {
   font-size: var(--text-caption);
 }
-.k-pcard__overdue {
-  color: var(--danger-text);
+
+/* 非活跃分组更紧凑：收敛行距与标题、隐藏下一步行动（详情在抽屉） */
+.k-plist__group--compact .k-plist__row {
+  padding: var(--space-3);
+  min-height: 0;
+}
+.k-plist__group--compact .k-plist__title {
+  font-size: var(--text-body);
+  font-weight: 500;
+}
+.k-plist__group--compact .k-plist__next {
+  display: none;
+}
+/* 已完成最紧凑：只留标题 + 进度 + 截止 */
+.k-plist__group--done .k-plist__row {
+  padding: var(--space-3);
+  min-height: 0;
+}
+.k-plist__group--done .k-plist__outcome,
+.k-plist__group--done .k-plist__next {
+  display: none;
+}
+
+/* 安静空态：与设计稿一致的一条细提示，不用大虚框 */
+.k-plist__empty .k-empty {
+  border: none;
+  background: none;
+  padding: var(--space-3) var(--space-3) 0;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-2);
+}
+.k-plist__empty .k-empty__title {
+  font-size: var(--text-caption);
+  font-weight: 400;
+  color: var(--muted);
+}
+.k-plist__empty .k-empty__title::before {
+  content: '';
+  display: inline-block;
+  vertical-align: middle;
+  width: 14px;
+  height: var(--hairline);
+  margin-right: var(--space-2);
+  background: var(--rule);
+}
+.k-plist__empty .k-empty__hint {
+  font-size: var(--text-caption);
+}
+
+/* 窄容器：右侧进度/截止折到标题下方，行改为纵向堆叠 */
+@container route (max-width: 900px) {
+  .k-plist__row {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .k-plist__side {
+    width: 100%;
+    align-items: flex-start;
+    padding-left: calc(32px + var(--space-4));
+  }
 }
 
 /* ---------------------------------------------------------------------------
  * 资料 LIBRARY
  * ------------------------------------------------------------------------- */
 
+/* 变体 A「列表」：标签行交给过滤条顶边统一分隔，不再单挂底边；右侧补总数 */
+.k-lib__tabs {
+  align-items: center;
+  border-bottom: none;
+  padding-bottom: 0;
+}
+.k-lib__tabs-count {
+  margin-left: auto;
+}
+
+/* 单一整合过滤条：笔记类型 / 资料类型 / 状态 / 标签 四组收进一条紧凑分段带
+   宽屏单行（横向可滚动不换行）；窄容器换行（见文末 container 查询） */
 .k-lib__filters {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
-  flex-wrap: wrap;
+  gap: var(--space-3) var(--space-5);
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  padding: var(--space-4) 0;
+  border-top: var(--hairline) solid var(--outline);
+  border-bottom: var(--hairline) solid var(--outline);
 }
+/* 一组筛选：安静内联标签 + 分段槽 */
+.k-lib__fgroup {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 0 0 auto;
+}
+.k-lib__flabel {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+/* 组间发际线分隔（仅非首组，窄屏换行时隐藏） */
+.k-lib__fgroup + .k-lib__fgroup::before {
+  content: '';
+  align-self: center;
+  flex: 0 0 auto;
+  width: 1px;
+  height: 18px;
+  margin-right: var(--space-3);
+  background: var(--outline);
+}
+/* 分段槽：胶囊嵌入浅底轨道；未选项透明、选中项 ink 填充（压过全局悬停抬升） */
+.k-lib__seg {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 3px;
+  border-radius: var(--radius-pill);
+  background: var(--fill-subtle);
+}
+.k-lib__seg .k-pill {
+  border-color: transparent;
+  background: transparent;
+}
+.k-lib__seg .k-pill:hover {
+  background: var(--fill-tag);
+  border-color: transparent;
+}
+.k-lib__seg .k-pill.is-selected,
+.k-lib__seg .k-pill.is-selected:hover {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--bg);
+  transform: none;
+  box-shadow: none;
+}
+
+/* 精化平铺行：类型标签 | 标题 | 元信息；保留悬停抬升语言 */
 .k-lib-row {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: var(--space-4);
   width: 100%;
   padding: var(--space-4) var(--space-3);
@@ -526,19 +1085,27 @@
 .k-lib-row__kind {
   flex: 0 0 auto;
   color: var(--muted);
-  min-width: 64px;
+  min-width: 86px;
 }
 .k-lib-row__title {
   flex: 1 1 auto;
   color: var(--ink);
   min-width: 0;
+  font-size: var(--text-body);
 }
 .k-lib-row__meta {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   gap: var(--space-3);
   color: var(--muted);
   font-size: var(--text-caption);
+  white-space: nowrap;
+}
+.k-lib__time {
+  color: var(--muted);
+  font-size: var(--text-caption);
+  white-space: nowrap;
 }
 .k-backlink {
   display: flex;
@@ -546,14 +1113,64 @@
   gap: var(--space-2);
 }
 
+/* 窄容器（route）：过滤条换行、行 meta 沉到第二行（标题独占首行） */
+@container route (max-width: 640px) {
+  .k-lib__filters {
+    flex-wrap: wrap;
+    overflow-x: visible;
+    gap: var(--space-3);
+  }
+  .k-lib__fgroup + .k-lib__fgroup::before {
+    display: none;
+  }
+  .k-lib-row {
+    flex-wrap: wrap;
+    gap: var(--space-2) var(--space-3);
+  }
+  .k-lib-row__title {
+    order: -1;
+    flex: 1 1 100%;
+  }
+  .k-lib-row__kind {
+    min-width: 0;
+  }
+  .k-lib-row__meta {
+    flex: 1 1 auto;
+    flex-wrap: wrap;
+    white-space: normal;
+  }
+}
+
 /* ---------------------------------------------------------------------------
  * 回顾 REVIEW
  * ------------------------------------------------------------------------- */
 
+/* 顶部：周期说明 + 当前周期胶囊 */
+.k-review__top {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
 .k-review__periods {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+/* 双栏仪表盘：左栏 1.15fr（指标 + 图表）· 右栏 0.85fr（回顾卡 + 停滞 + CTA） */
+.k-review__dash {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
   gap: var(--space-5);
+  align-items: start;
+}
+.k-review__col {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  min-width: 0;
 }
 .k-review__card {
   background: var(--surface);
@@ -584,10 +1201,11 @@
 .k-met__num.is-accent {
   color: var(--accent-text);
 }
-.k-review__charts {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-5);
+/* 右栏回顾卡内 CTA（开始周回顾 + 原型态说明） */
+.k-review__cta {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
 }
 .k-stale {
   display: flex;
@@ -677,21 +1295,83 @@
  * 设置 SETTINGS
  * ------------------------------------------------------------------------- */
 
+/* 左分类导航 + 右单区面板（设计稿 v2 · settings-b「侧导航」）。
+   导航项沿用轨道语言：无边框、填充高亮；容器为柔影卡片。 */
 .k-settings__grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: 240px minmax(0, 1fr);
   gap: var(--space-5);
   align-items: start;
 }
-.k-card {
+.k-settings__nav {
+  position: sticky;
+  top: calc(var(--topbar-h) + var(--space-4));
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3);
   background: var(--surface);
   border: var(--hairline) solid var(--outline);
   border-radius: var(--radius-card);
   box-shadow: var(--shadow-card), var(--shadow-highlight);
-  padding: var(--pad-card);
+}
+.k-settings__nav-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-inner);
+  color: var(--muted);
+  text-align: left;
+  transition: background var(--dur-fast) var(--ease-standard),
+    color var(--dur-fast) var(--ease-standard);
+}
+.k-settings__nav-item b {
+  color: var(--ink-2);
+  font-size: var(--text-body-sm);
+  font-weight: 600;
+}
+.k-settings__nav-item span {
+  font-size: var(--text-micro);
+  line-height: var(--text-micro-leading);
+  letter-spacing: var(--text-micro-tracking);
+}
+.k-settings__nav-item:hover {
+  background: var(--hover-veil);
+  color: var(--ink);
+}
+/* 选中态：填充高亮 + 顶部微高光，与轨道 is-active 同一语言（无边框） */
+.k-settings__nav-item.is-active {
+  background: var(--fill-tag);
+  color: var(--ink);
+  box-shadow: var(--shadow-highlight);
+}
+.k-settings__nav-item.is-active b {
+  color: var(--ink);
+}
+.k-settings__content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  min-width: 0;
+}
+/* 面板内统一竖向节奏：区块头与正文、正文块之间共用同一间距 token */
+.k-settings__content .k-panel {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
+}
+.k-settings__content .k-panel__head {
+  margin-bottom: 0;
+}
+/* 安静空态（如「暂无活动记录」）：保留表面阶，不抢注意力 */
+.k-settings__empty {
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-inner);
+  background: var(--fill-subtle);
+  color: var(--muted);
+  font-size: var(--text-body-sm);
 }
 .k-table {
   width: 100%;
@@ -736,15 +1416,35 @@
   flex-direction: column;
 }
 .k-activity__row {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: var(--space-4);
+  gap: var(--space-3);
   padding: var(--space-2) 0;
   font-size: var(--text-caption);
   border-top: var(--hairline) solid var(--rule-soft);
 }
 .k-activity__row:first-child {
   border-top: none;
+}
+/* route 窄：左导航转为横向可滚动标签条置顶，右面板整宽堆叠
+   （单列栅格由上方 route < 900px 容器查询统一处理） */
+@container route (max-width: 900px) {
+  .k-settings__nav {
+    position: static;
+    flex-direction: row;
+    gap: var(--space-1);
+    padding: var(--space-2);
+    overflow-x: auto;
+  }
+  .k-settings__nav-item {
+    flex: 0 0 auto;
+    flex-direction: row;
+    align-items: baseline;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-pill);
+  }
 }
 
 /* ---------------------------------------------------------------------------
@@ -778,37 +1478,34 @@
   flex-direction: column;
 }
 
+/* 抽屉内字段网格：dt/dd 成对铺成 2 列（阅读顺序 内容 → 元数据）
+ * 基础 .k-dl 为单列 label/value；此处限定抽屉，升级为 4 列 = 每行两对。
+ * 列序：label · value · label · value，故 max-content 逐个贴合各自标签。 */
+.k-drawer .k-dl {
+  grid-template-columns: max-content 1fr max-content 1fr;
+  gap: var(--space-3) var(--space-5);
+}
+/* 长值（项目完成定义 / 资源链接等）跨后三列独占整行，避免挤压 */
+.k-drawer .k-dl dd.k-dl__wide {
+  grid-column: 2 / -1;
+}
+
 /* ---------------------------------------------------------------------------
- * 容器查询 · 组件内部按容器宽度自适应（route / drawer / stat / task / pcard）
+ * 容器查询 · 组件内部按容器宽度自适应（route / drawer / stat / task）
  * 支持假设：container queries 为现代浏览器基线特性（Chrome 105+ / Safari 16+ / Firefox 110+）。
  * SHELL 级（rail / topbar / 移动底栏）仍用视口媒体查询（见 shell.css）。
  * CONTAINER MAP：
- *   route  = .k-route（版心宽度）→ 总览 stats/split、看板、日历主体、回顾分区、
- *           设置栅格、过滤行、周条
+ *   route  = .k-route（版心宽度）→ 工作台 body/proj、项目列表、日历主体、
+ *           回顾分区、设置栅格、过滤行、周条
  *   stat   = .k-stat            → 瓦片内大数字降级
  *   task   = .k-task            → 行内 meta 堆叠 / 收纳
- *   pcard  = .k-pcard           → 看板卡内部排版
  *   drawer = .k-drawer__body    → 抽屉内 dl / 说明行
  * ------------------------------------------------------------------------- */
 
-/* route < 1000px：统计瓦片 4 → 2 列 */
-@container route (max-width: 1000px) {
-  .k-overview__stats {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-/* route < 620px：统计瓦片 → 1 列 */
-@container route (max-width: 620px) {
-  .k-overview__stats {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-/* route < 900px：总览双栏 / 日脊+议程 / 回顾分区 / 设置栅格 → 单列 */
+/* route < 900px：日脊+议程 / 回顾仪表盘 / 设置栅格 → 单列 */
 @container route (max-width: 900px) {
-  .k-overview__split,
   .k-cal__body,
-  .k-review__periods,
-  .k-review__charts,
+  .k-review__dash,
   .k-settings__grid {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -816,17 +1513,8 @@
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
-/* route < 1120px：看板 4 → 2 列 */
-@container route (max-width: 1120px) {
-  .k-kanban {
-    grid-template-columns: repeat(2, minmax(220px, 1fr));
-  }
-}
-/* route < 640px：看板 → 1 列、指标 → 2 列、过滤行竖排、周条收紧 */
+/* route < 640px：指标 → 2 列、过滤行竖排、周条收紧 */
 @container route (max-width: 640px) {
-  .k-kanban {
-    grid-template-columns: minmax(0, 1fr);
-  }
   .k-review__metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -851,17 +1539,7 @@
 }
 /* 抽屉内容按抽屉宽度自适应 */
 @container drawer (max-width: 400px) {
-  .k-dl {
-    grid-template-columns: 84px 1fr;
-  }
-}
-
-/* 看板卡内部（容器 pcard）：卡片窄时标题/说明降级 */
-@container pcard (max-width: 220px) {
-  .k-pcard__title {
-    font-size: var(--text-body);
-  }
-  .k-pcard__outcome {
-    font-size: var(--text-micro);
+  .k-drawer .k-dl {
+    grid-template-columns: max-content 1fr;
   }
 }

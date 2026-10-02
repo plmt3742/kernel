@@ -2,9 +2,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
-import { ChevronRight, Plus } from 'lucide-react'
+import { AlertTriangle, ChevronRight, Plus } from 'lucide-react'
+import { clsx } from 'clsx'
 import { FilterBar, type FilterGroup } from '@/components/FilterBar'
-import { TaskRow } from '@/components/TaskRow'
+import { Checkbox } from '@/components/Checkbox'
 import { Drawer } from '@/components/Drawer'
 import { EmptyState } from '@/components/EmptyState'
 import { TagPill } from '@/components/TagPill'
@@ -244,39 +245,45 @@ export function Tasks() {
 
   return (
     <div className="k-view">
-      <div className="k-tasks__counts">
-        <div className="k-count">
-          <span className="k-count__num">{openCount}</span>
-          <span className="u-label k-muted">未完成 OPEN</span>
+      {/* 工具条：计数并入一行 + 快速新建（把纵向空间留给表格） */}
+      <div className="k-tasks__toolbar">
+        <div className="k-tasks__counts">
+          <div className="k-count">
+            <span className="k-count__num">{openCount}</span>
+            <span className="u-label k-muted">未完成 OPEN</span>
+          </div>
+          <div className="k-count">
+            <span className={overdueCount > 0 ? 'k-count__num is-accent' : 'k-count__num'}>
+              {overdueCount}
+            </span>
+            <span className="u-label k-muted">逾期 OVERDUE</span>
+          </div>
+          <div className="k-count">
+            <span className="k-count__num">{todayCount}</span>
+            <span className="u-label k-muted">今日 TODAY</span>
+          </div>
         </div>
-        <div className="k-count">
-          <span className={overdueCount > 0 ? 'k-count__num is-accent' : 'k-count__num'}>
-            {overdueCount}
-          </span>
-          <span className="u-label k-muted">逾期 OVERDUE</span>
-        </div>
-        <div className="k-count">
-          <span className="k-count__num">{todayCount}</span>
-          <span className="u-label k-muted">今日 TODAY</span>
+
+        <div className="k-quickadd">
+          <Plus size={16} strokeWidth={1.5} className="k-muted" aria-hidden />
+          <input
+            className="k-quickadd__input"
+            value={quick}
+            onChange={(event) => setQuick(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') handleQuickAdd()
+            }}
+            placeholder="快速新建任务，回车加入（写入 data/tasks）"
+            aria-label="快速新建任务"
+          />
+          <span className="u-label k-muted">ENTER</span>
         </div>
       </div>
 
-      <div className="k-quickadd">
-        <Plus size={16} strokeWidth={1.5} className="k-muted" aria-hidden />
-        <input
-          className="k-quickadd__input"
-          value={quick}
-          onChange={(event) => setQuick(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') handleQuickAdd()
-          }}
-          placeholder="快速新建任务，回车加入（写入 data/tasks）"
-          aria-label="快速新建任务"
-        />
-        <span className="u-label k-muted">ENTER</span>
+      {/* 筛选压缩为一行（状态 + 时间；结构不变，仅排版收敛） */}
+      <div className="k-tasks__filters">
+        <FilterBar groups={[statusGroup, timeGroup]} selected={filters} onSelect={handleFilterSelect} />
       </div>
-
-      <FilterBar groups={[statusGroup, timeGroup]} selected={filters} onSelect={handleFilterSelect} />
 
       <div className="k-tasks__groupbar">
         <button
@@ -321,44 +328,143 @@ export function Tasks() {
           hint="调整筛选条件，或清空筛选查看全部。"
         />
       ) : (
-        groups.map((group) => (
-          <div className="k-group" key={group.key}>
-            {groupMode !== 'flat' && (
-              <div className="k-group__head">
-                <span className="k-group__title">{group.title}</span>
-                <span className="k-muted u-label">{group.tasks.length}</span>
-              </div>
-            )}
-            <AnimatePresence initial={false}>
-              {group.tasks.map((task, index) => (
-                <motion.div
-                  key={task.id}
-                  layout
-                  initial={reduce === true ? { opacity: 0 } : { opacity: 0, y: 6 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{
-                    opacity: 0,
-                    height: 0,
-                    overflow: 'hidden',
-                    transition: { duration: DUR.base, ease: EASE_EXIT },
-                  }}
-                  transition={{
-                    duration: DUR.base,
-                    ease: EASE_ENTER,
-                    delay: reduce === true ? 0 : Math.min(index, STAGGER_MAX) * STAGGER,
-                  }}
-                >
-                  <TaskRow
-                    task={task}
-                    done={isTaskDone(task)}
-                    onToggle={handleToggle}
-                    onOpen={setDrawerId}
-                  />
-                </motion.div>
-              ))}
-            </AnimatePresence>
+        <>
+          {/* 每个分组一张表：吸顶表头 + 稠密行；窄屏由容器查询逐级收列 */}
+          {groups.map((group) => (
+            <div className="k-group" key={group.key}>
+              {groupMode !== 'flat' && (
+                <div className="k-group__head">
+                  <span className="k-group__title">{group.title}</span>
+                  <span className="k-muted u-label">{group.tasks.length}</span>
+                </div>
+              )}
+              <table className="k-table k-tasks__table" aria-label="任务列表">
+                <colgroup>
+                  <col className="k-tasks__col--check" />
+                  <col />
+                  <col className="k-tasks__col--ctx" />
+                  <col className="k-tasks__col--energy" />
+                  <col className="k-tasks__col--due" />
+                  <col className="k-tasks__col--proj" />
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th scope="col">完成</th>
+                    <th scope="col">标题</th>
+                    <th scope="col" className="k-tasks__col--ctx">
+                      上下文
+                    </th>
+                    <th scope="col" className="k-tasks__col--energy">
+                      能量
+                    </th>
+                    <th scope="col" className="k-tasks__col--due">
+                      截止
+                    </th>
+                    <th scope="col" className="k-tasks__col--proj">
+                      项目
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <AnimatePresence initial={false}>
+                    {group.tasks.map((task, index) => {
+                      const done = isTaskDone(task)
+                      const overdue = task.dueAt !== undefined && !done && isPast(task.dueAt)
+                      const project =
+                        task.projectId !== undefined
+                          ? getProjectById(task.projectId)?.title
+                          : undefined
+                      return (
+                        <motion.tr
+                          key={task.id}
+                          layout
+                          className={clsx('k-tasks__row', done && 'is-done')}
+                          initial={reduce === true ? { opacity: 0 } : { opacity: 0, y: 6 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{
+                            opacity: 0,
+                            transition: { duration: DUR.base, ease: EASE_EXIT },
+                          }}
+                          transition={{
+                            duration: DUR.base,
+                            ease: EASE_ENTER,
+                            delay: reduce === true ? 0 : Math.min(index, STAGGER_MAX) * STAGGER,
+                          }}
+                        >
+                          <td className="k-tasks__col--check">
+                            <Checkbox
+                              checked={done}
+                              onToggle={() => handleToggle(task.id)}
+                              label={`完成：${task.title}`}
+                            />
+                          </td>
+                          <td>
+                            <button
+                              type="button"
+                              className="k-task__open k-tasks__title-btn"
+                              onClick={() => setDrawerId(task.id)}
+                              aria-label={`查看任务：${task.title}`}
+                            >
+                              <span className="k-task__titlewrap">
+                                <span className="k-task__title">{task.title}</span>
+                                <span className="k-task__strike" aria-hidden />
+                              </span>
+                            </button>
+                          </td>
+                          <td className="k-tasks__col--ctx">
+                            <span className="k-tasks__ctx">
+                              {task.contexts.map((context) => (
+                                <TagPill key={context} ghost>
+                                  {context}
+                                </TagPill>
+                              ))}
+                            </span>
+                          </td>
+                          <td className="k-tasks__col--energy">
+                            <span className="k-task__energy">{ENERGY_LABEL[task.energy]}能</span>
+                          </td>
+                          <td className="k-tasks__col--due">
+                            {task.dueAt === undefined ? (
+                              <span className="k-tasks__due k-muted">无截止</span>
+                            ) : (
+                              <span
+                                className={clsx(
+                                  'k-task__due',
+                                  'k-tasks__due',
+                                  overdue && 'is-overdue',
+                                )}
+                              >
+                                {overdue && (
+                                  <AlertTriangle size={11} strokeWidth={1.5} aria-hidden />
+                                )}
+                                {overdue ? '逾期 ' : '截止 '}
+                                {humanizeDay(task.dueAt)}
+                              </span>
+                            )}
+                          </td>
+                          <td className="k-tasks__col--proj">
+                            {project !== undefined ? (
+                              <span className="k-tasks__proj">{project}</span>
+                            ) : (
+                              <span className="k-tasks__proj k-muted">—</span>
+                            )}
+                          </td>
+                        </motion.tr>
+                      )
+                    })}
+                  </AnimatePresence>
+                </tbody>
+              </table>
+            </div>
+          ))}
+
+          <div className="k-tasks__foot u-label">
+            <span>显示 {visible.length} 项 · 按截止升序</span>
+            <span>
+              逾期 {overdueCount} · 今日 {todayCount}
+            </span>
           </div>
-        ))
+        </>
       )}
 
       <Drawer
@@ -385,6 +491,14 @@ export function Tasks() {
       >
         {selected !== undefined && (
           <div className="k-detail-grid">
+            {/* 主内容区：可读内容（备注）优先；无备注则不渲染，不造假数据 */}
+            {selected.notes !== undefined && (
+              <div className="k-detail-block">
+                <span className="k-detail-block__label u-label">备注</span>
+                <p className="k-detail-note">{selected.notes}</p>
+              </div>
+            )}
+            {/* 元数据区：2 列紧凑字段网格（dt/dd 成对） */}
             <dl className="k-dl">
               <dt>状态</dt>
               <dd>{TASK_STATUS_LABEL[selected.status]}</dd>
@@ -417,6 +531,7 @@ export function Tasks() {
               <dt>创建</dt>
               <dd>{formatRelative(selected.createdAt)}</dd>
             </dl>
+            {/* 标签区：主内容之后扫描 */}
             {selected.tags.length > 0 && (
               <div className="k-detail-block">
                 <span className="k-detail-block__label u-label">标签</span>
@@ -425,12 +540,6 @@ export function Tasks() {
                     <TagPill key={tag}>{tagLabel(tag)}</TagPill>
                   ))}
                 </div>
-              </div>
-            )}
-            {selected.notes !== undefined && (
-              <div className="k-detail-block">
-                <span className="k-detail-block__label u-label">备注</span>
-                <p className="k-detail-note">{selected.notes}</p>
               </div>
             )}
           </div>

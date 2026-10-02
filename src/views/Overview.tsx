@@ -1,26 +1,76 @@
-// KERNEL · 总览 OVERVIEW（P0）——对齐 C 稿：状态胶囊 + 统计瓦片 + 紧凑日程 + 下一步行动
+// KERNEL · 总览 OVERVIEW（P0）——「工作台（Workbench）」：状态胶囊 + 左工作区（日程/行动交织）+ 右粘性监视柱 + 项目推进
 import { useNavigate } from 'react-router-dom'
-import { Sparkles } from 'lucide-react'
+import { clsx } from 'clsx'
 import { Panel } from '@/components/Panel'
-import { StatTile } from '@/components/StatTile'
 import { TaskRow } from '@/components/TaskRow'
 import { ScheduleList } from '@/components/ScheduleList'
 import { EmptyState } from '@/components/EmptyState'
-import { MeterBar } from '@/components/MeterBar'
+import { TrendLine } from '@/components/charts/TrendLine'
 import {
   getActiveProjects,
   getInboxCount,
-  getNextActions,
+  getProjectById,
   getProjectProgress,
+  getReviews,
   getTodayEvents,
 } from '@/lib/data'
-import { getCodingStreak, getNextEvent, getOverdueOpen, getTodayTaskScope } from '@/lib/derive'
+import {
+  getCodingStreakDetail,
+  getDueLoadSeries,
+  getNextEvent,
+  getOverdueOpen,
+  getTodayTaskScope,
+  getUpcomingNextActions,
+  getWeeklyCompletionSeries,
+} from '@/lib/derive'
 import { isTaskDone } from '@/lib/mutations'
 import { useDataRevision, useNow, useUndoableToggle } from '@/lib/hooks'
-import { formatTime } from '@/lib/date'
+import { formatTime, humanizeDay, isPast, toDate } from '@/lib/date'
 
-const INBOX_THRESHOLD = 10
+/* 水位容量 / 阈值与 WIP 上限：与 StatusBar 口径一致（capacity 12 · threshold 8） */
+const INBOX_CAPACITY = 12
+const INBOX_THRESHOLD = 8
 const WIP_LIMIT = 3
+
+/** 监视柱水平计：draft 版 .k-meter 轨道 + role=meter 语义 */
+function MonitorMeter({
+  value,
+  max,
+  threshold,
+  ariaLabel,
+  foot,
+}: {
+  value: number
+  max: number
+  threshold: number
+  ariaLabel: string
+  foot: string
+}) {
+  const safeMax = Math.max(1, max)
+  const fill = Math.min(100, (value / safeMax) * 100)
+  return (
+    <>
+      <div className={clsx('k-meter', value > threshold && 'is-over')}>
+        <div
+          className="k-meter__track"
+          role="meter"
+          aria-valuenow={value}
+          aria-valuemin={0}
+          aria-valuemax={safeMax}
+          aria-label={ariaLabel}
+        >
+          <div className="k-meter__fill" style={{ width: `${fill}%` }} />
+          <div
+            className="k-meter__threshold"
+            style={{ left: `${Math.min(100, (threshold / safeMax) * 100)}%` }}
+            aria-hidden
+          />
+        </div>
+      </div>
+      <span className="k-meter__foot">{foot}</span>
+    </>
+  )
+}
 
 export function Overview() {
   useDataRevision()
@@ -30,17 +80,59 @@ export function Overview() {
 
   const inboxCount = getInboxCount()
   const activeProjectList = getActiveProjects()
-  const activeProjects = activeProjectList.length
-
   const scope = getTodayTaskScope(now)
   const overdueOpen = getOverdueOpen(now).length
 
   const nextEvent = getNextEvent(now)
   const todayEvents = getTodayEvents(now)
-  const visibleEvents = todayEvents.slice(0, 6)
-  const streak = getCodingStreak(now)
+  const endedEvents = todayEvents.filter((event) => isPast(event.endAt, now))
+  // 行动列：即将到期的下一步行动（按截止升序，逾期已排除）
+  const flow = getUpcomingNextActions(5, now)
+  const streak = getCodingStreakDetail(now)
 
-  const topActions = getNextActions(5)
+  const completionSeries = getWeeklyCompletionSeries(now)
+  const dueLoadSeries = getDueLoadSeries(now)
+
+  /* 监视柱显示口径 */
+  const inboxOver = inboxCount > INBOX_THRESHOLD
+  const inboxFoot = inboxOver
+    ? '超过阈值 · 需要澄清排泄'
+    : `低于阈值 ${INBOX_THRESHOLD} · 存量健康`
+
+  const wip = activeProjectList.length
+  const wipMax = Math.max(WIP_LIMIT, wip)
+  const wipOver = wip > WIP_LIMIT
+  const wipFoot = wipOver ? `超出上限 ${wip - WIP_LIMIT} · 需收口` : `在限内 · 上限 ${WIP_LIMIT}`
+
+  const streakFoot =
+    streak.gaps.length === 0
+      ? `近 14 天命中 ${streak.hits} · 无缺口`
+      : `近 14 天命中 ${streak.hits} · 缺口 ${streak.gaps.join(' / ')}`
+
+  const completionSum = completionSeries.reduce((sum, day) => sum + day.value, 0)
+  // 周起点为周一：索引 5、6 即周六、周日
+  const weekendSum = completionSeries.slice(5).reduce((sum, day) => sum + day.value, 0)
+  const completedDays = completionSeries.filter((day) => day.value > 0)
+  const completionFoot =
+    completedDays.length === 0
+      ? '本周尚无完成 · 保持节奏'
+      : `${completedDays[0].label}–${completedDays[completedDays.length - 1].label} ${completionSum} 项 · 周末 ${weekendSum}`
+
+  const dueLoadSum = dueLoadSeries.reduce((sum, day) => sum + day.value, 0)
+  const dueLoadMax = Math.max(0, ...dueLoadSeries.map((day) => day.value))
+  const peakLabels = dueLoadSeries.filter((day) => day.value === dueLoadMax).map((day) => day.label)
+  const dueLoadFoot =
+    dueLoadSum === 0 ? '未来 7 天暂无到期' : `未来 7 天合计 ${dueLoadSum} · 峰值${peakLabels.join(' / ')}`
+
+  /* 最新周回顾：W40 一行（无周回顾则省略） */
+  const weeklyReview = [...getReviews()]
+    .filter((review) => review.type === 'weekly')
+    .sort((a, b) => toDate(b.date).getTime() - toDate(a.date).getTime())
+    .at(0)
+  const w40 =
+    weeklyReview === undefined
+      ? undefined
+      : `${weeklyReview.periodKey.replace(/^\d{4}-/, '')} 回顾 · 捕捉 ${weeklyReview.metrics.captured} · 新增 ${weeklyReview.metrics.created} · 完成 ${weeklyReview.metrics.completed} · 逾期 ${weeklyReview.metrics.overdue} · 迁移 ${weeklyReview.metrics.migrated}`
 
   return (
     <div className="k-view">
@@ -48,7 +140,7 @@ export function Overview() {
         <span className="k-chip">
           <span className="k-chip__dot" aria-hidden />
           {nextEvent !== undefined
-            ? `下一项 · ${nextEvent.title} ${formatTime(nextEvent.startAt)}`
+            ? `下一项 · ${nextEvent.title} ${humanizeDay(nextEvent.startAt, now)} ${formatTime(nextEvent.startAt)}`
             : '下一项 · 今日暂无日程'}
         </span>
         <span className="k-chip">
@@ -63,156 +155,191 @@ export function Overview() {
         )}
       </div>
 
-      <div className="k-overview__stats">
-        <StatTile
-          label="收件箱水位"
-          value={inboxCount}
-          suffix={`/ ${INBOX_THRESHOLD}`}
-          accent={inboxCount > INBOX_THRESHOLD}
-          meter={{ value: inboxCount, max: INBOX_THRESHOLD, threshold: INBOX_THRESHOLD }}
-          foot={inboxCount > INBOX_THRESHOLD ? '超过阈值 · 需要澄清排泄' : '低于阈值 · 存量健康'}
-        />
-        <StatTile
-          label="今日任务"
-          value={scope.done}
-          suffix={`/ ${scope.total}`}
-          foot={
-            scope.overdue > 0 ? (
-              <span>
-                今日到期 {scope.dueToday} · <span className="k-accent">逾期 {scope.overdue}</span>
-              </span>
-            ) : (
-              `今日到期 ${scope.dueToday} · 逾期 ${scope.overdue}`
-            )
+      <div className="r3c-body">
+        {/* 左 2/3：工作台（已结束日程 + 现在分界 + 行动） */}
+        <Panel
+          title="工作台"
+          en="WORKBENCH"
+          actions={
+            <span className="u-label k-muted">
+              今日任务 {scope.done} / {scope.total} · 日程 {todayEvents.length} · 行动 {flow.length}
+            </span>
           }
-        />
-        <StatTile
-          label="进行中项目"
-          value={activeProjects}
-          suffix={`/ ${WIP_LIMIT}`}
-          accent={activeProjects > WIP_LIMIT}
-          foot={activeProjects > WIP_LIMIT ? '超出在制品上限' : '活跃项目数在限内'}
-        />
-        <StatTile label="连续刷题" value={streak} suffix="天" foot="每日一题算法 · 习惯 h-0002" />
-      </div>
+        >
+          {endedEvents.length > 0 || flow.length > 0 ? (
+            <div className="r3c-flow">
+              {endedEvents.length > 0 && (
+                <ScheduleList
+                  events={endedEvents}
+                  now={now}
+                  ended
+                  onSelect={() => navigate('/calendar', { viewTransition: true })}
+                />
+              )}
 
-      <div className="k-overview__split">
-        <div className="k-overview__col">
-          <Panel
-            title="今日日程"
-            en="TODAY"
-            actions={<span className="u-label k-muted">{todayEvents.length} 项</span>}
-          >
-            {visibleEvents.length > 0 ? (
-              <ScheduleList
-                events={visibleEvents}
-                now={now}
-                onSelect={() => navigate('/calendar', { viewTransition: true })}
-              />
-            ) : (
-              <EmptyState title="今日无日程" hint="空的一天，适合深工作。可到日程页查看本周安排。" />
-            )}
-          </Panel>
+              <div className="r3c-now">
+                <span className="r3c-now__line" aria-hidden />
+                <span className="r3c-now__label u-label">
+                  现在 · {formatTime(now)} · 以下按截止时间排序
+                </span>
+                <span className="r3c-now__line" aria-hidden />
+              </div>
 
-          <Panel
-            title="下一步行动"
-            en="NEXT ACTIONS"
-            actions={<span className="u-label k-muted">{topActions.length} 项</span>}
-          >
-            {topActions.length > 0 ? (
-              <div className="k-tasklist-mini">
-                {topActions.map((task) => (
+              {flow.map((task) => {
+                const project = task.projectId !== undefined ? getProjectById(task.projectId) : undefined
+                const progress = task.projectId !== undefined ? getProjectProgress(task.projectId) : undefined
+                const projectProgress =
+                  project !== undefined && progress !== undefined
+                    ? { title: project.title, done: progress.done, total: progress.total }
+                    : undefined
+                return (
                   <TaskRow
                     key={task.id}
                     task={task}
                     done={isTaskDone(task)}
+                    showDueTime
+                    projectProgress={projectProgress}
                     onToggle={(id) => {
-                      const target = topActions.find((item) => item.id === id)
+                      const target = flow.find((item) => item.id === id)
                       if (target !== undefined) toggleTask(target)
                     }}
                     onOpen={(id) => navigate(`/tasks?task=${id}`, { viewTransition: true })}
                   />
+                )
+              })}
+            </div>
+          ) : (
+            <EmptyState title="工作台暂无内容" hint="今日无已结束日程，也没有可执行的下一步行动。" />
+          )}
+        </Panel>
+
+        {/* 右 1/3：监视柱（粘性；窄容器落回单列） */}
+        <Panel title="监视" en="MONITOR" className="r3c-rail">
+          <div className="r3c-mon">
+            <div className="r3c-block">
+              <div className="r3c-head">
+                <span className="r3c-head__t">收件箱水位</span>
+                <span className="r3c-head__v k-mono">
+                  {inboxCount} / {INBOX_CAPACITY}
+                </span>
+              </div>
+              <MonitorMeter
+                value={inboxCount}
+                max={INBOX_CAPACITY}
+                threshold={INBOX_THRESHOLD}
+                ariaLabel="收件箱水位"
+                foot={inboxFoot}
+              />
+            </div>
+
+            <div className="r3c-block">
+              <div className="r3c-head">
+                <span className="r3c-head__t">WIP · 进行中</span>
+                <span className={clsx('r3c-head__v', 'k-mono', wipOver && 'is-accent')}>
+                  {wip} / 上限 {WIP_LIMIT}
+                </span>
+              </div>
+              <MonitorMeter
+                value={wip}
+                max={wipMax}
+                threshold={WIP_LIMIT}
+                ariaLabel="在制品数量"
+                foot={wipFoot}
+              />
+            </div>
+
+            <div className="r3c-block">
+              <div className="r3c-head">
+                <span className="r3c-head__t">连续刷题</span>
+                <span className="r3c-head__v k-mono">{streak.current} 天</span>
+              </div>
+              <div className="k-streak" role="img" aria-label="近 14 天打卡点阵">
+                {streak.window.map((cell) => (
+                  <div
+                    key={cell.key}
+                    className={clsx('k-streak__cell', !cell.hit && 'is-miss')}
+                  />
                 ))}
               </div>
-            ) : (
-              <EmptyState title="没有可执行项" hint="收件箱与项目已清空，或全部为等待/将来状态。" />
-            )}
-          </Panel>
-        </div>
+              <span className="k-meter__foot">{streakFoot}</span>
+            </div>
 
-        <div className="k-overview__col">
-          <Panel
-            title="项目"
-            en="PROJECTS"
-            actions={
-              <button
-                type="button"
-                className="k-btn k-btn--sm"
-                onClick={() => navigate('/projects', { viewTransition: true })}
-              >
-                全部
-              </button>
-            }
-          >
-            {activeProjectList.length > 0 ? (
-              <div className="k-proj-mini">
-                {activeProjectList.slice(0, 4).map((project) => {
-                  const progress = getProjectProgress(project.id)
-                  const pct =
-                    progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0
-                  return (
-                    <button
-                      type="button"
-                      className="k-proj-mini__row"
-                      key={project.id}
-                      onClick={() => navigate('/projects', { viewTransition: true })}
-                    >
-                      <span className="k-proj-mini__top">
-                        <span className="k-proj-mini__name">{project.title}</span>
-                        <span className="k-pill is-ghost">进行中</span>
-                      </span>
-                      <MeterBar value={progress.done} max={Math.max(1, progress.total)} />
-                      <span className="k-proj-mini__foot">
-                        <span className="k-mono">
-                          {progress.done} / {progress.total}
-                        </span>
-                        <span className="k-mono">{pct}%</span>
-                      </span>
-                    </button>
-                  )
-                })}
+            <div className="r3c-block">
+              <div className="r3c-head">
+                <span className="r3c-head__t">完成趋势</span>
+                <span className="r3c-head__v k-mono">合计 {completionSum}</span>
               </div>
-            ) : (
-              <EmptyState title="暂无进行中项目" hint="所有项目都在暂停或已完成状态。" />
-            )}
-          </Panel>
-        </div>
+              <TrendLine
+                data={completionSeries}
+                height={40}
+                showValues={false}
+                showAxis={false}
+                ariaLabel="近 7 天完成趋势"
+              />
+              <span className="k-meter__foot">{completionFoot}</span>
+            </div>
+
+            <div className="r3c-block">
+              <div className="r3c-head">
+                <span className="r3c-head__t">到期负载</span>
+                <span className="r3c-head__v k-mono">高峰 {dueLoadMax}</span>
+              </div>
+              <TrendLine
+                data={dueLoadSeries}
+                height={40}
+                showValues={false}
+                showAxis={false}
+                ariaLabel="未来 7 天到期负载"
+              />
+              <span className="k-meter__foot">{dueLoadFoot}</span>
+            </div>
+          </div>
+        </Panel>
       </div>
 
-      <div className="k-aisug">
-        <div className="k-aisug__head">
-          <Sparkles size={16} strokeWidth={1.5} aria-hidden />
-          <span className="k-panel__cn">AI 建议</span>
-          <span className="k-aisug__badge u-label">待接入 v0.5</span>
-        </div>
-        <p className="k-view__intro">
-          未来由 opencode 经本地服务生成，以下是形态预览（示意内容，非实时计算）：
-        </p>
-        <div className="k-aisug__list">
-          <p className="k-aisug__line">
-            <span className="k-aisug__bullet">01</span>
-            数据结构期中临近，建议今天优先处理 t-0001 与 t-0003，避免临近截止堆积。
-          </p>
-          <p className="k-aisug__line">
-            <span className="k-aisug__bullet">02</span>
-            收件箱有 {inboxCount} 条未澄清，其中"助学金材料"类可合并为一个任务。
-          </p>
-          <p className="k-aisug__line">
-            <span className="k-aisug__bullet">03</span>
-            健康作息连续三天中断，建议今晚把睡眠列为首位习惯。
-          </p>
-        </div>
-      </div>
+      {/* 底部：项目推进（首个 4 个活跃项目 + W40 回顾行） */}
+      <Panel
+        title="项目推进"
+        en="PROJECTS"
+        actions={<span className="u-label k-muted">{activeProjectList.length} 个进行中</span>}
+      >
+        {activeProjectList.length > 0 ? (
+          <>
+            <div className="r3c-proj">
+              {activeProjectList.slice(0, 4).map((project) => {
+                const progress = getProjectProgress(project.id)
+                const pct =
+                  progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0
+                return (
+                  <button
+                    type="button"
+                    className="k-proj-mini__row"
+                    key={project.id}
+                    onClick={() => navigate('/projects', { viewTransition: true })}
+                  >
+                    <span className="k-proj-mini__top">
+                      <span className="k-proj-mini__name">{project.title}</span>
+                      <span className="k-pill is-ghost">进行中</span>
+                    </span>
+                    <div className="k-meter__track">
+                      <div className="k-meter__fill" style={{ width: `${pct}%` }} />
+                    </div>
+                    <span className="k-proj-mini__foot">
+                      <span className="k-mono">
+                        {progress.done} / {progress.total}
+                      </span>
+                      <span className="k-mono">{pct}%</span>
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+            {w40 !== undefined && <p className="u-label k-muted r3c-w40">{w40}</p>}
+          </>
+        ) : (
+          <EmptyState title="暂无进行中项目" hint="所有项目都在暂停或已完成状态。" />
+        )}
+      </Panel>
     </div>
   )
 }

@@ -68,7 +68,7 @@ export function Library() {
 
   return (
     <div className="k-view">
-      <div className="k-tabs">
+      <div className="k-tabs k-lib__tabs">
         {(
           [
             ['all', '全部 ALL'],
@@ -85,13 +85,16 @@ export function Library() {
             {label}
           </button>
         ))}
+        <span className="u-label k-muted k-lib__tabs-count">
+          笔记 {notes.length} · 资料 {resources.length}
+        </span>
       </div>
 
-      <div className="k-filterbar">
+      <div className="k-lib__filters">
         {showNotes && (
-          <div className="k-filterrow">
-            <span className="k-filterrow__label u-label">笔记类型</span>
-            <div className="k-filterrow__chips">
+          <div className="k-lib__fgroup" role="group" aria-label="笔记类型">
+            <span className="k-lib__flabel u-label">笔记类型</span>
+            <div className="k-lib__seg">
               <TagPill selected={noteType === ''} onClick={() => setNoteType('')}>
                 全部
               </TagPill>
@@ -109,9 +112,9 @@ export function Library() {
         )}
         {showResources && (
           <>
-            <div className="k-filterrow">
-              <span className="k-filterrow__label u-label">资料类型</span>
-              <div className="k-filterrow__chips">
+            <div className="k-lib__fgroup" role="group" aria-label="资料类型">
+              <span className="k-lib__flabel u-label">资料类型</span>
+              <div className="k-lib__seg">
                 <TagPill selected={resourceKind === ''} onClick={() => setResourceKind('')}>
                   全部
                 </TagPill>
@@ -126,9 +129,9 @@ export function Library() {
                 ))}
               </div>
             </div>
-            <div className="k-filterrow">
-              <span className="k-filterrow__label u-label">状态</span>
-              <div className="k-filterrow__chips">
+            <div className="k-lib__fgroup" role="group" aria-label="状态">
+              <span className="k-lib__flabel u-label">状态</span>
+              <div className="k-lib__seg">
                 <TagPill selected={resourceStatus === ''} onClick={() => setResourceStatus('')}>
                   全部
                 </TagPill>
@@ -145,9 +148,9 @@ export function Library() {
             </div>
           </>
         )}
-        <div className="k-filterrow">
-          <span className="k-filterrow__label u-label">标签</span>
-          <div className="k-filterrow__chips">
+        <div className="k-lib__fgroup" role="group" aria-label="标签">
+          <span className="k-lib__flabel u-label">标签</span>
+          <div className="k-lib__seg">
             <TagPill selected={tag === ''} onClick={() => setTag('')}>
               全部
             </TagPill>
@@ -191,7 +194,7 @@ export function Library() {
                       />
                     ))}
                   </span>
-                  <span className="k-mono">{formatRelative(note.updatedAt, now)}</span>
+                  <span className="k-mono k-lib__time">{formatRelative(note.updatedAt, now)}</span>
                 </span>
               </button>
             ))
@@ -221,6 +224,9 @@ export function Library() {
                   <span className="k-lib-row__meta">
                     <span>{RESOURCE_STATUS_LABEL[resource.status]}</span>
                     {area !== undefined && <span className="k-mono">{area.title}</span>}
+                    <span className="k-mono k-lib__time">
+                      {formatRelative(resource.addedAt, now)}
+                    </span>
                   </span>
                 </button>
               )
@@ -296,7 +302,7 @@ export function Library() {
               <dt>状态</dt>
               <dd>{RESOURCE_STATUS_LABEL[selectedResource.status]}</dd>
               <dt>链接</dt>
-              <dd>
+              <dd className="k-dl__wide">
                 {selectedResource.url !== undefined ? (
                   <a
                     href={selectedResource.url}
