@@ -374,6 +374,82 @@
   }
 }
 
+/* AI 解析（v0.5）：安静入口 + 建议卡；仅用 token 表面阶，无渐变 / 发光 */
+.ic-ai {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--fill-subtle);
+  border-radius: var(--radius-inner);
+}
+.ic-ai__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.ic-ai__title {
+  color: var(--ink);
+  font-size: var(--text-body-sm);
+  line-height: 1.4;
+}
+.ic-ai__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.ic-ai__reason {
+  color: var(--muted);
+  font-size: var(--text-caption);
+  line-height: 1.5;
+  max-width: var(--measure);
+}
+.ic-ai__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.ic-ai.is-error .ic-ai__title {
+  color: var(--danger-text);
+}
+/* 解析中的过程可视：阶段行 + 增量预览（安静；无渐变 / 发光 / 强动画） */
+.ic-ai__process {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.ic-ai__stage {
+  color: var(--muted);
+  font-size: var(--text-caption);
+}
+.ic-ai__stream {
+  color: var(--muted);
+  font-size: var(--text-caption);
+  line-height: 1.5;
+  max-width: var(--measure);
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.ic-ai__stream.is-dim {
+  opacity: 0.7;
+}
+/* 关联建议行（项目 / 区域 / 标签 / 疑似重复；仅提示，不自动合并） */
+.ic-ai__links {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.ic-ai__dup {
+  color: var(--muted);
+  font-size: var(--text-caption);
+}
+
 /* ---------------------------------------------------------------------------
  * 任务 TASKS
  * ------------------------------------------------------------------------- */
@@ -1237,6 +1313,71 @@
   color: var(--ink-2);
 }
 
+/* AI 周回顾草稿编辑（Slice C）：安静、token-only */
+.k-review__draft {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin-top: var(--space-5);
+}
+.k-review__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.k-review__label {
+  font-size: var(--text-caption);
+  color: var(--muted);
+}
+.k-review__ta {
+  width: 100%;
+  resize: vertical;
+  padding: var(--space-3);
+  border: var(--hairline) solid var(--outline);
+  border-radius: var(--radius-inner);
+  background: var(--surface-elevated);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: var(--text-body);
+  line-height: 1.6;
+}
+.k-review__ta:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.k-review__advice {
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius-inner);
+  background: var(--fill-subtle);
+}
+.k-review__advice-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-3);
+  font-size: var(--text-caption);
+}
+.k-review__advice-row + .k-review__advice-row {
+  border-top: var(--hairline) solid var(--rule-soft);
+}
+.k-review__busy,
+.k-review__error {
+  font-size: var(--text-body);
+  color: var(--muted);
+}
+.k-review__error {
+  color: var(--danger-text);
+}
+/* 五步清单在 Slice C 退化为静态指引 */
+.k-step.is-guide {
+  cursor: default;
+}
+.k-step.is-guide:hover {
+  transform: none;
+  box-shadow: var(--shadow-soft);
+}
+
 /* 回顾流程 stepper */
 .k-steps {
   display: flex;
@@ -1476,6 +1617,13 @@
 .k-tasklist-mini {
   display: flex;
   flex-direction: column;
+}
+
+/* 关联区块：互链芯片允许折行，长标题在胶囊内换行不溢出抽屉 */
+.k-relations .k-pill {
+  max-width: 100%;
+  white-space: normal;
+  text-align: left;
 }
 
 /* 抽屉内字段网格：dt/dd 成对铺成 2 列（阅读顺序 内容 → 元数据）

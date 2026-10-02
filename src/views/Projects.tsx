@@ -1,10 +1,12 @@
 // KERNEL · 项目 PROJECTS（P1）：状态分组纵向列表 + 行内进度 + 详情抽屉
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
 import { Drawer } from '@/components/Drawer'
 import { MeterBar } from '@/components/MeterBar'
 import { TagPill } from '@/components/TagPill'
 import { EmptyState } from '@/components/EmptyState'
 import { TaskRow } from '@/components/TaskRow'
+import { Relations } from '@/components/Relations'
 import {
   getAreaById,
   getProjectProgress,
@@ -38,8 +40,24 @@ const GROUPS: ProjectGroupSpec[] = [
 export function Projects() {
   useDataRevision()
   const toggleTask = useUndoableToggle()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [drawerId, setDrawerId] = useState<string | null>(null)
   const projects = getSnapshot().projects
+
+  // 深链直达项目抽屉：/projects?project=p-0002
+  useEffect(() => {
+    const id = searchParams.get('project')
+    if (id !== null && projects.some((project) => project.id === id)) {
+      setDrawerId(id)
+    }
+  }, [searchParams, projects])
+
+  const closeDrawer = (): void => {
+    setDrawerId(null)
+    if (searchParams.get('project') !== null) {
+      setSearchParams({}, { replace: true })
+    }
+  }
 
   const selected = drawerId !== null ? projects.find((p) => p.id === drawerId) : undefined
 
@@ -103,7 +121,7 @@ export function Projects() {
 
       <Drawer
         open={selected !== undefined}
-        onClose={() => setDrawerId(null)}
+        onClose={closeDrawer}
         kicker={`项目 · ${selected?.id ?? ''} · ${selected !== undefined ? PROJECT_STATUS_LABEL[selected.status] : ''}`}
         title={selected?.title ?? ''}
       >
@@ -175,6 +193,7 @@ function ProjectDetail({ project, onToggleTask }: ProjectDetailProps) {
   const tasks = getTasksByProject(project.id)
   const progress = getProjectProgress(project.id)
   const area = getAreaById(project.areaId)
+  const nextAction = project.nextActionId !== undefined ? getTaskById(project.nextActionId) : undefined
   return (
     <div className="k-detail-grid">
       <dl className="k-dl">
@@ -184,6 +203,16 @@ function ProjectDetail({ project, onToggleTask }: ProjectDetailProps) {
         <dd>{PROJECT_STATUS_LABEL[project.status]}</dd>
         <dt>区域</dt>
         <dd>{area?.title ?? project.areaId}</dd>
+        <dt>下一步</dt>
+        <dd>
+          {nextAction !== undefined ? (
+            <Link to={`/tasks?task=${nextAction.id}`} viewTransition>
+              {nextAction.title}
+            </Link>
+          ) : (
+            '—'
+          )}
+        </dd>
         <dt>进度</dt>
         <dd>
           {progress.done} / {progress.total}
@@ -201,6 +230,7 @@ function ProjectDetail({ project, onToggleTask }: ProjectDetailProps) {
           </div>
         </div>
       )}
+      <Relations kind="project" id={project.id} />
       <div className="k-detail-block">
         <span className="k-detail-block__label u-label">任务清单 · {tasks.length}</span>
         {tasks.length === 0 ? (

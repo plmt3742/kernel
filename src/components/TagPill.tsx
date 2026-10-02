@@ -20,7 +20,13 @@ export function TagPill({ children, selected, onClick, title, accent, ghost }: T
   )
   if (onClick !== undefined) {
     return (
-      <button type="button" className={className} onClick={onClick} aria-pressed={selected === true} title={title}>
+      <button
+        type="button"
+        className={className}
+        onClick={onClick}
+        aria-pressed={selected === undefined ? undefined : selected}
+        title={title}
+      >
         {children}
       </button>
     )

@@ -1,11 +1,13 @@
 // KERNEL · 资料 LIBRARY（P1）：笔记 + 资料混合流 / 类型与标签筛选 / Markdown 阅读抽屉
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import { clsx } from 'clsx'
 import { Panel } from '@/components/Panel'
 import { Drawer } from '@/components/Drawer'
 import { TagPill } from '@/components/TagPill'
 import { EmptyState } from '@/components/EmptyState'
+import { Relations } from '@/components/Relations'
 import { getAreaById, getBacklinks, getNotes, getResources, getTags } from '@/lib/data'
 import {
   NOTE_TYPE_EN,
@@ -32,6 +34,7 @@ interface DrawerTarget {
 
 export function Library() {
   const now = useNow()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [tab, setTab] = useState<Tab>('all')
   const [noteType, setNoteType] = useState<NoteType | ''>('')
   const [resourceKind, setResourceKind] = useState<ResourceKind | ''>('')
@@ -41,6 +44,26 @@ export function Library() {
 
   const notes = getNotes()
   const resources = getResources()
+
+  // 深链直达阅读抽屉：/library?note=n-0001 或 /library?resource=r-0001
+  useEffect(() => {
+    const noteId = searchParams.get('note')
+    if (noteId !== null && notes.some((note) => note.id === noteId)) {
+      setTarget({ kind: 'note', id: noteId })
+      return
+    }
+    const resourceId = searchParams.get('resource')
+    if (resourceId !== null && resources.some((resource) => resource.id === resourceId)) {
+      setTarget({ kind: 'resource', id: resourceId })
+    }
+  }, [searchParams, notes, resources])
+
+  const closeDrawer = (): void => {
+    setTarget(null)
+    if (searchParams.get('note') !== null || searchParams.get('resource') !== null) {
+      setSearchParams({}, { replace: true })
+    }
+  }
 
   const topicTags = useMemo(
     () => getTags().filter((item) => item.namespace === 'topic').slice(0, 12),
@@ -237,7 +260,7 @@ export function Library() {
 
       <Drawer
         open={selectedNote !== undefined || selectedResource !== undefined}
-        onClose={() => setTarget(null)}
+        onClose={closeDrawer}
         kicker={
           selectedNote !== undefined
             ? `笔记 · ${selectedNote.id}`
@@ -289,6 +312,7 @@ export function Library() {
                 </div>
               )}
             </div>
+            <Relations kind="note" id={selectedNote.id} />
           </div>
         )}
         {selectedResource !== undefined && (
@@ -332,6 +356,7 @@ export function Library() {
                 <p className="k-detail-note">{selectedResource.note}</p>
               </div>
             )}
+            <Relations kind="resource" id={selectedResource.id} />
           </div>
         )}
       </Drawer>

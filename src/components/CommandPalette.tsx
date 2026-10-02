@@ -6,7 +6,6 @@ import { Command } from 'cmdk'
 import { CornerDownLeft, MoonStar, Plus, Search, Sparkles } from 'lucide-react'
 import { usePalette } from '@/context/PaletteContext'
 import { useTheme } from '@/context/ThemeContext'
-import { useToast } from '@/context/ToastContext'
 import { NAV_ITEMS } from '@/lib/nav'
 import { DUR, EASE_ENTER } from '@/lib/motion'
 import { trapTab } from '@/lib/focus'
@@ -15,7 +14,6 @@ export function CommandPalette() {
   const { open, setOpen } = usePalette()
   const navigate = useNavigate()
   const { theme, setTheme } = useTheme()
-  const { toast } = useToast()
   const reduce = useReducedMotion()
   const dialogRef = useRef<HTMLDivElement>(null)
   const setOpenRef = useRef(setOpen)
@@ -151,20 +149,15 @@ export function CommandPalette() {
                   </Command.Item>
                 </Command.Group>
 
-                <Command.Group heading="AI · 待接入" className="k-palette__group">
+                <Command.Group heading="AI" className="k-palette__group">
                   <Command.Item
                     className="k-palette__item"
-                    value="AI 指令 待接入 v0.5"
-                    onSelect={() =>
-                      run(() => {
-                        toast('AI 集成计划于 v0.5 接入')
-                        navigate('/settings', { viewTransition: true })
-                      })
-                    }
+                    value="AI 解析 收件箱 inbox parse"
+                    onSelect={() => run(() => navigate('/inbox', { viewTransition: true }))}
                   >
                     <Sparkles size={16} strokeWidth={1.5} aria-hidden />
-                    <span>AI 指令入口</span>
-                    <span className="k-palette__hint u-label">待接入 v0.5</span>
+                    <span>AI 解析（收件箱）</span>
+                    <span className="k-palette__hint u-label">INBOX</span>
                   </Command.Item>
                 </Command.Group>
               </Command.List>

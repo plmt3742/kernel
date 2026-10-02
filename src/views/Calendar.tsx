@@ -1,11 +1,13 @@
 // KERNEL · 日程 CALENDAR：议程流（下一项高亮 + 今天/明天/本周/下周/更远 分组 + 迷你月历）
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { RefObject } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { Panel } from '@/components/Panel'
 import { Drawer } from '@/components/Drawer'
 import { TagPill } from '@/components/TagPill'
 import { EmptyState } from '@/components/EmptyState'
+import { Relations } from '@/components/Relations'
 import { getAreaById, getEventById, getEvents, getProjectById } from '@/lib/data'
 import { EVENT_STATUS_LABEL, tagLabel } from '@/lib/format'
 import {
@@ -124,10 +126,26 @@ interface MiniCell {
 export function Calendar() {
   const now = useNow()
   const revision = useDataRevision()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [drawerId, setDrawerId] = useState<string | null>(null)
   const [monthCursor, setMonthCursor] = useState(() => new Date())
   const heroRef = useRef<HTMLElement>(null)
   const todayRef = useRef<HTMLElement>(null)
+
+  // 深链直达事件抽屉：/calendar?event=e-0003
+  useEffect(() => {
+    const id = searchParams.get('event')
+    if (id !== null && getEventById(id) !== undefined) {
+      setDrawerId(id)
+    }
+  }, [searchParams])
+
+  const closeDrawer = (): void => {
+    setDrawerId(null)
+    if (searchParams.get('event') !== null) {
+      setSearchParams({}, { replace: true })
+    }
+  }
 
   const scrollToRef = (ref: RefObject<HTMLElement | null>): void => {
     const el = ref.current
@@ -379,7 +397,7 @@ export function Calendar() {
 
       <Drawer
         open={selectedEvent !== undefined}
-        onClose={() => setDrawerId(null)}
+        onClose={closeDrawer}
         kicker={`日程 · ${selectedEvent?.id ?? ''}`}
         title={selectedEvent?.title ?? ''}
       >
@@ -421,6 +439,7 @@ export function Calendar() {
                 </div>
               </div>
             )}
+            <Relations kind="event" id={selectedEvent.id} />
           </div>
         )}
       </Drawer>

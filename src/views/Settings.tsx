@@ -5,7 +5,7 @@ import { Panel } from '@/components/Panel'
 import { useTheme } from '@/context/ThemeContext'
 import { getSnapshot } from '@/lib/data'
 import { getDataRecordCount } from '@/lib/derive'
-import { useDataRevision, useDataSource } from '@/lib/hooks'
+import { useAiHealth, useDataRevision, useDataSource } from '@/lib/hooks'
 import { api } from '@/lib/api'
 import { formatTime } from '@/lib/date'
 
@@ -38,6 +38,7 @@ export function Settings() {
   useDataRevision()
   const { theme, setTheme } = useTheme()
   const source = useDataSource()
+  const ai = useAiHealth()
   const [section, setSection] = useState<SectionId>('appearance')
   const [activity, setActivity] = useState<ActivityEntry[]>([])
   const snapshot = getSnapshot()
@@ -137,16 +138,39 @@ export function Settings() {
           {section === 'ai' && (
             <Panel title="AI 集成" en="OPENCODE">
               <div className="k-between">
-                <span className="k-panel__cn">状态 · OFFLINE</span>
-                <span className="k-pill is-accent">待接入 v0.5</span>
+                <span className="k-panel__cn">
+                  {ai.status === 'online'
+                    ? '状态 · ONLINE'
+                    : ai.status === 'offline'
+                      ? '状态 · OFFLINE'
+                      : '状态 · 连接中'}
+                </span>
+                <span
+                  className={[
+                    'k-svc-pill',
+                    ai.status === 'online' ? 'is-ok' : '',
+                    ai.status === 'offline' ? 'is-off' : '',
+                  ]
+                    .filter(Boolean)
+                    .join(' ')}
+                >
+                  {ai.status === 'online'
+                    ? `127.0.0.1:4096 · ${ai.model ?? 'opencode'}`
+                    : ai.status === 'offline'
+                      ? 'opencode 未启动'
+                      : '检测中'}
+                </span>
               </div>
               <p className="k-view__intro">
-                计划链路：网页 → 本地 Node 服务（唯一写者）→ <code>opencode serve</code>（仅 127.0.0.1:4096）→
-                结果写回 <code>data/</code> 并经 SSE 推进度。详见 <code>docs/02-ARCHITECTURE.md</code>。
+                AI 已接入（收件箱 AI 解析；经本地 <code>opencode serve</code>，仅 127.0.0.1:4096；模型走
+                opencode 默认配置；AI 只出建议、确认后才写入；opencode 永不暴露局域网）。
               </p>
-              <p className="k-view__intro">
-                v0.4 数据服务已就位；AI 仍为 UI 预留（AI 建议卡、命令面板入口），v0.5 接入。opencode 永不直接暴露到局域网。
-              </p>
+              {ai.status === 'offline' && (
+                <p className="k-view__intro k-muted">
+                  opencode 服务离线：<code>npm run dev</code> 会自动拉起 opencode serve，或手动{' '}
+                  <code>opencode serve --port 4096</code>。
+                </p>
+              )}
             </Panel>
           )}
 
@@ -238,7 +262,7 @@ export function Settings() {
               </div>
               <dl className="k-dl">
                 <dt>版本</dt>
-                <dd className="k-mono">v0.4.0</dd>
+                <dd className="k-mono">v0.5.0</dd>
                 <dt>内核隐喻</dt>
                 <dd>进程 = 任务/项目 · 内存 = 资料/知识 · I/O = 收件箱 · 调度器 = 日程 · 检索 = 命令面板 · GC = 回顾</dd>
                 <dt>数据版本</dt>

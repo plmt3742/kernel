@@ -9,6 +9,7 @@ import { Checkbox } from '@/components/Checkbox'
 import { Drawer } from '@/components/Drawer'
 import { EmptyState } from '@/components/EmptyState'
 import { TagPill } from '@/components/TagPill'
+import { Relations } from '@/components/Relations'
 import { useToast } from '@/context/ToastContext'
 import { getAreaById, getAreas, getProjectById, getSnapshot, getTags } from '@/lib/data'
 import { createTask, isTaskDone } from '@/lib/mutations'
@@ -482,9 +483,15 @@ export function Tasks() {
               >
                 {selectedDone ? '取消完成' : '标记完成'}
               </button>
-              <Link to="/projects" viewTransition className="k-btn">
-                查看项目
-              </Link>
+              {selected.projectId !== undefined && (
+                <Link
+                  to={`/projects?project=${selected.projectId}`}
+                  viewTransition
+                  className="k-btn"
+                >
+                  查看项目
+                </Link>
+              )}
             </>
           ) : undefined
         }
@@ -542,6 +549,7 @@ export function Tasks() {
                 </div>
               </div>
             )}
+            <Relations kind="task" id={selected.id} />
           </div>
         )}
       </Drawer>
