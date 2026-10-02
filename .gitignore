@@ -1,0 +1,38 @@
+# dependencies
+node_modules
+.pnp
+.pnp.js
+
+# build output
+dist
+dist-ssr
+*.local
+
+# editor / os
+.DS_Store
+Thumbs.db
+.idea
+.vscode/*
+!.vscode/extensions.json
+
+# logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# tool artifacts (local only)
+.playwright-mcp/
+.codegraph/
+.omo/
+
+# env
+.env
+.env.*
+!.env.example
+
+# typescript
+*.tsbuildinfo
+node_modules/.tmp

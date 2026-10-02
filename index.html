@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+    />
+    <meta name="color-scheme" content="dark light" />
+    <meta name="description" content="KERNEL · 个人事务内核 —— 本地优先、AI 协作" />
+    <title>KERNEL · 事务内核</title>
+    <!-- 主题 FOUC 防护：首帧前读取 localStorage；无保存偏好时默认「柔暗夜色」 -->
+    <script>
+      (function () {
+        try {
+          var stored = localStorage.getItem('kernel-theme')
+          var theme = stored === 'light' ? 'light' : 'dark'
+          document.documentElement.setAttribute('data-theme', theme)
+        } catch (e) {
+          document.documentElement.setAttribute('data-theme', 'dark')
+        }
+      })()
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
