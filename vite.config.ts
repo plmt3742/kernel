@@ -8,6 +8,11 @@ const srcPath = decodeURIComponent(new URL('./src', import.meta.url).pathname).r
   '$1',
 )
 
+// v0.4 数据服务（仅 127.0.0.1:4097）经由 Vite 代理接入，浏览器与手机都只访问一个入口。
+const apiProxy = {
+  '/api': 'http://127.0.0.1:4097',
+}
+
 export default defineConfig({
   plugins: [react()],
   resolve: {
@@ -18,8 +23,14 @@ export default defineConfig({
   // server.host / preview.host 开启以便局域网开箱即用（见 00-DESIGN-BRIEF §6.4）
   server: {
     host: true,
+    proxy: apiProxy,
+    // 数据服务写入 data/** 不再触发热重载（前端经 API hydrate 获取最新快照，避免写入后整页刷新打断撤销）
+    watch: {
+      ignored: ['**/data/**'],
+    },
   },
   preview: {
     host: true,
+    proxy: apiProxy,
   },
 })

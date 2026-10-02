@@ -4,9 +4,11 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "node scripts/dev.mjs",
+    "dev:web": "vite",
     "build": "tsc -b && vite build",
-    "preview": "vite preview",
+    "preview": "node scripts/dev.mjs --preview",
+    "server": "node server/index.mjs",
     "seed": "node scripts/seed.mjs"
   },
   "dependencies": {
@@ -20,7 +22,9 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-markdown": "^9.0.1",
-    "react-router-dom": "^7.1.0"
+    "react-router-dom": "^7.1.0",
+    "write-file-atomic": "^8.0.0",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@types/react": "^19.0.0",
