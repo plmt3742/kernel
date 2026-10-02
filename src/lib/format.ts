@@ -18,6 +18,22 @@ import { getTags } from '@/lib/data'
 
 export const ENERGY_LABEL: Record<Energy, string> = { low: '低', medium: '中', high: '高' }
 export const ENERGY_EN: Record<Energy, string> = { low: 'LOW', medium: 'MED', high: 'HIGH' }
+/**
+ * 能量选项单一源（Slice Y · F7）：表单下拉 / 快速新建 / 任务筛选共用，
+ * 取代各处重复的 `['low','medium','high']` 字面量。
+ */
+export const ENERGY_OPTIONS: readonly Energy[] = ['low', 'medium', 'high']
+
+/**
+ * 重要性量纲单一源（Slice Y · F21）：0–3（与 `taskSchema` / docs/04 §4 一致）。
+ * 此前 TaskDetailModal 用 0–3、AiSuggestionForm 用 1–3、AI schema 用 1–3，量纲不一；
+ * 统一为 0–3（存量种子 t-0057/t-0058 已含 0，收紧为 1–3 将破坏既有记录，见 ADR-0021）。
+ */
+export const IMPORTANCE_OPTIONS: readonly number[] = [0, 1, 2, 3]
+/** 重要性展示文案（n / 3）；UI 唯一来源 */
+export function importanceLabel(value: number): string {
+  return `${value} / 3`
+}
 
 export const TASK_STATUS_LABEL: Record<TaskStatus, string> = {
   next: '下一步',

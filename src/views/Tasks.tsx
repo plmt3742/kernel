@@ -14,7 +14,7 @@ import { useToast } from '@/context/ToastContext'
 import { getAreas, getProjectById, getSnapshot, getTags } from '@/lib/data'
 import { isTaskDone, trashEntity } from '@/lib/mutations'
 import { errorText } from '@/lib/api'
-import { ENERGY_LABEL, TASK_STATUS_LABEL, tagLabel } from '@/lib/format'
+import { ENERGY_LABEL, ENERGY_OPTIONS, TASK_STATUS_LABEL, tagLabel } from '@/lib/format'
 import {
   endOfWeek,
   humanizeDay,
@@ -51,7 +51,7 @@ function byDueTask(a: Task, b: Task): number {
  * ------------------------------------------------------------------------- */
 
 export function Tasks() {
-  useDataRevision()
+  const revision = useDataRevision()
   const toggleTask = useUndoableToggle()
   const now = useNow()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -159,10 +159,15 @@ export function Tasks() {
     (task) => task.dueAt !== undefined && !isTaskDone(task) && isSameDay(task.dueAt, new Date()),
   ).length
 
-  const contexts = useMemo(
-    () => Array.from(new Set(allTasks.flatMap((task) => task.contexts))).sort(),
-    [allTasks],
-  )
+  // 上下文筛选候选（Slice Y · F24）：已用情境 ∪ 注册表情境——
+  // 使「已登记但暂无任务」的情境仍可选，避免注册表情境在 UI 中不可达。
+  const contexts = useMemo(() => {
+    const used = allTasks.flatMap((task) => task.contexts)
+    const registered = getTags()
+      .filter((tag) => tag.namespace === 'context')
+      .map((tag) => tag.name)
+    return Array.from(new Set([...used, ...registered])).sort()
+  }, [allTasks, revision])
 
   const filterGroups: FilterGroup[] = [
     {
@@ -186,7 +191,7 @@ export function Tasks() {
     {
       key: 'energy',
       label: '能量',
-      chips: (['low', 'medium', 'high'] as const).map((energy) => ({
+      chips: ENERGY_OPTIONS.map((energy) => ({
         value: energy,
         label: ENERGY_LABEL[energy],
       })),

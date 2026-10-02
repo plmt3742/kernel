@@ -8,6 +8,7 @@ import { Panel } from '@/components/Panel'
 import { Modal } from '@/components/Modal'
 import { EntityEditForm, type EditFieldSpec } from '@/components/EntityEditForm'
 import { NoteComposeModal } from '@/components/NoteComposeModal'
+import { ResourceDraftModal } from '@/components/ResourceDraftModal'
 import { TagPill } from '@/components/TagPill'
 import { EmptyState } from '@/components/EmptyState'
 import { Relations } from '@/components/Relations'
@@ -28,6 +29,7 @@ import {
   restoreEntity,
   revealPath,
   trashEntity,
+  undoPatchOf,
   updateEntity,
 } from '@/lib/mutations'
 import { errorText } from '@/lib/api'
@@ -47,7 +49,7 @@ import {
 } from '@/lib/format'
 import { formatRelative } from '@/lib/date'
 import { useDataRevision, useNow } from '@/lib/hooks'
-import type { Note, NoteType, ResourceKind, ResourceStatus, TrashKind } from '@/types'
+import type { Note, NoteType, Resource, ResourceKind, ResourceStatus, TrashKind } from '@/types'
 
 type Tab = 'all' | 'notes' | 'resources'
 
@@ -72,8 +74,9 @@ export function Library() {
   const { toast } = useToast()
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
-  // Slice M：新建笔记撰写弹窗
+  // Slice M：新建笔记撰写弹窗；Slice Y：新建资料草稿弹窗
   const [composing, setComposing] = useState(false)
+  const [composingResource, setComposingResource] = useState(false)
   // Slice M：AI 蒸馏草稿（editable textarea）+ 加载 / 错误 / 应用中
   const [distill, setDistill] = useState<{ text: string; targetLevel: number } | null>(null)
   const [distillLoading, setDistillLoading] = useState(false)
@@ -216,12 +219,27 @@ export function Library() {
     if (target === null) return
     const kind: TrashKind = target.kind === 'note' ? 'notes' : 'resources'
     const id = target.id
+    // Slice Y · F36：保存前快照被改字段原值，toast「撤销」回写即往返还原
+    const record = target.kind === 'note' ? selectedNote : selectedResource
+    const undo =
+      record !== undefined
+        ? undoPatchOf(record as unknown as Record<string, unknown>, patch)
+        : {}
     setSaving(true)
     void (async () => {
       try {
         await updateEntity(kind, id, patch)
         setEditing(false)
-        toast('已保存')
+        toast('已保存', {
+          action: {
+            label: '撤销',
+            onClick: () => {
+              void updateEntity(kind, id, undo).catch((err) => {
+                toast(`撤销失败：${errorText(err)}`, { tone: 'error' })
+              })
+            },
+          },
+        })
       } catch (err) {
         toast(`保存失败：${errorText(err)}`, { tone: 'error' })
       } finally {
@@ -344,6 +362,35 @@ export function Library() {
               )
               setSearchParams(
                 (prev) => (prev.get('note') === note.id ? {} : prev),
+                { replace: true },
+              )
+              toast('已撤销创建')
+            } catch (err) {
+              toast(`撤销失败：${errorText(err)}`, { tone: 'error' })
+            }
+          })()
+        },
+      },
+    })
+  }
+
+  // 新建资料成功（Slice Y · F5）：关闭草稿弹窗 → 打开新资料（深链）→ toast（撤销 = 移入回收站）
+  const handleResourceCreated = (resource: Resource): void => {
+    setComposingResource(false)
+    setTarget({ kind: 'resource', id: resource.id })
+    setSearchParams({ resource: resource.id }, { replace: true })
+    toast('资料已创建', {
+      action: {
+        label: '撤销',
+        onClick: () => {
+          void (async () => {
+            try {
+              await trashEntity('resources', resource.id)
+              setTarget((prev) =>
+                prev !== null && prev.kind === 'resource' && prev.id === resource.id ? null : prev,
+              )
+              setSearchParams(
+                (prev) => (prev.get('resource') === resource.id ? {} : prev),
                 { replace: true },
               )
               toast('已撤销创建')
@@ -563,7 +610,23 @@ export function Library() {
       )}
 
       {showResources && (
-        <Panel index="02" title="资料" en="RESOURCES" actions={<span className="u-label k-muted">{filteredResources.length}</span>}>
+        <Panel
+          index="02"
+          title="资料"
+          en="RESOURCES"
+          actions={
+            <div className="k-lib__head-actions">
+              <span className="u-label k-muted">{filteredResources.length}</span>
+              <button
+                type="button"
+                className="k-btn k-btn--sm"
+                onClick={() => setComposingResource(true)}
+              >
+                新建资料
+              </button>
+            </div>
+          }
+        >
           {filteredResources.length === 0 ? (
             <EmptyState index="02" title="没有匹配的资料" hint="调整类型、状态或标签筛选。" />
           ) : (
@@ -865,6 +928,12 @@ export function Library() {
         open={composing}
         onClose={() => setComposing(false)}
         onCreated={handleNoteCreated}
+      />
+
+      <ResourceDraftModal
+        open={composingResource}
+        onClose={() => setComposingResource(false)}
+        onCreated={handleResourceCreated}
       />
     </div>
   )

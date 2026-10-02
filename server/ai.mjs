@@ -126,6 +126,23 @@ function buildDigest(snapshot) {
   return out.trim()
 }
 
+/**
+ * 情境标签名（namespace === 'context'）——从标签注册表派生，供 AI 提示词注入（Slice Y · F1）。
+ * 此前提示词硬编码 5 个情境（@lab/@computer/@campus/@phone/@org-room），遗漏注册表中的
+ * @errands / @home；改由注册表派生后，所有已登记情境对 AI 均可达。
+ */
+export function contextNamesOf(snapshot) {
+  return (snapshot.tags ?? [])
+    .filter((tag) => tag.namespace === 'context')
+    .map((tag) => tag.name)
+}
+
+/** 提示词中的情境候选列表（注册表为空时回退 @computer，保证提示词始终有可用选项） */
+function contextRuleText(contextNames) {
+  const list = contextNames.length > 0 ? contextNames : ['@computer']
+  return list.map((name) => `"${name}"`).join(', ')
+}
+
 /** 可提取文本摘录的扩展名白名单（文件投递 · Slice D） */
 const TEXT_EXTS = new Set([
   '.txt', '.md', '.markdown', '.csv', '.json', '.log', '.yml', '.yaml', '.toml', '.ini',
@@ -323,7 +340,7 @@ export function normalizeResourceNote(raw, fallback = '') {
 }
 
 /** 构造系统提示词（注入当前本地时间 + 系统现状摘要 + 一揽子动作规则；Slice R2.5 文件条目校准） */
-function buildSystem(digest, hasFile = false) {
+function buildSystem(digest, hasFile = false, contextNames = []) {
   const d = new Date()
   const pad = (n) => String(n).padStart(2, '0')
   const stamp = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${WEEKDAYS[d.getDay()]} ${pad(d.getHours())}:${pad(d.getMinutes())}`
@@ -353,9 +370,9 @@ function buildSystem(digest, hasFile = false) {
 - title: 提炼后的标题（不超过 40 字，必填）
 - note: 仅 resource 用。1–3 句、不超过 ${AI_RESOURCE_NOTE_MAX_CHARS} 字的简约小结，作为资料详情页的「简介」（概括这是什么资料、讲了什么、有什么用）；附件条目必须给出此字段
 - reason: 一句话说明该动作的判断理由
-- contexts: 仅 task 用，字符串数组，只能从 ["@lab","@computer","@campus","@phone","@org-room"] 中选
+- contexts: 仅 task 用，字符串数组，只能从 [${contextRuleText(contextNames)}] 中选（无把握则省略）
 - energy: 仅 task 用，"low" | "medium" | "high"
-- importance: 仅 task 用，1 | 2 | 3（整数）
+- importance: 仅 task 用，0 | 1 | 2 | 3（整数；0 = 最低 / 可略过的输入）
 - estimateMin: 仅 task 用，预计所需分钟数（整数，最少 1 分钟）
 - dueAt: 仅 task 用，ISO8601 带时区或 null。现在是 ${stamp}
 - projectId: 仅当有明确依据属于下方某个现有项目时填该项目 id；否则省略
@@ -693,7 +710,7 @@ export async function parseInboxItem(item) {
   const snapshot = await loadSnapshot()
   const fileSection = await buildFileSection(item)
   const hasFile = item?.file !== undefined && item?.file !== null
-  const system = buildSystem(buildDigest(snapshot), hasFile)
+  const system = buildSystem(buildDigest(snapshot), hasFile, contextNamesOf(snapshot))
   const sessionID = await createSession()
   const userText = fileSection === '' ? item.content : `${item.content}\n\n${fileSection}`
   const { res, actions } = await promptWithRetry(sessionID, system, userText, null)
@@ -761,7 +778,7 @@ export async function parseInboxItemStream(item, emit) {
     const snapshot = await loadSnapshot()
     const fileSection = await buildFileSection(item)
     const hasFile = item?.file !== undefined && item?.file !== null
-    const system = buildSystem(buildDigest(snapshot), hasFile)
+    const system = buildSystem(buildDigest(snapshot), hasFile, contextNamesOf(snapshot))
     sessionID = await createSession()
     const userText = fileSection === '' ? item.content : `${item.content}\n\n${fileSection}`
     const { res, actions } = await promptWithRetry(sessionID, system, userText, safeEmit)
@@ -934,15 +951,15 @@ export async function chatWithKernel(messages) {
 export const TASK_DRAFT_MAX_TITLE_CHARS = 200
 
 /** 构造任务补全系统提示词（注入当前本地时间 + 系统现状摘要） */
-function buildTaskDraftSystem(digest) {
+function buildTaskDraftSystem(digest, contextNames = []) {
   const d = new Date()
   const pad = (n) => String(n).padStart(2, '0')
   const stamp = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${WEEKDAYS[d.getDay()]} ${pad(d.getHours())}:${pad(d.getMinutes())}`
   return `你是 KERNEL 个人事务系统的任务补全器。用户只给了一个任务标题，请推断可安全补全的字段，只输出一个 JSON 对象：不要 markdown 代码块、不要解释、不要多余文字。
 可用字段（凡拿不准就省略该键，绝不编造）：
-- contexts: 字符串数组，只能从 ["@lab","@computer","@campus","@phone","@org-room"] 中选
+- contexts: 字符串数组，只能从 [${contextRuleText(contextNames)}] 中选（无把握则省略）
 - energy: "low" | "medium" | "high"
-- importance: 1 | 2 | 3（整数）
+- importance: 0 | 1 | 2 | 3（整数；0 = 最低 / 可略过的输入）
 - estimateMin: 预计所需分钟数（整数，最少 1 分钟）
 - dueAt: ISO8601 带时区或 null。现在是 ${stamp}
 - projectId: 字符串或 null。仅当标题有明确依据属于下方某个项目时，填该项目 id；否则省略
@@ -1005,7 +1022,7 @@ async function promptTaskDraftWithRetry(sessionID, system, title) {
 export async function draftTask(title) {
   const t0 = Date.now()
   const snapshot = await loadSnapshot()
-  const system = buildTaskDraftSystem(buildDigest(snapshot))
+  const system = buildTaskDraftSystem(buildDigest(snapshot), contextNamesOf(snapshot))
   const sessionID = await createSession('kernel:task-draft')
   const { res, draft } = await promptTaskDraftWithRetry(sessionID, system, title)
   const clean = postValidate(draft, snapshot)

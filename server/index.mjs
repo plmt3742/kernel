@@ -40,6 +40,7 @@ import {
   ID_PATTERNS,
   inboxApplySchema,
   noteDistillRequestSchema,
+  resourceCreateSchema,
   taskCreateFieldsSchema,
   tagMergeSchema,
   tagUpdateSchema,
@@ -869,6 +870,58 @@ async function createNote(body) {
   })
   if (tags.length > 0) await ensureTags(tags, { origin: 'manual', firstUsedIn: saved.id })
   return { note: saved }
+}
+
+/**
+ * 新建资料（v0.5 · Slice Y，见 ADR-0021）：title 必填（trim 后非空）；kind 缺省 article、
+ * status 缺省 unread；可选 url / path / note / areaId / tags。areaId 须真实存在；标签规格化并
+ * 登记（origin manual）。审计 resource.create（detail.fields 记录携带的可选字段）。
+ * path 仅记录字符串（不校验磁盘存在，与文件投递澄清为资料时口径一致）。
+ */
+async function createResource(body) {
+  const parsed = resourceCreateSchema.parse(body)
+  const title = parsed.title.trim()
+  if (title === '') throw Object.assign(new Error('标题不能为空'), { status: 400 })
+  const tags = normalizeTagList(parsed.tags)
+  if (parsed.areaId !== undefined && (await readEntity('areas', parsed.areaId)) === null) {
+    throw Object.assign(new Error('区域不存在'), { status: 400 })
+  }
+  const resource = {
+    id: await nextId('resources'),
+    title,
+    kind: parsed.kind ?? 'article',
+    status: parsed.status ?? 'unread',
+    tags,
+    addedAt: nowIso(),
+  }
+  const fields = []
+  if (parsed.kind !== undefined) fields.push('kind')
+  if (parsed.status !== undefined) fields.push('status')
+  if (parsed.url !== undefined && parsed.url.trim() !== '') {
+    resource.url = parsed.url.trim()
+    fields.push('url')
+  }
+  if (parsed.path !== undefined && parsed.path.trim() !== '') {
+    resource.path = parsed.path.trim()
+    fields.push('path')
+  }
+  if (parsed.note !== undefined && parsed.note.trim() !== '') {
+    resource.note = parsed.note.trim()
+    fields.push('note')
+  }
+  if (parsed.areaId !== undefined) {
+    resource.areaId = parsed.areaId
+    fields.push('areaId')
+  }
+  if (tags.length > 0) fields.push('tags')
+  const saved = await commit('resources', resource, {
+    action: 'resource.create',
+    entity: 'resource',
+    id: resource.id,
+    detail: { title, fields },
+  })
+  if (tags.length > 0) await ensureTags(tags, { origin: 'manual', firstUsedIn: saved.id })
+  return { resource: saved }
 }
 
 async function completeTask(id) {
@@ -2083,6 +2136,13 @@ const server = http.createServer(async (req, res) => {
     }
     if (method === 'POST' && pathname === '/api/notes') {
       send(res, 201, await createNote(await readBody(req)))
+      return
+    }
+    // 新建资料（Slice Y）：title 必填；kind 缺省 article、status 缺省 unread；审计 resource.create
+    if (method === 'POST' && pathname === '/api/resources') {
+      const result = await createResource(await readBody(req))
+      console.log(`[data] resource.create ${result.resource.id}`)
+      send(res, 201, result)
       return
     }
     const taskMatch = TASK_ID_RE.exec(pathname)

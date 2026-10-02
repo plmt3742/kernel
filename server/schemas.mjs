@@ -101,6 +101,22 @@ export const resourceSchema = z
   .catchall(z.unknown())
 
 /**
+ * 资料创建入参（v0.5 · Slice Y）：title 必填（trim 后非空，服务端再校验）；
+ * kind / status 缺省为 article / unread；可选 url / path / note / areaId / tags。
+ * 关联 id / 标签为宽松字符串（关联 id 在 index.mjs 做存在性校验），对齐既有创建端点口径。
+ */
+export const resourceCreateSchema = z.object({
+  title: z.string().min(1).max(120),
+  kind: resourceKind.optional(),
+  status: resourceStatus.optional(),
+  url: z.string().max(2000).optional(),
+  path: z.string().min(1).max(1000).optional(),
+  note: z.string().max(600).optional(),
+  areaId: z.string().min(1).optional(),
+  tags: z.array(z.string().min(1)).max(8).optional(),
+})
+
+/**
  * 日程 · e-（v0.5 · Slice W，见 ADR-0018）：最末一个只读实体转为可写。
  * 字段对齐既有 data/events/*.json；`endAt` / `allDay` 可缺省（结束可选 / 缺省非全天），
  * `repeatRule` 仅展示保留（重复规则 UI 与写入延后，见 ADR-0018 §边界）。无 createdAt/updatedAt，
@@ -345,7 +361,8 @@ export const aiSuggestionSchema = z.object({
   title: z.string().min(1).max(80),
   contexts: z.array(z.string().min(1)).max(5).default([]),
   energy,
-  importance: z.number().int().min(1).max(3),
+  // 重要性：0–3（与 taskSchema 存储口径一致；Slice Y 统一量纲，0 = 最低 / 可略过的输入）
+  importance: z.number().int().min(0).max(3),
   estimateMin: z.number().int().min(1).max(600).optional(),
   // 允许模型显式返回 null（"无截止/无关联"），post-validate 时丢弃
   dueAt: z.union([iso, z.null()]).optional(),
@@ -379,7 +396,8 @@ export const aiActionSchema = z.object({
   // task 专属
   contexts: z.array(z.string().min(1)).max(5).default([]),
   energy: energy.optional(),
-  importance: z.number().int().min(1).max(3).optional(),
+  // 重要性：0–3（与 taskSchema 存储口径一致；Slice Y 统一量纲）
+  importance: z.number().int().min(0).max(3).optional(),
   estimateMin: z.number().int().min(1).max(600).optional(),
   dueAt: z.union([iso, z.null()]).optional(),
   // 归属（note / resource / project；task 亦可用）
@@ -426,7 +444,8 @@ export const projectDraftSchema = z.object({
 export const taskDraftSchema = z.object({
   contexts: z.array(z.string().min(1)).max(5).default([]),
   energy: energy.optional(),
-  importance: z.number().int().min(1).max(3).optional(),
+  // 重要性：0–3（与 taskSchema 存储口径一致；Slice Y 统一量纲）
+  importance: z.number().int().min(0).max(3).optional(),
   estimateMin: z.number().int().min(1).max(600).optional(),
   dueAt: z.union([iso, z.null()]).optional(),
   projectId: z.union([z.string(), z.null()]).optional(),
@@ -478,7 +497,8 @@ export const reviewDraftSchema = z.object({
 export const taskCreateFieldsSchema = z.object({
   contexts: z.array(z.string().min(1)).max(8).optional(),
   energy: energy.optional(),
-  importance: z.number().int().min(1).max(3).optional(),
+  // 重要性：0–3（与 taskSchema 存储口径一致；Slice Y 统一量纲）
+  importance: z.number().int().min(0).max(3).optional(),
   estimateMin: z.number().int().min(1).max(600).optional(),
   dueAt: iso.optional(),
   tags: z.array(z.string().min(1)).max(8).optional(),
@@ -495,7 +515,8 @@ export const clarifyDetailsSchema = z.object({
   title: z.string().min(1).max(120).optional(),
   contexts: z.array(z.string().min(1)).max(8).optional(),
   energy: energy.optional(),
-  importance: z.number().int().min(1).max(3).optional(),
+  // 重要性：0–3（与 taskSchema 存储口径一致；Slice Y 统一量纲）
+  importance: z.number().int().min(0).max(3).optional(),
   estimateMin: z.number().int().min(1).max(600).optional(),
   dueAt: iso.optional(),
   tags: z.array(z.string().min(1)).max(8).optional(),

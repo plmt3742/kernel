@@ -912,6 +912,23 @@ export type EditableRecord =
   | Goal
   | Habit
 
+/**
+ * 构造「编辑撤销」补丁（Slice Y · F36）：对 patch 中出现的每个键，取记录中的原值；
+ * 原值缺失（undefined）→ null（服务端 update 端点的「清除」语义）。把该补丁回写即可往返还原。
+ * 纯函数，供各详情弹窗保存成功后挂到 toast「撤销」上。
+ */
+export function undoPatchOf(
+  record: Record<string, unknown>,
+  patch: Record<string, unknown>,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const key of Object.keys(patch)) {
+    const prev = record[key]
+    out[key] = prev === undefined ? null : prev
+  }
+  return out
+}
+
 /** 编辑实体：只提交 patch 中提供的白名单字段；成功后 upsert 本地快照 */
 export async function updateEntity(
   kind: TrashKind,
@@ -995,6 +1012,25 @@ export async function createNote(input: CreateNoteInput): Promise<Note> {
   const { note } = await api.post<{ note: Note }>('/api/notes', input)
   upsertEntity('notes', note)
   return note
+}
+
+/** 资料创建入参（Slice Y）：title 必填；kind / status 缺省（服务端补 article / unread） */
+export interface ResourceCreateInput {
+  title: string
+  kind?: Resource['kind']
+  status?: Resource['status']
+  url?: string
+  path?: string
+  note?: string
+  areaId?: string
+  tags?: string[]
+}
+
+/** 新建资料（`POST /api/resources`；成功后 upsert 本地快照）——Sliver Y · F5 */
+export async function createResource(input: ResourceCreateInput): Promise<Resource> {
+  const { resource } = await api.post<{ resource: Resource }>('/api/resources', input)
+  upsertEntity('resources', resource)
+  return resource
 }
 
 /* ---------------------------------------------------------------------------

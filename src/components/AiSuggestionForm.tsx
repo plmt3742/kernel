@@ -5,7 +5,13 @@
 //   绝不展示一个提交后被静默丢弃的输入框。
 import { useId, type ReactNode } from 'react'
 import { getAreas, getSnapshot, getTags } from '@/lib/data'
-import { ENERGY_LABEL, tagLabel } from '@/lib/format'
+import {
+  ENERGY_LABEL,
+  ENERGY_OPTIONS,
+  IMPORTANCE_OPTIONS,
+  importanceLabel,
+  tagLabel,
+} from '@/lib/format'
 import { ALL_CLARIFY_FIELDS, type AiSuggestionFormValues, type ClarifyFieldKey } from '@/lib/aiForm'
 
 interface AiSuggestionFormProps {
@@ -18,8 +24,6 @@ interface AiSuggestionFormProps {
   /** 可见字段集（Slice V · F19/F31）；缺省为任务全字段，收件箱建议卡按 target 传入矩阵 */
   fields?: readonly ClarifyFieldKey[]
 }
-
-const ENERGY_OPTIONS = ['low', 'medium', 'high'] as const
 
 export function AiSuggestionForm({
   values,
@@ -35,6 +39,10 @@ export function AiSuggestionForm({
   const contextNames = getTags()
     .filter((tag) => tag.namespace === 'context')
     .map((tag) => tag.name)
+  // 标签补全（Slice Y · F13）：从注册表取全部标签（名称 + 中文标签），安静提供 datalist
+  const tagItems = getTags()
+  const contextListId = fieldId('contexts-list')
+  const tagListId = fieldId('tags-list')
   const show = (key: ClarifyFieldKey): boolean => fields.includes(key)
 
   return (
@@ -99,11 +107,19 @@ export function AiSuggestionForm({
             id={fieldId('contexts')}
             className="k-input"
             type="text"
+            list={contextListId}
             value={values.contexts}
             placeholder={contextNames.map(tagLabel).join(', ')}
             disabled={disabled}
             onChange={(event) => onChange({ contexts: event.target.value })}
           />
+          <datalist id={contextListId}>
+            {contextNames.map((name) => (
+              <option key={name} value={name}>
+                {tagLabel(name)}
+              </option>
+            ))}
+          </datalist>
         </div>
       )}
 
@@ -116,10 +132,18 @@ export function AiSuggestionForm({
             id={fieldId('tags')}
             className="k-input"
             type="text"
+            list={tagListId}
             value={values.tags}
             disabled={disabled}
             onChange={(event) => onChange({ tags: event.target.value })}
           />
+          <datalist id={tagListId}>
+            {tagItems.map((tag) => (
+              <option key={tag.id} value={tag.name}>
+                {tag.label}
+              </option>
+            ))}
+          </datalist>
         </div>
       )}
 
@@ -158,9 +182,9 @@ export function AiSuggestionForm({
             onChange={(event) => onChange({ importance: event.target.value })}
           >
             <option value="">—</option>
-            {[1, 2, 3].map((n) => (
+            {IMPORTANCE_OPTIONS.map((n) => (
               <option key={n} value={String(n)}>
-                {n} / 3
+                {importanceLabel(n)}
               </option>
             ))}
           </select>

@@ -1,8 +1,10 @@
 // KERNEL · EntityEditForm（抽屉内联编辑表单 · Slice E2）
 // 由字段规格驱动：文本 / 多行 / 数字 / 下拉 / 日期时间 / 逗号列表；提交时按类型归一化为 API patch。
 // 字段为空时的语义：日期时间 / 数字 → null（清除）；可清除文本/下拉 → null；其余文本/下拉跳过（不覆盖）。
-import { useState, type FormEvent } from 'react'
+import { useId, useState, type FormEvent } from 'react'
 import { toDate, toISODateTime } from '@/lib/date'
+import { getTags } from '@/lib/data'
+import { useDataRevision } from '@/lib/hooks'
 
 export type EditFieldType = 'text' | 'textarea' | 'number' | 'select' | 'datetime' | 'list' | 'boolean'
 
@@ -66,6 +68,10 @@ export function EntityEditForm({
   onCancel,
   submitLabel,
 }: EntityEditFormProps) {
+  const uid = useId()
+  // 标签补全（Slice Y · F13）：订阅数据版本，注册表变化时刷新 datalist
+  useDataRevision()
+  const tagNames = getTags().map((tag) => tag.name)
   const [values, setValues] = useState<Record<string, string>>(() => {
     const out: Record<string, string> = {}
     for (const field of fields) out[field.key] = initialFieldValue(field, initial)
@@ -161,20 +167,34 @@ export function EntityEditForm({
                     ))}
                   </select>
                 ) : (
-                  <input
-                    id={id}
-                    className="k-input"
-                    type={
-                      field.type === 'number'
-                        ? 'number'
-                        : field.type === 'datetime'
-                          ? 'datetime-local'
-                          : 'text'
-                    }
-                    value={value}
-                    placeholder={field.placeholder}
-                    onChange={(event) => setValue(field.key, event.target.value)}
-                  />
+                  <>
+                    <input
+                      id={id}
+                      className="k-input"
+                      type={
+                        field.type === 'number'
+                          ? 'number'
+                          : field.type === 'datetime'
+                            ? 'datetime-local'
+                            : 'text'
+                      }
+                      value={value}
+                      placeholder={field.placeholder}
+                      list={
+                        field.type === 'list' && field.key === 'tags'
+                          ? `${id}-tags-${uid}`
+                          : undefined
+                      }
+                      onChange={(event) => setValue(field.key, event.target.value)}
+                    />
+                    {field.type === 'list' && field.key === 'tags' && (
+                      <datalist id={`${id}-tags-${uid}`}>
+                        {tagNames.map((name) => (
+                          <option key={name} value={name} />
+                        ))}
+                      </datalist>
+                    )}
+                  </>
                 )}
               </>
             )}

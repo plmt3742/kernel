@@ -78,6 +78,32 @@ import type { InboxItem } from '@/types'
 const WATER_MAX = 12
 const WATER_THRESHOLD = 8
 
+/** 多文件上传的受限并发上限（Slice Y · F33）：文件上传可并行，AI 解析仍严格顺序 */
+const UPLOAD_CONCURRENCY = 3
+
+/**
+ * 受限并发映射（保持结果顺序，Slice Y · F33）：
+ * 至多 limit 个 worker 同时消费队列，结果按原始下标回填，避免读写成乱序。
+ */
+async function mapLimit<T, R>(
+  items: readonly T[],
+  limit: number,
+  fn: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length)
+  let next = 0
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    for (;;) {
+      const index = next
+      next += 1
+      if (index >= items.length) break
+      results[index] = await fn(items[index], index)
+    }
+  })
+  await Promise.all(workers)
+  return results
+}
+
 /** 参与聚类的未完成任务状态（与 server ai.mjs OPEN_TASK_STATUS 同口径） */
 const CLUSTER_OPEN_STATUS = new Set(['next', 'waiting', 'scheduled', 'someday'])
 /** 自动模式可自动应用的动作类型（构造上不含 discard；discard 表现为空动作 → 保留建议） */
@@ -528,15 +554,18 @@ export function Inbox() {
     setPendingFiles([])
     setDraft('')
     void (async () => {
-      const uploaded: InboxItem[] = []
-      for (let i = 0; i < files.length; i += 1) {
+      // Slice Y · F33：上传受限并发（≤3，保持结果顺序）；失败逐条 toast、不阻断其余文件。
+      // 解析仍严格顺序（AI 更重且共享 opencode 会话，顺序可给出稳定的进度与自动应用次序）。
+      const results = await mapLimit(files, UPLOAD_CONCURRENCY, async (file, i) => {
         setBusyLabel(`上传中 ${i + 1}/${files.length}…`)
         try {
-          uploaded.push(await uploadInboxFile(files[i], caption))
+          return await uploadInboxFile(file, caption)
         } catch (err) {
           toast(`上传失败：${errorText(err)}`, { tone: 'error' })
+          return null
         }
-      }
+      })
+      const uploaded = results.filter((item): item is InboxItem => item !== null)
       if (uploaded.length === 0) {
         setBusyLabel('')
         return
@@ -1109,6 +1138,7 @@ export function Inbox() {
                                   {panelPhase === 'ready' && panelResult !== null && (
                                     <AiActionsCard
                                       actions={panelResult.actions}
+                                      itemId={item.id}
                                       onApply={(next) => applyActions(item, next)}
                                       onRetry={() => forceParse(item)}
                                       retryDisabled={running}
