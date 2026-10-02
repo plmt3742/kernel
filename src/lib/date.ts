@@ -76,14 +76,24 @@ export function toISODateTime(input: DateInput): string {
   return format(toDate(input), "yyyy-MM-dd'T'HH:mm:ssxxx")
 }
 
-/** 周键：2026-W40 */
-export function toWeekKey(input: DateInput): string {
+/** ISO 周键：2026-W40（ISO 周 · 周一起点 · 零填充；与服务端 isoWeekKey 同口径） */
+export function isoWeekKey(input: DateInput): string {
   return format(toDate(input), "RRRR-'W'II", { locale: zhCN })
+}
+
+/** 周键：2026-W40（`isoWeekKey` 的历史别名） */
+export function toWeekKey(input: DateInput): string {
+  return isoWeekKey(input)
 }
 
 /** 月键：2026-09 */
 export function toMonthKey(input: DateInput): string {
   return format(toDate(input), 'yyyy-MM')
+}
+
+/** 月份标签：9月（不补零） */
+export function monthLabel(input: DateInput): string {
+  return format(toDate(input), 'M月', { locale: zhCN })
 }
 
 /* --------------------------- 判定 / 范围 --------------------------- */

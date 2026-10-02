@@ -1,5 +1,5 @@
-// KERNEL · 回顾 REVIEW（P1）：周期摘要 + 周回顾流程 + 单色图表 + 停滞项目重决策
-// v0.4 版式：按设计稿 B「仪表盘」落为双栏数据面板——左栏指标 + 图表，右栏回顾卡 + 停滞清单 + CTA。
+// KERNEL · 回顾 REVIEW（P1）：周期摘要 + AI 周回顾流程 + 单色图表 + 停滞项目重决策
+// v0.5 · Slice C：AI 生成草稿（指标 / 摘要 / 决策 / 停滞处置建议）→ 用户编辑 → 确认落盘（撤销即删除）。
 import { useState } from 'react'
 import type { ReactNode } from 'react'
 import { Panel } from '@/components/Panel'
@@ -8,10 +8,18 @@ import { TrendLine } from '@/components/charts/TrendLine'
 import { EnergyBars } from '@/components/charts/EnergyBars'
 import { EmptyState } from '@/components/EmptyState'
 import { useToast } from '@/context/ToastContext'
-import { getReviews, getStaleProjects } from '@/lib/data'
+import { getProjectById, getReviews, getStaleProjects } from '@/lib/data'
 import { getEnergyDistribution, getWeeklyCompletionSeries } from '@/lib/derive'
 import { REVIEW_TYPE_LABEL } from '@/lib/format'
-import { daysFromToday } from '@/lib/date'
+import { daysFromToday, isoWeekKey, monthLabel } from '@/lib/date'
+import { errorText } from '@/lib/api'
+import {
+  generateReviewDraft,
+  removeReview,
+  saveReview,
+  type ReviewDraft,
+  type StaleAdvice,
+} from '@/lib/mutations'
 import type { Review } from '@/types'
 
 const STEPS: Array<{ num: string; title: string; desc: string }> = [
@@ -22,7 +30,8 @@ const STEPS: Array<{ num: string; title: string; desc: string }> = [
   { num: '⑤', title: '完成', desc: '写下本周摘要与下周聚焦' },
 ]
 
-// 指标瓦片定义：数值取自 getReviews() 周回顾 metrics；accent 仅用于「逾期」信号。
+// 指标瓦片定义：数值取自 review.metrics；accent 仅用于「逾期」信号。
+// `migrated` 当前生成流程不产出，缺省时显示 '—'。
 const METRIC_LABELS: Array<{
   key: keyof Review['metrics']
   label: string
@@ -36,30 +45,101 @@ const METRIC_LABELS: Array<{
   { key: 'migrated', label: '迁移', foot: '改期 / 重决策' },
 ]
 
+/** 停滞处置建议 → 中文动作 */
+const ADVICE_ACTION_LABEL: Record<StaleAdvice['action'], string> = {
+  archive: '归档',
+  migrate: '迁移',
+  reactivate: '重启',
+}
+
+type DraftPhase = 'idle' | 'loading' | 'draft' | 'error' | 'saving'
+
 export function Review() {
   const { toast } = useToast()
   const [flowOpen, setFlowOpen] = useState(false)
-  const [step, setStep] = useState(0)
+  const [phase, setPhase] = useState<DraftPhase>('idle')
+  const [draft, setDraft] = useState<ReviewDraft | null>(null)
+  const [summary, setSummary] = useState('')
+  const [decisionsText, setDecisionsText] = useState('')
+  const [errorMsg, setErrorMsg] = useState('')
 
+  const now = new Date()
   const reviews = getReviews()
-  const weekly = reviews.find((review) => review.type === 'weekly')
-  const monthly = reviews.find((review) => review.type === 'monthly')
+  // 最新回顾：按 date 倒序取每周 / 每月各一条（不再依赖目录中的第一条）
+  const sortedReviews = [...reviews].sort((a, b) => b.date.localeCompare(a.date))
+  const weekly = sortedReviews.find((review) => review.type === 'weekly')
+  const monthly = sortedReviews.find((review) => review.type === 'monthly')
   const staleProjects = getStaleProjects(14)
   const weeklySeries = getWeeklyCompletionSeries()
   const energy = getEnergyDistribution()
   const energyTotal = energy.reduce((sum, item) => sum + item.value, 0)
+  const currentWeek = isoWeekKey(now)
+  const currentMonth = monthLabel(now)
 
-  const finishFlow = (): void => {
-    setFlowOpen(false)
-    setStep(0)
-    toast('原型态：周回顾流程为视觉演示，v0.6 起自动汇总指标并落盘')
+  const openFlow = (): void => {
+    setPhase('idle')
+    setDraft(null)
+    setSummary('')
+    setDecisionsText('')
+    setErrorMsg('')
+    setFlowOpen(true)
+  }
+
+  const runDraft = (): void => {
+    setPhase('loading')
+    setErrorMsg('')
+    void (async () => {
+      try {
+        const result = await generateReviewDraft()
+        setDraft(result)
+        setSummary(result.summary)
+        setDecisionsText(result.decisions.join('\n'))
+        setPhase('draft')
+      } catch (err) {
+        setErrorMsg(errorText(err))
+        setPhase('error')
+      }
+    })()
+  }
+
+  const decisions = decisionsText
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line !== '')
+  const canSave = summary.trim() !== '' && phase !== 'saving'
+
+  const onSave = (): void => {
+    if (!canSave) return
+    setPhase('saving')
+    void (async () => {
+      try {
+        const review = await saveReview(summary.trim(), decisions)
+        toast('已保存周回顾', {
+          action: {
+            label: '撤销',
+            onClick: () => {
+              void removeReview(review.id).catch((err) => {
+                toast(`撤销失败：${errorText(err)}`, { tone: 'error' })
+              })
+            },
+          },
+        })
+        setFlowOpen(false)
+        setPhase('idle')
+      } catch (err) {
+        setPhase('draft')
+        toast(`保存失败：${errorText(err)}`, { tone: 'error' })
+      }
+    })()
   }
 
   return (
     <div className="k-view">
       {/* 顶栏：周期说明 + 当前周期胶囊 */}
       <div className="k-review__top">
-        <p className="k-view__intro">周回顾是系统的心跳：短、可视、可自动化。当前周期 2026-W40 · 9 月。</p>
+        <p className="k-view__intro">
+          周回顾是系统的心跳：短、可视、可自动化。当前周期 {currentWeek} · {currentMonth}。
+        </p>
         <div className="k-review__periods">
           {weekly !== undefined && <span className="k-pill">{weekly.periodKey}</span>}
           {monthly !== undefined && <span className="k-pill is-ghost">{monthly.periodKey}</span>}
@@ -78,7 +158,7 @@ export function Review() {
                   key={metric.key}
                 >
                   <span className="k-stat__label">{metric.label}</span>
-                  <span className="k-stat__value">{weekly.metrics[metric.key]}</span>
+                  <span className="k-stat__value">{weekly.metrics[metric.key] ?? '—'}</span>
                   <span className="k-stat__foot">{metric.foot}</span>
                 </div>
               ))}
@@ -111,10 +191,9 @@ export function Review() {
               review={weekly}
               footer={
                 <div className="k-review__cta">
-                  <button type="button" className="k-btn is-solid" onClick={() => setFlowOpen(true)}>
+                  <button type="button" className="k-btn is-solid" onClick={openFlow}>
                     开始周回顾
                   </button>
-                  <span className="u-label k-muted">原型态：v0.6 起自动汇总指标并落盘</span>
                 </div>
               }
             />
@@ -171,59 +250,135 @@ export function Review() {
       <Drawer
         open={flowOpen}
         onClose={() => setFlowOpen(false)}
-        kicker="周回顾 · 2026-W40"
+        kicker={`周回顾 · ${currentWeek}`}
         title="开始周回顾"
         footer={
           <>
-            <button
-              type="button"
-              className="k-btn"
-              onClick={() => setStep((prev) => Math.max(0, prev - 1))}
-              disabled={step === 0}
-            >
-              上一步
-            </button>
-            {step < STEPS.length - 1 ? (
-              <button
-                type="button"
-                className="k-btn is-solid"
-                onClick={() => setStep((prev) => Math.min(STEPS.length - 1, prev + 1))}
-              >
-                下一步
+            {phase === 'idle' && (
+              <button type="button" className="k-btn is-solid" onClick={runDraft}>
+                AI 生成草稿
               </button>
-            ) : (
-              <button type="button" className="k-btn is-solid" onClick={finishFlow}>
-                完成
+            )}
+            {phase === 'loading' && (
+              <button type="button" className="k-btn is-solid" disabled>
+                正在生成…
               </button>
+            )}
+            {phase === 'error' && (
+              <button type="button" className="k-btn is-solid" onClick={runDraft}>
+                重试
+              </button>
+            )}
+            {(phase === 'draft' || phase === 'saving') && (
+              <>
+                <button
+                  type="button"
+                  className="k-btn"
+                  onClick={runDraft}
+                  disabled={phase === 'saving'}
+                >
+                  重新生成
+                </button>
+                <button type="button" className="k-btn is-solid" onClick={onSave} disabled={!canSave}>
+                  保存回顾
+                </button>
+              </>
             )}
           </>
         }
       >
+        {/* 五步清扫清单：保留为安静指引（不再驱动流程） */}
         <div className="k-steps">
-          {STEPS.map((item, index) => (
-            <button
-              type="button"
-              className={[
-                'k-step',
-                index === step ? 'is-active' : '',
-                index < step ? 'is-done' : '',
-              ]
-                .filter(Boolean)
-                .join(' ')}
-              key={item.num}
-              onClick={() => setStep(index)}
-            >
+          {STEPS.map((item) => (
+            <div className="k-step is-guide" key={item.num}>
               <span className="k-step__num">{item.num}</span>
               <span className="k-step__body">
                 <span>{item.title}</span>
                 <span className="k-muted u-label">{item.desc}</span>
               </span>
-            </button>
+            </div>
           ))}
         </div>
-        <p className="k-view__intro" style={{ marginTop: 'var(--space-5)' }}>
-          当前步骤：{STEPS[step].title} —— {STEPS[step].desc}。此流程为原型态演示，v0.6 起自动汇总指标、生成停滞清单并建议迁移。
-        </p>
+
+        <div className="k-review__draft">
+          {phase === 'idle' && (
+            <p className="k-view__intro">
+              先按上方五步清扫，再让 AI 汇总本周数据生成草稿；草稿可编辑，确认后才会保存。
+            </p>
+          )}
+
+          {phase === 'loading' && (
+            <p className="k-review__busy" aria-live="polite">
+              正在汇总本周数据并生成草稿…（约 10 秒）
+            </p>
+          )}
+
+          {phase === 'error' && (
+            <p className="k-review__error" role="alert">
+              {errorMsg}
+            </p>
+          )}
+
+          {(phase === 'draft' || phase === 'saving') && draft !== null && (
+            <>
+              <div className="k-review__metrics">
+                {METRIC_LABELS.map((metric) => (
+                  <div
+                    className={metric.accent === true ? 'k-stat k-stat--accent' : 'k-stat'}
+                    key={metric.key}
+                  >
+                    <span className="k-stat__label">{metric.label}</span>
+                    <span className="k-stat__value">{draft.metrics[metric.key] ?? '—'}</span>
+                    <span className="k-stat__foot">{metric.foot}</span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="k-review__field">
+                <label className="k-review__label" htmlFor="review-summary">
+                  本周摘要
+                </label>
+                <textarea
+                  id="review-summary"
+                  className="k-review__ta"
+                  rows={4}
+                  value={summary}
+                  onChange={(event) => setSummary(event.target.value)}
+                  placeholder="本周推进与问题…"
+                />
+              </div>
+
+              <div className="k-review__field">
+                <label className="k-review__label" htmlFor="review-decisions">
+                  决策（每行一条）
+                </label>
+                <textarea
+                  id="review-decisions"
+                  className="k-review__ta"
+                  rows={4}
+                  value={decisionsText}
+                  onChange={(event) => setDecisionsText(event.target.value)}
+                  placeholder="迁移 / 聚焦 / 处置…"
+                />
+              </div>
+
+              {draft.staleAdvice.length > 0 && (
+                <div className="k-review__field">
+                  <span className="k-review__label">停滞项目处置建议</span>
+                  <div className="k-review__advice">
+                    {draft.staleAdvice.map((advice) => (
+                      <div className="k-review__advice-row" key={advice.projectId}>
+                        <span>{getProjectById(advice.projectId)?.title ?? advice.projectId}</span>
+                        <span className="k-muted">建议{ADVICE_ACTION_LABEL[advice.action]}</span>
+                        {advice.reason !== '' && <span className="k-muted">{advice.reason}</span>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
       </Drawer>
     </div>
   )
