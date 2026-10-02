@@ -10,7 +10,17 @@ import {
   type ReactNode,
 } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
-import { ArrowUp, Bell, ChevronRight, FileText, Mic, Paperclip, PenLine, Sparkles } from 'lucide-react'
+import {
+  ArrowUp,
+  Bell,
+  ChevronRight,
+  FileText,
+  FolderOpen,
+  Mic,
+  Paperclip,
+  PenLine,
+  Sparkles,
+} from 'lucide-react'
 import { Panel } from '@/components/Panel'
 import { MeterBar } from '@/components/MeterBar'
 import { TagPill } from '@/components/TagPill'
@@ -21,6 +31,8 @@ import { getAreaById, getInbox, getProjectById, getTaskById } from '@/lib/data'
 import {
   captureInbox,
   clarifyInbox,
+  openInboxFile,
+  revealInboxFile,
   revertInbox,
   uploadInboxFile,
   type AiSuggestion,
@@ -422,6 +434,19 @@ export function Inbox() {
         toast(`澄清失败：${errorText(err)}`, { tone: 'error' })
       }
     })()
+  }
+
+  // 附件本机动作（Slice J2）：以默认程序打开 / 在文件管理器中定位；失败 toast，绝不触发浏览器下载
+  const openFile = (item: InboxItem): void => {
+    void openInboxFile(item.id).catch((err) => {
+      toast(`打开失败：${errorText(err)}`, { tone: 'error' })
+    })
+  }
+
+  const revealFile = (item: InboxItem): void => {
+    void revealInboxFile(item.id).catch((err) => {
+      toast(`定位失败：${errorText(err)}`, { tone: 'error' })
+    })
   }
 
   // 展开 / 收起：收起时清空面板（保留缓存）。批量运行中不打断活跃批次的解析，仅切换显示
@@ -842,15 +867,26 @@ export function Inbox() {
                             <div className="ic-subrow">
                               <div className="k-clarify">
                                 {item.file !== undefined && (
-                                  <a
-                                    className="k-pill is-ghost ic-file-link"
-                                    href={`/api/files/${item.id}`}
-                                    target="_blank"
-                                    rel="noreferrer noopener"
-                                  >
-                                    <FileText size={12} strokeWidth={1.5} aria-hidden />
-                                    查看文件
-                                  </a>
+                                  <>
+                                    <button
+                                      type="button"
+                                      className="k-pill is-ghost"
+                                      onClick={() => openFile(item)}
+                                      title="用系统默认程序打开该文件"
+                                    >
+                                      <FileText size={12} strokeWidth={1.5} aria-hidden />
+                                      打开文件
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="k-pill is-ghost"
+                                      onClick={() => revealFile(item)}
+                                      title="在文件管理器中定位该文件"
+                                    >
+                                      <FolderOpen size={12} strokeWidth={1.5} aria-hidden />
+                                      位置
+                                    </button>
+                                  </>
                                 )}
                                 <button
                                   type="button"

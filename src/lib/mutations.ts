@@ -145,6 +145,25 @@ export async function uploadInboxFile(file: File, caption?: string): Promise<Inb
   return inbox
 }
 
+/** 附件本机动作结果（Slice J2）：open / reveal 均回传解析后的绝对路径 */
+export interface InboxFileActionResult {
+  ok: true
+  path: string
+}
+
+/**
+ * 以系统默认程序打开收件箱附件（Slice J2 · 仅本机）：服务端解析路径后经 `cmd /c start` 打开。
+ * 不再经浏览器下载；失败抛出由调用方 toast。
+ */
+export async function openInboxFile(id: string): Promise<InboxFileActionResult> {
+  return api.post<InboxFileActionResult>(`/api/inbox/${id}/open`)
+}
+
+/** 在文件管理器中定位收件箱附件（Slice J2 · 仅本机；explorer /select） */
+export async function revealInboxFile(id: string): Promise<InboxFileActionResult> {
+  return api.post<InboxFileActionResult>(`/api/inbox/${id}/reveal`)
+}
+
 export type ClarifyTarget = 'task' | 'project' | 'note' | 'resource' | 'discard'
 
 export type CreatedKind = 'tasks' | 'projects' | 'notes' | 'resources'
@@ -455,6 +474,11 @@ export async function fetchTrash(): Promise<TrashItem[]> {
 /** 在文件管理器中显示本地文件 / 目录（仅本机；失败抛出由调用方提示） */
 export async function revealPath(path: string): Promise<void> {
   await api.post<{ ok: true }>('/api/reveal', { path })
+}
+
+/** 以系统默认程序打开本地文件 / 目录（Slice J2 · 仅本机；失败抛出由调用方提示） */
+export async function openPath(path: string): Promise<void> {
+  await api.post<{ ok: true }>('/api/open', { path })
 }
 
 /* ---------------------------------------------------------------------------

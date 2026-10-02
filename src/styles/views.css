@@ -324,9 +324,6 @@
   white-space: nowrap;
   max-width: 260px;
 }
-.ic-file-link {
-  text-decoration: none;
-}
 /* Slice E1：光学居中补偿已移除（所有者反馈后回位，不居中）——编辑器回到原捕捉栏位置 */
 @container route (max-width: 640px) {
   .ic-composer {

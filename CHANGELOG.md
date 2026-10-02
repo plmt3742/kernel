@@ -4,6 +4,17 @@
 
 ## [Unreleased]
 
+### 收件箱附件「打开文件 / 位置」· Slice J2（已完成 · 2026-10-03）
+以 owner 反馈为规格：收件箱点附件「查看文件」得到的是浏览器**下载**，而不是用本地默认程序打开文件、或定位到文件管理器。改为两个安静 pill（「打开文件」/「位置」）经数据服务本机动作执行；UI 不再有下载链接。`npm run build`（tsc strict + vite）通过；服务端冒烟 **33/33** + 浏览器 E2E **21/21**；零数据写入（前后快照计数一致、trash 0、i-0009/i-0010/i-0011 未变、`data/files/` 无增删）；控制台零应用 error；证据 `.qa/v27/`。
+
+- **根因**：`src/views/Inbox.tsx` 的「查看文件」是 `<a href="/api/files/:id" target="_blank">`；服务端 `serveFile` 虽 `Content-Disposition: inline`，但浏览器对 `.docx` 等不可内联展示的类型一律走下载。
+- **服务端本机动作（`server/index.mjs`）**：抽出 `spawnDetached`（`detached + stdio ignore + windowsHide + unref`，不阻塞请求）与 `statLocalPath`（存在性校验，缺即 404），既有 `POST /api/reveal` 复用之；新增 `POST /api/open`（`cmd /c start "" "<path>"`，走系统文件关联 → 默认程序）与收件箱专用 `POST /api/inbox/:id/open|reveal`——服务端按 `data/files/<id>-<file.name>` 解析路径，条目 / 附件元数据 / 磁盘文件三重校验，缺一 404。open/reveal 均回 `{ ok, path }`；仍仅 `127.0.0.1:4097` 本机可达。
+- **dryRun 测试通道**：`POST /api/inbox/:id/(open|reveal)` 与 `POST /api/open` 均接受 `{ dryRun: true }`——仅解析 + 校验并回传路径，**绝不 spawn**（自动化测试专用；真实 UI 永不传）。ADR-0008 §4 记载。
+- **前端（`Inbox.tsx`）**：附件行由单个下载 `<a>` 改为「打开文件」（`FileText` 图标）+「位置」（`FolderOpen` 图标）两个 `.k-pill.is-ghost` 按钮，分别调 `openInboxFile` / `revealInboxFile`，失败 toast（「打开失败：…」/「定位失败：…」）。`GET /api/files/:id` 保留（UI 不再引用）。
+- **资源对齐（`Library.tsx`）**：资料抽屉「文件位置」在「在文件管理器中显示」旁补「打开文件」（经新 `POST /api/open` / `openPath`）——与收件箱同一姿态。当前数据集无带 `path` 的资源，故该按钮未被 E2E 触达（数据驱动，不为此写 owner 数据）。
+- **验证**：`.qa/v27/smoke-j2.mjs` **33/33**（上传合成 `.txt` → open/reveal `dryRun:true` 200 + 路径以期望文件名结尾 + 磁盘存在 + `dryRun:true`；`POST /api/open {dryRun:true}` 200 + 路径一致 + 缺失路径 404；通用 `/api/open` 缺失路径 404 / 空路径 400（失败分支，绝不 spawn）；缺失 id 404；非法 id 400；remove 清理附件 + 条目；审计含 `inbox.upload` / `inbox.remove`；零残留）；`.qa/v27/slice-j2-verify.py` **21/21**（Playwright 拦截 `**/api/inbox/*/(open|reveal)` 并 fulfill——展开附件行出现两 pill、旧下载 `<a>` 不存在、点击命中正确端点、成功无错误 toast、mock 500 → 「打开失败」/「定位失败」错误 toast、移动 390 零横溢、排除 2 条 mock-500 资源日志后控制台零应用 error、零写入、i-0009/i-0010/i-0011 未变、`data/files/` 无增删）。
+- **记录**：ADR-0008 §4 修订；`docs/04 §4.1`；`CHANGELOG.md`；`TASK_BOOK.md`；`AGENTS.md`（安全节 + 变更记录）。
+
 ### 收件箱修复包 2 · Slice J（已完成 · 2026-10-03）
 以 owner 两条反馈为规格：①「批量 AI 解析后切页再回来，一切回到原始状态」（好像没解析过）；②「内置 opencode 为什么连文件都阅读不来」（投递 `.docx` 后 AI 只说「无法读取 / 仅凭文件名判断」）。`npm run build`（tsc strict + vite）通过；服务端冒烟 **14/14** + 浏览器 E2E **16/16**；零数据写入（前后快照计数一致、trash 0、i-0009/i-0010 JSON 完全未变）；控制台零 error；证据 `.qa/v26/`。
 

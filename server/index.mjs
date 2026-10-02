@@ -618,12 +618,16 @@ async function updateEntity(kind, id, body) {
 }
 
 /**
- * 在文件管理器中显示（Slice E2 · 仅本机）：校验路径存在后以 explorer.exe 打开。
- * 文件 → `/select,` 定位并选中；目录 → 直接打开。detached + stdio ignore + unref：
- * 不阻塞请求、不随数据服务退出（本地个人工具，无额外限制；见 ADR-0009）。
+ * 分离式启动本地进程（Slice E2 / J2）：detached + stdio ignore + unref——
+ * 不阻塞请求、不随数据服务退出（本地个人工具，无额外限制；见 ADR-0009 / ADR-0008）。
  */
-async function revealPath(body) {
-  const raw = typeof body.path === 'string' ? body.path.trim() : ''
+function spawnDetached(command, args) {
+  const child = spawn(command, args, { detached: true, stdio: 'ignore', windowsHide: true })
+  child.unref()
+}
+
+/** 校验本地路径存在（不存在即 404）；返回是否目录 */
+async function statLocalPath(raw) {
   if (raw === '') throw Object.assign(new Error('路径不能为空'), { status: 400 })
   const resolved = path.resolve(raw)
   if (!existsSync(resolved)) throw Object.assign(new Error('文件不存在'), { status: 404 })
@@ -633,10 +637,65 @@ async function revealPath(body) {
   } catch {
     throw Object.assign(new Error('文件不存在'), { status: 404 })
   }
-  const args = stat.isDirectory() ? [resolved] : ['/select,', resolved]
-  const child = spawn('explorer.exe', args, { detached: true, stdio: 'ignore', windowsHide: true })
-  child.unref()
+  return { resolved, isDirectory: stat.isDirectory() }
+}
+
+/**
+ * 在文件管理器中显示（Slice E2 · 仅本机）：校验路径存在后以 explorer.exe 打开。
+ * 文件 → `/select,` 定位并选中；目录 → 直接打开。
+ */
+async function revealPath(body) {
+  const raw = typeof body.path === 'string' ? body.path.trim() : ''
+  const { resolved, isDirectory } = await statLocalPath(raw)
+  const args = isDirectory ? [resolved] : ['/select,', resolved]
+  spawnDetached('explorer.exe', args)
   return { ok: true }
+}
+
+/**
+ * 以系统默认程序打开本地文件 / 目录（Slice J2 · 仅本机）：`cmd /c start "" "<path>"`。
+ * start 负责走文件关联（.docx → Word 等）；detached + windowsHide：不弹控制台、不阻塞请求。
+ * body.dryRun === true 时仅解析 + 校验并回传路径，**绝不 spawn**（自动化测试专用；真实 UI 永不传）。
+ */
+async function openPath(body) {
+  const raw = typeof body.path === 'string' ? body.path.trim() : ''
+  const { resolved } = await statLocalPath(raw)
+  if (body.dryRun === true) return { ok: true, path: resolved, dryRun: true }
+  spawnDetached('cmd.exe', ['/c', 'start', '', resolved])
+  return { ok: true, path: resolved }
+}
+
+/**
+ * 解析收件箱附件绝对路径（Slice J2）：条目 / 附件元数据 / 磁盘文件三重校验，缺一即 404。
+ * 附件命名规则与上传 / 读取一致：`data/files/<id>-<file.name>`（见 ADR-0008）。
+ */
+async function resolveInboxFile(id) {
+  const item = await readEntity('inbox', id)
+  if (item === null || item.file === undefined || item.file === null) {
+    throw Object.assign(new Error('文件不存在'), { status: 404 })
+  }
+  const filePath = path.join(FILES_DIR, `${id}-${item.file.name}`)
+  try {
+    await fs.stat(filePath)
+  } catch {
+    throw Object.assign(new Error('文件不存在'), { status: 404 })
+  }
+  return filePath
+}
+
+/**
+ * 收件箱附件本机动作（Slice J2）：action='open' 以默认程序打开；action='reveal' 在文件管理器中定位。
+ * body.dryRun === true 时仅解析 + 校验并回传路径，**绝不 spawn**（自动化测试专用；真实 UI 永不传）。
+ */
+async function inboxFileAction(id, action, body) {
+  const filePath = await resolveInboxFile(id)
+  if (body.dryRun === true) return { ok: true, path: filePath, dryRun: true }
+  if (action === 'open') {
+    spawnDetached('cmd.exe', ['/c', 'start', '', filePath])
+    return { ok: true, path: filePath }
+  }
+  spawnDetached('explorer.exe', ['/select,', filePath])
+  return { ok: true, path: filePath }
 }
 
 /* ---------------------------------------------------------------------------
@@ -646,6 +705,8 @@ async function revealPath(body) {
 const TASK_ID_RE = /^\/api\/tasks\/([^/]+)\/(complete|reopen)$/
 const INBOX_ID_RE = /^\/api\/inbox\/([^/]+)\/(clarify|revert)$/
 const INBOX_REMOVE_RE = /^\/api\/inbox\/([^/]+)\/remove$/
+/** 附件本机动作（Slice J2）：/api/inbox/<id>/(open|reveal) */
+const INBOX_FILE_ACTION_RE = /^\/api\/inbox\/([^/]+)\/(open|reveal)$/
 const FILES_RE = /^\/api\/files\/([^/]+)$/
 const AI_INBOX_PARSE_RE = /^\/api\/ai\/inbox\/([^/]+)\/parse$/
 const AI_INBOX_PARSE_STREAM_RE = /^\/api\/ai\/inbox\/([^/]+)\/parse-stream$/
@@ -884,6 +945,13 @@ const server = http.createServer(async (req, res) => {
       send(res, 200, result)
       return
     }
+    // 以默认程序打开本地文件 / 目录（Slice J2 · 仅本机）
+    if (method === 'POST' && pathname === '/api/open') {
+      const result = await openPath(await readBody(req))
+      console.log(`[data] open ok`)
+      send(res, 200, result)
+      return
+    }
     if (method === 'POST' && pathname === '/api/tasks') {
       send(res, 201, await createTask(await readBody(req)))
       return
@@ -922,6 +990,16 @@ const server = http.createServer(async (req, res) => {
       if (!validId('inbox', id)) return fail(res, 400, '收件箱 id 格式不正确')
       const result = await removeInbox(id)
       console.log(`[data] inbox.remove ${id}`)
+      send(res, 200, result)
+      return
+    }
+    const inboxFileMatch = INBOX_FILE_ACTION_RE.exec(pathname)
+    if (method === 'POST' && inboxFileMatch !== null) {
+      const id = decodeURIComponent(inboxFileMatch[1])
+      if (!validId('inbox', id)) return fail(res, 400, '收件箱 id 格式不正确')
+      const action = inboxFileMatch[2]
+      const result = await inboxFileAction(id, action, await readBody(req))
+      console.log(`[data] inbox.${action} ${id}${result.dryRun === true ? ' (dryRun)' : ''}`)
       send(res, 200, result)
       return
     }

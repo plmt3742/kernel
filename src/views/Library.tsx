@@ -19,7 +19,7 @@ import {
   getSnapshot,
   getTags,
 } from '@/lib/data'
-import { restoreEntity, revealPath, trashEntity, updateEntity } from '@/lib/mutations'
+import { openPath, restoreEntity, revealPath, trashEntity, updateEntity } from '@/lib/mutations'
 import { errorText } from '@/lib/api'
 import {
   DISTILL_LEVEL_DEF,
@@ -220,6 +220,19 @@ export function Library() {
     void (async () => {
       try {
         await revealPath(path)
+      } catch (err) {
+        toast(`打开失败：${errorText(err)}`, { tone: 'error' })
+      }
+    })()
+  }
+
+  // 以默认程序打开资源文件（Slice J2 · 与收件箱附件动作同姿态；仅本机）
+  const handleOpenResource = (): void => {
+    const path = selectedResource?.path
+    if (path === undefined) return
+    void (async () => {
+      try {
+        await openPath(path)
       } catch (err) {
         toast(`打开失败：${errorText(err)}`, { tone: 'error' })
       }
@@ -587,9 +600,14 @@ export function Library() {
                   <span className="k-file-path u-mono" title={selectedResource.path}>
                     {selectedResource.path}
                   </span>
-                  <button type="button" className="k-btn k-btn--sm" onClick={handleReveal}>
-                    在文件管理器中显示
-                  </button>
+                  <div className="k-hstack">
+                    <button type="button" className="k-btn k-btn--sm" onClick={handleOpenResource}>
+                      打开文件
+                    </button>
+                    <button type="button" className="k-btn k-btn--sm" onClick={handleReveal}>
+                      在文件管理器中显示
+                    </button>
+                  </div>
                 </>
               ) : (
                 <p className="k-muted k-file-path__hint">未记录文件位置 · 可通过编辑补充</p>
