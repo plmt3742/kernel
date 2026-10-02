@@ -114,15 +114,17 @@
 
 命名与形态统一，组件语义固定：
 
-`CommandPalette` / `StatusBar` / `RailNav` / `TopBar` / `Panel` / `StatTile` / `TagPill` / `DaySpine` / `ScheduleList` / `TaskRow` / `TaskBoard` / `Drawer` / `FilterBar` / `MeterBar` / `EnergyBars` / `TrendBars` / `EmptyState` / `Skeleton` / `Toast`
+`CommandPalette` / `StatusBar` / `RailNav` / `TopBar` / `Panel` / `StatTile` / `TagPill` / `DaySpine` / `ScheduleList` / `TaskRow` / `TaskBoard` / `Drawer` / `FilterBar` / `MeterBar` / `EnergyBars` / `TrendLine` / `EmptyState` / `Skeleton` / `Toast`
 
 要点：
 
 - `Panel` / `StatTile`：柔影悬浮卡片；静态容器承接柔影，不抬升。
 - `TagPill`：胶囊；选中 = ink 填充 + bg 文字，悬停/选中始终保证文字可读（AA）。
 - `TaskRow` / `k-lib-row`：交互行，悬停柔影抬升。
-- `MeterBar` / 图表：单色阶 + 图案区分；强调色不作数据系列。
-- `Toast`：克制使用，不打断操作；「原型态」标签用 `--accent-text`。
+- `MeterBar`：计量条（横向），单色阶；超阈用强调色填充作信号。
+- `TrendLine`（`.k-line`）：趋势图统一用折线（线 + 面积晕染 + 数据点）；峰值信号环仅唯一最大值；**「圆头柱」柱状已否决**（所有者 2026-10-02）。强调色不作数据系列。
+- `Toast`：克制使用，不打断操作；错误态用危险色标签（「原型态」语义已于 v0.4 退役）。
+- 侧边栏 `RailNav` 选中态：无边框高亮（填充）+ 左缘 3px 强调线（2026-10-02 规格）。
 
 > `HeatGrid` / `Ticker` / `Sparkline` 已于 v0.3.0 删除（死代码 / 已被状态 chips 与紧凑日程列表替代）。
 

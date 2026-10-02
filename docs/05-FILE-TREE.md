@@ -67,7 +67,7 @@ kernel/
 │  ├─ lib/                      # 数据访问与工具（data 可变快照 / api 客户端 / mutations 写入动作 / derive / date / format / motion / focus / hooks）
 │  └─ styles/                   # 全局样式与 token（tokens / base / shell / components / views）
 │
-├─ design-drafts/               # 设计草案选型稿（a 硬瑞士 / b 暖雾柔光 / c 柔暗夜色；渲染验证后作方向参考）
+├─ design-drafts/               # 设计选型稿（v1 视觉方向 a/b/c；v2 页面排版多版本 29 方案 + 选型页 index.html + 三版对比页 _sheets/）
 ├─ .qa/                         # 视觉 QA 证据（截图与报告；v0.2 起按批次归档，勿改归档件）
 │
 ├─ scripts/                     # 脚本
