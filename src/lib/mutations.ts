@@ -89,6 +89,8 @@ export interface TaskCreateInput {
   dueAt?: string
   projectId?: string
   areaId?: string
+  /** Slice R3：父任务（生成子任务）；服务端校验存在且不成环 */
+  parentTaskId?: string
   tags?: string[]
   /** Slice T：本次创建来自 AI 草稿确认——新标签按 origin:'ai' 登记 */
   ai?: boolean

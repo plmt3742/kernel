@@ -33,6 +33,19 @@ KERNEL 的任务台账与迭代记录。记录当前迭代目标、未来待办�
 
 ---
 
+## 子任务全链路 + 项目内操作 · Slice R3（已完成 · 2026-10-03）
+
+以 owner 追问「项目里面的子任务又是怎么产生的？你根本没有关系」为规格。此前 `task.parentTaskId` 在 schema / relations 中已存在，却**没有任何创建 / 编辑路径**（字段是死的），项目详情任务行 `onOpen={() => undefined}` 也是死行。本切片补全**子任务全链路**（服务端写入白名单 + 自引用 / 成环 / 不存在三重护栏；任务详情「子任务」区块 + 就地打开 + quick-add 继承父项目；编辑表单「父任务」下拉防环）与**项目内操作**（任务行可就地打开、按项目预填新建任务），一律**先确认后写入、无自动子任务**。`npm run build`（tsc strict + vite）通过；服务端冒烟 **20/20** + 浏览器 E2E **29/29**；零数据残留（tasks 62 / projects 10 / notes 16 / inbox 12 / reviews 4；标签注册表回基线 26；所有者 i-0009..0012、t-0061/0062、rev-0001..0004、n-0016 未动）；控制台零 error；证据 `.qa/v37/`。
+
+- [x] Deliverable A · 服务端 `parentTaskId`（`server/schemas.mjs` / `index.mjs`）：`taskCreateFieldsSchema` 增可选 `parentTaskId`；`EDITABLE_FIELDS.tasks` / `CREATE_FIELD_KEYS` 增它。`assertValidParentTask(callerId, parentId)`——父必须存在 / 不得自引用 / 不得成环（沿祖先链上溯，守卫上限 = 任务数 + 1）；创建与编辑均接入（`null` 清除键），拒绝 400、不留半成品；审计 `task.create` / `task.update`（`detail.fields` 含 `parentTaskId`）。
+- [x] Deliverable A · 子任务 UI（`src/components/TaskDetail.tsx` / `TaskDetailModal.tsx` / `src/lib/data.ts`）：`getChildTasks`；「子任务 · N」区块（安静整行、完成划线、点击就地打开）+ 安静 quick-add（回车即建、**继承父任务 `projectId`**、toast 撤销）；任务弹窗导航栈（打开子任务 / 「← 返回」逐级退回，切根清空）；编辑表单「父任务」下拉（候选 = 未完成 / 未丢弃，排除自身 + 全部后代；含「—」；当前父项补入回显）。
+- [x] Deliverable B · 项目内操作（`src/components/ProjectDetail.tsx` / `ProjectDetailModal.tsx` / `TaskDraftModal.tsx`）：任务行接通 `onOpen` → 就地打开任务详情；「添加任务到本项目，回车确认」→ 打开既有 `TaskDraftModal` 且 `projectId` 预填（`initialProjectId`；AI 不覆盖预填），确认后创建、可撤销；项目详情编辑 / 删除不变；覆盖层（任务 / 草稿）**替换呈现**，关闭回归项目。
+- [x] 样式（`src/styles/views.css`）：`.k-subtasks` / `.k-subtask` / `.k-inline-add*`，token-only。
+- [x] 验证：`.qa/v37/smoke-r3.mjs` 20/20（create/update 往返、自引用 / 非法 / `A→B→A` / 深层环 400 且不留半成品、同带 `parentTaskId`+`projectId` 落盘、审计、零残留 + 所有者未动）；`.qa/v37/verify-r3.py` 29/29（编辑设父 → 落盘；父详情列出子任务 → 就地打开 → 返回；quick-add 继承项目 → 撤销；项目任务行打开 → 返回项目；项目内新建草稿 `projectId` 预填 / 确认前零落盘 / 确认后入列表；390 可见 + 零横溢；控制台 0 error；零残留 + 所有者未动）。
+- [x] 记录：新增 ADR-0017（`docs/decisions/0017-subtasks-and-project-actions.md`）；`docs/04` §4.2；`docs/README.md`；`public/guide.html`；`CHANGELOG.md`、`AGENTS.md`。
+
+---
+
 ## 文件投递解析校准 + 资料简介 + 删除按钮修整 · Slice R2.5（已完成 · 2026-10-03）
 
 以 owner 校准反馈为规格：①「丢入文件后，希望 AI 解析用于总结出简约的小结，用于资料详情页介绍这份资料，而不是拆分成一堆任务」；②「删除按钮的位置有点奇怪」。本切片把**文件条目**从 Slice R1 的「多动作一揽子」校准为 **「资料 + 简介」单一动作**（提示词 + `postValidateActions` 硬归一化双重保证），为**文本条目**补反过拆规则；资料详情页新增标题下的「简介」；收件箱展开区把删除推到动作行最右。`npm run build`（tsc strict + vite）通过；服务端冒烟 **31/31** + 浏览器 E2E **23/23**；零数据残留（inbox 12 / tasks 62 / notes 16 / resources 12 / projects 10；标签注册表回基线 26；所有者 i-0009..0012、t-0061/0062、rev-0001..0004、n-0016 未动）；控制台零 error；证据 `.qa/v36/`。

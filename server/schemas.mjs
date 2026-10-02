@@ -323,6 +323,8 @@ export const taskCreateFieldsSchema = z.object({
   tags: z.array(z.string().min(1)).max(8).optional(),
   projectId: z.string().min(1).optional(),
   areaId: z.string().min(1).optional(),
+  // Slice R3：父任务（子任务生成）；必须为真实存在且不构成环的任务 id（服务端校验）
+  parentTaskId: z.string().min(1).optional(),
   // Slice T：本次创建来自 AI 草稿确认（新标签按 origin:'ai' 登记）；仅影响标签来源，缺省 manual
   ai: z.boolean().optional(),
 })

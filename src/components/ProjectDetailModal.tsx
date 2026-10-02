@@ -4,6 +4,8 @@
 import { useEffect, useState } from 'react'
 import { Modal } from '@/components/Modal'
 import { ProjectDetail } from '@/components/ProjectDetail'
+import { TaskDetailModal } from '@/components/TaskDetailModal'
+import { TaskDraftModal } from '@/components/TaskDraftModal'
 import { EntityEditForm, type EditFieldSpec } from '@/components/EntityEditForm'
 import { useToast } from '@/context/ToastContext'
 import { getAreas, getProjectById, getSnapshot } from '@/lib/data'
@@ -11,7 +13,14 @@ import { restoreEntity, trashEntity, updateEntity } from '@/lib/mutations'
 import { errorText } from '@/lib/api'
 import { PROJECT_STATUS_LABEL } from '@/lib/format'
 import { useDataRevision, useUndoableToggle } from '@/lib/hooks'
-import type { Project } from '@/types'
+import type { Project, Task } from '@/types'
+
+/**
+ * 项目弹窗内的覆盖层（Slice R3）：二选一——打开某任务详情，或「添加任务到本项目」草稿。
+ * 采用**替换**呈现（覆盖层出现时项目弹窗退场，关闭后回归项目），复用既有 TaskDetailModal /
+ * TaskDraftModal 全部动作与「先确认后写入」纪律，避免叠加弹窗的 ESC / 焦点争用。
+ */
+type Overlay = { kind: 'task'; id: string } | { kind: 'draft'; title: string } | null
 
 interface ProjectDetailModalProps {
   /** 目标项目 id；null 时弹窗关闭 */
@@ -26,13 +35,30 @@ export function ProjectDetailModal({ projectId, onClose }: ProjectDetailModalPro
   const { toast } = useToast()
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
+  // 内嵌覆盖层：任务详情 / 添加任务草稿（Slice R3）
+  const [overlay, setOverlay] = useState<Overlay>(null)
 
-  // 切换目标时退出编辑态
+  // 切换目标时退出编辑态与覆盖层
   useEffect(() => {
     setEditing(false)
+    setOverlay(null)
   }, [projectId])
 
   const project = projectId !== null ? getProjectById(projectId) : undefined
+
+  const handleTaskCreated = (task: Task): void => {
+    setOverlay(null)
+    toast(`已在本项目创建任务「${task.title}」`, {
+      action: {
+        label: '撤销',
+        onClick: () => {
+          void trashEntity('tasks', task.id).catch((err) => {
+            toast(`撤销失败：${errorText(err)}`, { tone: 'error' })
+          })
+        },
+      },
+    })
+  }
 
   const projectFields: EditFieldSpec[] = [
     { key: 'title', label: '标题', type: 'text' },
@@ -113,41 +139,63 @@ export function ProjectDetailModal({ projectId, onClose }: ProjectDetailModalPro
   }
 
   return (
-    <Modal
-      open={project !== undefined}
-      onClose={onClose}
-      kicker={
-        project !== undefined
-          ? `项目 · ${project.id} · ${PROJECT_STATUS_LABEL[project.status]}`
-          : ''
-      }
-      title={project?.title ?? ''}
-      className="k-modal--detail"
-      footer={
-        project !== undefined && !editing ? (
-          <div className="k-modal__foot-actions">
-            <button type="button" className="k-btn k-btn--sm" onClick={() => setEditing(true)}>
-              编辑
-            </button>
-            <button type="button" className="k-btn k-btn--sm is-danger" onClick={handleDelete}>
-              删除
-            </button>
-          </div>
-        ) : undefined
-      }
-    >
-      {project !== undefined &&
-        (editing ? (
-          <EntityEditForm
-            fields={projectFields}
-            initial={project as unknown as Record<string, unknown>}
-            saving={saving}
-            onSubmit={handleSave}
-            onCancel={() => setEditing(false)}
-          />
-        ) : (
-          <ProjectDetail project={project} onToggleTask={toggleTask} />
-        ))}
-    </Modal>
+    <>
+      <Modal
+        open={project !== undefined && overlay === null}
+        onClose={onClose}
+        kicker={
+          project !== undefined
+            ? `项目 · ${project.id} · ${PROJECT_STATUS_LABEL[project.status]}`
+            : ''
+        }
+        title={project?.title ?? ''}
+        className="k-modal--detail"
+        footer={
+          project !== undefined && !editing ? (
+            <div className="k-modal__foot-actions">
+              <button type="button" className="k-btn k-btn--sm" onClick={() => setEditing(true)}>
+                编辑
+              </button>
+              <button type="button" className="k-btn k-btn--sm is-danger" onClick={handleDelete}>
+                删除
+              </button>
+            </div>
+          ) : undefined
+        }
+      >
+        {project !== undefined &&
+          (editing ? (
+            <EntityEditForm
+              fields={projectFields}
+              initial={project as unknown as Record<string, unknown>}
+              saving={saving}
+              onSubmit={handleSave}
+              onCancel={() => setEditing(false)}
+            />
+          ) : (
+            <ProjectDetail
+              project={project}
+              onToggleTask={toggleTask}
+              onOpenTask={(id) => setOverlay({ kind: 'task', id })}
+              onQuickAddTask={(title) => setOverlay({ kind: 'draft', title })}
+            />
+          ))}
+      </Modal>
+
+      {/* 内嵌覆盖层：任务详情（复用全站动作 + 子任务导航）*/}
+      <TaskDetailModal
+        taskId={overlay?.kind === 'task' ? overlay.id : null}
+        onClose={() => setOverlay(null)}
+      />
+
+      {/* 内嵌覆盖层：添加任务草稿确认（项目预填，确认前零落盘）*/}
+      <TaskDraftModal
+        open={overlay?.kind === 'draft'}
+        initialTitle={overlay?.kind === 'draft' ? overlay.title : ''}
+        initialProjectId={project?.id}
+        onClose={() => setOverlay(null)}
+        onCreated={handleTaskCreated}
+      />
+    </>
   )
 }

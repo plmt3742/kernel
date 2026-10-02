@@ -33,6 +33,8 @@ const AI_FIELD_KEYS = [
 interface TaskDraftModalProps {
   open: boolean
   initialTitle: string
+  /** 预填项目归属（Slice R3：项目详情「添加任务到本项目」）；AI 不会覆盖该预填值 */
+  initialProjectId?: string
   onClose: () => void
   onCreated: (task: Task) => void
 }
@@ -40,6 +42,7 @@ interface TaskDraftModalProps {
 export function TaskDraftModal({
   open,
   initialTitle,
+  initialProjectId,
   onClose,
   onCreated,
 }: TaskDraftModalProps): ReactNode {
@@ -88,19 +91,21 @@ export function TaskDraftModal({
     })()
   }
 
-  // 打开时重置为「标题 + 空字段」并请求一次补全；关闭（open=false）不写任何数据
+  // 打开时重置为「标题 + 预填项目 + 空字段」并请求一次补全；关闭（open=false）不写任何数据
   useEffect(() => {
     if (!open) return
-    setFields({ ...EMPTY_AI_FORM, title: initialTitle })
+    const prefillProject = initialProjectId ?? ''
+    setFields({ ...EMPTY_AI_FORM, title: initialTitle, projectId: prefillProject })
     setAiState('loading')
     setAiNote('')
     setSubmitError('')
     setSubmitting(false)
-    touchedRef.current = new Set()
+    // 预填的项目归属视为「用户已定」，锁定以免 AI 补全覆盖（Slice R3）
+    touchedRef.current = new Set(prefillProject !== '' ? ['projectId'] : [])
     runAi(initialTitle)
-    // runAi 为组件内稳定逻辑，仅随 open / initialTitle 触发
+    // runAi 为组件内稳定逻辑，仅随 open / initialTitle / initialProjectId 触发
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, initialTitle])
+  }, [open, initialTitle, initialProjectId])
 
   const patchFields = (patch: Partial<AiSuggestionFormValues>): void => {
     setFields((prev) => ({ ...prev, ...patch }))

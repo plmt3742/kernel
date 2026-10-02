@@ -233,6 +233,11 @@ export function getTasksByProject(projectId: string): Task[] {
   return state.tasks.filter((t) => t.projectId === projectId)
 }
 
+/** 某任务的直接子任务（parentTaskId 指向它；Slice R3） */
+export function getChildTasks(parentTaskId: string): Task[] {
+  return state.tasks.filter((t) => t.parentTaskId === parentTaskId)
+}
+
 /** 按上下文筛选任务（第一筛选轴） */
 export function getTasksByContext(context: string): Task[] {
   return state.tasks.filter((t) => t.contexts.includes(context))

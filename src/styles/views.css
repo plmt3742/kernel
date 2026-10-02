@@ -2192,6 +2192,68 @@ button.k-pill.is-danger:hover {
   flex-direction: column;
 }
 
+/* 子任务列表（Slice R3）：安静整行可点；完成标题划线；无重边框 */
+.k-subtasks {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.k-subtask {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  text-align: left;
+  border-radius: var(--radius-inner);
+  color: var(--ink-2);
+  transition: background var(--dur-fast) var(--ease-standard);
+}
+.k-subtask:hover:not(:disabled) {
+  background: var(--fill-subtle);
+}
+.k-subtask:focus-visible {
+  outline: 2px solid var(--focus-ring);
+}
+.k-subtask:disabled {
+  cursor: default;
+}
+.k-subtask__title.is-done {
+  text-decoration: line-through;
+  color: var(--muted);
+}
+.k-subtask__meta {
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+
+/* 安静内联添加（Slice R3）：子任务 quick-add / 项目内「添加任务到本项目」 */
+.k-inline-add {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) 0;
+  border-bottom: var(--hairline) solid transparent;
+  transition: border-color var(--dur-fast) var(--ease-standard);
+}
+.k-inline-add:focus-within {
+  border-bottom-color: var(--outline-strong);
+}
+.k-inline-add__input {
+  flex: 1 1 auto;
+  background: transparent;
+  outline: none;
+  color: var(--ink);
+  font-size: var(--text-body-sm);
+}
+.k-inline-add__input::placeholder {
+  color: var(--muted);
+}
+
 /* 关联区块：互链芯片允许折行，长标题在胶囊内换行不溢出抽屉 */
 .k-relations .k-pill {
   max-width: 100%;

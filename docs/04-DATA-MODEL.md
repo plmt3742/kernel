@@ -93,6 +93,8 @@
 | doneAt? | ISO | |
 | sourceInboxId? | string | |
 
+> **子任务 / `parentTaskId` 语义（v0.5 · Slice R3）**：`parentTaskId` 指向 `data/tasks/` 中另一任务，构成父子层级（一任务至多一个父、可有多个子）；派生展示不落盘。服务端写入护栏（`server/index.mjs` `assertValidParentTask`）：① 父任务必须真实存在（否则 400）；② 不得指向自身（400）；③ **不得成环**——沿 `parentTaskId` 祖先链上溯，命中自身即 400（`A→B→A` 被拒，且拒绝后不写半成品）。创建（`POST /api/tasks` 可选 `parentTaskId`）与编辑（`POST /api/tasks/:id/update`；`parentTaskId:null` 清除）均支持，审计 `task.create` / `task.update`（`detail.fields` 含 `parentTaskId`）。UI 路径：任务详情「子任务」区块列出直接子任务（点击就地打开其详情，可逐级返回）+ 安静 quick-add（回车即建，**继承父任务 `projectId`**，其余字段走默认，toast 可撤销）；项目详情的任务行可就地打开、并提供「添加任务到本项目」（草稿确认、`projectId` 预填）。系统**不自动生成子任务**——一律用户显式创建 / 编辑。
+
 ### 4.3 project（`p-`）
 
 | 字段 | 类型 | 说明 |

@@ -5,7 +5,11 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Modal } from '@/components/Modal'
 import { TaskDetail } from '@/components/TaskDetail'
-import { EntityEditForm, type EditFieldSpec } from '@/components/EntityEditForm'
+import {
+  EntityEditForm,
+  type EditFieldOption,
+  type EditFieldSpec,
+} from '@/components/EntityEditForm'
 import { useToast } from '@/context/ToastContext'
 import { getAreas, getSnapshot, getTags, getTaskById } from '@/lib/data'
 import { isTaskDone, restoreEntity, trashEntity, updateEntity } from '@/lib/mutations'
@@ -23,20 +27,57 @@ interface TaskDetailModalProps {
   onToggled?: (task: Task, wasDone: boolean) => void
 }
 
+/**
+ * 候选父任务（Slice R3）：仅未完成 / 未丢弃的任务，排除自身与全部后代（防环）。
+ * 当前父项若不在候选中（如已完成）仍补入，保证编辑表单能正确回显。
+ */
+function parentTaskOptions(task: Task): EditFieldOption[] {
+  const all = getSnapshot().tasks
+  const childrenByParent = new Map<string, string[]>()
+  for (const item of all) {
+    if (item.parentTaskId === undefined) continue
+    const arr = childrenByParent.get(item.parentTaskId) ?? []
+    arr.push(item.id)
+    childrenByParent.set(item.parentTaskId, arr)
+  }
+  const blocked = new Set<string>([task.id])
+  const stack = [...(childrenByParent.get(task.id) ?? [])]
+  while (stack.length > 0) {
+    const id = stack.pop()
+    if (id === undefined || blocked.has(id)) continue
+    blocked.add(id)
+    const kids = childrenByParent.get(id)
+    if (kids !== undefined) stack.push(...kids)
+  }
+  const options: EditFieldOption[] = all
+    .filter((item) => !blocked.has(item.id) && item.status !== 'done' && item.status !== 'dropped')
+    .map((item) => ({ value: item.id, label: item.title }))
+  if (task.parentTaskId !== undefined && !options.some((o) => o.value === task.parentTaskId)) {
+    const current = all.find((item) => item.id === task.parentTaskId)
+    if (current !== undefined) options.unshift({ value: current.id, label: current.title })
+  }
+  return options
+}
+
 export function TaskDetailModal({ taskId, onClose, onToggled }: TaskDetailModalProps) {
   useDataRevision()
   const { toast } = useToast()
   const toggleTask = useUndoableToggle()
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
+  // 子任务导航栈（Slice R3）：在当前弹窗内打开子任务，可逐级返回；切换根目标时清空
+  const [navStack, setNavStack] = useState<string[]>([])
 
-  // 切换目标时退出编辑态
   useEffect(() => {
     setEditing(false)
+    setNavStack([])
   }, [taskId])
 
-  const task = taskId !== null ? getTaskById(taskId) : undefined
+  const activeId = navStack.length > 0 ? navStack[navStack.length - 1] : taskId
+  const task = activeId !== null ? getTaskById(activeId) : undefined
   const done = task !== undefined && isTaskDone(task)
+  const openChild = (id: string): void => setNavStack((prev) => [...prev, id])
+  const goBack = (): void => setNavStack((prev) => prev.slice(0, -1))
 
   const contextNames = getTags()
     .filter((tag) => tag.namespace === 'context')
@@ -94,6 +135,13 @@ export function TaskDetailModal({ taskId, onClose, onToggled }: TaskDetailModalP
       type: 'select',
       clearable: true,
       options: getAreas().map((area) => ({ value: area.id, label: area.title })),
+    },
+    {
+      key: 'parentTaskId',
+      label: '父任务',
+      type: 'select',
+      clearable: true,
+      options: task !== undefined ? parentTaskOptions(task) : [],
     },
     { key: 'tags', label: '标签（逗号分隔）', type: 'list' },
     { key: 'notes', label: '备注', type: 'textarea' },
@@ -155,6 +203,11 @@ export function TaskDetailModal({ taskId, onClose, onToggled }: TaskDetailModalP
         task !== undefined && !editing ? (
           <>
             <div className="k-modal__foot-main">
+              {navStack.length > 0 && (
+                <button type="button" className="k-btn" onClick={goBack}>
+                  ← 返回
+                </button>
+              )}
               <button
                 type="button"
                 className={done ? 'k-btn' : 'k-btn is-solid'}
@@ -195,7 +248,7 @@ export function TaskDetailModal({ taskId, onClose, onToggled }: TaskDetailModalP
             onCancel={() => setEditing(false)}
           />
         ) : (
-          <TaskDetail task={task} />
+          <TaskDetail task={task} onOpenTask={openChild} />
         ))}
     </Modal>
   )

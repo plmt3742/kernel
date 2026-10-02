@@ -78,13 +78,13 @@ const EDITABLE_KINDS = ['tasks', 'projects', 'notes', 'resources']
 const SINGULAR = { tasks: 'task', projects: 'project', notes: 'note', resources: 'resource' }
 /** 任务创建可携带的可选字段顺序（Slice O；用于审计 detail.fields） */
 const CREATE_FIELD_KEYS = [
-  'contexts', 'energy', 'importance', 'estimateMin', 'dueAt', 'projectId', 'areaId', 'tags',
+  'contexts', 'energy', 'importance', 'estimateMin', 'dueAt', 'projectId', 'areaId', 'parentTaskId', 'tags',
 ]
 /** 各 kind 允许编辑的字段白名单（其余一律忽略，见 ADR-0009） */
 const EDITABLE_FIELDS = {
   tasks: [
     'title', 'status', 'contexts', 'energy', 'importance', 'estimateMin',
-    'dueAt', 'deferUntil', 'projectId', 'areaId', 'tags', 'notes',
+    'dueAt', 'deferUntil', 'projectId', 'areaId', 'parentTaskId', 'tags', 'notes',
   ],
   projects: ['title', 'outcome', 'status', 'areaId', 'goalId', 'nextActionId', 'dueAt', 'tags'],
   notes: ['title', 'type', 'body', 'areaId', 'projectId', 'tags', 'distillLevel'],
@@ -277,6 +277,37 @@ async function serveFile(res, id) {
  * ------------------------------------------------------------------------- */
 
 /**
+ * 校验父任务引用（v0.5 · Slice R3）：父任务必须真实存在，且不得引用自身 / 构成环。
+ * 环检测沿 parentTaskId 祖先链上溯（守卫上限 = 任务数 + 1，防既有脏数据死循环）。
+ * callerId 为当前任务 id；新建任务时传 null（尚不存在，自引用不可能）。
+ * 校验失败抛 400（可读中文），由路由层统一转错误响应。
+ */
+async function assertValidParentTask(callerId, parentId) {
+  if (typeof parentId !== 'string' || parentId.trim() === '') {
+    throw Object.assign(new Error('父任务不存在'), { status: 400 })
+  }
+  if (callerId !== null && parentId === callerId) {
+    throw Object.assign(new Error('任务不能作为自己的父任务'), { status: 400 })
+  }
+  const snapshot = await readSnapshot()
+  const byId = new Map((snapshot.tasks ?? []).map((task) => [task.id, task]))
+  if (!byId.has(parentId)) {
+    throw Object.assign(new Error('父任务不存在'), { status: 400 })
+  }
+  let cursor = parentId
+  let guard = 0
+  while (cursor !== undefined && cursor !== null) {
+    if (callerId !== null && cursor === callerId) {
+      throw Object.assign(new Error('父任务会形成循环引用'), { status: 400 })
+    }
+    guard += 1
+    if (guard > byId.size + 1) break
+    const node = byId.get(cursor)
+    cursor = node !== undefined ? node.parentTaskId : undefined
+  }
+}
+
+/**
  * 创建任务（v0.5 · Slice O）：title 必填；可一次性携带「预览确认（含编辑）」后的字段。
  * 可选字段与澄清覆盖同口径（taskCreateFieldsSchema），关联 id 只接受真实存在的项目 / 区域；
  * 缺省字段维持既有默认（contexts ['@computer'] / energy 'low' / importance 2 / tags []）。
@@ -314,6 +345,11 @@ async function createTask(body) {
       throw Object.assign(new Error('区域不存在'), { status: 400 })
     }
     task.areaId = fields.areaId
+  }
+  if (fields.parentTaskId !== undefined) {
+    // Slice R3：新建任务的父任务必须存在（新建 id 尚不存在，故不可能成环 / 自引用）
+    await assertValidParentTask(null, fields.parentTaskId)
+    task.parentTaskId = fields.parentTaskId
   }
   const applied = CREATE_FIELD_KEYS.filter((key) => fields[key] !== undefined)
   const saved = await commit('tasks', task, {
@@ -1086,6 +1122,10 @@ async function updateEntity(kind, id, body) {
       // 标签规格化（裸名 → topic: 前缀等，Slice T）
       value = normalizeTagList(value)
       tagList = value
+    }
+    // Slice R3：编辑父任务时校验存在性 / 自引用 / 环（null = 清除，合法无需校验）
+    if (key === 'parentTaskId' && value !== null) {
+      await assertValidParentTask(id, value)
     }
     if (value === null) {
       if (Object.prototype.hasOwnProperty.call(next, key)) {

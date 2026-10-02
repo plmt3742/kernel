@@ -4,6 +4,17 @@
 
 ## [Unreleased]
 
+### 子任务全链路 + 项目内操作 · Slice R3（已完成 · 2026-10-03）
+以 owner 追问「项目里面的子任务又是怎么产生的？你根本没有关系」为规格。此前 `task.parentTaskId` 在 schema / relations 中存在，却**无创建 / 编辑路径**：项目详情任务行 `onOpen={() => undefined}` 是死行，也没有「在项目里加任务」的入口。本切片补全 **子任务全链路**（服务端创建 / 编辑白名单 + 自引用 / 成环 / 不存在三重护栏；任务详情「子任务」区块 + 就地打开 + 安静 quick-add 继承父项目；编辑表单「父任务」下拉防环）与 **项目内操作**（任务行可就地打开、按项目预填新建任务），一律**先确认后写入、无自动子任务**。`npm run build`（tsc strict + vite）通过；服务端冒烟 **20/20** + 浏览器 E2E **29/29**；零数据残留（tasks 62 / projects 10 / notes 16 / inbox 12 / reviews 4；标签注册表回基线 26；所有者 i-0009..0012、t-0061/0062、rev-0001..0004、n-0016 未动）；控制台零 error；证据 `.qa/v37/`。
+
+- **服务端 `parentTaskId`（`server/schemas.mjs` / `server/index.mjs`）**：`taskCreateFieldsSchema` 增可选 `parentTaskId`；`EDITABLE_FIELDS.tasks` 与 `CREATE_FIELD_KEYS` 增 `parentTaskId`。新增 `assertValidParentTask(callerId, parentId)`：① 父任务必须真实存在；② 不得自引用（`callerId === parentId`）；③ 不得成环——沿 `parentTaskId` 祖先链上溯（守卫上限 = 任务数 + 1，防既有脏数据死循环），命中自身即拒。创建（`POST /api/tasks`）与编辑（`POST /api/tasks/:id/update`；`null` 清除键）均接入校验，失败 400 中文可读；审计 `task.create` / `task.update`（`detail.fields` 含 `parentTaskId`），拒绝时不写半成品。
+- **任务详情子任务区块（`src/components/TaskDetail.tsx` / `src/lib/data.ts`）**：新增 `getChildTasks(parentTaskId)`；`TaskDetail` 增「子任务 · N」区块——列出直接子任务（安静整行、完成划线；点击经 `onOpenTask` 在当前弹窗打开其详情）+ 安静 quick-add（回车即建，**继承父任务 `projectId`**，其余走服务端默认；toast 提供「撤销」= 移入回收站）。
+- **任务详情弹窗（`src/components/TaskDetailModal.tsx`）**：新增子任务导航栈——点击子任务在当前弹窗内打开、底栏「← 返回」逐级退回（切换根目标时清空）；编辑表单增「父任务」下拉（候选 = 未完成 / 未丢弃任务，**排除自身与全部后代**防环；含「—」清除；当前父项即使已完成也补入以回显）。
+- **项目内操作（`src/components/ProjectDetail.tsx` / `ProjectDetailModal.tsx` / `TaskDraftModal.tsx`）**：项目详情任务行由死行改为**就地打开任务详情**（`onOpen` 接通）；新增安静输入「添加任务到本项目，回车确认」→ 打开既有 `TaskDraftModal` 且 `projectId` **预填**（`TaskDraftModal` 增 `initialProjectId`，预填项目视为已定、AI 不覆盖），确认后才创建，项目详情的编辑 / 删除动作保持不变。项目弹窗内的任务详情 / 新建草稿以**替换**呈现（覆盖层出现时项目弹窗退场，关闭后回归），复用全站 `TaskDetailModal` / `TaskDraftModal`，避免叠加弹窗的 ESC / 焦点争用。
+- **样式（`src/styles/views.css`）**：新增 `.k-subtasks` / `.k-subtask`（安静可点行、完成划线、focus-visible 环）与 `.k-inline-add` / `.k-inline-add__input`（无重边框、仅 focus-within 现基线），全部 token-only。
+- **验证**：`.qa/v37/smoke-r3.mjs` **20/20**（create 带 `parentTaskId` 落盘 + 审计含字段；update 设 / 清往返（清除即删键）；自引用 400；非法 id 400；`A→B→A` 400 且不留半成品；深层环 `A→B→C→A` 400；子任务同带 `parentTaskId` + `projectId` 两者落盘；零残留 + 所有者未动）；`.qa/v37/verify-r3.py` **29/29**（编辑表单设父（候选含目标父、自身排除）→ 落盘；父详情列出子任务 → 点击就地打开 → 返回；quick-add 子任务继承项目 → 撤销消失；项目详情点击任务行 → 打开任务详情 → 关闭返回项目；「添加任务到本项目」草稿 `projectId` 预填、确认前零落盘、确认后出现在项目列表；390 子任务可见 + 零横溢；控制台 0 error；零残留 + 所有者未动）。
+- **记录**：新增 ADR-0017（`docs/decisions/0017-subtasks-and-project-actions.md`）；`docs/04` §4.2；`docs/README.md`（ADR 索引）；`public/guide.html`；`CHANGELOG.md`、`TASK_BOOK.md`、`AGENTS.md`。
+
 ### 文件投递解析校准 + 资料简介 + 删除按钮修整 · Slice R2.5（已完成 · 2026-10-03）
 以 owner 校准反馈为规格：①「丢入文件后，希望 AI 解析用于总结出简约的小结，用于资料详情页介绍这份资料，而不是拆分成一堆任务」；②「删除按钮的位置有点奇怪」。本切片把**文件条目**从 Slice R1 的「多动作一揽子」校准为 **「资料 + 简介」单一动作**（提示词 + `postValidateActions` 硬归一化双重保证），为**文本条目**补反过拆规则；资料详情页新增标题下的「简介」展示；收件箱展开区把删除按钮推到动作行最右（破坏性尾部），修掉孤行左飘。`npm run build`（tsc strict + vite）通过；服务端冒烟 **31/31** + 浏览器 E2E **23/23**；零数据残留（inbox 12 / tasks 62 / notes 16 / resources 12 / projects 10；标签注册表回基线 26；所有者 i-0009..0012、t-0061/0062、rev-0001..0004、n-0016 未动）；控制台零 error；证据 `.qa/v36/`。
 
