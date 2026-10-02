@@ -1,0 +1,4300 @@
+<!--
+  组件样本页 · charts-kit.html「图表组件 CHART KIT」
+  概念：把总览第二轮用到的 7 个监控图表各做成一个可复用模块，每个模块标注 名称 / 建议类名 / 数据来源 / 使用场景，
+        本页同时作为落地实现说明与所有者评审依据。
+  与总览三版的关系：overview-a 平铺复用其中 7 图；overview-b 以完成趋势为主图；overview-c 用其迷你形态做信号行——本页是它们的公共词汇表。
+  图表纪律：统一解剖（标题 + 期间标签 → 图形区 → 基线 / 阈值 → 脚注口径）；单一墨色阶 + 图案表达数据，强调色仅作阈值 / 超限 / 峰值信号。
+  移动端行为：组件画廊在容器 ≤900px 折为单列；图表内部随各自容器查询（stat / task / route）自适应。
+-->
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>KERNEL · 图表组件 CHART KIT</title>
+    <style>
+      @font-face {
+        font-family: 'Inter Variable';
+        src: url('../fonts/inter-latin-wght-normal.woff2') format('woff2-variations');
+        font-weight: 100 900;
+        font-display: swap;
+      }
+      @font-face {
+        font-family: 'Inter Variable';
+        src: url('../fonts/inter-latin-ext-wght-normal.woff2') format('woff2-variations');
+        font-weight: 100 900;
+        font-display: swap;
+      }
+    </style>
+    <style data-app-css="tokens">
+/* =============================================================================
+ * KERNEL · DESIGN TOKENS v2（唯一事实源）
+ * 方向：柔暗夜色「C」为默认 + 柔影悬浮「B」语言融合（见 docs/decisions/0003）。
+ * 纪律：柔暗为主、柔影悬浮（无硬边线，用表面阶 + 柔影表达深度）、
+ *       圆角 16、单一强调色仅作信号、低亮度柔和对比、亮/暗共享几何与排版。
+ * 值对应 docs/00-DESIGN-BRIEF.md §5（v2）。
+ * ========================================================================== */
+
+/* -----------------------------------------------------------------------------
+ * 几何 · 字号 · 间距 · 动效 · 层级（两主题共享，只换色彩与高度）
+ * -------------------------------------------------------------------------- */
+:root {
+  /* --- 5.2 字体（本地自托管，禁止 CDN；等宽栈补 CJK 回退，避免中文豆腐块） --- */
+  --font-sans: "Inter Variable", "Inter", "PingFang SC", "HarmonyOS Sans SC",
+    "Microsoft YaHei", "Noto Sans CJK SC", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Consolas,
+    "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", monospace;
+
+  /* ===========================================================================
+   * 5.3 字号 · 流体比例（数理自适应 · Utopia 方法）
+   * 公式：clamp(MIN, calc(INTERCEPT + SLOPEvw), MAX)
+   *   SLOPE(vw) = (MAX − MIN) / (1440 − 390) × 100
+   *   INTERCEPT = MIN − (SLOPE/100) × 390
+   * 锚点：mobile 390px = MIN，desktop 1440px = MAX（1440 保持既有视觉尺寸）。
+   * 复算：任取视口 w，值 = INTERCEPT + (SLOPE/100)·w，线性夹在 [MIN, MAX]。
+   * 小号（micro 11px）保持固定：其流体收益 < 反锯齿/4px 栅格成本。
+   * =========================================================================== */
+  --text-micro: 11px; /* 固定 390=11 / 1440=11 */
+  --text-micro-leading: 1.3;
+  --text-micro-tracking: 0.02em;
+
+  /* caption 11.5→12 | m=0.0476vw b=11.314 */
+  --text-caption: clamp(11.5px, calc(11.314px + 0.0476vw), 12px);
+  --text-caption-leading: 1.45;
+  --text-caption-tracking: 0.01em;
+
+  /* body-sm 12.4→13 | m=0.0571vw b=12.177 */
+  --text-body-sm: clamp(12.4px, calc(12.177px + 0.0571vw), 13px);
+  --text-body-sm-leading: 1.55;
+  --text-body-sm-tracking: 0;
+
+  /* body 14.4→15 | m=0.0571vw b=14.177 */
+  --text-body: clamp(14.4px, calc(14.177px + 0.0571vw), 15px);
+  --text-body-leading: 1.65;
+  --text-body-tracking: 0;
+
+  /* h4 17→18 | m=0.0952vw b=16.629 */
+  --text-h4: clamp(17px, calc(16.629px + 0.0952vw), 18px);
+  --text-h4-leading: 1.3;
+  --text-h4-tracking: -0.01em;
+
+  /* h3 20→22 | m=0.1905vw b=19.257 */
+  --text-h3: clamp(20px, calc(19.257px + 0.1905vw), 22px);
+  --text-h3-leading: 1.25;
+  --text-h3-tracking: -0.012em;
+
+  /* h2 24→27 | m=0.2857vw b=22.886 */
+  --text-h2: clamp(24px, calc(22.886px + 0.2857vw), 27px);
+  --text-h2-leading: 1.2;
+  --text-h2-tracking: -0.015em;
+
+  /* h1 29→34 | m=0.4762vw b=27.143 */
+  --text-h1: clamp(29px, calc(27.143px + 0.4762vw), 34px);
+  --text-h1-leading: 1.12;
+  --text-h1-tracking: -0.02em;
+
+  /* 展示数字（统计瓦片）30→40.32（1440 既有 2.8vw=40.32）| m=0.9829vw b=26.167
+     1680 触及 MAX 42，与 v2 上限一致 */
+  --text-display: clamp(30px, calc(26.167px + 0.9829vw), 42px);
+  --text-display-leading: 1.08;
+  --text-display-tracking: -0.02em;
+
+  /* ===========================================================================
+   * 5.4 间距 · 流体阶梯 + φ 层级
+   * 微步（4/8/12/16）保持固定：用于图标/行内对齐，流体化会破坏 4px 栅格且收益极小。
+   * 大步（≥24）流体：390 收紧 → 1440 保持既有 → >1440 封顶。注释含 390→1440 与 (m,b)。
+   * =========================================================================== */
+  --space-0: 0;
+  --space-1: 4px; /* 固定 */
+  --space-2: 8px; /* 固定 */
+  --space-3: 12px; /* 固定 */
+  --space-4: 16px; /* 固定 */
+  --space-5: clamp(20px, calc(18.514px + 0.381vw), 24px); /* 20→24 | m=0.381 b=18.514 */
+  --space-6: clamp(26px, calc(23.771px + 0.5714vw), 32px); /* 26→32 | m=0.5714 b=23.771 */
+  --space-7: clamp(38px, calc(34.286px + 0.9524vw), 48px); /* 38→48 | m=0.9524 b=34.286 */
+  --space-8: clamp(48px, calc(42.057px + 1.5238vw), 64px); /* 48→64 | m=1.5238 b=42.057 */
+  --space-9: clamp(64px, calc(52.114px + 3.0476vw), 96px); /* 64→96 | m=3.0476 b=52.114 */
+  --space-10: clamp(80px, calc(62.171px + 4.5714vw), 128px); /* 80→128 | m=4.5714 b=62.171 */
+
+  /* φ 间距层级（几何级数 1 : φ : φ² : φ³ ≈ 1 : 1.62 : 2.62 : 4.24）
+     锚点 1440：inner 10.4 · element 16.83 · section 27.23 · page 44.05
+     语义：inner=组件内缝 / element=元素间隙 / section=区块间隙 / page=页边距 */
+  --phi: 1.618;
+  --rhythm-inner: 10.4px;
+  --rhythm-element: calc(var(--rhythm-inner) * 1.618); /* 16.83 */
+  --rhythm-section: calc(var(--rhythm-inner) * 2.618); /* 27.23 */
+  --rhythm-page: calc(var(--rhythm-inner) * 4.236); /* 44.05 */
+
+  --grid-cols: 12;
+  --rail-w: 96px;
+  --rail-w-collapsed: 64px;
+  /* 版心：居中内容上限 + 页边距（20→44 线性，与 φ page 层级同锚） */
+  --content-max: 1240px;
+  --page-margin: clamp(20px, calc(11.086px + 2.2857vw), var(--rhythm-page));
+  --measure: 65ch;
+
+  /* 组件呼吸：卡片内边距 / 列表行最小高度（流体，1440 保持 26 / 64） */
+  --pad-card: clamp(20px, calc(17.771px + 0.5714vw), 26px); /* 20→26 | m=0.5714 b=17.771 */
+  --row-min: clamp(52px, calc(47.543px + 1.1429vw), 64px); /* 52→64 | m=1.1429 b=47.543 */
+
+  /* 圆角比值：card 16（大表面）· inner 12（= card − 4 ≈ 0.75×，内部控件）· pill 全圆（chip/按钮）
+     半径随组件尺度分级：小件不显笨重、大件维持柔影悬浮感 */
+  --radius-card: 16px;
+  --radius-inner: 12px;
+  --radius-pill: 999px;
+  --radius: 12px;
+  --hairline: 1px;
+
+  /* --- 5.5 动效 · 按「位移/距离类别」分级（与 src/lib/motion.ts 一一对应） ---
+   * instant 80ms  颜色/描边等零位移状态切换
+   * micro   120ms 微小状态（chip 反选、透明度）
+   * fast    180ms 悬停/按压/短位移（translateY -2px、fade）
+   * base    240ms 入场/抽屉滑入（面板位移）
+   * slow    400ms 计量条宽度等长距离属性
+   * page    560ms 路由级过渡（最大距离）
+   * 曲线：standard 通用 / enter 进场(减速) / exit 退场(加速) */
+  --dur-instant: 80ms;
+  --dur-micro: 120ms;
+  --dur-fast: 180ms;
+  --dur-base: 240ms;
+  --dur-slow: 400ms;
+  --dur-page: 560ms;
+
+  --ease-standard: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-enter: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+
+  /* --- 层级 --- */
+  --z-base: 0;
+  --z-sticky: 100;
+  --z-drawer: 200;
+  --z-overlay: 300;
+  --z-palette: 400;
+  --z-toast: 500;
+
+  /* --- 布局常量 --- */
+  --rail-current: var(--rail-w);
+  --statusbar-h: 34px;
+  --tabbar-h: 58px;
+  --topbar-h: 104px;
+  --drawer-w: 460px;
+  --palette-w: 640px;
+}
+
+/* =============================================================================
+ * 5.1 色彩 · 暗色「柔暗夜色」—— 默认主题（无 data-theme 时即此套）
+ * 低亮度、柔和对比；表面阶 + 柔影表达深度；边缘至多 faint rgba(255,255,255,.06)。
+ * ========================================================================== */
+:root {
+  /* 表面阶 */
+  --bg: #0f0f10;
+  --surface: #1a1a1c;
+  --surface-elevated: #212124;
+  --surface-hover: #232327;
+  --surface-sunken: #141416;
+
+  /* 原生控件/滚动条随主题（暗色下不出现亮色原生部件） */
+  color-scheme: dark;
+
+  /* 文字（避免纯白，主文 #F4F4F5） */
+  --ink: #f4f4f5;
+  --ink-2: #a1a1aa;
+  --muted: #929298; /* 验收校正：全表面（含填充合成）≥4.5:1 */
+
+  /* 边缘 / 分隔（柔和，非硬线） */
+  --outline: rgba(255, 255, 255, 0.06);
+  --outline-strong: rgba(255, 255, 255, 0.12);
+  --rule: rgba(255, 255, 255, 0.1);
+  --rule-soft: rgba(255, 255, 255, 0.06);
+  --rule-ghost: rgba(255, 255, 255, 0.05);
+
+  /* 填充 */
+  --fill-tag: rgba(255, 255, 255, 0.07);
+  --fill-subtle: rgba(255, 255, 255, 0.05);
+  --fill-secondary: rgba(255, 255, 255, 0.08);
+  --hover-veil: rgba(255, 255, 255, 0.04);
+
+  /* 强调色：仅信号 / 焦点 / 激活。文字用 accent-text（暗底提亮变体） */
+  --accent: #ff5a52;
+  --accent-ink: #0f0f10;
+  --accent-text: #ff8a80; /* 暗底上的强调文字，实测 ≥4.5:1 */
+  --accent-on-ink: #b3261e; /* 浅色 ink 填充上的强调文字，实测 ≥4.5:1 */
+  --accent-veil: rgba(255, 90, 82, 0.16);
+
+  /* 语义色（克制） */
+  --success: #4caf7d;
+  --warning: #d08a2b;
+  --danger: #f87171;
+  --danger-bg: rgba(248, 113, 113, 0.14);
+  --danger-text: #fca5a5;
+
+  /* 柔影悬浮：大模糊、低不透明度 + 顶部微弱高光衬托悬浮 */
+  --shadow-card: 0 16px 40px rgba(0, 0, 0, 0.45);
+  --shadow-soft: 0 8px 24px rgba(0, 0, 0, 0.35);
+  --shadow-hover: 0 22px 54px rgba(0, 0, 0, 0.55);
+  --shadow-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+
+  --scrim: rgba(0, 0, 0, 0.62);
+  --focus-ring: rgba(244, 244, 245, 0.55);
+
+  /* 背景氛围：三处极淡辉光，避免纯平死黑 */
+  --ambient: radial-gradient(1100px 560px at 12% -8%, rgba(124, 124, 160, 0.06), transparent 62%),
+    radial-gradient(980px 620px at 98% 4%, rgba(96, 132, 168, 0.045), transparent 58%),
+    radial-gradient(900px 640px at 50% 112%, rgba(168, 150, 120, 0.035), transparent 60%);
+}
+
+/* =============================================================================
+ * 5.1 色彩 · 亮色「暖雾柔光」（draft B 语言：暖白 + 柔影；几何/排版与暗色一致）
+ * ========================================================================== */
+[data-theme='light'] {
+  color-scheme: light;
+
+  --bg: #f7f6f3;
+  --surface: #ffffff;
+  --surface-elevated: #ffffff;
+  --surface-hover: #fbfaf8;
+  --surface-sunken: #f1efe9;
+
+  --ink: #1c1917;
+  --ink-2: #665f59; /* 验收校正：全表面（含填充合成）≥4.5:1 */
+  --muted: #6e6862; /* 验收校正：全表面（含填充合成）≥4.5:1 */
+
+  --outline: #ede9e3;
+  --outline-strong: #e2dcd3;
+  --rule: #ede9e3;
+  --rule-soft: #efebe4;
+  --rule-ghost: #e8e3db;
+
+  --fill-tag: #f1efe9;
+  --fill-subtle: #f5f3ef;
+  --fill-secondary: #edeae4;
+  --hover-veil: rgba(28, 25, 23, 0.035);
+
+  --accent: #d62828;
+  --accent-ink: #ffffff;
+  --accent-text: #b3261e; /* 亮底上的强调文字，实测 ≥4.5:1 */
+  --accent-on-ink: #ff8a80; /* 深色 ink 填充上的强调文字，实测 ≥4.5:1 */
+  --accent-veil: rgba(214, 40, 40, 0.1);
+
+  --success: #1d6b3c;
+  --warning: #b26a00;
+  --danger: #b91c1c;
+  --danger-bg: #fbeae7;
+  --danger-text: #b91c1c;
+
+  --shadow-card: 0 1px 2px rgba(28, 25, 23, 0.04), 0 10px 30px -12px rgba(28, 25, 23, 0.14);
+  --shadow-soft: 0 1px 2px rgba(28, 25, 23, 0.04), 0 6px 18px -10px rgba(28, 25, 23, 0.16);
+  --shadow-hover: 0 2px 4px rgba(28, 25, 23, 0.05), 0 18px 42px -14px rgba(28, 25, 23, 0.2);
+  --shadow-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+
+  --scrim: rgba(28, 25, 23, 0.3);
+  --focus-ring: rgba(28, 25, 23, 0.45);
+
+  --ambient: radial-gradient(1100px 460px at 50% -140px, rgba(232, 219, 199, 0.42), rgba(232, 219, 199, 0) 68%),
+    radial-gradient(760px 420px at 92% 6%, rgba(233, 224, 210, 0.3), rgba(233, 224, 210, 0) 70%);
+}
+
+</style>
+    <style data-app-css="base">
+/* =============================================================================
+ * KERNEL · BASE / RESET v2
+ * 最小重置 + token 化正文默认值 + 可访问性基线。
+ * 柔暗基调：无硬边线，背景带极淡氛围辉光与胶片颗粒，深度靠柔影。
+ * ========================================================================== */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+* {
+  margin: 0;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  height: 100%;
+}
+
+body {
+  min-height: 100%;
+  background-color: var(--bg);
+  background-image: var(--ambient);
+  background-attachment: fixed;
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: var(--text-body);
+  line-height: var(--text-body-leading);
+  letter-spacing: var(--text-body-tracking);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  position: relative;
+}
+
+/* 极淡胶片颗粒：增加质感、避免纯平（内联 SVG，无外部依赖） */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  opacity: 0.028;
+  mix-blend-mode: soft-light;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23g)'/%3E%3C/svg%3E");
+}
+
+#root {
+  min-height: 100vh;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-weight: 600;
+  text-wrap: balance;
+}
+
+h1 {
+  font-size: var(--text-h1);
+  line-height: var(--text-h1-leading);
+  letter-spacing: var(--text-h1-tracking);
+}
+h2 {
+  font-size: var(--text-h2);
+  line-height: var(--text-h2-leading);
+  letter-spacing: var(--text-h2-tracking);
+}
+h3 {
+  font-size: var(--text-h3);
+  line-height: var(--text-h3-leading);
+  letter-spacing: var(--text-h3-tracking);
+}
+h4 {
+  font-size: var(--text-h4);
+  line-height: var(--text-h4-leading);
+  letter-spacing: var(--text-h4-tracking);
+}
+
+p,
+li {
+  text-wrap: pretty;
+  max-width: var(--measure);
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+  text-underline-offset: 0.2em;
+}
+a:hover {
+  text-decoration: underline;
+}
+
+img,
+svg,
+video {
+  display: block;
+  max-width: 100%;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  padding: 0; /* M3 根因：按钮 reset 缺 padding:0，UA 内边距会挤压勾选图形 */
+  border-radius: var(--radius);
+}
+
+button {
+  cursor: pointer;
+}
+
+ul,
+ol {
+  list-style: none;
+  padding: 0;
+}
+
+hr {
+  border: none;
+  border-top: var(--hairline) solid var(--rule-soft);
+}
+
+code,
+kbd,
+samp,
+pre {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+::selection {
+  background: rgba(244, 244, 245, 0.18);
+}
+
+/* 焦点环：2px，柔和，offset —— 键盘全可达 */
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--radius);
+}
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* 滚动条（克制） */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--rule-soft) transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--rule-soft);
+  border-radius: var(--radius-pill);
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
+  background-clip: padding-box;
+}
+
+/* ---------------------------------------------------------------------------
+ * 工具类（全局词汇）
+ * ------------------------------------------------------------------------- */
+
+/* 等宽 / 表格数字：时间、ID、统计 */
+.u-mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+/* 安静小灰标签（v2：撤下大写等宽重排，改用低对比无衬线小字） */
+.u-label {
+  font-family: var(--font-sans);
+  font-size: var(--text-micro);
+  line-height: var(--text-micro-leading);
+  letter-spacing: var(--text-micro-tracking);
+  font-weight: 500;
+  color: var(--muted);
+}
+
+/* 展示数字（统计）——走 display token（P9） */
+.u-display {
+  font-family: var(--font-sans);
+  font-size: var(--text-display);
+  line-height: var(--text-display-leading);
+  letter-spacing: var(--text-display-tracking);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+/* 数字一律表格化 */
+.u-tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+/* 发际线边界（v2 极少使用，优先柔影与表面阶） */
+.u-rule {
+  border-top: var(--hairline) solid var(--rule);
+}
+.u-rule-soft {
+  border-top: var(--hairline) solid var(--rule-soft);
+}
+
+/* 左对齐容器约束 */
+.u-measure {
+  max-width: var(--measure);
+}
+
+/* ---------------------------------------------------------------------------
+ * 无障碍 · 尊重减少动效
+ * ------------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+</style>
+    <style data-app-css="shell">
+/* =============================================================================
+ * KERNEL · SHELL v2（索引轨道 / 顶栏 / 状态条 / 抽屉 / 命令面板 / Toast / 响应式）
+ * 柔暗 + 柔影悬浮：表面阶 + 柔影表达深度，无硬边线，唯一强调色仅作信号。
+ * ========================================================================== */
+
+.k-app {
+  min-height: 100vh;
+  background: var(--bg);
+}
+/* 手动折叠时同步轨道宽度变量（Toast 等 .k-app 之外的浮层跟随；由 AppLayout 写到 <html>） */
+:root[data-rail='collapsed'] {
+  --rail-current: var(--rail-w-collapsed);
+}
+
+/* ---------------------------------------------------------------------------
+ * 左侧索引轨道 RailNav
+ * ------------------------------------------------------------------------- */
+
+.k-rail {
+  position: fixed;
+  inset: 0 auto 0 0;
+  width: var(--rail-w);
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border-right: var(--hairline) solid var(--outline);
+  box-shadow: var(--shadow-card);
+  z-index: var(--z-sticky);
+  transition: width var(--dur-base) var(--ease-standard);
+}
+.k-app[data-rail='collapsed'] .k-rail {
+  width: var(--rail-w-collapsed);
+}
+
+/* 品牌锁排：垂直居中（K 标 / KERNEL / 版本），96px 轨道内完整显示不裁切。
+   与顶栏共享 --topbar-h，底边发际线与顶栏对齐成一条连续接缝。 */
+.k-rail__brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  height: var(--topbar-h);
+  padding: var(--space-3) var(--space-2);
+  border-bottom: var(--hairline) solid var(--outline);
+  overflow: hidden;
+}
+.k-rail__mark {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-inner);
+  background: var(--surface-elevated);
+  color: var(--ink);
+  display: grid;
+  place-items: center;
+  font-size: var(--text-body-sm);
+  font-weight: 600;
+  box-shadow: var(--shadow-soft), var(--shadow-highlight);
+}
+.k-rail__brandtext {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  line-height: 1;
+  white-space: nowrap;
+}
+.k-rail__brandtext b {
+  font-size: var(--text-body-sm);
+  letter-spacing: 0.02em;
+}
+.k-app[data-rail='collapsed'] .k-rail__brandtext,
+.k-app[data-rail='collapsed'] .k-rail__toggle .u-label {
+  display: none;
+}
+
+.k-rail__list {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-2);
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.k-rail__item {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-2);
+  border-radius: var(--radius-inner);
+  color: var(--ink-2);
+  background: transparent;
+  transition: background var(--dur-fast) var(--ease-standard),
+    color var(--dur-fast) var(--ease-standard),
+    transform var(--dur-fast) var(--ease-standard);
+}
+.k-rail__item::before {
+  content: '';
+  position: absolute;
+  left: calc(-1 * var(--space-2)); /* 对齐轨道左缘（抵消列表横向内边距） */
+  top: 22%;
+  bottom: 22%;
+  width: 3px;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  transition: background var(--dur-fast) var(--ease-standard);
+}
+.k-rail__cn {
+  white-space: nowrap;
+  font-size: var(--text-caption);
+  line-height: 1.15;
+  letter-spacing: 0.01em;
+}
+.k-app[data-rail='collapsed'] .k-rail__cn {
+  display: none;
+}
+.k-rail__item:hover {
+  background: var(--hover-veil);
+  color: var(--ink);
+}
+.k-rail__item.is-active {
+  background: var(--fill-secondary); /* 无边框高亮：仅填充，无描边/阴影 */
+  color: var(--ink);
+}
+.k-rail__item.is-active::before {
+  background: var(--accent);
+}
+
+.k-rail__foot {
+  border-top: var(--hairline) solid var(--outline);
+  padding: var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.k-rail__toggle,
+.k-rail__more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: 34px;
+  padding: var(--space-2);
+  border-radius: var(--radius-inner);
+  background: var(--fill-subtle);
+  color: var(--ink-2);
+  transition: background var(--dur-fast) var(--ease-standard),
+    color var(--dur-fast) var(--ease-standard),
+    transform var(--dur-fast) var(--ease-standard);
+}
+.k-rail__toggle:hover,
+.k-rail__more:hover {
+  background: var(--fill-secondary);
+  color: var(--ink);
+}
+.k-rail__more {
+  display: none;
+}
+
+/* ---------------------------------------------------------------------------
+ * 主区域
+ * ------------------------------------------------------------------------- */
+
+.k-main {
+  margin-left: var(--rail-w);
+  min-height: 100vh;
+  padding-bottom: var(--statusbar-h);
+  display: flex;
+  flex-direction: column;
+  transition: margin-left var(--dur-base) var(--ease-standard);
+}
+.k-app[data-rail='collapsed'] .k-main {
+  margin-left: var(--rail-w-collapsed);
+}
+
+.k-topbar {
+  position: sticky;
+  top: 0;
+  z-index: calc(var(--z-sticky) - 1);
+  display: flex;
+  align-items: center;
+  min-height: var(--topbar-h);
+  padding: var(--space-5) var(--page-margin);
+  background: var(--bg);
+  border-bottom: var(--hairline) solid var(--outline);
+}
+.k-topbar__inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-5);
+  width: 100%;
+  max-width: var(--content-max);
+  margin: 0 auto;
+}
+.k-topbar__id {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  min-width: 0;
+}
+.k-topbar__title {
+  font-size: var(--text-h2);
+  line-height: var(--text-h2-leading);
+  letter-spacing: var(--text-h2-tracking);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.k-topbar__en {
+  color: var(--muted);
+  align-self: center;
+}
+.k-topbar__tools {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 0 0 auto;
+}
+
+.k-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 36px;
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-pill);
+  background: var(--fill-subtle);
+  color: var(--ink-2);
+  transition: background var(--dur-fast) var(--ease-standard),
+    color var(--dur-fast) var(--ease-standard),
+    box-shadow var(--dur-fast) var(--ease-standard),
+    transform var(--dur-fast) var(--ease-standard);
+}
+.k-btn:hover {
+  background: var(--fill-secondary);
+  color: var(--ink);
+}
+.k-btn.is-solid {
+  background: var(--ink);
+  color: var(--bg);
+  box-shadow: var(--shadow-soft);
+}
+.k-btn.is-solid:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-hover);
+  color: var(--bg);
+}
+.k-btn:active {
+  transform: translateY(0);
+}
+.k-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+}
+.k-btn--sm {
+  height: 30px;
+  padding: 0 var(--space-3);
+  font-size: var(--text-body-sm);
+}
+.k-iconbtn {
+  display: inline-grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-pill);
+  background: var(--fill-subtle);
+  color: var(--ink-2);
+  transition: background var(--dur-fast) var(--ease-standard),
+    color var(--dur-fast) var(--ease-standard),
+    transform var(--dur-fast) var(--ease-standard);
+}
+.k-iconbtn:hover {
+  background: var(--fill-secondary);
+  color: var(--ink);
+}
+.k-kbd {
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  letter-spacing: 0.04em;
+  border: var(--hairline) solid var(--outline);
+  padding: 2px 6px;
+  border-radius: 6px;
+  color: var(--muted);
+}
+.k-btn:hover .k-kbd {
+  border-color: var(--outline-strong);
+  color: inherit;
+}
+
+.k-content {
+  flex: 1 1 auto;
+  padding: var(--space-6) var(--page-margin) var(--space-8);
+}
+.k-route {
+  display: block;
+  width: 100%;
+  max-width: var(--content-max);
+  margin: 0 auto;
+  /* 容器查询根：组件内部按此容器（=版心宽度）自适应，替代视口媒体查询 */
+  container-type: inline-size;
+  container-name: route;
+}
+
+/* ---------------------------------------------------------------------------
+ * 底部状态条 StatusBar
+ * ------------------------------------------------------------------------- */
+
+.k-statusbar {
+  position: fixed;
+  left: var(--rail-w);
+  right: 0;
+  bottom: 0;
+  height: var(--statusbar-h);
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: 0 var(--space-4);
+  background: var(--surface);
+  border-top: var(--hairline) solid var(--outline);
+  z-index: var(--z-sticky);
+  overflow: hidden;
+  white-space: nowrap;
+  transition: left var(--dur-base) var(--ease-standard);
+}
+.k-app[data-rail='collapsed'] .k-statusbar {
+  left: var(--rail-w-collapsed);
+}
+.k-statusbar__cell {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--muted);
+}
+.k-statusbar__cell b {
+  color: var(--ink);
+  font-weight: 600;
+}
+.k-statusbar__cell--ink {
+  color: var(--ink);
+}
+.k-statusbar__cell--accent {
+  color: var(--accent-text);
+}
+.k-statusbar__spacer {
+  margin-left: auto;
+}
+.k-statusbar__sep {
+  width: 1px;
+  height: 12px;
+  background: var(--outline);
+  display: inline-block;
+}
+/* 数据服务状态胶囊样式见 components.css `.k-svc-pill` */
+
+/* ---------------------------------------------------------------------------
+ * 抽屉 Drawer
+ * ------------------------------------------------------------------------- */
+
+.k-drawer-scrim {
+  position: fixed;
+  inset: 0;
+  background: var(--scrim);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  z-index: var(--z-drawer);
+}
+.k-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: var(--drawer-w);
+  max-width: 100vw;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border-left: var(--hairline) solid var(--outline);
+  box-shadow: var(--shadow-hover);
+  z-index: calc(var(--z-drawer) + 1);
+}
+.k-drawer__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-5);
+  border-bottom: var(--hairline) solid var(--outline);
+}
+.k-drawer__kicker {
+  color: var(--muted);
+  display: block;
+  margin-bottom: var(--space-2);
+}
+.k-drawer__title {
+  font-size: var(--text-h3);
+  line-height: var(--text-h3-leading);
+  letter-spacing: var(--text-h3-tracking);
+  font-weight: 600;
+}
+.k-drawer__body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: var(--space-5);
+  /* 容器查询根：抽屉内容按自身宽度自适应 */
+  container-type: inline-size;
+  container-name: drawer;
+}
+.k-drawer__foot {
+  border-top: var(--hairline) solid var(--outline);
+  padding: var(--space-4) var(--space-5);
+  display: flex;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+/* ---------------------------------------------------------------------------
+ * 命令面板 CommandPalette
+ * ------------------------------------------------------------------------- */
+
+.k-palette__scrim {
+  position: fixed;
+  inset: 0;
+  background: var(--scrim);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  z-index: var(--z-palette);
+}
+.k-palette {
+  position: fixed;
+  top: 16vh;
+  left: 0;
+  right: 0;
+  margin: 0 auto;
+  width: min(var(--palette-w), calc(100vw - 32px));
+  background: var(--surface-elevated);
+  border: var(--hairline) solid var(--outline);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-hover);
+  z-index: calc(var(--z-palette) + 1);
+  display: flex;
+  flex-direction: column;
+  max-height: 62vh;
+  overflow: hidden;
+}
+.k-palette__search {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 0 var(--space-4);
+  border-bottom: var(--hairline) solid var(--outline);
+}
+.k-palette__input {
+  flex: 1 1 auto;
+  height: 54px;
+  background: transparent;
+  color: var(--ink);
+  outline: none;
+}
+.k-palette__input::placeholder {
+  color: var(--muted);
+}
+.k-palette__esc {
+  color: var(--muted);
+}
+.k-palette__list {
+  overflow-y: auto;
+  padding: var(--space-2) 0;
+}
+.k-palette__group {
+  padding: var(--space-2) 0;
+}
+.k-palette__group [cmdk-group-heading] {
+  display: block;
+  padding: var(--space-2) var(--space-4);
+  color: var(--muted);
+  font-size: var(--text-micro);
+  letter-spacing: var(--text-micro-tracking);
+}
+.k-palette__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 46px;
+  margin: 0 var(--space-2);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-inner);
+  color: var(--ink-2);
+  cursor: pointer;
+  transition: background var(--dur-micro) var(--ease-standard),
+    color var(--dur-micro) var(--ease-standard);
+}
+.k-palette__item svg {
+  flex: 0 0 auto;
+}
+.k-palette__item[data-selected='true'] {
+  background: var(--ink);
+  color: var(--bg);
+  box-shadow: var(--shadow-soft);
+}
+.k-palette__item[data-selected='true'] .k-palette__hint {
+  color: var(--bg);
+  opacity: 0.7;
+}
+.k-palette__hint {
+  margin-left: auto;
+  color: var(--muted);
+}
+.k-palette__empty {
+  padding: var(--space-6) var(--space-4);
+  color: var(--muted);
+  text-align: center;
+}
+.k-palette__foot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-2) var(--space-4);
+  border-top: var(--hairline) solid var(--outline);
+  color: var(--muted);
+}
+
+/* ---------------------------------------------------------------------------
+ * Toast
+ * ------------------------------------------------------------------------- */
+
+.k-toasts {
+  position: fixed;
+  left: calc(var(--rail-current) + var(--space-5));
+  bottom: calc(var(--statusbar-h) + var(--space-4));
+  z-index: var(--z-toast);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  pointer-events: none;
+  transition: left var(--dur-base) var(--ease-standard);
+}
+.k-toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  max-width: 420px;
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface-elevated);
+  color: var(--ink-2);
+  border: var(--hairline) solid var(--outline);
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-card), var(--shadow-highlight);
+}
+.k-toast__tag {
+  color: var(--muted);
+  flex: 0 0 auto;
+}
+/* 错误态：危险色描边 + 标签提示（如「错误」） */
+.k-toast.is-error {
+  border-color: var(--danger);
+}
+.k-toast.is-error .k-toast__tag {
+  color: var(--danger-text);
+}
+.k-toast__msg {
+  font-size: var(--text-body-sm);
+  color: var(--ink);
+}
+/* 内嵌动作（如「撤销」）：强调色小胶囊，悬停描边提示可点 */
+.k-toast__action {
+  flex: 0 0 auto;
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  border: var(--hairline) solid transparent;
+  color: var(--accent-text);
+  background: var(--accent-veil);
+  font-size: var(--text-caption);
+  line-height: 1.35;
+  transition: border-color var(--dur-fast) var(--ease-standard);
+}
+.k-toast__action:hover {
+  border-color: var(--accent);
+}
+.k-toast__close {
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  transition: color var(--dur-micro) var(--ease-standard);
+}
+.k-toast__close:hover {
+  color: var(--ink);
+}
+
+/* ---------------------------------------------------------------------------
+ * 响应式
+ * ------------------------------------------------------------------------- */
+
+@media (max-width: 1279px) {
+  :root {
+    --rail-current: var(--rail-w-collapsed);
+  }
+  .k-app .k-rail {
+    width: var(--rail-w-collapsed);
+  }
+  .k-app .k-rail__cn,
+  .k-app .k-rail__brandtext {
+    display: none;
+  }
+  .k-app .k-main {
+    margin-left: var(--rail-w-collapsed);
+  }
+  .k-app .k-statusbar {
+    left: var(--rail-w-collapsed);
+  }
+}
+
+@media (max-width: 767px) {
+  .k-app .k-rail {
+    inset: auto 0 calc(var(--statusbar-h)) 0;
+    width: auto;
+    height: var(--tabbar-h);
+    flex-direction: row;
+    border-right: none;
+    border-top: var(--hairline) solid var(--outline);
+    box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.28);
+  }
+  .k-app .k-rail__brand {
+    display: none;
+  }
+  .k-rail__list {
+    flex-direction: row;
+    padding: 0;
+    gap: 0;
+    overflow: visible;
+  }
+  .k-rail__item {
+    flex: 1 1 0;
+    padding: var(--space-2) var(--space-1);
+    gap: 2px;
+    border-radius: 0;
+  }
+  .k-rail__item::before {
+    inset: auto 0 0 0;
+    top: auto;
+    width: auto;
+    height: 3px;
+  }
+  .k-rail__item.is-active {
+    background: var(--fill-tag); /* 底部标签栏：高亮 + 底部强调线 */
+  }
+  .k-app .k-rail__cn {
+    display: block;
+    font-size: 10px;
+  }
+  .k-rail__item[data-secondary='true'] {
+    display: none;
+  }
+  .k-rail__foot {
+    display: none;
+  }
+  .k-rail__more {
+    display: flex;
+    flex: 0 0 auto;
+    width: 62px;
+    border-radius: 0;
+    border-left: var(--hairline) solid var(--outline);
+  }
+  .k-rail__more .k-rail__cn {
+    display: block;
+  }
+  .k-app .k-main {
+    margin-left: 0;
+    padding-bottom: calc(var(--tabbar-h) + var(--statusbar-h));
+  }
+  .k-app .k-statusbar {
+    left: 0;
+  }
+  .k-statusbar__desktop-only {
+    display: none;
+  }
+  .k-topbar {
+    min-height: 0;
+    padding: var(--space-4) var(--page-margin) var(--space-3);
+  }
+  .k-topbar__inner {
+    flex-wrap: wrap;
+    gap: var(--space-3);
+  }
+  .k-topbar__title {
+    font-size: 26px;
+  }
+  .k-topbar__en {
+    display: none;
+  }
+  .k-content {
+    padding: var(--space-5) var(--page-margin) var(--space-7);
+  }
+  .k-toasts {
+    left: var(--space-4);
+    right: var(--space-4);
+    bottom: calc(var(--tabbar-h) + var(--statusbar-h) + var(--space-3));
+  }
+  .k-drawer {
+    width: 100vw;
+  }
+  .k-palette {
+    top: 8vh;
+  }
+}
+
+</style>
+    <style data-app-css="components">
+/* =============================================================================
+ * KERNEL · 全局组件词汇 v2（Panel / StatTile / TagPill / TaskRow / Drawer 内容 /
+ * FilterBar / MeterBar / 图表 / DaySpine / EmptyState / Skeleton / 容器查询）
+ * 柔暗 + 柔影悬浮：卡片承载柔影，交互行 hover 抬升，深度=表面阶+柔影，无硬线。
+ * ========================================================================== */
+
+/* ---------------------------------------------------------------------------
+ * 通用排布工具
+ * ------------------------------------------------------------------------- */
+
+.k-grid {
+  display: grid;
+  gap: var(--space-5);
+}
+.k-grid--2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.k-grid--3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.k-grid--4 {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.k-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.k-hstack {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.k-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.k-mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.k-muted {
+  color: var(--muted);
+}
+.k-accent {
+  color: var(--accent-text);
+}
+.k-num {
+  font-variant-numeric: tabular-nums;
+}
+.k-divider {
+  border-top: var(--hairline) solid var(--outline);
+}
+.k-fill {
+  flex: 1 1 auto;
+}
+
+@container route (max-width: 1023px) {
+  .k-grid--4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .k-grid--3 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@container route (max-width: 640px) {
+  .k-grid--4,
+  .k-grid--3,
+  .k-grid--2 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Panel —— 柔影悬浮卡片（静态容器：承接柔影，不抬升）
+ * ------------------------------------------------------------------------- */
+
+.k-panel {
+  background: var(--surface);
+  border: var(--hairline) solid var(--outline);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card), var(--shadow-highlight);
+  padding: var(--pad-card);
+  min-width: 0;
+}
+.k-panel__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--rhythm-inner); /* φ⁰ 组件内缝（1440=10.4px） */
+  margin-bottom: var(--rhythm-element); /* φ¹ 元素间隙（1440=16.8px） */
+  min-width: 0;
+}
+.k-panel__idx {
+  color: var(--accent-text);
+  font-size: var(--text-caption);
+  font-weight: 600;
+}
+.k-panel__cn {
+  font-size: var(--text-h4);
+  line-height: 1.2;
+  letter-spacing: var(--text-h4-tracking);
+  font-weight: 600;
+}
+.k-panel__en {
+  color: var(--muted);
+}
+.k-panel__actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+/* ---------------------------------------------------------------------------
+ * StatTile —— 柔影悬浮统计瓦片（展示层：柔影，无抬升）
+ * ------------------------------------------------------------------------- */
+
+.k-stat {
+  background: var(--surface);
+  border: var(--hairline) solid var(--outline);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card), var(--shadow-highlight);
+  padding: var(--pad-card);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  /* 瓦片自身为容器：内部大数字按瓦片宽度自适应 */
+  container-type: inline-size;
+  container-name: stat;
+}
+.k-stat__label {
+  color: var(--ink-2);
+  font-size: var(--text-body-sm);
+}
+.k-stat__value {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-size: var(--text-display);
+  line-height: var(--text-display-leading);
+  letter-spacing: var(--text-display-tracking);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+.k-stat__suffix {
+  font-size: var(--text-h4);
+  font-weight: 500;
+  color: var(--muted);
+  letter-spacing: 0;
+}
+.k-stat__foot {
+  color: var(--muted);
+  font-size: var(--text-caption);
+}
+.k-stat .k-meter {
+  margin-top: auto;
+}
+
+/* 瓦片窄于 200px 时，数字降级为 h2（容器查询；瓦片不能查询自身尺寸，故作用于子级） */
+@container stat (max-width: 200px) {
+  .k-stat__value {
+    font-size: var(--text-h2);
+  }
+  .k-stat__suffix {
+    font-size: var(--text-body-sm);
+  }
+}
+.k-stat--accent .k-stat__value {
+  color: var(--accent-text);
+}
+.k-stat--accent .k-stat__suffix {
+  color: var(--accent-text);
+}
+
+/* ---------------------------------------------------------------------------
+ * TagPill —— 胶囊；选中 = ink 填充 + bg 文字（M1：选中/悬停始终可读）
+ * ------------------------------------------------------------------------- */
+
+.k-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  border: var(--hairline) solid var(--outline);
+  padding: 4px 11px;
+  border-radius: var(--radius-pill);
+  color: var(--ink-2);
+  background: var(--fill-subtle);
+  font-size: var(--text-caption);
+  letter-spacing: var(--text-caption-tracking);
+  line-height: 1.35;
+  white-space: nowrap;
+  transition: background var(--dur-fast) var(--ease-standard),
+    color var(--dur-fast) var(--ease-standard),
+    border-color var(--dur-fast) var(--ease-standard),
+    transform var(--dur-fast) var(--ease-standard);
+}
+button.k-pill {
+  cursor: pointer;
+}
+button.k-pill:hover {
+  border-color: var(--outline-strong);
+  color: var(--ink);
+  background: var(--fill-tag);
+}
+/* 选中态必须在悬停时也保持可读（提升特异性，压过 button.k-pill:hover） */
+.k-pill.is-selected,
+button.k-pill.is-selected,
+button.k-pill.is-selected:hover {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--bg);
+}
+button.k-pill.is-selected:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-soft);
+}
+.k-pill.is-accent {
+  border-color: var(--accent);
+  color: var(--accent-text);
+  background: var(--accent-veil);
+}
+.k-pill.is-ghost {
+  border-color: var(--rule-ghost);
+  color: var(--muted);
+  background: transparent;
+}
+
+/* ---------------------------------------------------------------------------
+ * Checkbox —— 圆形，完成 = ink 填充 + bg 勾（M3）
+ * ------------------------------------------------------------------------- */
+
+.k-check {
+  flex: 0 0 auto;
+  width: 1.2em; /* 相对尺寸：随流体字号缩放（15px→18px，与旧固定值等价） */
+  height: 1.2em;
+  border: 1.5px solid var(--outline-strong);
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  color: var(--bg);
+  background: transparent;
+  transition: background var(--dur-fast) var(--ease-standard),
+    border-color var(--dur-fast) var(--ease-standard);
+}
+.k-check:hover {
+  border-color: var(--ink-2);
+}
+.k-check svg {
+  width: 0.72em;
+  height: 0.72em;
+  opacity: 0;
+  transition: opacity var(--dur-micro) var(--ease-standard);
+}
+.k-check.is-done {
+  background: var(--ink);
+  border-color: var(--ink);
+}
+.k-check.is-done svg {
+  opacity: 1;
+}
+
+/* ---------------------------------------------------------------------------
+ * TaskRow —— 交互行：悬停抬升 + 柔影，无硬底线
+ * ------------------------------------------------------------------------- */
+
+.k-task {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  width: 100%;
+  min-height: var(--row-min);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-inner);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-standard),
+    transform var(--dur-fast) var(--ease-standard),
+    box-shadow var(--dur-fast) var(--ease-standard);
+  /* 行自身为容器：meta 按行宽自适应堆叠/收纳 */
+  container-type: inline-size;
+  container-name: task;
+}
+.k-task + .k-task {
+  border-top: var(--hairline) solid var(--rule-soft);
+}
+.k-task:hover {
+  background: var(--surface-hover);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-soft);
+}
+.k-task__check {
+  margin-top: 0;
+}
+.k-task__open {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0;
+  text-align: left;
+  background: transparent;
+  color: inherit;
+}
+.k-task__main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.k-task__titlewrap {
+  position: relative;
+  display: inline-block;
+}
+.k-task__title {
+  color: var(--ink);
+}
+.k-task__strike {
+  position: absolute;
+  left: 0;
+  top: 52%;
+  width: 100%;
+  height: 1px;
+  background: var(--muted);
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform var(--dur-base) var(--ease-enter);
+}
+.k-task.is-done .k-task__strike {
+  transform: scaleX(1);
+}
+.k-task.is-done .k-task__title {
+  color: var(--muted);
+}
+.k-task__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  color: var(--muted);
+  font-size: var(--text-caption);
+  line-height: 1.5;
+}
+.k-task__energy {
+  color: var(--ink-2);
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--fill-subtle);
+}
+.k-task__due {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.k-task__due.is-overdue {
+  color: var(--danger-text);
+}
+.k-task__why {
+  display: inline-flex;
+  gap: var(--space-1);
+  flex-wrap: wrap;
+}
+
+/* 行宽自适应（容器查询）：≤560px meta 换行更松；≤420px 竖排并收起附加标签 */
+@container task (max-width: 560px) {
+  .k-task__meta {
+    align-items: flex-start;
+    gap: var(--space-1) var(--space-2);
+  }
+}
+@container task (max-width: 420px) {
+  .k-task__meta {
+    flex-direction: column;
+  }
+  .k-task__why {
+    display: none;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * FilterBar
+ * ------------------------------------------------------------------------- */
+
+.k-filterbar {
+  border-top: var(--hairline) solid var(--outline);
+  padding: var(--space-4) 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.k-filterrow {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+.k-filterrow__label {
+  color: var(--muted);
+  min-width: 72px;
+  padding-top: 4px;
+}
+.k-filterrow__chips {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  flex: 1 1 auto;
+}
+
+/* ---------------------------------------------------------------------------
+ * MeterBar
+ * ------------------------------------------------------------------------- */
+
+.k-meter {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.k-meter__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  color: var(--muted);
+}
+.k-meter__track {
+  position: relative;
+  height: 8px;
+  border-radius: var(--radius-pill);
+  background: var(--fill-subtle);
+  overflow: hidden;
+}
+.k-meter__fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: var(--radius-pill);
+  background: linear-gradient(90deg, var(--ink-2), var(--ink));
+  transition: width var(--dur-slow) var(--ease-standard);
+}
+.k-meter.is-over .k-meter__fill {
+  background: var(--accent);
+}
+.k-meter__threshold {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--muted);
+  opacity: 0.7;
+}
+.k-meter__foot {
+  color: var(--muted);
+  font-size: var(--text-caption);
+}
+
+/* ---------------------------------------------------------------------------
+ * 图表（单色 / 图案；强调色不作数据系列 —— P7）
+ * ------------------------------------------------------------------------- */
+
+/* ---------------------------------------------------------------------------
+ * 折线趋势图（趋势类图表的新默认形式：折线 + 面积晕染 + 数据点）
+ * 说明：替代原「圆头柱」柱状（所有者 2026-10-02 否决——柱体大圆角呈现不佳）。
+ * 纪律：单一墨色数据系列（P7）；强调色仅作峰值信号环，不作数据系列。
+ * 实现：SVG viewBox 0 0 1000 100 随容器拉伸；描边一律 non-scaling-stroke 保持像素恒定；
+ *       数据点用「零长度路径 + 圆头端帽」绘制（拉伸不变形）。
+ * ------------------------------------------------------------------------- */
+
+.k-line {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.k-line__plot {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  border-bottom: var(--hairline) solid var(--outline);
+}
+.k-line__svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.k-line__stroke {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.k-line__dot {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 7;
+  stroke-linecap: round;
+}
+.k-line__peak {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 11;
+  stroke-linecap: round;
+}
+.k-line__value {
+  position: absolute;
+  transform: translate(-50%, calc(-100% - 6px));
+  white-space: nowrap;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.k-line__value.is-peak {
+  color: var(--accent-text);
+}
+.k-line__axis {
+  position: relative;
+  height: 15px;
+}
+.k-line__label {
+  position: absolute;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  color: var(--muted);
+}
+
+.k-energy {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.k-energy__row {
+  display: grid;
+  grid-template-columns: 56px 1fr 40px;
+  align-items: center;
+  gap: var(--space-3);
+}
+.k-energy__track {
+  height: 14px;
+  border-radius: var(--radius-pill);
+  background: var(--fill-subtle);
+  overflow: hidden;
+  position: relative;
+}
+.k-energy__fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: var(--radius-pill);
+  background: var(--ink);
+}
+/* P7：三档一律单色阶/图案，强调色不再作数据系列 */
+.k-energy__fill[data-energy='high'] {
+  background: var(--ink);
+}
+.k-energy__fill[data-energy='medium'] {
+  background: var(--muted);
+}
+.k-energy__fill[data-energy='low'] {
+  background: repeating-linear-gradient(
+    45deg,
+    var(--muted) 0,
+    var(--muted) 2px,
+    transparent 2px,
+    transparent 6px
+  );
+}
+.k-energy__value {
+  text-align: right;
+  color: var(--muted);
+}
+
+/* ---------------------------------------------------------------------------
+ * DaySpine
+ * ------------------------------------------------------------------------- */
+
+.k-spine {
+  position: relative;
+  --hour-h: 56px;
+}
+.k-spine__body {
+  position: relative;
+  margin-left: 64px;
+  height: calc(24 * var(--hour-h));
+  border-left: var(--hairline) solid var(--outline);
+}
+.k-spine__hour {
+  position: absolute;
+  left: 0;
+  right: 0;
+}
+.k-spine__hourline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: var(--hairline) solid var(--rule-soft);
+}
+.k-spine__hourlabel {
+  position: absolute;
+  left: -64px;
+  width: 52px;
+  text-align: right;
+  transform: translateY(-0.6em);
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+}
+.k-spine__event {
+  position: absolute;
+  min-height: 24px;
+  overflow: hidden;
+  border: var(--hairline) solid var(--outline);
+  border-radius: var(--radius-inner);
+  background: var(--surface-elevated);
+  box-shadow: var(--shadow-soft);
+  padding: 4px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-standard),
+    color var(--dur-fast) var(--ease-standard),
+    transform var(--dur-fast) var(--ease-standard),
+    box-shadow var(--dur-fast) var(--ease-standard);
+}
+.k-spine__event:hover {
+  background: var(--surface-hover);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-hover);
+}
+.k-spine__event-title {
+  font-size: var(--text-body-sm);
+  line-height: 1.25;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.k-spine__event-meta {
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  color: var(--muted);
+}
+.k-spine__event.is-all-day {
+  position: static;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-2) 0;
+}
+.k-spine__now {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 0;
+  border-top: 2px solid var(--accent);
+  z-index: 2;
+}
+.k-spine__now::before {
+  content: '';
+  position: absolute;
+  left: -4px;
+  top: -4px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.k-spine__now.is-breathing {
+  animation: k-breathe 3.4s ease-in-out infinite;
+}
+.k-spine__now-label {
+  position: absolute;
+  right: 0;
+  top: -18px;
+  color: var(--accent-text);
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+}
+@keyframes k-breathe {
+  0%,
+  100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * StatusChips —— 安静状态胶囊行（替代密集 ticker；对齐 C 稿）
+ * ------------------------------------------------------------------------- */
+
+.k-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--rhythm-element);
+}
+.k-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 36px;
+  padding: 0 var(--space-4);
+  font-size: var(--text-body-sm);
+  color: var(--ink-2);
+  background: var(--fill-subtle);
+  border: var(--hairline) solid var(--outline);
+  border-radius: var(--radius-pill);
+  transition: background var(--dur-fast) var(--ease-standard),
+    border-color var(--dur-fast) var(--ease-standard);
+}
+.k-chip:hover {
+  background: var(--fill-tag);
+  border-color: var(--outline-strong);
+}
+.k-chip__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ink-2);
+  box-shadow: 0 0 8px rgba(244, 244, 245, 0.28);
+}
+.k-chip__dot--quiet {
+  background: var(--muted);
+  box-shadow: none;
+}
+.k-chip__dot--accent {
+  background: var(--accent);
+  box-shadow: none;
+}
+
+/* ---------------------------------------------------------------------------
+ * ScheduleList —— 紧凑日程列表（时间 + 标题 + 地点；C 稿式，替代总览日脊）
+ * ------------------------------------------------------------------------- */
+
+.k-schedule {
+  display: flex;
+  flex-direction: column;
+}
+.k-sched {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  width: 100%;
+  min-height: var(--row-min);
+  padding: var(--space-3);
+  border-radius: var(--radius-inner);
+  text-align: left;
+  transition: background var(--dur-fast) var(--ease-standard);
+}
+.k-sched + .k-sched {
+  border-top: var(--hairline) solid var(--rule-soft);
+}
+.k-sched:hover {
+  background: var(--surface-hover);
+}
+.k-sched__time {
+  flex: 0 0 96px;
+  text-align: right;
+  color: var(--muted);
+  font-size: var(--text-body-sm);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.k-sched__marker {
+  flex: 0 0 10px;
+  display: flex;
+  justify-content: center;
+}
+.k-sched__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--outline-strong);
+  box-shadow: 0 0 0 4px var(--fill-subtle);
+}
+.k-sched.is-next .k-sched__dot {
+  background: var(--ink);
+  box-shadow: 0 0 0 4px var(--fill-subtle), 0 0 12px rgba(244, 244, 245, 0.18);
+}
+.k-sched__body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.k-sched__title {
+  color: var(--ink);
+  font-size: var(--text-body-sm);
+}
+.k-sched.is-next .k-sched__title {
+  font-weight: 500;
+}
+.k-sched__meta {
+  font-size: var(--text-caption);
+  color: var(--muted);
+}
+
+/* ---------------------------------------------------------------------------
+ * EmptyState / Skeleton
+ * ------------------------------------------------------------------------- */
+
+.k-empty {
+  border: var(--hairline) dashed var(--outline-strong);
+  border-radius: var(--radius-card);
+  padding: var(--space-6) var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  background: var(--fill-subtle);
+}
+.k-empty__idx {
+  color: var(--accent-text);
+}
+.k-empty__title {
+  font-size: var(--text-h4);
+  font-weight: 600;
+}
+.k-empty__hint {
+  color: var(--muted);
+  max-width: 48ch;
+}
+
+.k-skel {
+  background: var(--fill-subtle);
+  border-radius: var(--radius-inner);
+  height: 14px;
+  animation: k-pulse 1.6s ease-in-out infinite;
+}
+@keyframes k-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * 数据服务状态胶囊（状态条与设置页共用）
+ * 在线（成功）/ 离线（危险）/ 连接中（静默）
+ * ------------------------------------------------------------------------- */
+
+.k-svc-pill {
+  border: var(--hairline) solid var(--outline-strong);
+  color: var(--muted);
+  padding: 1px 7px;
+  border-radius: var(--radius-pill);
+}
+.k-svc-pill.is-ok {
+  border-color: var(--success);
+  color: var(--success);
+}
+.k-svc-pill.is-off {
+  border-color: var(--danger);
+  color: var(--danger-text);
+  background: var(--danger-bg);
+}
+
+/* ---------------------------------------------------------------------------
+ * 蒸馏度指示 / Tabs / 杂项
+ * ------------------------------------------------------------------------- */
+
+.k-distill {
+  display: inline-flex;
+  gap: var(--space-1);
+  align-items: center;
+}
+.k-distill__cell {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--fill-subtle);
+}
+.k-distill__cell.is-on {
+  background: var(--ink);
+}
+.k-distill__label {
+  color: var(--muted);
+  margin-right: var(--space-1);
+}
+
+.k-tabs {
+  display: flex;
+  gap: var(--space-2);
+  border-bottom: var(--hairline) solid var(--outline);
+  padding-bottom: var(--space-3);
+}
+.k-tab {
+  padding: 7px 14px;
+  border-radius: var(--radius-pill);
+  color: var(--muted);
+  font-size: var(--text-body-sm);
+  letter-spacing: var(--text-caption-tracking);
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease-standard),
+    background var(--dur-fast) var(--ease-standard);
+}
+.k-tab:hover {
+  color: var(--ink);
+  background: var(--hover-veil);
+}
+.k-tab.is-active {
+  color: var(--ink);
+  background: var(--fill-tag);
+}
+
+.k-dl {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  gap: var(--space-2) var(--space-4);
+  align-items: baseline;
+}
+.k-dl dt {
+  color: var(--muted);
+  font-size: var(--text-caption);
+  letter-spacing: var(--text-caption-tracking);
+}
+.k-dl dd {
+  margin: 0;
+  color: var(--ink-2);
+  word-break: break-word;
+}
+
+.k-markdown {
+  color: var(--ink-2);
+  font-size: var(--text-body);
+  line-height: var(--text-body-leading);
+  max-width: var(--measure);
+}
+.k-markdown > * + * {
+  margin-top: var(--space-4);
+}
+.k-markdown h1 {
+  font-size: var(--text-h3);
+  color: var(--ink);
+}
+.k-markdown h2 {
+  font-size: var(--text-h4);
+  color: var(--ink);
+}
+.k-markdown h3 {
+  font-size: var(--text-body);
+  font-weight: 600;
+  color: var(--ink);
+}
+.k-markdown code {
+  background: var(--fill-subtle);
+  padding: 2px 6px;
+  border-radius: 6px;
+  font-size: 0.9em;
+}
+.k-markdown pre {
+  background: var(--fill-subtle);
+  border-radius: var(--radius-inner);
+  padding: var(--space-4);
+  overflow-x: auto;
+}
+.k-markdown ul,
+.k-markdown ol {
+  padding-left: 1.2em;
+  list-style: revert;
+}
+.k-markdown a {
+  color: var(--ink);
+  text-decoration: underline;
+}
+.k-markdown blockquote {
+  border-left: 3px solid var(--accent);
+  padding-left: var(--space-4);
+  color: var(--muted);
+}
+
+</style>
+    <style data-app-css="views">
+/* =============================================================================
+ * KERNEL · 视图 v2（总览 / 收件箱 / 任务 / 日程 / 项目 / 资料 / 回顾 / 设置）
+ * 柔暗 + 柔影悬浮；无硬边线；强调色仅作信号。
+ * ========================================================================== */
+
+.k-view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--rhythm-section); /* φ² 区块间隙（1440=27.2px） */
+}
+.k-view__intro {
+  color: var(--muted);
+  max-width: var(--measure);
+}
+.k-view__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+/* ---------------------------------------------------------------------------
+ * 总览 OVERVIEW
+ * ------------------------------------------------------------------------- */
+
+.k-overview__stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-5);
+}
+.k-overview__split {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(280px, 1fr);
+  gap: var(--space-5);
+  align-items: start;
+}
+.k-overview__col {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  min-width: 0;
+}
+.k-proj-mini {
+  display: flex;
+  flex-direction: column;
+}
+.k-proj-mini__row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-3);
+  border-radius: var(--radius-inner);
+  text-align: left;
+  transition: background var(--dur-fast) var(--ease-standard);
+}
+.k-proj-mini__row + .k-proj-mini__row {
+  border-top: var(--hairline) solid var(--rule-soft);
+}
+.k-proj-mini__row:hover {
+  background: var(--surface-hover);
+}
+.k-proj-mini__top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.k-proj-mini__name {
+  color: var(--ink);
+  font-size: var(--text-body-sm);
+  line-height: 1.4;
+}
+.k-proj-mini__foot {
+  display: flex;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: var(--text-caption);
+}
+.k-aisug {
+  background: var(--surface);
+  border: var(--hairline) solid var(--outline);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card), inset 3px 0 0 var(--accent), var(--shadow-highlight);
+  padding: var(--pad-card);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.k-aisug__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--accent-text);
+}
+.k-aisug__head .k-panel__cn {
+  color: var(--ink);
+}
+.k-aisug__badge {
+  border: var(--hairline) solid var(--accent);
+  border-radius: var(--radius-pill);
+  color: var(--accent-text);
+  background: var(--accent-veil);
+  padding: 2px 8px;
+}
+.k-aisug__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.k-aisug__line {
+  display: flex;
+  gap: var(--space-3);
+  color: var(--ink-2);
+  max-width: var(--measure);
+}
+.k-aisug__bullet {
+  color: var(--accent-text);
+  font-family: var(--font-mono);
+}
+
+/* ---------------------------------------------------------------------------
+ * 收件箱 INBOX
+ * ------------------------------------------------------------------------- */
+
+.k-capture {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 0 var(--space-4);
+  background: var(--surface-elevated);
+  border: var(--hairline) solid var(--outline);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card), var(--shadow-highlight);
+  transition: border-color var(--dur-fast) var(--ease-standard),
+    box-shadow var(--dur-fast) var(--ease-standard);
+}
+.k-capture:focus-within {
+  border-color: var(--outline-strong);
+  box-shadow: var(--shadow-hover), var(--shadow-highlight);
+}
+.k-capture__input {
+  flex: 1 1 auto;
+  height: 60px;
+  background: transparent;
+  color: var(--ink);
+  outline: none;
+}
+.k-capture__input::placeholder {
+  color: var(--muted);
+}
+.k-inbox-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-3);
+  border-radius: var(--radius-inner);
+  background: transparent;
+  transition: background var(--dur-fast) var(--ease-standard);
+}
+.k-inbox-item + .k-inbox-item {
+  border-top: var(--hairline) solid var(--rule-soft);
+}
+.k-inbox-item:hover {
+  background: var(--surface-hover);
+}
+.k-inbox-item__top {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+}
+.k-inbox-item__content {
+  flex: 1 1 auto;
+  color: var(--ink);
+  font-size: var(--text-body);
+}
+.k-inbox-item__meta {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  color: var(--muted);
+  font-size: var(--text-caption);
+}
+.k-clarify {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.k-collapse-head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-3);
+  border-radius: var(--radius-inner);
+  color: var(--muted);
+  text-align: left;
+  transition: background var(--dur-fast) var(--ease-standard),
+    color var(--dur-fast) var(--ease-standard);
+}
+.k-collapse-head:hover {
+  color: var(--ink);
+  background: var(--hover-veil);
+}
+.k-collapse-head__caret {
+  transition: transform var(--dur-fast) var(--ease-standard);
+}
+.k-collapse-head[aria-expanded='true'] .k-collapse-head__caret {
+  transform: rotate(90deg);
+}
+.k-source-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-inner);
+  background: var(--fill-subtle);
+  color: var(--muted);
+}
+
+/* 变体 C「批量」：分组浏览 + 多选批量条（所有者选定布局） */
+.ic-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.ic-batchbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+.ic-batchbar__count {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-size: var(--text-body-sm);
+  color: var(--ink-2);
+}
+.ic-batchbar__count b {
+  color: var(--ink);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.ic-batchbar__actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+.ic-groups {
+  --ic-no-w: 20px; /* 行序号列宽（供缩进计算复用） */
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+/* 行包裹层：滚动/展开项之间统一顶部分隔（含已展开子行，避免相邻选择器断链） */
+.ic-item {
+  position: relative;
+}
+.ic-item + .ic-item {
+  border-top: var(--hairline) solid var(--rule-soft);
+}
+.ic-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--row-min);
+  padding: var(--space-3);
+  border-radius: var(--radius-inner);
+  transition: background var(--dur-fast) var(--ease-standard);
+}
+.ic-row:hover {
+  background: var(--surface-hover);
+}
+.ic-row.is-selected {
+  background: var(--fill-tag);
+}
+.ic-row__no {
+  flex: 0 0 auto;
+  width: var(--ic-no-w);
+  color: var(--muted);
+  font-size: var(--text-caption);
+}
+.ic-row__body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.ic-row__title {
+  color: var(--ink);
+  font-size: var(--text-body-sm);
+  line-height: 1.4;
+}
+.ic-row__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  color: var(--muted);
+  font-size: var(--text-caption);
+}
+.ic-row__tail {
+  margin-left: auto;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+/* 内联澄清子行：缩进对齐正文列（checkbox 1.2em + 序号 + 图标 + 行内间距，均取自组件度量） */
+.ic-subrow {
+  padding: 0 var(--space-3) var(--space-4)
+    calc(1.2em + var(--ic-no-w) + 26px + var(--space-3) * 4);
+}
+@container route (max-width: 640px) {
+  .ic-batchbar__actions {
+    margin-left: 0;
+    width: 100%;
+  }
+  .ic-row__no {
+    display: none;
+  }
+  .ic-subrow {
+    padding-left: var(--space-3);
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * 任务 TASKS
+ * ------------------------------------------------------------------------- */
+
+/* 工具条：计数 + 快速新建 同排（把纵向空间留给表格） */
+.k-tasks__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-5);
+  flex-wrap: wrap;
+}
+.k-tasks__toolbar .k-quickadd {
+  flex: 1 1 320px;
+  max-width: 620px;
+}
+.k-tasks__counts {
+  display: flex;
+  gap: var(--space-6);
+  flex-wrap: wrap;
+}
+/* 筛选压缩：状态 + 时间 并排成一行（结构不变，仅排版收敛） */
+.k-tasks__filters .k-filterbar {
+  border-top: none;
+  padding: var(--space-2) 0;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3) var(--space-5);
+}
+.k-tasks__filters .k-filterrow {
+  align-items: center;
+}
+.k-tasks__groupbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+/* 「更多筛选」在分组行内保持自身宽度，与分组切换同排（避免 width:100% 独占整行导致换行） */
+.k-tasks__groupbar .k-collapse-head {
+  width: auto;
+  flex: 0 0 auto;
+  padding-left: 0;
+}
+.k-count {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.k-count__num {
+  font-size: var(--text-h2);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.k-count__num.is-accent {
+  color: var(--accent-text);
+}
+.k-quickadd {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 0 var(--space-4);
+  background: var(--surface);
+  border: var(--hairline) solid var(--outline);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card), var(--shadow-highlight);
+  transition: box-shadow var(--dur-fast) var(--ease-standard);
+}
+.k-quickadd:focus-within {
+  box-shadow: var(--shadow-hover), var(--shadow-highlight);
+}
+.k-quickadd__input {
+  flex: 1 1 auto;
+  height: 50px;
+  background: transparent;
+  outline: none;
+}
+.k-quickadd__input::placeholder {
+  color: var(--muted);
+}
+.k-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-bottom: 0;
+}
+.k-group__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  border-bottom: var(--hairline) solid var(--outline);
+  padding-bottom: var(--space-2);
+}
+.k-group__title {
+  font-size: var(--text-h4);
+  font-weight: 600;
+}
+
+/* ---------------------------------------------------------------------------
+ * 任务表格（变体 C「表格」）：稠密多列、吸顶表头、悬浮行；窄屏逐级收列
+ * ------------------------------------------------------------------------- */
+
+/* 表格骨架：固定列宽 + 吸顶表头（贴在顶栏之下；表头背景用 --bg 遮挡滚动内容） */
+.k-tasks__table {
+  table-layout: fixed;
+}
+.k-tasks__table thead th {
+  position: sticky;
+  top: var(--topbar-h);
+  z-index: calc(var(--z-sticky) - 2);
+  background: var(--bg);
+  border-bottom-color: var(--outline-strong);
+}
+.k-tasks__table th,
+.k-tasks__table td {
+  padding: var(--space-3) var(--space-4);
+  vertical-align: middle;
+}
+/* 表头不折行；勾选列（完成）收窄内边距并居中，避免「完成」竖排 */
+.k-tasks__table thead th {
+  white-space: nowrap;
+}
+.k-tasks__table th:first-child,
+.k-tasks__table td:first-child {
+  padding-inline: var(--space-2);
+  text-align: center;
+}
+/* 项目列保持左对齐（覆盖 .k-table 末列右对齐），便于纵向扫读项目名 */
+.k-tasks__table th.k-tasks__col--proj,
+.k-tasks__table td.k-tasks__col--proj {
+  text-align: left;
+}
+.k-tasks__row {
+  transition: background var(--dur-fast) var(--ease-standard);
+}
+.k-tasks__row:hover {
+  background: var(--surface-hover);
+}
+
+/* 列宽（结构性尺寸，4px 栅格） */
+.k-tasks__col--check {
+  width: 58px;
+}
+.k-tasks__col--ctx {
+  width: 116px;
+}
+.k-tasks__col--energy {
+  width: 86px;
+}
+.k-tasks__col--due {
+  width: 138px;
+}
+.k-tasks__col--proj {
+  width: 220px;
+}
+
+/* 标题单元格：整格按钮打开抽屉，长标题省略；沿用 k-task__strike 划线动效 */
+.k-tasks__title-btn {
+  flex-direction: row;
+  width: 100%;
+}
+.k-tasks__row .k-task__titlewrap {
+  max-width: 100%;
+}
+.k-tasks__row .k-task__title {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.k-tasks__row.is-done .k-task__title {
+  color: var(--muted);
+}
+.k-tasks__row.is-done .k-task__strike {
+  transform: scaleX(1);
+}
+
+/* 单元格内容 */
+.k-tasks__ctx {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+.k-tasks__due {
+  font-size: var(--text-caption);
+}
+.k-tasks__proj {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-caption);
+  color: var(--muted);
+}
+.k-tasks__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  color: var(--muted);
+}
+
+/* 容器查询（.k-route 即容器）：窄屏逐级收列，保留「完成 / 标题 / 截止」骨架 */
+@container route (max-width: 900px) {
+  .k-tasks__table .k-tasks__col--proj {
+    display: none;
+  }
+}
+@container route (max-width: 700px) {
+  .k-tasks__table .k-tasks__col--ctx,
+  .k-tasks__table .k-tasks__col--energy {
+    display: none;
+  }
+  .k-tasks__table th,
+  .k-tasks__table td {
+    padding: var(--space-3);
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * 日程 CALENDAR · 变体 C「议程流」
+ * 顶部高亮「下一项」+ 按 今天/明天/本周/下周/更远 分组的纵向事件流
+ * + 右侧迷你月历。颜色 / 圆角 / 阴影 / 字号只用 token；结构性尺寸可自由用 px。
+ * ------------------------------------------------------------------------- */
+
+.k-cal__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+/* 桌面端：日期标题条吸顶在顶栏之下，滚动后不丢失「今天 / 哪天」上下文 */
+@media (min-width: 768px) {
+  .k-cal__bar {
+    position: sticky;
+    top: var(--topbar-h);
+    z-index: calc(var(--z-sticky) - 2);
+    background: var(--bg);
+  }
+}
+.k-cal__nav {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.k-cal__date {
+  font-size: var(--text-h2);
+  font-weight: 600;
+  letter-spacing: var(--text-h2-tracking);
+}
+.k-cal__quiet {
+  color: var(--muted);
+}
+
+/* 日期条左侧：主日期 + 安静统计行 */
+.k-cal-c__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+/* —— 下一项高亮卡（强调色仅作信号：3px 左信号条） —— */
+.k-cal-c__next {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-5);
+  padding: var(--pad-card);
+  background: var(--surface);
+  border: var(--hairline) solid var(--outline);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card), inset 3px 0 0 var(--accent), var(--shadow-highlight);
+  flex-wrap: wrap;
+}
+.k-cal-c__next-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.k-cal-c__next-kicker {
+  color: var(--accent-text);
+}
+.k-cal-c__next-title {
+  font-size: var(--text-h3);
+  font-weight: 600;
+  letter-spacing: var(--text-h3-tracking);
+  line-height: 1.2;
+}
+.k-cal-c__next-meta {
+  color: var(--muted);
+  font-size: var(--text-body-sm);
+}
+.k-cal-c__next-side {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin-left: auto;
+}
+.k-cal-c__count {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+.k-cal-c__count b {
+  font-size: var(--text-h4);
+  font-weight: 600;
+  color: var(--accent-text);
+  font-variant-numeric: tabular-nums;
+}
+.k-cal-c__count span {
+  color: var(--muted);
+}
+
+/* —— 流 + 侧栏 —— */
+.k-cal-c__layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: var(--space-5);
+  align-items: start;
+}
+.k-cal-c__stream {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  min-width: 0;
+}
+.k-cal-c__side {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  position: sticky;
+  top: calc(var(--topbar-h) + var(--space-5));
+}
+
+/* 日分组 */
+.k-cal-c__group {
+  display: flex;
+  flex-direction: column;
+}
+.k-cal-c__grouphd {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding-bottom: var(--space-2);
+  border-bottom: var(--hairline) solid var(--outline);
+}
+.k-cal-c__grouphd h3 {
+  font-size: var(--text-h4);
+  font-weight: 600;
+  color: var(--ink);
+}
+.k-cal-c__grouphd .k-mono {
+  color: var(--muted);
+}
+.k-cal-c .k-lib-row__kind {
+  min-width: 116px;
+}
+.k-cal-c .k-lib-row__meta {
+  text-align: right;
+}
+
+/* —— 迷你月历 —— */
+.k-minical {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 2px;
+}
+.k-minical__dow {
+  text-align: center;
+  color: var(--muted);
+  font-size: var(--text-micro);
+  padding-bottom: var(--space-1);
+}
+.k-minical__d {
+  position: relative;
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1 / 1;
+  border-radius: var(--radius-inner);
+  color: var(--ink-2);
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+}
+.k-minical__d.is-today {
+  background: var(--ink);
+  color: var(--bg);
+  font-weight: 600;
+}
+.k-minical__d.is-event::after {
+  content: '';
+  position: absolute;
+  bottom: 3px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+.k-minical__d.is-today.is-event::after {
+  background: var(--bg);
+}
+.k-minical__d.is-void {
+  color: transparent;
+}
+.k-cal-c__legend {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin-top: var(--space-4);
+  color: var(--muted);
+  font-size: var(--text-caption);
+}
+.k-cal-c__legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.k-cal-c__legend i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+.k-cal-c__legend i.is-today {
+  background: var(--ink);
+}
+
+/* —— 窄容器：侧栏落到流之后（取消吸顶） —— */
+@container route (max-width: 900px) {
+  .k-cal-c__layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .k-cal-c__side {
+    position: static;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * 项目 PROJECTS · 变体 B「列表」
+ * 纵向一览：按状态分组、组头安静收敛；每项目一行
+ * （标题 + 状态/区域标签 / 完成定义 / 下一步 / 内联进度计 / 截止）。
+ * 非活跃分组更紧凑；交互行可悬停抬升（静态容器不抬升）。
+ * ------------------------------------------------------------------------- */
+
+.k-plist {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-7); /* φ² 区块间隙：组与组 */
+}
+/* 分组：复用全局 .k-group 头（标题 + 计数），组内更紧 */
+.k-group.k-plist__group {
+  gap: var(--space-1);
+}
+.k-plist__group .k-group__head {
+  padding-bottom: var(--space-2);
+}
+.k-plist__group .k-group__title .u-label {
+  margin-left: var(--space-2);
+}
+/* 行：左序号 → 中部主信息 → 右侧进度/截止 */
+.k-plist__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  width: 100%;
+  min-height: var(--row-min);
+  padding: var(--space-4) var(--space-3);
+  border-radius: var(--radius-inner);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-standard),
+    transform var(--dur-fast) var(--ease-standard),
+    box-shadow var(--dur-fast) var(--ease-standard);
+}
+.k-plist__row + .k-plist__row {
+  border-top: var(--hairline) solid var(--rule-soft);
+}
+.k-plist__row:hover {
+  background: var(--surface-hover);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-soft);
+}
+.k-plist__idx {
+  flex: 0 0 auto;
+  width: 32px;
+  font-size: var(--text-micro);
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.k-plist__main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.k-plist__titleline {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+.k-plist__title {
+  font-size: var(--text-h4);
+  font-weight: 600;
+  line-height: 1.25;
+}
+.k-plist__outcome {
+  color: var(--muted);
+  font-size: var(--text-caption);
+}
+.k-plist__next {
+  display: flex;
+  gap: var(--space-2);
+  align-items: flex-start;
+  color: var(--ink-2);
+  font-size: var(--text-body-sm);
+  border-left: 2px solid var(--accent);
+  padding-left: var(--space-3);
+}
+/* 「下一步」标签不被正文挤压成竖排断字 */
+.k-plist__next .u-label {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+.k-plist__side {
+  flex: 0 0 auto;
+  width: min(220px, 24%);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-2);
+}
+.k-plist__meter {
+  width: 100%;
+}
+.k-plist__due {
+  font-size: var(--text-caption);
+}
+
+/* 非活跃分组更紧凑：收敛行距与标题、隐藏下一步行动（详情在抽屉） */
+.k-plist__group--compact .k-plist__row {
+  padding: var(--space-3);
+  min-height: 0;
+}
+.k-plist__group--compact .k-plist__title {
+  font-size: var(--text-body);
+  font-weight: 500;
+}
+.k-plist__group--compact .k-plist__next {
+  display: none;
+}
+/* 已完成最紧凑：只留标题 + 进度 + 截止 */
+.k-plist__group--done .k-plist__row {
+  padding: var(--space-3);
+  min-height: 0;
+}
+.k-plist__group--done .k-plist__outcome,
+.k-plist__group--done .k-plist__next {
+  display: none;
+}
+
+/* 安静空态：与设计稿一致的一条细提示，不用大虚框 */
+.k-plist__empty .k-empty {
+  border: none;
+  background: none;
+  padding: var(--space-3) var(--space-3) 0;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-2);
+}
+.k-plist__empty .k-empty__title {
+  font-size: var(--text-caption);
+  font-weight: 400;
+  color: var(--muted);
+}
+.k-plist__empty .k-empty__title::before {
+  content: '';
+  display: inline-block;
+  vertical-align: middle;
+  width: 14px;
+  height: var(--hairline);
+  margin-right: var(--space-2);
+  background: var(--rule);
+}
+.k-plist__empty .k-empty__hint {
+  font-size: var(--text-caption);
+}
+
+/* 窄容器：右侧进度/截止折到标题下方，行改为纵向堆叠 */
+@container route (max-width: 900px) {
+  .k-plist__row {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .k-plist__side {
+    width: 100%;
+    align-items: flex-start;
+    padding-left: calc(32px + var(--space-4));
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * 资料 LIBRARY
+ * ------------------------------------------------------------------------- */
+
+/* 变体 A「列表」：标签行交给过滤条顶边统一分隔，不再单挂底边；右侧补总数 */
+.k-lib__tabs {
+  align-items: center;
+  border-bottom: none;
+  padding-bottom: 0;
+}
+.k-lib__tabs-count {
+  margin-left: auto;
+}
+
+/* 单一整合过滤条：笔记类型 / 资料类型 / 状态 / 标签 四组收进一条紧凑分段带
+   宽屏单行（横向可滚动不换行）；窄容器换行（见文末 container 查询） */
+.k-lib__filters {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3) var(--space-5);
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  padding: var(--space-4) 0;
+  border-top: var(--hairline) solid var(--outline);
+  border-bottom: var(--hairline) solid var(--outline);
+}
+/* 一组筛选：安静内联标签 + 分段槽 */
+.k-lib__fgroup {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 0 0 auto;
+}
+.k-lib__flabel {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+/* 组间发际线分隔（仅非首组，窄屏换行时隐藏） */
+.k-lib__fgroup + .k-lib__fgroup::before {
+  content: '';
+  align-self: center;
+  flex: 0 0 auto;
+  width: 1px;
+  height: 18px;
+  margin-right: var(--space-3);
+  background: var(--outline);
+}
+/* 分段槽：胶囊嵌入浅底轨道；未选项透明、选中项 ink 填充（压过全局悬停抬升） */
+.k-lib__seg {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 3px;
+  border-radius: var(--radius-pill);
+  background: var(--fill-subtle);
+}
+.k-lib__seg .k-pill {
+  border-color: transparent;
+  background: transparent;
+}
+.k-lib__seg .k-pill:hover {
+  background: var(--fill-tag);
+  border-color: transparent;
+}
+.k-lib__seg .k-pill.is-selected,
+.k-lib__seg .k-pill.is-selected:hover {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--bg);
+  transform: none;
+  box-shadow: none;
+}
+
+/* 精化平铺行：类型标签 | 标题 | 元信息；保留悬停抬升语言 */
+.k-lib-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  width: 100%;
+  padding: var(--space-4) var(--space-3);
+  border-radius: var(--radius-inner);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-standard),
+    transform var(--dur-fast) var(--ease-standard),
+    box-shadow var(--dur-fast) var(--ease-standard);
+}
+.k-lib-row + .k-lib-row {
+  border-top: var(--hairline) solid var(--rule-soft);
+}
+.k-lib-row:hover {
+  background: var(--surface-hover);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-soft);
+}
+.k-lib-row__kind {
+  flex: 0 0 auto;
+  color: var(--muted);
+  min-width: 86px;
+}
+.k-lib-row__title {
+  flex: 1 1 auto;
+  color: var(--ink);
+  min-width: 0;
+  font-size: var(--text-body);
+}
+.k-lib-row__meta {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--muted);
+  font-size: var(--text-caption);
+  white-space: nowrap;
+}
+.k-lib__time {
+  color: var(--muted);
+  font-size: var(--text-caption);
+  white-space: nowrap;
+}
+.k-backlink {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* 窄容器（route）：过滤条换行、行 meta 沉到第二行（标题独占首行） */
+@container route (max-width: 640px) {
+  .k-lib__filters {
+    flex-wrap: wrap;
+    overflow-x: visible;
+    gap: var(--space-3);
+  }
+  .k-lib__fgroup + .k-lib__fgroup::before {
+    display: none;
+  }
+  .k-lib-row {
+    flex-wrap: wrap;
+    gap: var(--space-2) var(--space-3);
+  }
+  .k-lib-row__title {
+    order: -1;
+    flex: 1 1 100%;
+  }
+  .k-lib-row__kind {
+    min-width: 0;
+  }
+  .k-lib-row__meta {
+    flex: 1 1 auto;
+    flex-wrap: wrap;
+    white-space: normal;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * 回顾 REVIEW
+ * ------------------------------------------------------------------------- */
+
+/* 顶部：周期说明 + 当前周期胶囊 */
+.k-review__top {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+.k-review__periods {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+/* 双栏仪表盘：左栏 1.15fr（指标 + 图表）· 右栏 0.85fr（回顾卡 + 停滞 + CTA） */
+.k-review__dash {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+  gap: var(--space-5);
+  align-items: start;
+}
+.k-review__col {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  min-width: 0;
+}
+.k-review__card {
+  background: var(--surface);
+  border: var(--hairline) solid var(--outline);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card), var(--shadow-highlight);
+  padding: var(--pad-card);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.k-review__metrics {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+.k-met {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.k-met__num {
+  font-size: var(--text-h3);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.k-met__num.is-accent {
+  color: var(--accent-text);
+}
+/* 右栏回顾卡内 CTA（开始周回顾 + 原型态说明） */
+.k-review__cta {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.k-stale {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.k-stale__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border-radius: var(--radius-inner);
+  transition: background var(--dur-fast) var(--ease-standard);
+}
+.k-stale__row + .k-stale__row {
+  border-top: var(--hairline) solid var(--rule-soft);
+}
+.k-stale__row:hover {
+  background: var(--surface-hover);
+}
+.k-stale__meta {
+  color: var(--muted);
+  font-size: var(--text-caption);
+}
+.k-decision {
+  display: flex;
+  gap: var(--space-3);
+  color: var(--ink-2);
+}
+
+/* 回顾流程 stepper */
+.k-steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.k-step {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  border: var(--hairline) solid var(--outline);
+  border-radius: var(--radius-inner);
+  background: var(--surface-elevated);
+  box-shadow: var(--shadow-soft);
+  text-align: left;
+  cursor: pointer;
+  transition: transform var(--dur-fast) var(--ease-standard),
+    border-color var(--dur-fast) var(--ease-standard),
+    box-shadow var(--dur-fast) var(--ease-standard);
+}
+.k-step:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-card);
+}
+.k-step.is-active {
+  border-color: var(--outline-strong);
+}
+.k-step.is-done {
+  color: var(--muted);
+}
+.k-step__num {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--fill-subtle);
+  font-family: var(--font-mono);
+}
+.k-step.is-active .k-step__num {
+  background: var(--ink);
+  color: var(--bg);
+}
+.k-step.is-done .k-step__num {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+.k-step__body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* ---------------------------------------------------------------------------
+ * 设置 SETTINGS
+ * ------------------------------------------------------------------------- */
+
+/* 左分类导航 + 右单区面板（设计稿 v2 · settings-b「侧导航」）。
+   导航项沿用轨道语言：无边框、填充高亮；容器为柔影卡片。 */
+.k-settings__grid {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: var(--space-5);
+  align-items: start;
+}
+.k-settings__nav {
+  position: sticky;
+  top: calc(var(--topbar-h) + var(--space-4));
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  background: var(--surface);
+  border: var(--hairline) solid var(--outline);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card), var(--shadow-highlight);
+}
+.k-settings__nav-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-inner);
+  color: var(--muted);
+  text-align: left;
+  transition: background var(--dur-fast) var(--ease-standard),
+    color var(--dur-fast) var(--ease-standard);
+}
+.k-settings__nav-item b {
+  color: var(--ink-2);
+  font-size: var(--text-body-sm);
+  font-weight: 600;
+}
+.k-settings__nav-item span {
+  font-size: var(--text-micro);
+  line-height: var(--text-micro-leading);
+  letter-spacing: var(--text-micro-tracking);
+}
+.k-settings__nav-item:hover {
+  background: var(--hover-veil);
+  color: var(--ink);
+}
+/* 选中态：填充高亮 + 顶部微高光，与轨道 is-active 同一语言（无边框） */
+.k-settings__nav-item.is-active {
+  background: var(--fill-tag);
+  color: var(--ink);
+  box-shadow: var(--shadow-highlight);
+}
+.k-settings__nav-item.is-active b {
+  color: var(--ink);
+}
+.k-settings__content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  min-width: 0;
+}
+/* 面板内统一竖向节奏：区块头与正文、正文块之间共用同一间距 token */
+.k-settings__content .k-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.k-settings__content .k-panel__head {
+  margin-bottom: 0;
+}
+/* 安静空态（如「暂无活动记录」）：保留表面阶，不抢注意力 */
+.k-settings__empty {
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-inner);
+  background: var(--fill-subtle);
+  color: var(--muted);
+  font-size: var(--text-body-sm);
+}
+.k-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-body-sm);
+}
+.k-table th,
+.k-table td {
+  text-align: left;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: var(--hairline) solid var(--rule-soft);
+  font-variant-numeric: tabular-nums;
+}
+.k-table th {
+  color: var(--muted);
+  font-size: var(--text-micro);
+  letter-spacing: var(--text-micro-tracking);
+  font-weight: 500;
+}
+.k-table td:last-child,
+.k-table th:last-child {
+  text-align: right;
+}
+.k-philosophy {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  color: var(--ink-2);
+  max-width: var(--measure);
+}
+.k-philosophy__line {
+  display: flex;
+  gap: var(--space-3);
+}
+.k-philosophy__n {
+  color: var(--accent-text);
+  font-family: var(--font-mono);
+}
+/* 数据服务 · 最近活动（审计日志尾部） */
+.k-activity {
+  display: flex;
+  flex-direction: column;
+}
+.k-activity__row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  font-size: var(--text-caption);
+  border-top: var(--hairline) solid var(--rule-soft);
+}
+.k-activity__row:first-child {
+  border-top: none;
+}
+/* route 窄：左导航转为横向可滚动标签条置顶，右面板整宽堆叠
+   （单列栅格由上方 route < 900px 容器查询统一处理） */
+@container route (max-width: 900px) {
+  .k-settings__nav {
+    position: static;
+    flex-direction: row;
+    gap: var(--space-1);
+    padding: var(--space-2);
+    overflow-x: auto;
+  }
+  .k-settings__nav-item {
+    flex: 0 0 auto;
+    flex-direction: row;
+    align-items: baseline;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-pill);
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * 详情（抽屉内）
+ * ------------------------------------------------------------------------- */
+
+.k-detail-grid {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+.k-detail-block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.k-detail-block__label {
+  color: var(--muted);
+}
+.k-detail-note {
+  background: var(--fill-subtle);
+  border-radius: var(--radius-inner);
+  box-shadow: inset 2px 0 0 var(--outline-strong);
+  padding: var(--space-3) var(--space-4);
+  color: var(--ink-2);
+  font-size: var(--text-body-sm);
+  max-width: var(--measure);
+}
+.k-tasklist-mini {
+  display: flex;
+  flex-direction: column;
+}
+
+/* 抽屉内字段网格：dt/dd 成对铺成 2 列（阅读顺序 内容 → 元数据）
+ * 基础 .k-dl 为单列 label/value；此处限定抽屉，升级为 4 列 = 每行两对。
+ * 列序：label · value · label · value，故 max-content 逐个贴合各自标签。 */
+.k-drawer .k-dl {
+  grid-template-columns: max-content 1fr max-content 1fr;
+  gap: var(--space-3) var(--space-5);
+}
+/* 长值（项目完成定义 / 资源链接等）跨后三列独占整行，避免挤压 */
+.k-drawer .k-dl dd.k-dl__wide {
+  grid-column: 2 / -1;
+}
+
+/* ---------------------------------------------------------------------------
+ * 容器查询 · 组件内部按容器宽度自适应（route / drawer / stat / task）
+ * 支持假设：container queries 为现代浏览器基线特性（Chrome 105+ / Safari 16+ / Firefox 110+）。
+ * SHELL 级（rail / topbar / 移动底栏）仍用视口媒体查询（见 shell.css）。
+ * CONTAINER MAP：
+ *   route  = .k-route（版心宽度）→ 总览 stats/split、项目列表、日历主体、
+ *           回顾分区、设置栅格、过滤行、周条
+ *   stat   = .k-stat            → 瓦片内大数字降级
+ *   task   = .k-task            → 行内 meta 堆叠 / 收纳
+ *   drawer = .k-drawer__body    → 抽屉内 dl / 说明行
+ * ------------------------------------------------------------------------- */
+
+/* route < 1000px：统计瓦片 4 → 2 列 */
+@container route (max-width: 1000px) {
+  .k-overview__stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+/* route < 620px：统计瓦片 → 1 列 */
+@container route (max-width: 620px) {
+  .k-overview__stats {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+/* route < 900px：总览双栏 / 日脊+议程 / 回顾仪表盘 / 设置栅格 → 单列 */
+@container route (max-width: 900px) {
+  .k-overview__split,
+  .k-cal__body,
+  .k-review__dash,
+  .k-settings__grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .k-review__metrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+/* route < 640px：指标 → 2 列、过滤行竖排、周条收紧 */
+@container route (max-width: 640px) {
+  .k-review__metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .k-weekstrip {
+    gap: var(--space-1);
+  }
+  .k-weekday {
+    padding: var(--space-2);
+    min-height: 72px;
+  }
+  .k-cal__date {
+    font-size: var(--text-h3);
+  }
+  .k-filterrow {
+    flex-direction: column;
+    gap: var(--rhythm-inner);
+  }
+  .k-filterrow__label {
+    min-width: 0;
+    padding-top: 0;
+  }
+}
+/* 抽屉内容按抽屉宽度自适应 */
+@container drawer (max-width: 400px) {
+  .k-drawer .k-dl {
+    grid-template-columns: max-content 1fr;
+  }
+}
+
+</style>
+    <style>
+      /* =====================================================================
+       * 图表组件样本页局部排版 —— 统一解剖 + 7 个监控模块 + 迷你形态
+       * 纪律：颜色/圆角/阴影/字号只走 var(--token)；仅结构性尺寸用 px/%/fr。
+       * ===================================================================== */
+
+      .k-chart {
+        background: var(--surface);
+        border: var(--hairline) solid var(--outline);
+        border-radius: var(--radius-card);
+        box-shadow: var(--shadow-card), var(--shadow-highlight);
+        padding: var(--pad-card);
+        display: flex;
+        flex-direction: column;
+        gap: var(--rhythm-element);
+        min-width: 0;
+      }
+      .k-chart__head {
+        display: flex;
+        align-items: baseline;
+        gap: var(--rhythm-inner);
+        min-width: 0;
+      }
+      .k-chart__title {
+        font-size: var(--text-body-sm);
+        font-weight: 600;
+        color: var(--ink);
+        letter-spacing: var(--text-caption-tracking);
+      }
+      .k-chart__period {
+        margin-left: auto;
+        white-space: nowrap;
+      }
+      .k-chart__plot {
+        position: relative;
+        min-width: 0;
+      }
+      .k-chart__foot {
+        display: flex;
+        justify-content: space-between;
+        gap: var(--space-3);
+        flex-wrap: wrap;
+        color: var(--muted);
+        font-size: var(--text-caption);
+        padding-top: var(--space-2);
+        border-top: var(--hairline) solid var(--rule-soft);
+      }
+      .k-chart.is-alert {
+        box-shadow: var(--shadow-card), inset 3px 0 0 var(--accent), var(--shadow-highlight);
+      }
+
+      /* 连续打卡 14 日点阵（实心=命中 · 空心=缺口） */
+      .k-streak {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 3px;
+      }
+      .k-streak__cell {
+        flex: 1 1 0;
+        min-width: 5px;
+        max-width: 8px;
+        aspect-ratio: 1;
+        border-radius: 50%;
+        background: var(--ink-2);
+      }
+      .k-streak__cell.is-miss {
+        background: transparent;
+        box-shadow: inset 0 0 0 1px var(--outline-strong);
+      }
+      .k-streak__axis {
+        display: flex;
+        justify-content: space-between;
+        color: var(--muted);
+        font-size: var(--text-micro);
+        margin-top: var(--space-2);
+      }
+
+      /* 项目推进多进度条 */
+      .k-progress {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: var(--space-2) var(--space-3);
+        align-items: center;
+      }
+      .k-progress + .k-progress {
+        margin-top: var(--space-4);
+      }
+      .k-progress__name {
+        font-size: var(--text-body-sm);
+        color: var(--ink-2);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .k-progress__val {
+        font-size: var(--text-caption);
+        color: var(--muted);
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+      }
+      .k-progress > .k-meter__track {
+        grid-column: 1 / -1;
+      }
+
+      /* 画廊 */
+      .k-kit {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: var(--space-5);
+        align-items: start;
+      }
+      .k-kit__spec {
+        border-top: var(--hairline) solid var(--rule-soft);
+        padding-top: var(--space-3);
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-2);
+      }
+      .k-kit__spec code {
+        font-family: var(--font-mono);
+        font-size: var(--text-caption);
+        color: var(--ink-2);
+      }
+      .k-kit__tags {
+        display: flex;
+        gap: var(--space-2);
+        flex-wrap: wrap;
+      }
+      .k-kit__intro {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-3);
+      }
+
+      @container route (max-width: 900px) {
+        .k-kit {
+          grid-template-columns: minmax(0, 1fr);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="k-app" data-rail="expanded">
+      <nav class="k-rail" aria-label="主导航">
+        <div class="k-rail__brand">
+          <span class="k-rail__mark" aria-hidden>K</span>
+          <span class="k-rail__brandtext">
+            <b>KERNEL</b>
+            <span class="u-label k-muted">v0.4.0</span>
+          </span>
+        </div>
+        <ul class="k-rail__list">
+          <li>
+            <a class="k-rail__item is-active" href="#">
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+              <span class="k-rail__cn">总览</span>
+            </a>
+          </li>
+          <li>
+            <a class="k-rail__item" href="#">
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-5.5l-1.5 2.5h-6L7.5 12H2"/><path d="M6 4h12l4 7v7a1.5 1.5 0 0 1-1.5 1.5h-17A1.5 1.5 0 0 1 2 18v-7z"/></svg>
+              <span class="k-rail__cn">收件箱</span>
+            </a>
+          </li>
+          <li>
+            <a class="k-rail__item" href="#">
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h12M3 12h12M3 18h12"/><path d="m18 5.5 1.6 1.6L22.5 4"/><path d="m18 17.5 1.6 1.6 2.9-3.1"/></svg>
+              <span class="k-rail__cn">任务</span>
+            </a>
+          </li>
+          <li>
+            <a class="k-rail__item" href="#">
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></svg>
+              <span class="k-rail__cn">日程</span>
+            </a>
+          </li>
+          <li>
+            <a class="k-rail__item" href="#">
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+              <span class="k-rail__cn">项目</span>
+            </a>
+          </li>
+          <li>
+            <a class="k-rail__item" href="#">
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h4v16H4zM10.5 4h4v16h-4z"/><path d="m17 5 4 1-2.5 14-4-1z"/></svg>
+              <span class="k-rail__cn">资料</span>
+            </a>
+          </li>
+          <li>
+            <a class="k-rail__item" href="#">
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 2.6-6.3"/><path d="M3 4v4h4"/></svg>
+              <span class="k-rail__cn">回顾</span>
+            </a>
+          </li>
+          <li>
+            <a class="k-rail__item" href="#">
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.2 5.2l2.1 2.1M16.7 16.7l2.1 2.1M18.8 5.2l-2.1 2.1M7.3 16.7l-2.1 2.1"/></svg>
+              <span class="k-rail__cn">设置</span>
+            </a>
+          </li>
+        </ul>
+        <div class="k-rail__foot">
+          <button class="k-rail__toggle" type="button">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/><path d="m14 9 3 3-3 3"/></svg>
+            <span class="u-label">COLLAPSE</span>
+          </button>
+        </div>
+      </nav>
+
+      <div class="k-main">
+        <header class="k-topbar">
+          <div class="k-topbar__inner">
+            <div class="k-topbar__id">
+              <h1 class="k-topbar__title">图表组件</h1>
+              <span class="k-topbar__en u-label">CHART KIT</span>
+            </div>
+            <div class="k-topbar__tools">
+              <button class="k-btn" type="button">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3"/></svg>
+                <span class="u-label">命令</span>
+                <kbd class="k-kbd">Ctrl K</kbd>
+              </button>
+              <button class="k-iconbtn" type="button" aria-label="切换主题">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+              </button>
+            </div>
+          </div>
+        </header>
+
+        <main class="k-content">
+          <div class="k-route">
+            <div class="k-view">
+              <!-- 图表解剖说明 -->
+              <section class="k-panel">
+                <header class="k-panel__head">
+                  <h2 class="k-panel__cn">图表解剖</h2>
+                  <span class="k-panel__en u-label">ANATOMY</span>
+                  <div class="k-panel__actions"><span class="u-label k-muted">7 个监控模块</span></div>
+                </header>
+                <div class="k-kit__intro">
+                  <p class="k-view__intro">
+                    统一解剖：标题 + 期间小标签 → 图形区 → 基线 / 阈值 → 脚注口径。数据只用单一墨色阶与图案（高/中/低能 = 实心 / 灰 / 斜纹），
+                    强调色仅作阈值线、超限、峰值三类信号，绝不作数据系列（P7）。
+                  </p>
+                  <div class="k-kit__tags">
+                    <span class="k-pill is-ghost">完成趋势</span>
+                    <span class="k-pill is-ghost">到期负载</span>
+                    <span class="k-pill is-ghost">能量分布</span>
+                    <span class="k-pill is-ghost">连续打卡</span>
+                    <span class="k-pill is-ghost">收件箱水位</span>
+                    <span class="k-pill is-ghost">WIP 监控</span>
+                    <span class="k-pill is-ghost">项目推进</span>
+                  </div>
+                </div>
+              </section>
+
+              <!-- 组件画廊 -->
+              <div class="k-kit">
+                <!-- 1 完成趋势 -->
+                <article class="k-chart">
+                  <header class="k-chart__head">
+                    <span class="k-chart__title">完成趋势</span>
+                    <span class="k-chart__period u-label">近 7 天</span>
+                  </header>
+                  <div class="k-chart__plot">
+                    <div class="k-line" style="height: 120px">
+                      <div class="k-line__plot">
+                        <svg class="k-line__svg" viewBox="0 0 1000 100" preserveAspectRatio="none" role="img" aria-label="近 7 天完成趋势">
+                          <defs>
+                            <linearGradient id="lg-kct" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="0%" stop-color="var(--ink)" stop-opacity="0.1"></stop>
+                              <stop offset="100%" stop-color="var(--ink)" stop-opacity="0"></stop>
+                            </linearGradient>
+                          </defs>
+                          <path d="M 40 18 L 193.3 18 L 346.7 18 L 500 18 L 653.3 100 L 806.7 100 L 960 100 L 960 100 L 40 100 Z" fill="url(#lg-kct)"></path>
+                          <path class="k-line__stroke" vector-effect="non-scaling-stroke" d="M 40 18 L 193.3 18 L 346.7 18 L 500 18 L 653.3 100 L 806.7 100 L 960 100"></path>
+                          <path class="k-line__dot" vector-effect="non-scaling-stroke" d="M 40 18 l 0 0.01"></path>
+                          <path class="k-line__dot" vector-effect="non-scaling-stroke" d="M 193.3 18 l 0 0.01"></path>
+                          <path class="k-line__dot" vector-effect="non-scaling-stroke" d="M 346.7 18 l 0 0.01"></path>
+                          <path class="k-line__dot" vector-effect="non-scaling-stroke" d="M 500 18 l 0 0.01"></path>
+                          <path class="k-line__dot" vector-effect="non-scaling-stroke" d="M 653.3 100 l 0 0.01"></path>
+                          <path class="k-line__dot" vector-effect="non-scaling-stroke" d="M 806.7 100 l 0 0.01"></path>
+                          <path class="k-line__dot" vector-effect="non-scaling-stroke" d="M 960 100 l 0 0.01"></path>
+                        </svg>
+                        <span class="k-line__value" style="left: 4%; top: 18%">1</span>
+                        <span class="k-line__value" style="left: 19.33%; top: 18%">1</span>
+                        <span class="k-line__value" style="left: 34.67%; top: 18%">1</span>
+                        <span class="k-line__value" style="left: 50%; top: 18%">1</span>
+                        <span class="k-line__value" style="left: 65.33%; top: 100%">0</span>
+                        <span class="k-line__value" style="left: 80.67%; top: 100%">0</span>
+                        <span class="k-line__value" style="left: 96%; top: 100%">0</span>
+                      </div>
+                      <div class="k-line__axis">
+                        <span class="k-line__label" style="left: 4%">一</span>
+                        <span class="k-line__label" style="left: 19.33%">二</span>
+                        <span class="k-line__label" style="left: 34.67%">三</span>
+                        <span class="k-line__label" style="left: 50%">四</span>
+                        <span class="k-line__label" style="left: 65.33%">五</span>
+                        <span class="k-line__label" style="left: 80.67%">六</span>
+                        <span class="k-line__label" style="left: 96%">日</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="k-chart__foot"><span>合计 4 项</span><span>峰值 1 / 日</span></div>
+                  <div class="k-kit__spec">
+                    <dl class="k-dl">
+                      <dt>名称</dt><dd>完成趋势 · 7 日折线</dd>
+                      <dt>建议类名</dt><dd><code>.k-line</code>（折线趋势；替代圆头柱，所有者 2026-10-02 否决）</dd>
+                      <dt>数据来源</dt><dd>doneAt 按本周 7 天分桶（getWeeklyCompletionSeries）</dd>
+                      <dt>使用场景</dt><dd>产出节奏；总览顶部、回顾页趋势对比</dd>
+                    </dl>
+                  </div>
+                </article>
+
+                <!-- 2 到期负载 -->
+                <article class="k-chart">
+                  <header class="k-chart__head">
+                    <span class="k-chart__title">到期负载</span>
+                    <span class="k-chart__period u-label">未来 7 天</span>
+                  </header>
+                    <div class="k-chart__plot">
+                      <div class="k-line" style="height: 120px">
+                        <div class="k-line__plot">
+                          <svg class="k-line__svg" viewBox="0 0 1000 100" preserveAspectRatio="none" role="img" aria-label="未来 7 天到期负载">
+                            <defs>
+                              <linearGradient id="lg-kdl" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stop-color="var(--ink)" stop-opacity="0.1"></stop>
+                                <stop offset="100%" stop-color="var(--ink)" stop-opacity="0"></stop>
+                              </linearGradient>
+                            </defs>
+                            <path d="M 40 100 L 193.3 18 L 346.7 31.7 L 500 18 L 653.3 18 L 806.7 59 L 960 59 L 960 100 L 40 100 Z" fill="url(#lg-kdl)"></path>
+                            <path class="k-line__stroke" vector-effect="non-scaling-stroke" d="M 40 100 L 193.3 18 L 346.7 31.7 L 500 18 L 653.3 18 L 806.7 59 L 960 59"></path>
+                            <path class="k-line__dot" vector-effect="non-scaling-stroke" d="M 40 100 l 0 0.01"></path>
+                            <path class="k-line__dot" vector-effect="non-scaling-stroke" d="M 193.3 18 l 0 0.01"></path>
+                            <path class="k-line__dot" vector-effect="non-scaling-stroke" d="M 346.7 31.7 l 0 0.01"></path>
+                            <path class="k-line__dot" vector-effect="non-scaling-stroke" d="M 500 18 l 0 0.01"></path>
+                            <path class="k-line__dot" vector-effect="non-scaling-stroke" d="M 653.3 18 l 0 0.01"></path>
+                            <path class="k-line__dot" vector-effect="non-scaling-stroke" d="M 806.7 59 l 0 0.01"></path>
+                            <path class="k-line__dot" vector-effect="non-scaling-stroke" d="M 960 59 l 0 0.01"></path>
+                          </svg>
+                          <span class="k-line__value" style="left: 4%; top: 100%">0</span>
+                          <span class="k-line__value" style="left: 19.33%; top: 18%">6</span>
+                          <span class="k-line__value" style="left: 34.67%; top: 31.7%">5</span>
+                          <span class="k-line__value" style="left: 50%; top: 18%">6</span>
+                          <span class="k-line__value" style="left: 65.33%; top: 18%">6</span>
+                          <span class="k-line__value" style="left: 80.67%; top: 59%">3</span>
+                          <span class="k-line__value" style="left: 96%; top: 59%">3</span>
+                        </div>
+                        <div class="k-line__axis">
+                          <span class="k-line__label" style="left: 4%">今</span>
+                          <span class="k-line__label" style="left: 19.33%">六</span>
+                          <span class="k-line__label" style="left: 34.67%">日</span>
+                          <span class="k-line__label" style="left: 50%">一</span>
+                          <span class="k-line__label" style="left: 65.33%">二</span>
+                          <span class="k-line__label" style="left: 80.67%">三</span>
+                          <span class="k-line__label" style="left: 96%">四</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="k-chart__foot"><span>高峰 6 项（六 / 一 / 二）</span><span>合计 29 项</span></div>
+                    <div class="k-kit__spec">
+                      <dl class="k-dl">
+                        <dt>名称</dt><dd>到期负载 · 未来 7 天折线</dd>
+                        <dt>建议类名</dt><dd><code>.k-line</code>（折线趋势；替代圆头柱，所有者 2026-10-02 否决）</dd>
+                      <dt>数据来源</dt><dd>未完成任务 dueAt 按未来 7 天分桶</dd>
+                      <dt>使用场景</dt><dd>负载前瞻；安排明天 / 预警堆积</dd>
+                    </dl>
+                  </div>
+                </article>
+
+                <!-- 3 能量分布 -->
+                <article class="k-chart">
+                  <header class="k-chart__head">
+                    <span class="k-chart__title">能量分布</span>
+                    <span class="k-chart__period u-label">未完成 54 项</span>
+                  </header>
+                  <div class="k-chart__plot">
+                    <div class="k-energy" role="img" aria-label="未完成任务能量分布">
+                      <div class="k-energy__row"><span class="u-label k-muted">高能</span><div class="k-energy__track"><div class="k-energy__fill" data-energy="high" style="width: 76%"></div></div><span class="k-energy__value k-mono">16</span></div>
+                      <div class="k-energy__row"><span class="u-label k-muted">中能</span><div class="k-energy__track"><div class="k-energy__fill" data-energy="medium" style="width: 100%"></div></div><span class="k-energy__value k-mono">21</span></div>
+                      <div class="k-energy__row"><span class="u-label k-muted">低能</span><div class="k-energy__track"><div class="k-energy__fill" data-energy="low" style="width: 81%"></div></div><span class="k-energy__value k-mono">17</span></div>
+                    </div>
+                  </div>
+                  <div class="k-chart__foot"><span>高 16 · 中 21 · 低 17</span><span>中能为最大档</span></div>
+                  <div class="k-kit__spec">
+                    <dl class="k-dl">
+                      <dt>名称</dt><dd>能量分布 · 横向条</dd>
+                      <dt>建议类名</dt><dd><code>.k-energy</code>（实心 / 灰 / 斜纹三档）</dd>
+                      <dt>数据来源</dt><dd>未完成任务按 energy 分档（getEnergyDistribution）</dd>
+                      <dt>使用场景</dt><dd>按精力选任务；批量执行前评估</dd>
+                    </dl>
+                  </div>
+                </article>
+
+                <!-- 4 连续打卡 -->
+                <article class="k-chart">
+                  <header class="k-chart__head">
+                    <span class="k-chart__title">连续打卡</span>
+                    <span class="k-chart__period u-label">近 14 天 · h-0002</span>
+                  </header>
+                  <div class="k-chart__plot">
+                    <div class="k-streak" role="img" aria-label="近 14 天打卡点阵">
+                      <div class="k-streak__cell"></div>
+                      <div class="k-streak__cell is-miss"></div>
+                      <div class="k-streak__cell"></div>
+                      <div class="k-streak__cell is-miss"></div>
+                      <div class="k-streak__cell"></div>
+                      <div class="k-streak__cell"></div>
+                      <div class="k-streak__cell"></div>
+                      <div class="k-streak__cell"></div>
+                      <div class="k-streak__cell"></div>
+                      <div class="k-streak__cell"></div>
+                      <div class="k-streak__cell"></div>
+                      <div class="k-streak__cell"></div>
+                      <div class="k-streak__cell"></div>
+                      <div class="k-streak__cell"></div>
+                    </div>
+                    <div class="k-streak__axis"><span>09-19</span><span>09-26</span><span>10-02</span></div>
+                  </div>
+                  <div class="k-chart__foot"><span>命中 12 / 14 · 空心 = 缺口</span><span>当前连续 10 天 · 缺口 09-20 / 09-22</span></div>
+                  <div class="k-kit__spec">
+                    <dl class="k-dl">
+                      <dt>名称</dt><dd>连续打卡 · 14 日点阵</dd>
+                      <dt>建议类名</dt><dd><code>.k-streak</code> + <code>.k-streak__cell.is-miss</code>（新增）</dd>
+                      <dt>数据来源</dt><dd>习惯 h-0002「每日一题算法」最近 14 天 log</dd>
+                      <dt>使用场景</dt><dd>习惯连续性；断点提醒、连续刷题激励</dd>
+                    </dl>
+                  </div>
+                </article>
+
+                <!-- 5 收件箱水位 -->
+                <article class="k-chart">
+                  <header class="k-chart__head">
+                    <span class="k-chart__title">收件箱水位</span>
+                    <span class="k-chart__period u-label">当前</span>
+                  </header>
+                  <div class="k-chart__plot">
+                    <div class="k-meter">
+                      <div class="k-meter__head u-label"><span>待处理存量</span><span class="k-mono">6 / 12</span></div>
+                      <div class="k-meter__track" role="meter" aria-valuenow="6" aria-valuemin="0" aria-valuemax="12" aria-label="收件箱水位">
+                        <div class="k-meter__fill" style="width: 50%"></div>
+                        <div class="k-meter__threshold" style="left: 66.7%" aria-hidden></div>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="k-chart__foot"><span>阈值 8（竖线）</span><span>低于阈值 · 存量健康</span></div>
+                  <div class="k-kit__spec">
+                    <dl class="k-dl">
+                      <dt>名称</dt><dd>收件箱水位 · 计量条 + 阈值</dd>
+                      <dt>建议类名</dt><dd><code>.k-meter</code> + <code>.k-meter__threshold</code></dd>
+                      <dt>数据来源</dt><dd>inbox 未处理计数 / 阈值 8（上限 12）</dd>
+                      <dt>使用场景</dt><dd>存量健康；提醒澄清排泄、防止积压</dd>
+                    </dl>
+                  </div>
+                </article>
+
+                <!-- 6 WIP 监控 -->
+                <article class="k-chart is-alert">
+                  <header class="k-chart__head">
+                    <span class="k-chart__title">WIP 监控</span>
+                    <span class="k-chart__period u-label">当前</span>
+                  </header>
+                  <div class="k-chart__plot">
+                    <div class="k-meter is-over">
+                      <div class="k-meter__head u-label"><span>进行中</span><span class="k-mono">9 / 上限 3</span></div>
+                      <div class="k-meter__track" role="meter" aria-valuenow="9" aria-valuemin="0" aria-valuemax="12" aria-label="在制品数量">
+                        <div class="k-meter__fill" style="width: 75%"></div>
+                        <div class="k-meter__threshold" style="left: 25%" aria-hidden></div>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="k-chart__foot"><span class="k-accent">超出上限 6（fill 转 accent）</span><span>建议收敛至 3</span></div>
+                  <div class="k-kit__spec">
+                    <dl class="k-dl">
+                      <dt>名称</dt><dd>WIP 监控 · 计量条 + 上限</dd>
+                      <dt>建议类名</dt><dd><code>.k-meter.is-over</code> + <code>.k-chart.is-alert</code></dd>
+                      <dt>数据来源</dt><dd>active 项目计数 / 上限 3（9 个进行中）</dd>
+                      <dt>使用场景</dt><dd>在制品超限信号；驱动收敛与暂停决策</dd>
+                    </dl>
+                  </div>
+                </article>
+
+                <!-- 7 项目推进 -->
+                <article class="k-chart">
+                  <header class="k-chart__head">
+                    <span class="k-chart__title">项目推进</span>
+                    <span class="k-chart__period u-label">4 个 active</span>
+                  </header>
+                  <div class="k-chart__plot">
+                    <div class="k-progress">
+                      <span class="k-progress__name">KERNEL v0.2 前端原型</span>
+                      <span class="k-progress__val k-mono">1 / 7</span>
+                      <div class="k-meter__track"><div class="k-meter__fill" style="width: 14%"></div></div>
+                    </div>
+                    <div class="k-progress">
+                      <span class="k-progress__name">学生组织 10 月程序设计大赛</span>
+                      <span class="k-progress__val k-mono">1 / 8</span>
+                      <div class="k-meter__track"><div class="k-meter__fill" style="width: 13%"></div></div>
+                    </div>
+                    <div class="k-progress">
+                      <span class="k-progress__name">ACM · Codeforces 上分训练</span>
+                      <span class="k-progress__val k-mono">1 / 6</span>
+                      <div class="k-meter__track"><div class="k-meter__fill" style="width: 17%"></div></div>
+                    </div>
+                    <div class="k-progress">
+                      <span class="k-progress__name">数据结构期中冲刺</span>
+                      <span class="k-progress__val k-mono">1 / 7</span>
+                      <div class="k-meter__track"><div class="k-meter__fill" style="width: 14%"></div></div>
+                    </div>
+                  </div>
+                  <div class="k-chart__foot"><span>均为 1 项已完成</span><span>平均推进 15%</span></div>
+                  <div class="k-kit__spec">
+                    <dl class="k-dl">
+                      <dt>名称</dt><dd>项目推进 · 多进度条</dd>
+                      <dt>建议类名</dt><dd><code>.k-progress</code>（沿 <code>.k-proj-mini</code> 视觉）</dd>
+                      <dt>数据来源</dt><dd>每 active 项目 done / total（getProjectProgress）</dd>
+                      <dt>使用场景</dt><dd>多项目推进一览；识别停滞项目</dd>
+                    </dl>
+                  </div>
+                </article>
+              </div>
+            </div>
+          </div>
+        </main>
+      </div>
+
+      <footer class="k-statusbar u-label">
+        <span class="k-statusbar__cell k-statusbar__cell--ink">16:20:16</span>
+        <span class="k-statusbar__sep"></span>
+        <span class="k-statusbar__cell">INBOX <b>6</b></span>
+        <span class="k-statusbar__sep k-statusbar__desktop-only"></span>
+        <span class="k-statusbar__cell k-statusbar__desktop-only">WIP 9</span>
+        <span class="k-statusbar__sep k-statusbar__desktop-only"></span>
+        <span class="k-statusbar__cell k-statusbar__desktop-only">DATA · 146 RECORDS</span>
+        <span class="k-statusbar__spacer"></span>
+        <span class="k-statusbar__cell k-statusbar__cell--accent k-statusbar__desktop-only">AI: OFFLINE · 待接入 v0.5</span>
+        <span class="k-statusbar__sep k-statusbar__desktop-only"></span>
+        <span class="k-statusbar__cell k-svc-pill is-ok">数据 · 在线</span>
+      </footer>
+    </div>
+  </body>
+</html>

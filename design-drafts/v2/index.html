@@ -1,0 +1,376 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>KERNEL · 页面排版多版本选型</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; background: #0f0f10; color: #f4f4f5; font-family: "Inter Variable", Inter, "PingFang SC", "Microsoft YaHei", sans-serif; }
+  .wrap { max-width: 1320px; margin: 0 auto; padding: 48px 32px 96px; }
+  h1 { font-size: 30px; letter-spacing: -0.02em; margin: 0 0 8px; }
+  .intro { color: #929298; font-size: 14px; line-height: 1.8; margin: 0 0 40px; }
+  .intro code { background: rgba(255,255,255,.06); padding: 1px 6px; border-radius: 6px; }
+  .page { margin-bottom: 56px; }
+  .page h2 { font-size: 20px; margin: 0 0 4px; }
+  .page .note { color: #929298; font-size: 13px; margin: 0 0 16px; }
+  .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+  .cards.five { grid-template-columns: repeat(3, 1fr); }
+  .card { background: #1a1a1c; border: 1px solid rgba(255,255,255,.06); border-radius: 16px; overflow: hidden; box-shadow: 0 16px 40px rgba(0,0,0,.45); display: flex; flex-direction: column; }
+  .card a.shot { display: block; border-bottom: 1px solid rgba(255,255,255,.06); }
+  .card img { display: block; width: 100%; aspect-ratio: 1600 / 1000; object-fit: cover; object-position: top; }
+  .card .body { padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 8px; }
+  .card .tag { font-size: 11px; color: #929298; letter-spacing: .04em; }
+  .card .name { font-size: 15px; font-weight: 600; }
+  .card .concept { font-size: 12.5px; color: #a1a1aa; line-height: 1.7; }
+  .card .links { display: flex; gap: 12px; font-size: 12px; margin-top: 2px; }
+  .card .links a { color: #ff8a80; text-decoration: none; }
+  .card .links a:hover { text-decoration: underline; }
+  .sheetlink { margin-left: 12px; font-size: 12px; color: #929298; }
+  .sheetlink a { color: #a1a1aa; }
+  footer { color: #6e6e73; font-size: 12px; margin-top: 64px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>KERNEL · 页面排版多版本选型</h1>
+  <p class="intro">
+    每一项给出 3 版排版/组件编排方案（风格不变：柔暗夜色 + 柔影悬浮）。评审方式：<br />
+    ① 直接打开各版本实时页面（<code>/design-drafts/v2/&lt;name&gt;.html</code>，可拖动窗口看自适应）；② 看下方预览图与三版对比页；③ 选中的组合告诉我即可落到 <code>src/</code>。<br />
+    明细概念写在每个文件顶部注释；此页每张卡片的摘要即提取自该注释。
+  </p>
+  <section class="page">
+    <h2>总览 <span style="color:#6e6e73;font-size:13px">OVERVIEW</span><span class="sheetlink">· <a href="./_sheets/overview.html">三版对比页</a></span></h2>
+    <p class="note">信息中枢：一天从哪里开始看。</p>
+    <div class="cards">
+    <div class="card">
+      <a class="shot" href="./overview-a.html" title="打开实时页面"><img src="./previews/overview-a.png" alt="overview-a" loading="lazy" /></a>
+      <div class="body">
+        <span class="tag">OVERVIEW · 方案 A</span>
+        <span class="name">overview-a</span>
+        <span class="concept" data-concept="overview-a">变体 A · overview-a.html「今日线 TODAY LINE」（总览第三轮 R3-A） · 概念：以「今天」的时间轴做叙事核心——日期问候 + 3 枚状态胶囊；主体是一条贯穿全高的「今日线」， · 把今日日程（08:00 数据结构 → 10:00 Java）与截止 10-03 / 10-04 的下一步行动按时间编织成一条可点入的行动线； · 监视（水位 / WIP / 连续刷题 / 完成趋势）压成右栏紧凑统计瓦片，微型图内嵌瓦片内；底部一行项目推进条。 · 与另两版差异：B 以横向状态带为锚（四仪表 + 底部低高度趋势带）；C 是左 2/3 工作台 / 右 1/3 监视柱； · </span>
+        <span class="links"><a href="./overview-a.html">打开实时页</a><a href="./_sheets/overview.html">三版对比</a></span>
+      </div>
+    </div>
+    <div class="card">
+      <a class="shot" href="./overview-b.html" title="打开实时页面"><img src="./previews/overview-b.png" alt="overview-b" loading="lazy" /></a>
+      <div class="body">
+        <span class="tag">OVERVIEW · 方案 B</span>
+        <span class="name">overview-b</span>
+        <span class="concept" data-concept="overview-b">变体 B · overview-b.html「状态带 STATUS STRIP」（总览第三轮 R3-B） · 概念：以一条全宽「系统状态带」为锚——水位 / WIP / 逾期 / 连续刷题 四枚仪表（含阈值 / 上限标记），像内核状态栏的展开； · 中部左右分舱：左「焦点」（当前最重要一步大块 + 其后排队行动），右「今日日程」紧凑列； · 底部「趋势带」——完成趋势 / 到期负载 / 项目推进 三条低高度（≤96px）紧凑图表横排。 · 与另两版差异：A 是单条今日时间线 + 瓦片内嵌微型图；C 是左 2/3 工作台 / 右 1/3 监视柱； · B 的签名是顶部那条横向仪表带 + 底部低矮</span>
+        <span class="links"><a href="./overview-b.html">打开实时页</a><a href="./_sheets/overview.html">三版对比</a></span>
+      </div>
+    </div>
+    <div class="card">
+      <a class="shot" href="./overview-c.html" title="打开实时页面"><img src="./previews/overview-c.png" alt="overview-c" loading="lazy" /></a>
+      <div class="body">
+        <span class="tag">OVERVIEW · 方案 C</span>
+        <span class="name">overview-c</span>
+        <span class="concept" data-concept="overview-c">变体 C · overview-c.html「工作台 WORKBENCH」（总览第三轮 R3-C） · 概念：左 2/3「工作区」——下一步行动 TOP5（完整 meta）与今日日程条目按时间穿插在同一列（课程 → 现在 → 按截止排序的行动）； · 右 1/3「监视柱」——垂直监控栈：水位 / WIP / 连续刷题 / 完成趋势 / 到期负载，各一小块，随时可瞥； · 顶部仅一条窄状态行（胶囊），底部一行项目推进条。功能分区最清晰，图表全部收进右侧窄柱。 · 与另两版差异：A 是单条今日时间线做叙事 + 瓦片内嵌微型图；B 以顶部横向仪表带为锚、趋势带置底； · C 既不画时间线也不铺仪表带</span>
+        <span class="links"><a href="./overview-c.html">打开实时页</a><a href="./_sheets/overview.html">三版对比</a></span>
+      </div>
+    </div>
+    </div>
+  </section>
+  <section class="page">
+    <h2>收件箱 <span style="color:#6e6e73;font-size:13px">INBOX</span><span class="sheetlink">· <a href="./_sheets/inbox.html">三版对比页</a></span></h2>
+    <p class="note">捕捉 → 澄清的处理台。</p>
+    <div class="cards">
+    <div class="card">
+      <a class="shot" href="./inbox-a.html" title="打开实时页面"><img src="./previews/inbox-a.png" alt="inbox-a" loading="lazy" /></a>
+      <div class="body">
+        <span class="tag">INBOX · 方案 A</span>
+        <span class="name">inbox-a</span>
+        <span class="concept" data-concept="inbox-a">收件箱 · 变体 A「处理台」（INBOX · PROCESSING DESK） · 概念：左右分栏 —— 左侧未澄清紧凑列表（序号 + 来源 + 摘要 + 时间），右侧为选中条目详情 + 澄清操作区 + 处理进度；单条聚焦、键盘流处理。 · 关键差异：三版中唯一双栏「列表 ↔ 详情」结构，一次处理一条；B 为单列卡片流（每条自带完整澄清），C 为按日期分组的批量浏览 + 多选。 · 移动端：&lt; 1024px 折叠为单列 —— 列表在上，选中条目详情以全宽面板紧随其下。</span>
+        <span class="links"><a href="./inbox-a.html">打开实时页</a><a href="./_sheets/inbox.html">三版对比</a></span>
+      </div>
+    </div>
+    <div class="card">
+      <a class="shot" href="./inbox-b.html" title="打开实时页面"><img src="./previews/inbox-b.png" alt="inbox-b" loading="lazy" /></a>
+      <div class="body">
+        <span class="tag">INBOX · 方案 B</span>
+        <span class="name">inbox-b</span>
+        <span class="concept" data-concept="inbox-b">收件箱 · 变体 B「卡片流」（INBOX · CARD STREAM） · 概念：单列卡片流 —— 捕捉条在下、水位并入一条安静细带；每条未澄清为一张卡片，内容为标题、元信息为副行、底部完整澄清操作行，间距更松、层级更清晰。 · 关键差异：不分区、不分栏，六条平权；A 用双栏聚焦单条，C 用分组 + 多选批量处理。 · 移动端：单列天然适配，卡片内边距与澄清按钮自动收窄为一行两列换行。</span>
+        <span class="links"><a href="./inbox-b.html">打开实时页</a><a href="./_sheets/inbox.html">三版对比</a></span>
+      </div>
+    </div>
+    <div class="card">
+      <a class="shot" href="./inbox-c.html" title="打开实时页面"><img src="./previews/inbox-c.png" alt="inbox-c" loading="lazy" /></a>
+      <div class="body">
+        <span class="tag">INBOX · 方案 C</span>
+        <span class="name">inbox-c</span>
+        <span class="concept" data-concept="inbox-c">收件箱 · 变体 C「批量」（INBOX · BATCH） · 概念：分组浏览 —— 按捕捉日期分组（今天 / 昨天），行内置 .k-check 多选；顶部批量操作条（批量澄清 / 批量丢弃）统一处理，单条澄清仍可从行尾入口展开。 · 关键差异：唯一支持多选与批量动作的版本，密度最高；A 为双栏单条聚焦，B 为单列卡片流逐条处理。 · 移动端：批量条换行为两行，分组与行保持单列；勾选框与行尾入口缩小但仍可点。</span>
+        <span class="links"><a href="./inbox-c.html">打开实时页</a><a href="./_sheets/inbox.html">三版对比</a></span>
+      </div>
+    </div>
+    </div>
+  </section>
+  <section class="page">
+    <h2>任务 <span style="color:#6e6e73;font-size:13px">TASKS</span><span class="sheetlink">· <a href="./_sheets/tasks.html">三版对比页</a></span></h2>
+    <p class="note">每日执行的主列表：扫描与定位效率是关键。</p>
+    <div class="cards">
+    <div class="card">
+      <a class="shot" href="./tasks-a.html" title="打开实时页面"><img src="./previews/tasks-a.png" alt="tasks-a" loading="lazy" /></a>
+      <div class="body">
+        <span class="tag">TASKS · 方案 A</span>
+        <span class="name">tasks-a</span>
+        <span class="concept" data-concept="tasks-a">任务 TASKS · 变体 A · 代号：A「清单」 · 概念：单列时间分桶清单——逾期 / 今天 / 明天 / 本周 / 稍后 五组手风琴； · 点击某行在行下「就地展开」详情（描述 + 元数据 + 操作），不弹右侧抽屉。 · 阅读动线是自上而下一条线：先看清逾期的、再处理今天的，逐组往下。 · 与 B/C 的关键差异： · B 是横向状态看板（列 = 状态），一眼横向扫列； · C 是紧凑多列表格（列 = 字段），为 15+ 行扫描优化； · A 是纵向分组清单，靠「分组收合 + 行内展开」控制信息密度与阅读节奏。 · 风格：完全复用真实应用 token 与组件类（未新增色彩 / 字体 /</span>
+        <span class="links"><a href="./tasks-a.html">打开实时页</a><a href="./_sheets/tasks.html">三版对比</a></span>
+      </div>
+    </div>
+    <div class="card">
+      <a class="shot" href="./tasks-b.html" title="打开实时页面"><img src="./previews/tasks-b.png" alt="tasks-b" loading="lazy" /></a>
+      <div class="body">
+        <span class="tag">TASKS · 方案 B</span>
+        <span class="name">tasks-b</span>
+        <span class="concept" data-concept="tasks-b">任务 TASKS · 变体 B · 代号：B「看板」 · 概念：横向状态看板——列 = 状态（逾期 / 下一步 / 等待中 / 已排期 / 将来）， · 每个任务是一张紧凑卡片（勾选 + 标题 + 项目 + 上下文 + 能量 + 截止）。 · 逾期列加宽作为「每日分诊」焦点：先扫最左列，把逾期的清出去，再往右推。 · 与 A/C 的关键差异： · A 是纵向时间分桶清单（行内展开详情）； · C 是紧凑多列表格（字段列，15+ 行扫描）； · B 是横向状态分列（卡片列，按状态推进 / 拖拽的心智模型）。 · 风格：完全复用真实应用 token 与组件类（k-kanban / k-pcard </span>
+        <span class="links"><a href="./tasks-b.html">打开实时页</a><a href="./_sheets/tasks.html">三版对比</a></span>
+      </div>
+    </div>
+    <div class="card">
+      <a class="shot" href="./tasks-c.html" title="打开实时页面"><img src="./previews/tasks-c.png" alt="tasks-c" loading="lazy" /></a>
+      <div class="body">
+        <span class="tag">TASKS · 方案 C</span>
+        <span class="name">tasks-c</span>
+        <span class="concept" data-concept="tasks-c">任务 TASKS · 变体 C · 代号：C「表格」 · 概念：紧凑而舒适的多列表格——列 = 字段（完成勾选 / 标题 / 上下文 / 能量 / · 截止 / 项目），表头吸顶，一行一任务，为「15+ 行快速扫描」优化。 · 筛选压缩到一行、计数并入工具条，把纵向空间全部留给数据行。 · 与 A/B 的关键差异： · A 是纵向时间分桶清单（行内展开详情），阅读节奏优先； · B 是横向状态看板（卡片列），按状态推进； · C 是二维字段表格（行 × 列），扫描与比较优先、信息密度最高。 · 风格：完全复用真实应用 token 与组件类（k-table / k-task__* / k-pil</span>
+        <span class="links"><a href="./tasks-c.html">打开实时页</a><a href="./_sheets/tasks.html">三版对比</a></span>
+      </div>
+    </div>
+    </div>
+  </section>
+  <section class="page">
+    <h2>日程 <span style="color:#6e6e73;font-size:13px">CALENDAR</span><span class="sheetlink">· <a href="./_sheets/calendar.html">三版对比页</a></span></h2>
+    <p class="note">时间上下文：日 / 周 / 议程流三种视角。</p>
+    <div class="cards">
+    <div class="card">
+      <a class="shot" href="./calendar-a.html" title="打开实时页面"><img src="./previews/calendar-a.png" alt="calendar-a" loading="lazy" /></a>
+      <div class="body">
+        <span class="tag">CALENDAR · 方案 A</span>
+        <span class="name">calendar-a</span>
+        <span class="concept" data-concept="calendar-a">日程 CALENDAR · 变体 A「日视图」 · 概念：现有「日脊 + 议程」骨架的精化——日期条建立层级、周条紧凑化提高信息密度， · 左侧日脊以 08:00–23:00 窗口按真实时间落位（含 16:20 现在线）， · 右侧议程拆成「今天 / 接下来」两段，补足上下文。 · 关键差异： · 相比 B（周视图 · 7 列课表），A 是单日纵深时间轴 + 侧栏议程，回答「今天怎么过」； · 相比 C（议程流 + 迷你月历），A 以时间几何为主视觉，强调现在位置与日内疏密。 · 移动端设想：日脊与议程塌陷为单列（日脊优先，议程随后），周条收成 7 个窄卡横向滚动。 · 数据说明：今天 = 2</span>
+        <span class="links"><a href="./calendar-a.html">打开实时页</a><a href="./_sheets/calendar.html">三版对比</a></span>
+      </div>
+    </div>
+    <div class="card">
+      <a class="shot" href="./calendar-b.html" title="打开实时页面"><img src="./previews/calendar-b.png" alt="calendar-b" loading="lazy" /></a>
+      <div class="body">
+        <span class="tag">CALENDAR · 方案 B</span>
+        <span class="name">calendar-b</span>
+        <span class="concept" data-concept="calendar-b">日程 CALENDAR · 变体 B「周视图」 · 概念：7 列 × 08:00–22:00 时间网格，按课表方式铺排一周事件；今天列轻微抬亮， · 顶部全天条 + 左侧时间刻度，侧栏放迷你月历与「本周」快速导航。 · 关键差异： · 相比 A（单日日脊 + 议程），B 是横向一周全景，回答「这一周怎么排」； · 相比 C（纵向议程流 + 迷你月历），B 保留时间几何（小时线 / 块高）， · 并真实呈现 10-03 周六「训练赛 19:00–22:00 ∩ KERNEL 冲刺 20:00–22:00」的重叠并置。 · 移动端设想：网格横向滚动或按天折叠；侧栏（月历 / 本周）落到主区下方单列</span>
+        <span class="links"><a href="./calendar-b.html">打开实时页</a><a href="./_sheets/calendar.html">三版对比</a></span>
+      </div>
+    </div>
+    <div class="card">
+      <a class="shot" href="./calendar-c.html" title="打开实时页面"><img src="./previews/calendar-c.png" alt="calendar-c" loading="lazy" /></a>
+      <div class="body">
+        <span class="tag">CALENDAR · 方案 C</span>
+        <span class="name">calendar-c</span>
+        <span class="concept" data-concept="calendar-c">日程 CALENDAR · 变体 C「议程流」 · 概念：以「接下来」为主线的纵向事件流——顶部高亮下一项，正文按 · 今天 / 明天 / 本周 / 下周 / 稍后 分组，每行「时间 · 标题 · 地点」； · 右侧迷你月历（10 月，今天标记）+ 分布图例。整体偏移动端阅读节奏。 · 关键差异： · 相比 A（单日日脊 + 议程），C 不画时间几何，改用可无限增长的列表流； · 相比 B（一周横向课表），C 是纵向时间线，跨天连续、天然适配窄屏。 · 移动端设想：单列即可成立——下一项卡 → 事件流 → 迷你月历顺次堆叠（侧栏取消吸顶）。 · 数据说明：今天 = 2026-10-02（周五）</span>
+        <span class="links"><a href="./calendar-c.html">打开实时页</a><a href="./_sheets/calendar.html">三版对比</a></span>
+      </div>
+    </div>
+    </div>
+  </section>
+  <section class="page">
+    <h2>项目 <span style="color:#6e6e73;font-size:13px">PROJECTS</span><span class="sheetlink">· <a href="./_sheets/projects.html">三版对比页</a></span></h2>
+    <p class="note">多步结果承诺：看板 / 列表 / 网格三种组织。</p>
+    <div class="cards">
+    <div class="card">
+      <a class="shot" href="./projects-a.html" title="打开实时页面"><img src="./previews/projects-a.png" alt="projects-a" loading="lazy" /></a>
+      <div class="body">
+        <span class="tag">PROJECTS · 方案 A</span>
+        <span class="name">projects-a</span>
+        <span class="concept" data-concept="projects-a">项目 PROJECTS · 变体 A「看板」 · 概念：现状四列看板的精化——保留状态分列的心智，但把「空列」从占半屏的大虚框 · 降级为一条安静的窄列（00 · 暂无项目），版面还给进行中的承诺；卡片信息 · 重新分层（ID/区域 → 标题 → 完成定义 → 下一步 → 进度 → 脚注），让每张卡 · 都能被 3 秒读懂。 · 与 B/C 关键差异：唯一按「状态列」组织的方案；卡片纵向堆叠在各自状态列内。 · B 是单列可纵扫的列表；C 是按进度卡片的 2–3 列网格（非状态列）。 · 移动端设想：route 容器 &lt;1120px 收为 2 列、&lt;640px 收为单列；空列提示仍成立。</span>
+        <span class="links"><a href="./projects-a.html">打开实时页</a><a href="./_sheets/projects.html">三版对比</a></span>
+      </div>
+    </div>
+    <div class="card">
+      <a class="shot" href="./projects-b.html" title="打开实时页面"><img src="./previews/projects-b.png" alt="projects-b" loading="lazy" /></a>
+      <div class="body">
+        <span class="tag">PROJECTS · 方案 B</span>
+        <span class="name">projects-b</span>
+        <span class="concept" data-concept="projects-b">项目 PROJECTS · 变体 B「列表」 · 概念：纵向一览——每个项目一行（标题 + 状态胶囊 + 完成定义 + 下一步 + 内联进度 · 计 + 截止），按状态分组、组头安静收敛。目标是一屏扫完全部承诺，比较 · 各项目推进度与下一步，而不是在四列间左右找。 · 与 A/C 关键差异：唯一「单列纵扫」方案，行内信息密度最高；不按状态分列，而是 · 分组纵向排列。A 是状态看板；C 是 2–3 列卡片网格并把非活跃项目折进脚条。 · 移动端设想：route 容器收窄时行内右栏（进度/截止）下移为第二行，标题行不换行。</span>
+        <span class="links"><a href="./projects-b.html">打开实时页</a><a href="./_sheets/projects.html">三版对比</a></span>
+      </div>
+    </div>
+    <div class="card">
+      <a class="shot" href="./projects-c.html" title="打开实时页面"><img src="./previews/projects-c.png" alt="projects-c" loading="lazy" /></a>
+      <div class="body">
+        <span class="tag">PROJECTS · 方案 C</span>
+        <span class="name">projects-c</span>
+        <span class="concept" data-concept="projects-c">项目 PROJECTS · 变体 C「卡片网格」 · 概念：把项目当作「进度卡片」平铺进 2–3 列响应式网格，用 CSS 圆环（conic-gradient， · 仅 token 取色）一眼读出推进度；进行中的项目优先铺满网格，非活跃项目 · （暂停/将来/已完成）折进底部一条紧凑脚条，避免空网格与空列占地。 · 与 A/B 关键差异：唯一「卡片网格」方案，不按状态分列；进度用环 + 数字而非横条； · 非活跃状态折叠为「暂停 0 · 将来 1 · 已完成 0」计数脚条。A 是状态看板； · B 是单列纵扫列表。 · 移动端设想：route 容器 &lt;1000px 收为 2 列、&lt;640px </span>
+        <span class="links"><a href="./projects-c.html">打开实时页</a><a href="./_sheets/projects.html">三版对比</a></span>
+      </div>
+    </div>
+    </div>
+  </section>
+  <section class="page">
+    <h2>资料 <span style="color:#6e6e73;font-size:13px">LIBRARY</span><span class="sheetlink">· <a href="./_sheets/library.html">三版对比页</a></span></h2>
+    <p class="note">知识流：列表 / 卡片 / 三栏阅读。</p>
+    <div class="cards">
+    <div class="card">
+      <a class="shot" href="./library-a.html" title="打开实时页面"><img src="./previews/library-a.png" alt="library-a" loading="lazy" /></a>
+      <div class="body">
+        <span class="tag">LIBRARY · 方案 A</span>
+        <span class="name">library-a</span>
+        <span class="concept" data-concept="library-a">资料 LIBRARY · 变体 A「列表」 · 概念：现有行式清单的精化——清晰分段标签行 + 单一整合过滤条（把 笔记类型 / · 资料类型 / 状态 / 标签 四组筛选收进一条紧凑分段带）+ 笔记 / 资料两个 · 章节头；行内固定四段：类型标签 · 标题 · 蒸馏度 · 相对时间。 · 与 B/C 关键差异：唯一「单列双区连续清单」方案，一屏纵向扫读、信息密度最高； · B 是 2–3 列卡片网格（标签切页 + 极简筛选）；C 是三栏知识工作台 · （左导航带计数 / 中列表 / 右 Markdown 阅读区）。 · 移动端设想：过滤条横向可滚动不换行；行内类型标签与蒸馏、时间降为第二行</span>
+        <span class="links"><a href="./library-a.html">打开实时页</a><a href="./_sheets/library.html">三版对比</a></span>
+      </div>
+    </div>
+    <div class="card">
+      <a class="shot" href="./library-b.html" title="打开实时页面"><img src="./previews/library-b.png" alt="library-b" loading="lazy" /></a>
+      <div class="body">
+        <span class="tag">LIBRARY · 方案 B</span>
+        <span class="name">library-b</span>
+        <span class="concept" data-concept="library-b">资料 LIBRARY · 变体 B「卡片网格」 · 概念：把笔记与资料当作可平铺的文献卡——2–3 列卡片网格，每卡 = 类型胶囊 + · 标题 + 一行摘要（笔记取自正文首句；资料取自 url / 类型）+ 蒸馏点或状态 · + 相对时间；顶部用分段控件切换 全部 / 笔记 / 资料，筛选保持极简。 · 与 A/C 关键差异：唯一「网格平铺」方案，视觉节奏与浏览性优先于行密度； · A 是单列双区连续清单（信息密度最高）；C 是三栏知识工作台 · （左导航带计数 / 中列表 / 右 Markdown 阅读区）。 · 移动端设想：网格在 route 收窄时降为单列；分段控件与极简筛选行保持一行</span>
+        <span class="links"><a href="./library-b.html">打开实时页</a><a href="./_sheets/library.html">三版对比</a></span>
+      </div>
+    </div>
+    <div class="card">
+      <a class="shot" href="./library-c.html" title="打开实时页面"><img src="./previews/library-c.png" alt="library-c" loading="lazy" /></a>
+      <div class="body">
+        <span class="tag">LIBRARY · 方案 C</span>
+        <span class="name">library-c</span>
+        <span class="concept" data-concept="library-c">资料 LIBRARY · 变体 C「三栏」 · 概念：知识工作台——左栏为类型 / 状态 / 标签导航（每项带计数，可当筛选器）， · 中栏为结果列表（当前定位 n-0001），右栏为阅读区：用 .k-markdown 原样 · 渲染真实笔记正文（标题 / 列表 / 小节），下方接 .k-detail-block 反向链接 · 与引用外链。三栏并置，导航 → 扫描 → 阅读一气呵成。 · 与 A/B 关键差异：唯一「常驻导航 + 常驻阅读区」方案，三栏同屏、无抽屉； · A 是单列双区连续清单；B 是 2–3 列卡片网格平铺。 · 移动端设想：route 收窄时左导航先隐藏（降为顶部横向筛选）</span>
+        <span class="links"><a href="./library-c.html">打开实时页</a><a href="./_sheets/library.html">三版对比</a></span>
+      </div>
+    </div>
+    </div>
+  </section>
+  <section class="page">
+    <h2>回顾 <span style="color:#6e6e73;font-size:13px">REVIEW</span><span class="sheetlink">· <a href="./_sheets/review.html">三版对比页</a></span></h2>
+    <p class="note">系统的"心跳"：叙事 / 仪表盘 / 向导。</p>
+    <div class="cards">
+    <div class="card">
+      <a class="shot" href="./review-a.html" title="打开实时页面"><img src="./previews/review-a.png" alt="review-a" loading="lazy" /></a>
+      <div class="body">
+        <span class="tag">REVIEW · 方案 A</span>
+        <span class="name">review-a</span>
+        <span class="concept" data-concept="review-a">变体代号：REVIEW-A「叙事」 · 一句话概念：把回顾当周记——一条收窄到 ~760px 的阅读流，周期头 / 摘要 / 编号决策 / · 内嵌数字散文 / 图表 / 停滞清单，纵向推进，安静编辑感。 · 关键差异：A 单列阅读流（无分栏、无卡片堆叠，靠度量与分隔线组织）； · B 是双栏仪表盘（左指标+图 / 右卡片+清单）；C 是顶部步骤条向导。 · 移动端行为设想：阅读栏自然收窄至满宽，图表两列降为单列，字号随流体 token 缩小。</span>
+        <span class="links"><a href="./review-a.html">打开实时页</a><a href="./_sheets/review.html">三版对比</a></span>
+      </div>
+    </div>
+    <div class="card">
+      <a class="shot" href="./review-b.html" title="打开实时页面"><img src="./previews/review-b.png" alt="review-b" loading="lazy" /></a>
+      <div class="body">
+        <span class="tag">REVIEW · 方案 B</span>
+        <span class="name">review-b</span>
+        <span class="concept" data-concept="review-b">变体代号：REVIEW-B「仪表盘」 · 一句话概念：双栏数据密集——左栏 5 枚指标瓦片 + 本周完成柱图 + 能量分布； · 右栏周/月回顾卡（含编号决策）+ 停滞清单 + 主 CTA，一眼看全周期。 · 关键差异：B 是左右双栏仪表盘（信息密度最高、扫读最快）；A 是单列周记阅读流； · C 是顶部步骤条向导（流程感、聚焦单步）。 · 移动端行为设想：1100px 以下双栏并为单栏（左栏在上、右栏在下），指标瓦片 5→3→2 列。</span>
+        <span class="links"><a href="./review-b.html">打开实时页</a><a href="./_sheets/review.html">三版对比</a></span>
+      </div>
+    </div>
+    <div class="card">
+      <a class="shot" href="./review-c.html" title="打开实时页面"><img src="./previews/review-c.png" alt="review-c" loading="lazy" /></a>
+      <div class="body">
+        <span class="tag">REVIEW · 方案 C</span>
+        <span class="name">review-c</span>
+        <span class="concept" data-concept="review-c">变体代号：REVIEW-C「向导」 · 一句话概念：顶部 5 段步骤条（01 概览 → 05 定稿，当前停在第 02 步「清空收件箱」）， · 主体只呈现当前步的内容（收件箱水位 + 相关指标 + 本步清单），右侧常驻迷你摘要。 · 关键差异：C 是流程导向的向导（一次只做一步、步骤条领航）；A 是单列周记阅读； · B 是双栏仪表盘（一次看全）。C 信息聚焦度最高、仪式感最强。 · 移动端行为设想：步骤条由 5 列折为 2 列换行，右侧迷你摘要落到主体下方（取消 sticky）。</span>
+        <span class="links"><a href="./review-c.html">打开实时页</a><a href="./_sheets/review.html">三版对比</a></span>
+      </div>
+    </div>
+    </div>
+  </section>
+  <section class="page">
+    <h2>设置 <span style="color:#6e6e73;font-size:13px">SETTINGS</span><span class="sheetlink">· <a href="./_sheets/settings.html">三版对比页</a></span></h2>
+    <p class="note">偏好与数据服务：卡片组 / 侧导航 / 单列流。</p>
+    <div class="cards">
+    <div class="card">
+      <a class="shot" href="./settings-a.html" title="打开实时页面"><img src="./previews/settings-a.png" alt="settings-a" loading="lazy" /></a>
+      <div class="body">
+        <span class="tag">SETTINGS · 方案 A</span>
+        <span class="name">settings-a</span>
+        <span class="concept" data-concept="settings-a">变体代号：SETTINGS-A「卡片组」 · 一句话概念：现有分组卡片的精化——五张同构卡片（主题 / AI 集成 / 数据统计 / · 数据服务 / 关于）在响应式两栏「类瀑布」网格中有节奏地排布，卡片一律对齐顶端。 · 关键差异：A 是宽屏两栏卡组，可一次纵览全部设置；B 是左分类导航 + 右单区面板； · C 是单列长表单流（~760px，靠分隔线分区）。 · 移动端行为设想：900px 以下并为一栏，卡片按「主题 → AI → 数据统计 → 数据服务 → 关于」顺序堆叠。</span>
+        <span class="links"><a href="./settings-a.html">打开实时页</a><a href="./_sheets/settings.html">三版对比</a></span>
+      </div>
+    </div>
+    <div class="card">
+      <a class="shot" href="./settings-b.html" title="打开实时页面"><img src="./previews/settings-b.png" alt="settings-b" loading="lazy" /></a>
+      <div class="body">
+        <span class="tag">SETTINGS · 方案 B</span>
+        <span class="name">settings-b</span>
+        <span class="concept" data-concept="settings-b">变体代号：SETTINGS-B「侧导航」 · 一句话概念：左侧竖排分类导航（外观 / AI / 数据 / 关于，静态、外观选中）+ 右侧单区 · 内容面板；当前展示「外观」区（主题切换，暗色为当前态），下方带出「数据统计」预览。 · 关键差异：B 是设置应用式的「导航 + 单面板」结构（分类聚焦、可扩展）；A 是宽屏两栏卡组； · C 是单列长表单流。B 最像成熟设置中心。 · 移动端行为设想：900px 以下左导航变横向可滚动标签条置顶，右面板占满整宽。</span>
+        <span class="links"><a href="./settings-b.html">打开实时页</a><a href="./_sheets/settings.html">三版对比</a></span>
+      </div>
+    </div>
+    <div class="card">
+      <a class="shot" href="./settings-c.html" title="打开实时页面"><img src="./previews/settings-c.png" alt="settings-c" loading="lazy" /></a>
+      <div class="body">
+        <span class="tag">SETTINGS · 方案 C</span>
+        <span class="name">settings-c</span>
+        <span class="concept" data-concept="settings-c">变体代号：SETTINGS-C「单列流」 · 一句话概念：一条居中约 760px 的长表单流，分区自上而下（外观 / AI 集成 / 数据统计 / · 数据服务 / 关于），每区以标题 + 英文小标签开头、以细分隔线区隔，安静、可扫读。 · 关键差异：C 是单列长表单（阅读顺序唯一、最安静）；A 是宽屏两栏卡组（一次纵览）； · B 是左导航 + 右单面板（分类聚焦）。 · 移动端行为设想：760px 阅读栏在窄屏满宽，表格纵向滚动，分隔线节奏不变。</span>
+        <span class="links"><a href="./settings-c.html">打开实时页</a><a href="./_sheets/settings.html">三版对比</a></span>
+      </div>
+    </div>
+    </div>
+  </section>
+  <section class="page">
+    <h2>详情面板 <span style="color:#6e6e73;font-size:13px">DETAIL DRAWERS</span><span class="sheetlink">· <a href="./_sheets/detail.html">三版对比页</a></span></h2>
+    <p class="note">点击卡片/行展开的抽屉（任务为基准，骨架适用于事件/项目/笔记/资料）。</p>
+    <div class="cards five">
+    <div class="card">
+      <a class="shot" href="./detail-task-a.html" title="打开实时页面"><img src="./previews/detail-task-a.png" alt="detail-task-a" loading="lazy" /></a>
+      <div class="body">
+        <span class="tag">DETAIL · 方案 A</span>
+        <span class="name">detail-task-a</span>
+        <span class="concept" data-concept="detail-task-a">详情抽屉 DETAIL · 任务 · 变体 A · 代号：A「单列」 · 概念：在现有抽屉基线上精化的单列阅读流——kicker / 放大标题 / 摘要胶囊行 / · 字段清单（.k-dl）/ 标签 / 备注 / 底部行动区；用「摘要 → 字段 → 备注 → · 操作」的单一纵向动线建立层级与间距节奏。 · 与 B/C 的关键差异： · B「双栏」把主内容（说明 / 子任务）与元数据（2 列字段网格）拆成两区； · C「行动优先」把关键操作提到顶部行动带，再分「关于 / 关联 / 记录」； · A 是「先看清是什么、再读字段、最后操作」的经典单列，最接近现状、改动最小。 · 风格：完全复用真实</span>
+        <span class="links"><a href="./detail-task-a.html">打开实时页</a><a href="./_sheets/detail.html">三版对比</a></span>
+      </div>
+    </div>
+    <div class="card">
+      <a class="shot" href="./detail-task-b.html" title="打开实时页面"><img src="./previews/detail-task-b.png" alt="detail-task-b" loading="lazy" /></a>
+      <div class="body">
+        <span class="tag">DETAIL · 方案 B</span>
+        <span class="name">detail-task-b</span>
+        <span class="concept" data-concept="detail-task-b">详情抽屉 DETAIL · 任务 · 变体 B · 代号：B「双栏」 · 概念：把抽屉内容拆成两区——上区「主体」（说明 + 子任务清单，回答“要做什么”）， · 下区「元数据」（2 列紧凑字段网格 + 标签 + 项目/区域链接）置于下沉表面， · 用 2 列网格把 9 条字段压短一半；底部行动区收束。 · 与 A/C 的关键差异： · A 是单列纵向阅读流（字段与内容交错为一条线）； · C 把操作提到最顶部、再分「关于 / 关联 / 记录」； · B 用「内容区 vs 元数据区」的二分，把可读内容与可扫字段分层，字段密度最高。 · 风格：完全复用真实 token 与组件类（未新增色彩 / </span>
+        <span class="links"><a href="./detail-task-b.html">打开实时页</a><a href="./_sheets/detail.html">三版对比</a></span>
+      </div>
+    </div>
+    <div class="card">
+      <a class="shot" href="./detail-task-c.html" title="打开实时页面"><img src="./previews/detail-task-c.png" alt="detail-task-c" loading="lazy" /></a>
+      <div class="body">
+        <span class="tag">DETAIL · 方案 C</span>
+        <span class="name">detail-task-c</span>
+        <span class="concept" data-concept="detail-task-c">详情抽屉 DETAIL · 任务 · 变体 C · 代号：C「行动优先」 · 概念：把操作提到最前——顶部行动带（大号「标记完成」+「延后」「改期」两次操作）， · 其后才是阅读区：分组为「关于」（2 列字段网格）/「关联」（同项目任务 + 来源）/ · 「记录」（创建 / 更新时间），底部只留一条极简出口。 · 与 A/B 的关键差异： · A 是「先读后做」的单列流，操作在底部； · B 是「内容区 vs 元数据区」二分，重字段密度； · C 是「先做后确认」的行动导向：一眼看到主操作，细节按需下读。 · 风格：完全复用真实 token 与组件类（未新增色彩 / 字体 / 圆角 / 阴影）</span>
+        <span class="links"><a href="./detail-task-c.html">打开实时页</a><a href="./_sheets/detail.html">三版对比</a></span>
+      </div>
+    </div>
+    <div class="card">
+      <a class="shot" href="./detail-note-a.html" title="打开实时页面"><img src="./previews/detail-note-a.png" alt="detail-note-a" loading="lazy" /></a>
+      <div class="body">
+        <span class="tag">DETAIL · 方案 A</span>
+        <span class="name">detail-note-a</span>
+        <span class="concept" data-concept="detail-note-a">详情抽屉 DETAIL · 笔记 · 变体 A · 代号：A「单列」 · 概念：笔记阅读抽屉的精化单列——放大的标题 / 属性字段（类型·蒸馏·更新）/ · 标签 / 正文（.k-markdown 完整渲染真实 Markdown）/ 反向链接；用发际线分隔 · 建立「属性 → 正文 → 关联」三段阅读节奏。 · 与任务 A 同属「单列」方向，骨架一致而内容域不同：任务偏字段+操作，笔记偏正文阅读。 · 与任务 B/C 的差异：B 分内容/元数据两区，C 行动优先；笔记 A 保持纯阅读动线。 · 风格：完全复用真实 token 与组件类（未新增色彩 / 字体 / 圆角 / 阴影）。 · 内容：n</span>
+        <span class="links"><a href="./detail-note-a.html">打开实时页</a><a href="./_sheets/detail.html">三版对比</a></span>
+      </div>
+    </div>
+    <div class="card">
+      <a class="shot" href="./detail-event-a.html" title="打开实时页面"><img src="./previews/detail-event-a.png" alt="detail-event-a" loading="lazy" /></a>
+      <div class="body">
+        <span class="tag">DETAIL · 方案 A</span>
+        <span class="name">detail-event-a</span>
+        <span class="concept" data-concept="detail-event-a">详情抽屉 DETAIL · 日程 · 变体 A · 代号：A「单列」 · 概念：日程条目的单列详情——kicker / 放大标题 / 字段清单（时间·日期·全天·地点 · 状态·区域·项目）/ 标签；无底部操作（事件只读，故 footer-less）。 · 与任务 A 同属「单列」方向，骨架一致；差异在字段域与「无操作」的克制收尾。 · 与任务 B/C 的差异：B 分内容/元数据两区，C 行动优先；事件 A 保持纯信息读取。 · 风格：完全复用真实 token 与组件类（未新增色彩 / 字体 / 圆角 / 阴影）。 · 内容：e-0003 取自 data/events（无 projectId，</span>
+        <span class="links"><a href="./detail-event-a.html">打开实时页</a><a href="./_sheets/detail.html">三版对比</a></span>
+      </div>
+    </div>
+    </div>
+  </section>
+  <section class="page">
+    <h2>图表组件（监控） <span style="color:#6e6e73;font-size:13px">CHART KIT</span><span class="sheetlink">· <a href="./_sheets/charts.html">三版对比页</a></span></h2>
+    <p class="note">监控图表词汇表：完成趋势 / 到期负载 / 能量分布 / 连续打卡 / 水位 / WIP / 项目推进。</p>
+    <div class="cards">
+    <div class="card">
+      <a class="shot" href="./charts-kit.html" title="打开实时页面"><img src="./previews/charts-kit.png" alt="charts-kit" loading="lazy" /></a>
+      <div class="body">
+        <span class="tag">CHARTS · 方案 T</span>
+        <span class="name">charts-kit</span>
+        <span class="concept" data-concept="charts-kit">组件样本页 · charts-kit.html「图表组件 CHART KIT」 · 概念：把总览第二轮用到的 7 个监控图表各做成一个可复用模块，每个模块标注 名称 / 建议类名 / 数据来源 / 使用场景， · 本页同时作为落地实现说明与所有者评审依据。 · 与总览三版的关系：overview-a 平铺复用其中 7 图；overview-b 以完成趋势为主图；overview-c 用其迷你形态做信号行——本页是它们的公共词汇表。 · 图表纪律：统一解剖（标题 + 期间标签 → 图形区 → 基线 / 阈值 → 脚注口径）；单一墨色阶 + 图案表达数据，强调色仅作阈值 / 超限 / 峰值信号。 </span>
+        <span class="links"><a href="./charts-kit.html">打开实时页</a><a href="./_sheets/charts.html">三版对比</a></span>
+      </div>
+    </div>
+    </div>
+  </section>
+
+  <footer>KERNEL 设计稿 v2 · 生成于 2026-10-02 12:54 · 风格 token 与线上应用完全一致</footer>
+</div>
+</body>
+</html>
