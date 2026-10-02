@@ -12,9 +12,15 @@ import {
 } from '@/components/EntityEditForm'
 import { useToast } from '@/context/ToastContext'
 import { getAreas, getSnapshot, getTags, getTaskById } from '@/lib/data'
-import { isTaskDone, restoreEntity, trashEntity, updateEntity } from '@/lib/mutations'
+import { isTaskDone, restoreEntity, trashEntity, undoPatchOf, updateEntity } from '@/lib/mutations'
 import { errorText } from '@/lib/api'
-import { ENERGY_LABEL, TASK_STATUS_LABEL } from '@/lib/format'
+import {
+  ENERGY_LABEL,
+  ENERGY_OPTIONS,
+  IMPORTANCE_OPTIONS,
+  importanceLabel,
+  TASK_STATUS_LABEL,
+} from '@/lib/format'
 import { useDataRevision, useUndoableToggle } from '@/lib/hooks'
 import type { Task } from '@/types'
 
@@ -98,7 +104,7 @@ export function TaskDetailModal({ taskId, onClose, onToggled }: TaskDetailModalP
       key: 'energy',
       label: '能量',
       type: 'select',
-      options: (['low', 'medium', 'high'] as const).map((value) => ({
+      options: ENERGY_OPTIONS.map((value) => ({
         value,
         label: ENERGY_LABEL[value],
       })),
@@ -108,7 +114,7 @@ export function TaskDetailModal({ taskId, onClose, onToggled }: TaskDetailModalP
       label: '重要性',
       type: 'select',
       numeric: true,
-      options: [0, 1, 2, 3].map((n) => ({ value: String(n), label: `${n} / 3` })),
+      options: IMPORTANCE_OPTIONS.map((n) => ({ value: String(n), label: importanceLabel(n) })),
     },
     {
       key: 'contexts',
@@ -155,12 +161,24 @@ export function TaskDetailModal({ taskId, onClose, onToggled }: TaskDetailModalP
 
   const handleSave = (patch: Record<string, unknown>): void => {
     if (task === undefined) return
+    const id = task.id
+    // Slice Y · F36：保存前快照被改字段的原值，toast「撤销」回写即往返还原
+    const undo = undoPatchOf(task as unknown as Record<string, unknown>, patch)
     setSaving(true)
     void (async () => {
       try {
-        await updateEntity('tasks', task.id, patch)
+        await updateEntity('tasks', id, patch)
         setEditing(false)
-        toast('已保存')
+        toast('已保存', {
+          action: {
+            label: '撤销',
+            onClick: () => {
+              void updateEntity('tasks', id, undo).catch((err) => {
+                toast(`撤销失败：${errorText(err)}`, { tone: 'error' })
+              })
+            },
+          },
+        })
       } catch (err) {
         toast(`保存失败：${errorText(err)}`, { tone: 'error' })
       } finally {

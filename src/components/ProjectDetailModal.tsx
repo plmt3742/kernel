@@ -9,7 +9,7 @@ import { TaskDraftModal } from '@/components/TaskDraftModal'
 import { EntityEditForm, type EditFieldSpec } from '@/components/EntityEditForm'
 import { useToast } from '@/context/ToastContext'
 import { getAreas, getProjectById, getSnapshot } from '@/lib/data'
-import { restoreEntity, trashEntity, updateEntity } from '@/lib/mutations'
+import { restoreEntity, trashEntity, undoPatchOf, updateEntity } from '@/lib/mutations'
 import { errorText } from '@/lib/api'
 import { PROJECT_STATUS_LABEL } from '@/lib/format'
 import { useDataRevision, useUndoableToggle } from '@/lib/hooks'
@@ -101,12 +101,24 @@ export function ProjectDetailModal({ projectId, onClose }: ProjectDetailModalPro
 
   const handleSave = (patch: Record<string, unknown>): void => {
     if (project === undefined) return
+    const id = project.id
+    // Slice Y · F36：保存前快照被改字段原值，toast「撤销」回写即往返还原
+    const undo = undoPatchOf(project as unknown as Record<string, unknown>, patch)
     setSaving(true)
     void (async () => {
       try {
-        await updateEntity('projects', project.id, patch)
+        await updateEntity('projects', id, patch)
         setEditing(false)
-        toast('已保存')
+        toast('已保存', {
+          action: {
+            label: '撤销',
+            onClick: () => {
+              void updateEntity('projects', id, undo).catch((err) => {
+                toast(`撤销失败：${errorText(err)}`, { tone: 'error' })
+              })
+            },
+          },
+        })
       } catch (err) {
         toast(`保存失败：${errorText(err)}`, { tone: 'error' })
       } finally {

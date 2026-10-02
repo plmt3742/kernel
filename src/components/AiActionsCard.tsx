@@ -3,13 +3,14 @@
 //   · 每行可勾选（纳入 / 排除）+ 可逐条编辑该 kind 真正会落盘的字段（ACTION_FIELD_MATRIX）；
 //   · 「全部应用（N 项）」→ 一次写入（先建项目、再落实体、自动挂接）；「重新解析」/「忽略」保留。
 // 纪律：确认前绝不落盘；本组件只产出 onApply(actions)，由 Inbox 调 applyInbox。
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Sparkles } from 'lucide-react'
 import { Checkbox } from '@/components/Checkbox'
 import { TagPill } from '@/components/TagPill'
 import { AiSuggestionForm } from '@/components/AiSuggestionForm'
 import { getAreaById, getProjectById } from '@/lib/data'
 import { ACTION_FIELD_MATRIX, actionToForm, formToAction, type AiSuggestionFormValues } from '@/lib/aiForm'
+import { getActionEditCache, setActionEditCache } from '@/lib/inboxAi'
 import { tagLabel } from '@/lib/format'
 import type { AiAction, AiActionKind } from '@/lib/mutations'
 
@@ -27,6 +28,8 @@ interface AiActionsCardProps {
   onRetry: () => void
   retryDisabled: boolean
   onClear: () => void
+  /** 来源条目 id（Slice Y · F32）：用于在重新解析（卸载重建）间恢复用户编辑 */
+  itemId?: string
 }
 
 export function AiActionsCard({
@@ -35,22 +38,89 @@ export function AiActionsCard({
   onRetry,
   retryDisabled,
   onClear,
+  itemId,
 }: AiActionsCardProps): ReactNode {
   const [included, setIncluded] = useState<boolean[]>(() => actions.map(() => true))
-  const [values, setValues] = useState<AiSuggestionFormValues[]>(() => actions.map(actionToForm))
+  // Slice Y · F32：重新解析会把活跃相位切到 parsing（本组件卸载重建）。
+  // 从模块级 actionEditCache 按 itemId 恢复用户值 / 已改字段（kind 对齐才复用）。
+  const cachedEntry = itemId !== undefined ? getActionEditCache(itemId) : undefined
+  const cacheCompatible =
+    cachedEntry !== undefined &&
+    cachedEntry.kinds.length === actions.length &&
+    cachedEntry.kinds.every((kind, index) => kind === actions[index].kind)
+  const [values, setValues] = useState<AiSuggestionFormValues[]>(() =>
+    cacheCompatible && cachedEntry !== undefined ? cachedEntry.values : actions.map(actionToForm),
+  )
   const [editing, setEditing] = useState<number | null>(null)
 
-  // 建议变化（重新解析 / 缓存切换）→ 重置勾选与编辑态
+  const touchedRef = useRef<Set<string>[]>(
+    cacheCompatible && cachedEntry !== undefined
+      ? cachedEntry.touched
+      : actions.map(() => new Set<string>()),
+  )
+  const prevValuesRef = useRef<AiSuggestionFormValues[]>(values)
+  const prevKindsRef = useRef<AiActionKind[]>(actions.map((a) => a.kind))
+
+  const persistEdits = (
+    nextValues: AiSuggestionFormValues[],
+    nextTouched: Set<string>[],
+    kinds: AiActionKind[],
+  ): void => {
+    if (itemId === undefined) return
+    setActionEditCache(itemId, { kinds, values: nextValues, touched: nextTouched })
+  }
+
+  // 建议变化（重新解析 / 缓存切换）→ 重置勾选与编辑态；已手改字段按 kind 对齐保留
   useEffect(() => {
+    const prevValues = prevValuesRef.current
+    const prevKinds = prevKindsRef.current
+    const prevTouched = touchedRef.current
+    const kinds = actions.map((action) => action.kind)
+    const nextTouched = actions.map((action, index) =>
+      prevKinds[index] === action.kind ? (prevTouched[index] ?? new Set<string>()) : new Set<string>(),
+    )
+    const merged = actions.map((action, index) => {
+      const base = actionToForm(action)
+      const touched = nextTouched[index]
+      const prev = prevValues[index]
+      if (
+        prevKinds[index] !== action.kind ||
+        touched === undefined ||
+        touched.size === 0 ||
+        prev === undefined
+      ) {
+        return base
+      }
+      const out: AiSuggestionFormValues = { ...base }
+      for (const key of touched) {
+        const typedKey = key as keyof AiSuggestionFormValues
+        out[typedKey] = prev[typedKey]
+      }
+      return out
+    })
+    touchedRef.current = nextTouched
+    prevValuesRef.current = merged
+    prevKindsRef.current = kinds
+    persistEdits(merged, nextTouched, kinds)
     setIncluded(actions.map(() => true))
-    setValues(actions.map(actionToForm))
+    setValues(merged)
     setEditing(null)
+    // 仅在 actions 引用变化时重建；用户编辑经 patchValues 同步进 refs
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [actions])
 
   const includedCount = included.filter(Boolean).length
 
   const patchValues = (index: number, patch: Partial<AiSuggestionFormValues>): void => {
-    setValues((prev) => prev.map((entry, i) => (i === index ? { ...entry, ...patch } : entry)))
+    const set = touchedRef.current[index] ?? new Set<string>()
+    for (const key of Object.keys(patch)) set.add(key)
+    touchedRef.current[index] = set
+    setValues((prev) => {
+      const next = prev.map((entry, i) => (i === index ? { ...entry, ...patch } : entry))
+      prevValuesRef.current = next
+      persistEdits(next, touchedRef.current, prevKindsRef.current)
+      return next
+    })
   }
 
   const toggleInclude = (index: number): void => {
@@ -114,7 +184,8 @@ export function AiActionsCard({
                 />
                 <span className={`k-pill ic-action__kind is-${action.kind}`}>{KIND_LABEL[action.kind]}</span>
                 <span className="ic-action__title">
-                  {isEditing ? form.title.trim() || '（未命名）' : action.title}
+                  {/* F32：显示当前表单值（= 用户已改标题或解析标题），使重新解析后的保留可见 */}
+                  {form.title.trim() || action.title}
                 </span>
                 <button
                   type="button"

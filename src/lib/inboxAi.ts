@@ -5,7 +5,8 @@
 //   跨路由切换存活；完成条目以「AI 建议就绪」标记可见，无需再次点击。
 import { errorText } from '@/lib/api'
 import { getInbox } from '@/lib/data'
-import { aiParseInboxStream, type AiParseResult } from '@/lib/mutations'
+import { aiParseInboxStream, type AiActionKind, type AiParseResult } from '@/lib/mutations'
+import type { AiSuggestionFormValues } from '@/lib/aiForm'
 import type { InboxItem } from '@/types'
 
 /** 解析过程阶段（由 SSE 事件驱动；文案安静、不夸大） */
@@ -99,6 +100,29 @@ export function getCachedSuggestion(id: string): AiParseResult | undefined {
   return suggestionCache.get(id)
 }
 
+/* ---------------------------------------------------------------------------
+ * 一揽子处置卡的「用户编辑」缓存（Slice Y · F32）
+ * 背景：重新解析会把活跃相位切到 parsing（result 置 null），AiActionsCard 被卸载重建，
+ *   组件内 touchedRef/values 随之丢失。此处把「用户已手改的字段」提升到模块级，
+ *   组件按 itemId 在挂载时恢复 → 重新解析后用户编辑不丢（kind 对齐才复用）。
+ * 对账：条目离开未澄清列表（应用 / 撤销 / 水合）即清除；忽略（清空面板）亦清除。
+ * ------------------------------------------------------------------------- */
+export interface ActionEditCacheEntry {
+  kinds: AiActionKind[]
+  values: AiSuggestionFormValues[]
+  touched: Set<string>[]
+}
+
+const actionEditCache = new Map<string, ActionEditCacheEntry>()
+
+export function getActionEditCache(id: string): ActionEditCacheEntry | undefined {
+  return actionEditCache.get(id)
+}
+
+export function setActionEditCache(id: string, entry: ActionEditCacheEntry): void {
+  actionEditCache.set(id, entry)
+}
+
 function bumpCacheVersion(): void {
   setState({ cacheVersion: snapshot.cacheVersion + 1 })
 }
@@ -111,6 +135,9 @@ export function reconcileInboxAiCache(validIds: ReadonlySet<string>): void {
       suggestionCache.delete(id)
       changed = true
     }
+  }
+  for (const id of [...actionEditCache.keys()]) {
+    if (!validIds.has(id)) actionEditCache.delete(id)
   }
   if (changed) bumpCacheVersion()
 }
@@ -271,6 +298,7 @@ export async function startBatchAi(ids: readonly string[]): Promise<void> {
 export function clearInboxAiActive(): void {
   activeToken += 1
   resetDeltas()
+  if (snapshot.activeId !== null) actionEditCache.delete(snapshot.activeId)
   setState({
     activeId: null,
     phase: 'idle',

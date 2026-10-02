@@ -31,7 +31,8 @@ import {
 import type { Project, Review, ReviewMetrics, ReviewType } from '@/types'
 
 // 指标瓦片定义：数值取自 report.metrics；accent 仅用于「逾期」信号。
-// `migrated` 当前生成流程不产出，缺省时显示 '—'。
+// 「迁移」瓦片已移除（Slice Y · F12，见 ADR-0021）：生成流程不产出 `migrated`，
+// 瓦片长期恒显示 '—'；数据字段 `ReviewMetrics.migrated` 保留以兼容旧归档，但不再在 UI 呈现。
 const METRIC_LABELS: Array<{
   key: keyof ReviewMetrics
   label: string
@@ -42,7 +43,6 @@ const METRIC_LABELS: Array<{
   { key: 'created', label: '新增', foot: '转任务 / 项目' },
   { key: 'completed', label: '完成', foot: '本期闭环' },
   { key: 'overdue', label: '逾期', foot: '需前置处理', accent: true },
-  { key: 'migrated', label: '迁移', foot: '改期 / 重决策' },
 ]
 
 /** 停滞处置建议 → 中文动作 */
@@ -347,6 +347,30 @@ export function Review() {
     })()
   }
 
+  // 重启（Slice Y · F17）：AI 建议 reactivate → status active（与归档对称）
+  const reactivateProject = (project: Project): void => {
+    void (async () => {
+      try {
+        await updateEntity('projects', project.id, { status: 'active' })
+        toast('已重启：继续推进')
+      } catch (err) {
+        toast(`重启失败：${errorText(err)}`, { tone: 'error' })
+      }
+    })()
+  }
+
+  // 报告弹窗内「按建议处理」（Slice Y · F17）：把只读的停滞建议行接到与下方停滞栏相同的动作。
+  const applyStaleAdvice = (advice: StaleAdvice): void => {
+    const project = getProjectById(advice.projectId)
+    if (project === undefined) {
+      toast('项目不存在或已被删除', { tone: 'error' })
+      return
+    }
+    if (advice.action === 'archive') archiveProject(project)
+    else if (advice.action === 'reactivate') reactivateProject(project)
+    else migrateProject(project)
+  }
+
   /* ------------------------------- 卡片 ------------------------------- */
 
   const renderCycle = (kind: ReviewType): ReactNode => {
@@ -597,6 +621,17 @@ export function Review() {
                       <span>{getProjectById(advice.projectId)?.title ?? advice.projectId}</span>
                       <span className="k-muted">建议{ADVICE_ACTION_LABEL[advice.action]}</span>
                       {advice.reason !== '' && <span className="k-muted">{advice.reason}</span>}
+                      <span className="k-view__actions">
+                        <button
+                          type="button"
+                          className="k-btn k-btn--sm"
+                          onClick={() => applyStaleAdvice(advice)}
+                          disabled={getProjectById(advice.projectId) === undefined}
+                          title="按 AI 建议处理该项目"
+                        >
+                          {ADVICE_ACTION_LABEL[advice.action]}
+                        </button>
+                      </span>
                     </div>
                   ))}
                 </div>

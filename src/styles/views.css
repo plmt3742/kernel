@@ -111,6 +111,38 @@
 .r3c-w40 {
   margin-top: var(--space-4);
 }
+/* 监视柱可点项（Slice Y · F13/F14）：整块按钮化，安静无边框，hover 仅微亮 */
+button.r3c-block--link {
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: var(--space-4) 0;
+  cursor: pointer;
+}
+button.r3c-block--link:first-child {
+  padding-top: 0;
+}
+button.r3c-block--link:hover {
+  opacity: 0.85;
+}
+/* 回顾行（W40）：安静通栏按钮（Slice Y · F14） */
+button.r3c-w40 {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+button.r3c-w40:hover {
+  opacity: 0.85;
+}
 
 /* 窄容器：监视柱落回单列、项目条降列 */
 @container route (max-width: 980px) {

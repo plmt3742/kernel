@@ -174,7 +174,7 @@ export function Overview() {
   const w40 =
     weeklyReview === undefined
       ? undefined
-      : `${weeklyReview.periodKey.replace(/^\d{4}-/, '')} 回顾 · 捕捉 ${weeklyReview.metrics.captured} · 新增 ${weeklyReview.metrics.created} · 完成 ${weeklyReview.metrics.completed} · 逾期 ${weeklyReview.metrics.overdue} · 迁移 ${weeklyReview.metrics.migrated}`
+      : `${weeklyReview.periodKey.replace(/^\d{4}-/, '')} 回顾 · 捕捉 ${weeklyReview.metrics.captured} · 新增 ${weeklyReview.metrics.created} · 完成 ${weeklyReview.metrics.completed} · 逾期 ${weeklyReview.metrics.overdue} · 迁移 ${weeklyReview.metrics.migrated ?? '—'}`
 
   return (
     <div className="k-view">
@@ -280,7 +280,12 @@ export function Overview() {
         {/* 右 1/3：监视柱（粘性；窄容器落回单列） */}
         <Panel title="监视" en="MONITOR" className="r3c-rail">
           <div className="r3c-mon">
-            <div className="r3c-block">
+            <button
+              type="button"
+              className="r3c-block r3c-block--link"
+              onClick={() => navigate('/inbox', { viewTransition: true })}
+              aria-label="查看收件箱"
+            >
               <div className="r3c-head">
                 <span className="r3c-head__t">收件箱水位</span>
                 <span className="r3c-head__v k-mono">
@@ -294,9 +299,14 @@ export function Overview() {
                 ariaLabel="收件箱水位"
                 foot={inboxFoot}
               />
-            </div>
+            </button>
 
-            <div className="r3c-block">
+            <button
+              type="button"
+              className="r3c-block r3c-block--link"
+              onClick={() => navigate('/tasks', { viewTransition: true })}
+              aria-label="查看任务"
+            >
               <div className="r3c-head">
                 <span className="r3c-head__t">WIP · 进行中</span>
                 <span className={clsx('r3c-head__v', 'k-mono', wipOver && 'is-accent')}>
@@ -310,7 +320,7 @@ export function Overview() {
                 ariaLabel="在制品数量"
                 foot={wipFoot}
               />
-            </div>
+            </button>
 
             <div className="r3c-block">
               <div className="r3c-head">
@@ -409,7 +419,16 @@ export function Overview() {
                 )
               })}
             </div>
-            {w40 !== undefined && <p className="u-label k-muted r3c-w40">{w40}</p>}
+            {w40 !== undefined && (
+              <button
+                type="button"
+                className="u-label k-muted r3c-w40"
+                onClick={() => navigate('/review', { viewTransition: true })}
+                aria-label="查看回顾"
+              >
+                {w40}
+              </button>
+            )}
           </>
         ) : (
           <EmptyState title="暂无进行中项目" hint="所有项目都在暂停或已完成状态。" />

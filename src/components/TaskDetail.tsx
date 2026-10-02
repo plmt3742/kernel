@@ -57,6 +57,15 @@ export function TaskDetail({ task, onOpenTask }: TaskDetailProps) {
             ? `${formatDateTime(task.dueAt)} · ${humanizeDay(task.dueAt)}`
             : '—'}
         </dd>
+        {/* 推迟至（Slice Y · F18）：仅设置时显示；编辑仍在编辑表单内 */}
+        {task.deferUntil !== undefined && (
+          <>
+            <dt>推迟至</dt>
+            <dd>
+              {`${formatDateTime(task.deferUntil)} · ${humanizeDay(task.deferUntil)}`}
+            </dd>
+          </>
+        )}
         <dt>预估</dt>
         <dd>{task.estimateMin !== undefined ? `${task.estimateMin} 分钟` : '—'}</dd>
         <dt>创建</dt>
