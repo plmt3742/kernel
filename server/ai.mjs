@@ -4,8 +4,10 @@
 // 依据：.qa/v13/probe4/5 实证——variant:'low' 下 deepseek-flash 约 4~5s 返回干净 JSON；
 //       format:json_schema 在 thinking 模式报 tool_choice 错误，故采用「指令式 JSON + Zod + 一次重试」。
 import { createOpencodeClient } from '@opencode-ai/sdk/v2'
-import { aiSuggestionSchema, reviewDraftSchema } from './schemas.mjs'
-import { readActivity, readSnapshot } from './store.mjs'
+import { promises as fs } from 'node:fs'
+import path from 'node:path'
+import { aiSuggestionSchema, reviewDraftSchema, taskDraftSchema } from './schemas.mjs'
+import { DATA_DIR, readActivity, readSnapshot } from './store.mjs'
 
 const OPENCODE_URL = process.env.KERNEL_OPENCODE_URL ?? 'http://127.0.0.1:4096'
 const SERVER_PASSWORD = process.env.OPENCODE_SERVER_PASSWORD ?? ''
@@ -114,6 +116,42 @@ function buildDigest(snapshot) {
   return out.trim()
 }
 
+/** 可提取文本摘录的扩展名白名单（文件投递 · Slice D） */
+const TEXT_EXTS = new Set([
+  '.txt', '.md', '.markdown', '.csv', '.json', '.log', '.yml', '.yaml', '.toml', '.ini',
+  '.js', '.mjs', '.ts', '.tsx', '.jsx', '.py', '.java', '.c', '.cpp', '.h', '.hpp',
+  '.css', '.html', '.xml', '.sql', '.sh', '.bat', '.ps1',
+])
+/** 摘录上限：≤5MB 且扩展名/mime 判定为文本时，读前 8000 字（else 仅给元数据） */
+const FILE_EXCERPT_MAX_BYTES = 5 * 1024 * 1024
+const FILE_EXCERPT_CHARS = 8000
+const FILE_UNREADABLE_HINT = '——无法直接读取内容，请依据文件名与上下文判断'
+
+/**
+ * 构造附件段落（供收件箱解析的同步 / 流式两条路径复用）。
+ * 无附件返回 ''；文本类且 ≤5MB 时附前 8000 字摘录；否则仅给元数据。
+ * @param {{ id: string, file?: { name: string, size: number, mime?: string } }} item
+ * @returns {Promise<string>}
+ */
+export async function buildFileSection(item) {
+  const file = item?.file
+  if (file === undefined || file === null) return ''
+  const mime = file.mime ?? '未知类型'
+  const meta = `${file.name}（${mime}｜${file.size} 字节）`
+  const ext = path.extname(file.name).toLowerCase()
+  const isText =
+    TEXT_EXTS.has(ext) || (typeof file.mime === 'string' && file.mime.startsWith('text/'))
+  if (!isText || file.size > FILE_EXCERPT_MAX_BYTES) {
+    return `【附件】${meta}${FILE_UNREADABLE_HINT}`
+  }
+  try {
+    const raw = await fs.readFile(path.join(DATA_DIR, 'files', `${item.id}-${file.name}`), 'utf8')
+    return `【附件】${meta}\n内容摘录（前 ${FILE_EXCERPT_CHARS} 字）：\n${raw.slice(0, FILE_EXCERPT_CHARS)}`
+  } catch {
+    return `【附件】${meta}${FILE_UNREADABLE_HINT}`
+  }
+}
+
 /** 构造系统提示词（注入当前本地时间 + 系统现状摘要 + 关联建议字段规则） */
 function buildSystem(digest) {
   const d = new Date()
@@ -128,16 +166,21 @@ function buildSystem(digest) {
 - importance: 1 | 2 | 3（整数）
 - estimateMin: 预计所需分钟数（整数，最少 1 分钟）
 - dueAt: ISO8601 带时区或 null。现在是 ${stamp}
-- projectId: 字符串或 null。仅当内容明确属于下方某个项目时，填该项目 id；否则 null
+- projectId: 字符串或 null。仅当内容有明确依据属于下方某个项目时，填该项目 id；否则 null
 - areaId: 字符串或 null。仅当内容明确属于下方某个区域时，填该区域 id；否则 null
 - tags: 字符串数组，只能从下方标签名中选，最多 3 个（无把握则空数组）
 - duplicateOf: 字符串或 null。仅当与下方某个未完成任务高度可能重复时，填该任务 id；否则 null
+- newProjectHint: 字符串或 null（不超过 40 字）。当内容像一件需要多步推进的新事务（如一个新比赛 / 新活动 / 新项目）且不属于任何现有项目时，给出建议项目名（例：「辩论赛筹备」）；否则 null
 - reason: 一句话说明判断理由
 
 【系统现状摘要】
 ${digest}
 
-规则：projectId / areaId / tags / duplicateOf 只能取摘要中列出的 id 或标签名；拿不准一律填 null（tags 可为空数组）。`
+规则：
+1. 挂靠宁缺毋滥：projectId / areaId / tags / duplicateOf 只能取摘要中列出的 id 或标签名，且必须有明确依据；表面相似（例如都含「竞赛 / 比赛 / 规则」字样）不算依据；拿不准一律填 null（tags 可为空数组）。
+2. 附件不可读时更保守：当【附件】无法直接读取（只有文件名 / 元数据）时，除非文件名直接指向某现有项目（名称 / 主题强匹配），否则 projectId 一律 null，并在 reason 中注明「仅基于文件名判断」。
+3. newProjectHint 与 projectId 互斥：要么挂现有项目（填 projectId、newProjectHint 为 null），要么提示新建（填 newProjectHint、projectId 为 null），要么都不填；绝不能既挂现有项目又提示新建。
+4. 若条目带【附件】，基于附件内容与文件名判断 target 与 title（读取失败则只凭文件名推断）。`
 }
 
 /** 从模型响应中抽取纯文本（多段拼接） */
@@ -158,11 +201,11 @@ function describeError(err) {
   return err?.message ?? String(err)
 }
 
-/** 丢弃模型显式给出的 null 关联字段（dueAt / projectId / areaId / duplicateOf），保持输出干净 */
+/** 丢弃模型显式给出的 null 关联字段（dueAt / projectId / areaId / duplicateOf / newProjectHint），保持输出干净 */
 function normalizeSuggestion(suggestion) {
   const out = { ...suggestion }
   if (out.dueAt === null || out.dueAt === undefined) delete out.dueAt
-  for (const key of ['projectId', 'areaId', 'duplicateOf']) {
+  for (const key of ['projectId', 'areaId', 'duplicateOf', 'newProjectHint']) {
     if (out[key] === null) delete out[key]
   }
   return out
@@ -171,10 +214,13 @@ function normalizeSuggestion(suggestion) {
 /**
  * 关联字段按快照后校验：未知 id / 标签一律丢弃（模型可能臆造）
  * projectId 必须在 projects；areaId 必须在 areas；duplicateOf 必须在 tasks；tags 必须在注册表。
+ * newProjectHint（Slice E2.5）：trim + 截断 40 字 + 丢弃空串；与 projectId 互斥；
+ * 与现有项目标题完全相同者丢弃（那是在重复已有项目）。
  */
 function postValidate(suggestion, snapshot) {
   const out = { ...suggestion }
-  const projectIds = new Set((snapshot.projects ?? []).map((p) => p.id))
+  const projects = snapshot.projects ?? []
+  const projectIds = new Set(projects.map((p) => p.id))
   const areaIds = new Set((snapshot.areas ?? []).map((a) => a.id))
   const taskIds = new Set((snapshot.tasks ?? []).map((t) => t.id))
   const tagNames = new Set((snapshot.tags ?? []).map((t) => t.name))
@@ -182,6 +228,19 @@ function postValidate(suggestion, snapshot) {
   if (out.areaId !== undefined && !areaIds.has(out.areaId)) delete out.areaId
   if (out.duplicateOf !== undefined && !taskIds.has(out.duplicateOf)) delete out.duplicateOf
   if (Array.isArray(out.tags)) out.tags = out.tags.filter((name) => tagNames.has(name))
+
+  if (typeof out.newProjectHint === 'string') {
+    const hint = Array.from(out.newProjectHint.trim()).slice(0, 40).join('')
+    if (hint === '') delete out.newProjectHint
+    else out.newProjectHint = hint
+  }
+  if (out.newProjectHint !== undefined) {
+    const projectTitles = new Set(projects.map((p) => p.title))
+    // 互斥：已挂现有项目 → 丢弃提示；提示恰为现有项目标题 → 丢弃提示
+    if (out.projectId !== undefined || projectTitles.has(out.newProjectHint)) {
+      delete out.newProjectHint
+    }
+  }
   return out
 }
 
@@ -219,9 +278,9 @@ function promptOnce(sessionID, system, text) {
   ).then(pick)
 }
 
-/** 创建解析会话并返回 sessionID */
-async function createSession() {
-  const created = pick(await getClient().session.create({ title: 'kernel:inbox-parse' }))
+/** 创建解析会话并返回 sessionID（title 仅用于 opencode 会话列表展示） */
+async function createSession(title = 'kernel:inbox-parse') {
+  const created = pick(await getClient().session.create({ title }))
   const sessionID = created?.id
   if (typeof sessionID !== 'string' || sessionID === '') {
     throw new Error('无法创建 opencode 会话')
@@ -241,8 +300,8 @@ function modelOf(res) {
  * 单会话内「prompt → 解析 → 一次重试」；失败抛错。
  * emit 存在时在重试前发出 { kind:'retry', reason }（流式路径用）。
  */
-async function promptWithRetry(sessionID, system, item, emit) {
-  let res = await promptOnce(sessionID, system, item.content)
+async function promptWithRetry(sessionID, system, userText, emit) {
+  let res = await promptOnce(sessionID, system, userText)
   let parsed = tryParseSuggestion(res)
   if (!parsed.ok) {
     if (emit) emit({ kind: 'retry', reason: parsed.reason })
@@ -268,7 +327,9 @@ export async function parseInboxItem(item) {
   const snapshot = await loadSnapshot()
   const system = buildSystem(buildDigest(snapshot))
   const sessionID = await createSession()
-  const { res, suggestion } = await promptWithRetry(sessionID, system, item, null)
+  const fileSection = await buildFileSection(item)
+  const userText = fileSection === '' ? item.content : `${item.content}\n\n${fileSection}`
+  const { res, suggestion } = await promptWithRetry(sessionID, system, userText, null)
   const clean = postValidate(suggestion, snapshot)
   const model = modelOf(res)
   const ms = Date.now() - t0
@@ -333,7 +394,9 @@ export async function parseInboxItemStream(item, emit) {
     const snapshot = await loadSnapshot()
     const system = buildSystem(buildDigest(snapshot))
     sessionID = await createSession()
-    const { res, suggestion } = await promptWithRetry(sessionID, system, item, safeEmit)
+    const fileSection = await buildFileSection(item)
+    const userText = fileSection === '' ? item.content : `${item.content}\n\n${fileSection}`
+    const { res, suggestion } = await promptWithRetry(sessionID, system, userText, safeEmit)
     const clean = postValidate(suggestion, snapshot)
     const model = modelOf(res)
     const ms = Date.now() - t0
@@ -354,6 +417,237 @@ export async function parseInboxItemStream(item, emit) {
 }
 
 /* ---------------------------------------------------------------------------
+ * AI 对话（v0.5 · Slice G）：读系统现状回答用户问题
+ * 纪律：无状态——客户端每次携带有界历史；服务端拼装「现状摘要」注入系统提示。
+ *       自然语言输出（不解析 JSON）；120s 超时 + 单次重试；失败抛错（路由转 502）。
+ * ------------------------------------------------------------------------- */
+
+/** 对话历史硬上限：最近 20 条 / 单条 4000 字 / 合计 16000 字（服务端边界由路由裁剪） */
+export const CHAT_MAX_MESSAGES = 20
+export const CHAT_MAX_CHARS = 4000
+export const CHAT_TOTAL_CHARS = 16000
+
+/** 当前时刻（本机时区，中文可读；对话摘要用） */
+function nowStamp() {
+  const d = new Date()
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${WEEKDAYS[d.getDay()]} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+/**
+ * 构造「问答用」现状摘要：突出「今天最紧急」所需事实。
+ * 含：现在时刻 / 逾期任务 / 今日到期 / 未来 7 天日程 / 收件箱积压 / 进行中项目 / 高优先下一步。
+ * 仅取事实，禁止模型据此编造；摘要外的信息模型须如实回答「数据里没有」。
+ */
+export function buildChatDigest(snapshot, now = new Date()) {
+  const pad = (n) => String(n).padStart(2, '0')
+  const dayKey = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+  const today = dayKey(now)
+  const dueMs = (t) => (typeof t.dueAt === 'string' ? new Date(t.dueAt).getTime() : null)
+  const openTasks = (snapshot.tasks ?? []).filter((t) => OPEN_TASK_STATUS.has(t.status))
+
+  const overdue = openTasks
+    .filter((t) => {
+      const m = dueMs(t)
+      return m !== null && Number.isFinite(m) && m < now.getTime()
+    })
+    .map((t) => {
+      const days = Math.max(0, calendarDayDiff(now, new Date(t.dueAt)))
+      return `${t.id} · ${t.title} · 逾期 ${days} 天 · 重要性 ${t.importance}/3`
+    })
+
+  const dueToday = openTasks
+    .filter((t) => {
+      const m = dueMs(t)
+      return m !== null && Number.isFinite(m) && dayKey(new Date(m)) === today
+    })
+    .map((t) => `${t.id} · ${t.title} · 重要性 ${t.importance}/3`)
+
+  const horizon = new Date(now)
+  horizon.setDate(horizon.getDate() + 7)
+  const events = [...(snapshot.events ?? [])]
+    .filter((e) => e.status !== 'cancelled' && typeof e.startAt === 'string')
+    .filter((e) => {
+      const t = new Date(e.startAt).getTime()
+      return Number.isFinite(t) && t >= now.getTime() && t <= horizon.getTime()
+    })
+    .sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime())
+    .slice(0, 12)
+    .map((e) => {
+      const d = new Date(e.startAt)
+      const stamp = `${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+      return `${stamp} · ${e.title}${e.location ? ` · ${e.location}` : ''}`
+    })
+
+  const inbox = (snapshot.inbox ?? []).filter((i) => i.status === 'unprocessed')
+  const inboxLines = inbox.slice(0, 20).map((i) => `${i.id} · ${i.content}`)
+
+  const projects = (snapshot.projects ?? []).filter((p) => p.status === 'active')
+  const projectLines = projects.map((p) => `${p.id} · ${p.title} · 完成定义：${p.outcome}`)
+
+  const nextActions = openTasks
+    .slice()
+    .sort((a, b) => (b.importance ?? 0) - (a.importance ?? 0))
+    .slice(0, 12)
+    .map(
+      (t) =>
+        `${t.id} · ${t.title} · ${t.status} · 重要性 ${t.importance}/3${typeof t.dueAt === 'string' ? ` · 截止 ${t.dueAt}` : ''}`,
+    )
+
+  return [
+    `【现在】${nowStamp()}`,
+    `【逾期任务（${overdue.length}）】\n${overdue.join('\n') || '（无）'}`,
+    `【今日到期（${dueToday.length}）】\n${dueToday.join('\n') || '（无）'}`,
+    `【未来 7 天日程（${events.length}）】\n${events.join('\n') || '（无）'}`,
+    `【收件箱积压（${inbox.length} 条未澄清）】\n${inboxLines.join('\n') || '（无）'}`,
+    `【进行中项目（${projects.length}）】\n${projectLines.join('\n') || '（无）'}`,
+    `【未完成下一步（按重要性，最多 12）】\n${nextActions.join('\n') || '（无）'}`,
+  ].join('\n\n')
+}
+
+/** 构造对话系统提示词（自然语言；要求只依据摘要事实，优先回答「最紧急」） */
+function buildChatSystem(digest) {
+  return `你是 KERNEL（个人事务内核）的对话助手。用户会用中文问你关于他自己的事（例如「我今天有什么特别紧急需要去做的事情」「这周有什么安排」「项目进展如何」）。
+回答要求：
+- 只依据下方【系统现状摘要】中的事实回答；摘要里没有的信息，直接说「数据里没有」，绝不编造任务 / 日程 / 项目 / 时间。
+- 简洁、直接、可执行；用中文；不要输出 JSON，不要用 markdown 代码块。
+- 当被问「最紧急」时，按「逾期 → 今日到期 → 即将开始的日程」排序给出判断与理由。
+- 当对话记录里含有「用户：」「KERNEL：」标记时，只回答最后一条「用户：」的内容。
+
+【系统现状摘要】
+${digest}`
+}
+
+/** 单次对话 prompt：调用 + 抽取纯文本；空响应视为失败（供重试判定） */
+async function promptChatOnce(sessionID, system, text) {
+  const res = await promptOnce(sessionID, system, text)
+  const reply = extractText(res).trim()
+  if (reply === '') throw new Error('AI 未返回内容')
+  return { res, reply }
+}
+
+/**
+ * 与 KERNEL 对话：读当前数据快照构造摘要，注入有界对话历史，返回自然语言回答。
+ * @param {Array<{ role: 'user'|'assistant', content: string }>} messages 已由路由裁剪的有界历史（末条为用户）
+ * @returns {Promise<{ reply: string, model: string | null, ms: number }>}
+ */
+export async function chatWithKernel(messages) {
+  const t0 = Date.now()
+  const snapshot = await loadSnapshot()
+  const system = buildChatSystem(buildChatDigest(snapshot))
+  const created = pick(await getClient().session.create({ title: 'kernel:chat' }))
+  const sessionID = created?.id
+  if (typeof sessionID !== 'string' || sessionID === '') {
+    throw new Error('无法创建 opencode 会话')
+  }
+  const transcript = messages
+    .map((m) => `${m.role === 'assistant' ? 'KERNEL' : '用户'}：${m.content}`)
+    .join('\n\n')
+  const userText = `${transcript}\n\n请只回答最后一条「用户：」的内容。`
+  let outcome
+  try {
+    outcome = await promptChatOnce(sessionID, system, userText)
+  } catch (err) {
+    console.warn(`[ai] chat 首次失败（${err?.message ?? err}），重试一次`)
+    outcome = await promptChatOnce(sessionID, system, userText)
+  }
+  const model = modelOf(outcome.res)
+  const ms = Date.now() - t0
+  console.log(`[ai] chat 完成 ${ms}ms（${model ?? '未知模型'}）`)
+  return { reply: outcome.reply, model, ms }
+}
+
+/* ---------------------------------------------------------------------------
+ * 任务快速新建 AI 补全（v0.5 · Slice H）：只填标题 → 建议可补全字段
+ * 纪律：AI 只出建议，绝不自动落盘；应用走既有 /api/tasks/:id/update 白名单。
+ * ------------------------------------------------------------------------- */
+
+/** 输入标题硬上限（超长截断；有界输入） */
+export const TASK_DRAFT_MAX_TITLE_CHARS = 200
+
+/** 构造任务补全系统提示词（注入当前本地时间 + 系统现状摘要） */
+function buildTaskDraftSystem(digest) {
+  const d = new Date()
+  const pad = (n) => String(n).padStart(2, '0')
+  const stamp = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${WEEKDAYS[d.getDay()]} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+  return `你是 KERNEL 个人事务系统的任务补全器。用户只给了一个任务标题，请推断可安全补全的字段，只输出一个 JSON 对象：不要 markdown 代码块、不要解释、不要多余文字。
+可用字段（凡拿不准就省略该键，绝不编造）：
+- contexts: 字符串数组，只能从 ["@lab","@computer","@campus","@phone","@org-room"] 中选
+- energy: "low" | "medium" | "high"
+- importance: 1 | 2 | 3（整数）
+- estimateMin: 预计所需分钟数（整数，最少 1 分钟）
+- dueAt: ISO8601 带时区或 null。现在是 ${stamp}
+- projectId: 字符串或 null。仅当标题有明确依据属于下方某个项目时，填该项目 id；否则省略
+- areaId: 字符串或 null。仅当标题明确属于下方某个区域时，填该区域 id；否则省略
+- tags: 字符串数组，只能从下方标签名中选，最多 3 个（无把握则省略）
+- reason: 一句话说明判断理由
+
+【系统现状摘要】
+${digest}
+
+规则：
+1. 宁缺毋滥：projectId / areaId / tags 只能取摘要中列出的 id 或标签名，且必须有明确依据；表面相似不算；拿不准一律省略。
+2. 只补全标题之外的信息，不要返回 title / status / 备注字段。
+3. 不确定 dueAt 就省略，不要编造截止日期。
+4. 一个字段都没把握时，返回 {"reason":"无明确可补全信息"}。`
+}
+
+/** 解析 + 校验单次任务补全响应；返回 { ok, draft } 或 { ok:false, reason } */
+function tryParseTaskDraft(res) {
+  const cleaned = extractText(res)
+    .trim()
+    .replace(/^```(?:json)?/i, '')
+    .replace(/```$/, '')
+    .trim()
+  let obj
+  try {
+    obj = JSON.parse(cleaned)
+  } catch (err) {
+    return { ok: false, reason: `JSON 解析失败（${err.message}）` }
+  }
+  try {
+    return { ok: true, draft: normalizeSuggestion(taskDraftSchema.parse(obj)) }
+  } catch (err) {
+    return { ok: false, reason: `字段校验失败（${describeError(err)}）` }
+  }
+}
+
+/** 单会话内「prompt → 解析 → 一次重试」；失败抛错 */
+async function promptTaskDraftWithRetry(sessionID, system, title) {
+  let res = await promptOnce(sessionID, system, `任务标题：${title}`)
+  let parsed = tryParseTaskDraft(res)
+  if (!parsed.ok) {
+    console.warn(`[ai] task.draft 首次失败（${parsed.reason}），重试一次`)
+    res = await promptOnce(
+      sessionID,
+      system,
+      `上次输出无法解析（${parsed.reason}）。请只输出一个合法 JSON 对象，不要任何多余文字。`,
+    )
+    parsed = tryParseTaskDraft(res)
+    if (!parsed.ok) throw new Error(`AI 输出无法解析：${parsed.reason}`)
+  }
+  return { res, draft: parsed.draft }
+}
+
+/**
+ * 任务快速新建 AI 补全：读系统摘要，对标题推断可安全补全的字段。
+ * @param {string} title 已裁剪的任务标题
+ * @returns {Promise<{ suggestion: object, model: string | null, ms: number }>}
+ */
+export async function draftTask(title) {
+  const t0 = Date.now()
+  const snapshot = await loadSnapshot()
+  const system = buildTaskDraftSystem(buildDigest(snapshot))
+  const sessionID = await createSession('kernel:task-draft')
+  const { res, draft } = await promptTaskDraftWithRetry(sessionID, system, title)
+  const clean = postValidate(draft, snapshot)
+  const model = modelOf(res)
+  const ms = Date.now() - t0
+  console.log(`[ai] task.draft 完成 ${ms}ms（${model ?? '未知模型'}）`)
+  return { suggestion: clean, model, ms }
+}
+
+/* ---------------------------------------------------------------------------
  * 周回顾（v0.5 · Slice C）：周期 / 指标 / 停滞项目（服务端事实源）
  * 说明：computeWeekMetrics 与 staleProjects 同时供「AI 草稿」与「写入路径」复用；
  *       staleProjects 与前端 src/lib/data.ts getStaleProjects 口径严格一致。
@@ -366,6 +660,14 @@ function startOfWeekMonday(now = new Date()) {
   const d = new Date(now)
   const diff = (d.getDay() + 6) % 7 // 周日=0 → 距周一的天数
   d.setDate(d.getDate() - diff)
+  d.setHours(0, 0, 0, 0)
+  return d
+}
+
+/** 当前月起点（本机时区 1 日 00:00；Slice F 月回顾窗口） */
+function startOfMonth(now = new Date()) {
+  const d = new Date(now)
+  d.setDate(1)
   d.setHours(0, 0, 0, 0)
   return d
 }
@@ -387,6 +689,12 @@ export function isoWeekKey(date = new Date()) {
   return `${d.getUTCFullYear()}-W${String(weekNo).padStart(2, '0')}`
 }
 
+/** 月键：2026-10（本地时区；与前端 src/lib/date.ts toMonthKey 同口径；Slice F） */
+export function monthKey(date = new Date()) {
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}`
+}
+
 /** 是否落在 [start, end]（含端点；ISO 字符串非法返回 false） */
 function inRange(isoValue, start, end) {
   if (typeof isoValue !== 'string') return false
@@ -405,6 +713,27 @@ export function computeWeekMetrics(snapshot, now = new Date()) {
   const captured = (snapshot.inbox ?? []).filter((i) => inRange(i.capturedAt, weekStart, now)).length
   const created = (snapshot.tasks ?? []).filter((t) => inRange(t.createdAt, weekStart, now)).length
   const completed = (snapshot.tasks ?? []).filter((t) => inRange(t.doneAt, weekStart, now)).length
+  const overdue = (snapshot.tasks ?? []).filter(
+    (t) =>
+      typeof t.dueAt === 'string' &&
+      new Date(t.dueAt).getTime() < now.getTime() &&
+      ['next', 'waiting', 'scheduled'].includes(t.status),
+  ).length
+  return { captured, created, completed, overdue }
+}
+
+/**
+ * 本月指标（Slice F 月回顾）：窗口为本机时区 1 日 00:00 → 现在；
+ * 口径与 computeWeekMetrics **完全一致**，仅换窗口起点：
+ * captured = 收件箱 capturedAt 入区间；created = 任务 createdAt 入区间；
+ * completed = 任务 doneAt 入区间；overdue = dueAt < now 且 status ∈ next/waiting/scheduled。
+ * 注：migrated 同样刻意不产出（无编辑追踪来源），见 ADR-0007。
+ */
+export function computeMonthMetrics(snapshot, now = new Date()) {
+  const monthStart = startOfMonth(now)
+  const captured = (snapshot.inbox ?? []).filter((i) => inRange(i.capturedAt, monthStart, now)).length
+  const created = (snapshot.tasks ?? []).filter((t) => inRange(t.createdAt, monthStart, now)).length
+  const completed = (snapshot.tasks ?? []).filter((t) => inRange(t.doneAt, monthStart, now)).length
   const overdue = (snapshot.tasks ?? []).filter(
     (t) =>
       typeof t.dueAt === 'string' &&
@@ -436,13 +765,17 @@ function habitHitsLastDays(habit, days, now) {
   }).length
 }
 
-/** 构造紧凑中文周回顾摘要（指标 / 完成 / 逾期 / 停滞 / 习惯 / 活动计数） */
-async function buildReviewDigest(snapshot, metrics, now) {
-  const weekStart = startOfWeekMonday(now)
+/**
+ * 构造紧凑中文回顾摘要（指标 / 完成 / 逾期 / 停滞 / 习惯 / 活动计数）。
+ * `scope` 为 '周' | '月'：窗口起点 `periodStart` 由调用方给出（周首 / 月首），
+ * 文案中的「本周 / 本月」随之切换；其余口径完全一致（Slice F）。
+ */
+async function buildReviewDigest(snapshot, metrics, now, periodStart, scope) {
+  const label = `本${scope}`
   const daysLate = (due) => Math.max(0, calendarDayDiff(now, new Date(due)))
 
   const completed = (snapshot.tasks ?? [])
-    .filter((t) => inRange(t.doneAt, weekStart, now))
+    .filter((t) => inRange(t.doneAt, periodStart, now))
     .map((t) => t.title)
 
   const overdue = (snapshot.tasks ?? [])
@@ -467,7 +800,7 @@ async function buildReviewDigest(snapshot, metrics, now) {
 
   const activity = (await readActivity(200)).filter((entry) => {
     const t = Date.parse(entry.ts)
-    return Number.isFinite(t) && t >= weekStart.getTime()
+    return Number.isFinite(t) && t >= periodStart.getTime()
   })
   const counts = new Map()
   for (const entry of activity) counts.set(entry.action, (counts.get(entry.action) ?? 0) + 1)
@@ -476,24 +809,24 @@ async function buildReviewDigest(snapshot, metrics, now) {
     .map(([action, count]) => `${action} ×${count}`)
 
   return [
-    `【本周指标】捕获 ${metrics.captured} · 新增 ${metrics.created} · 完成 ${metrics.completed} · 逾期 ${metrics.overdue}`,
-    `【本周完成（${completed.length}）】\n${completed.join('\n') || '（无）'}`,
+    `【${label}指标】捕获 ${metrics.captured} · 新增 ${metrics.created} · 完成 ${metrics.completed} · 逾期 ${metrics.overdue}`,
+    `【${label}完成（${completed.length}）】\n${completed.join('\n') || '（无）'}`,
     `【当前逾期（${overdue.length}）】\n${overdue.join('\n') || '（无）'}`,
     `【停滞项目（≥14 天未更新，共 ${stale.length}）】\n${stale.join('\n') || '（无）'}`,
     `【可处置停滞项目 id】${staleList.map((p) => p.id).join(', ') || '（无）'}`,
     `【习惯（近 7 天）】\n${habits.join('\n') || '（无）'}`,
-    `【本周活动计数】\n${activityLines.join('\n') || '（无）'}`,
+    `【${label}活动计数】\n${activityLines.join('\n') || '（无）'}`,
   ].join('\n\n')
 }
 
-/** 构造周回顾系统提示词（指令式 JSON） */
-function buildReviewSystem(digest) {
-  return `你是 KERNEL 的周回顾助手。只输出一个 JSON 对象：不要 markdown、不要解释。字段：
-- summary（≤200 字中文，具体、克制、不夸大，总结本周推进与问题）
+/** 构造回顾系统提示词（指令式 JSON）；scope = '周' | '月'（Slice F） */
+function buildReviewSystem(digest, scope) {
+  return `你是 KERNEL 的${scope}回顾助手。只输出一个 JSON 对象：不要 markdown、不要解释。字段：
+- summary（≤200 字中文，具体、克制、不夸大，总结本${scope}推进与问题）
 - decisions（2–4 条中文，动作导向，如迁移 / 聚焦 / 处置）
 - staleAdvice（数组，可空：{ projectId, action: 'archive'|'migrate'|'reactivate', reason }，仅针对摘要中列出的停滞项目）
 
-【本周数据摘要】
+【本${scope}数据摘要】
 ${digest}
 
 规则：staleAdvice.projectId 只能取「可处置停滞项目 id」中列出的 id；没有把握就返回空数组。`
@@ -550,28 +883,35 @@ async function promptReviewWithRetry(sessionID, system, text) {
 }
 
 /**
- * 生成本周回顾草稿（AI 只出草稿；落盘仍由用户确认后走 /api/reviews）。
+ * 生成回顾草稿（AI 只出草稿；落盘仍由用户确认后走 /api/reviews）。
+ * @param {'weekly' | 'monthly'} period 周期；缺省 'weekly'（周行为保持不变）
  * @returns {Promise<{ periodKey: string, metrics: object, summary: string, decisions: string[], staleAdvice: object[], model: string | null, ms: number }>}
  */
-export async function generateReviewDraft() {
+export async function generateReviewDraft(period = 'weekly') {
   const t0 = Date.now()
   const now = new Date()
+  const monthly = period === 'monthly'
+  const scope = monthly ? '月' : '周'
   const snapshot = await loadSnapshot()
-  const metrics = computeWeekMetrics(snapshot, now)
+  const periodStart = monthly ? startOfMonth(now) : startOfWeekMonday(now)
+  const metrics = monthly ? computeMonthMetrics(snapshot, now) : computeWeekMetrics(snapshot, now)
   const staleIds = new Set(staleProjects(snapshot, 14, now).map((p) => p.id))
-  const system = buildReviewSystem(await buildReviewDigest(snapshot, metrics, now))
+  const system = buildReviewSystem(
+    await buildReviewDigest(snapshot, metrics, now, periodStart, scope),
+    scope,
+  )
   const created = pick(await getClient().session.create({ title: 'kernel:review-draft' }))
   const sessionID = created?.id
   if (typeof sessionID !== 'string' || sessionID === '') {
     throw new Error('无法创建 opencode 会话')
   }
-  const { res, draft } = await promptReviewWithRetry(sessionID, system, '请生成本周回顾草稿。')
+  const { res, draft } = await promptReviewWithRetry(sessionID, system, `请生成本${scope}回顾草稿。`)
   const clean = postValidateDraft(draft, staleIds)
   const model = modelOf(res)
   const ms = Date.now() - t0
-  console.log(`[ai] review.draft 完成 ${ms}ms（${model ?? '未知模型'}）`)
+  console.log(`[ai] review.draft(${period}) 完成 ${ms}ms（${model ?? '未知模型'}）`)
   return {
-    periodKey: isoWeekKey(now),
+    periodKey: monthly ? monthKey(now) : isoWeekKey(now),
     metrics,
     summary: clean.summary,
     decisions: clean.decisions,

@@ -39,3 +39,15 @@ ADR-0005 已把「SSE 流式进度」与「AI 作用于更多层面」列为后�
 - 工具调用式「真搜索」（让模型主动检索库内条目）—— 后续增量选项；本切片为摘要注入。
 - 自动落盘 / 自动合并重复 —— 明确不做。
 - 文件 / 通知投递解析 —— 仍列后续。
+
+---
+
+## 6. 修订（2026-10-03 · Slice E2.5：挂靠规则 v2 + newProjectHint）
+
+**触发**：owner 反馈「辩论赛」文件被 AI 硬挂到无关项目（学生组织·程序设计大赛），因为旧提示词要求「只能从现有项目里选」，缺「宁缺毋滥」与「这是新事务」的判断。
+
+1. **挂靠宁缺毋滥（§2 提示词修订）**：`projectId / areaId / tags / duplicateOf` 仅在内容与现有对象有**明确依据**时才填；**表面相似（都含「竞赛 / 比赛 / 规则」字样）不算依据**；拿不准一律 null。附件不可直接读取（仅文件名 / 元数据）时进一步保守：除非文件名直接指向某现有项目（名称 / 主题强匹配），否则 `projectId` 一律 null，并在 reason 注明「仅基于文件名判断」。
+2. **新增字段 `newProjectHint`**：`aiSuggestionSchema` 增 `newProjectHint: z.union([z.string(), z.null()]).optional()`（≤40 字）。当内容像一件需要多步推进的**新事务**（新比赛 / 新活动 / 新项目）且不属于任何现有项目时给出建议项目名；否则 null。
+3. **互斥 + 后校验**：`newProjectHint` 与 `projectId` 互斥（要么挂现有、要么提示新建、要么都不）。`normalizeSuggestion` 丢弃 null；`postValidate` 追加 trim + `Array.from(...).slice(0,40)` 截断 + 丢弃空串 + 与 `projectId` 互斥 + 与现有项目标题完全相同者丢弃。
+4. **前端仅提示**：「建议新项目：{X}」+「可到项目页新建」安静 chip，**绝不自动创建 / 自动挂靠**；`AiSuggestion.newProjectHint?`。
+5. **验证**：辩论赛样例解析 `projectId=null` + `newProjectHint=新生辩论赛筹备`（`areaId=a-0003`）；控制样例「学生组织：策划书要补个流程图」正确挂 `p-0002`（明确依据）。提示词**一次通过**。证据 `.qa/v19/smoke-e25.mjs`、`.qa/v19/slice-e25-verify.py`。

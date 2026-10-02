@@ -1,24 +1,21 @@
 // KERNEL · 项目 PROJECTS（P1）：状态分组纵向列表 + 行内进度 + 详情抽屉
 import { useEffect, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { useSearchParams } from 'react-router-dom'
+import { Plus } from 'lucide-react'
 import { Drawer } from '@/components/Drawer'
+import { EntityEditForm, type EditFieldSpec } from '@/components/EntityEditForm'
 import { MeterBar } from '@/components/MeterBar'
 import { TagPill } from '@/components/TagPill'
 import { EmptyState } from '@/components/EmptyState'
-import { TaskRow } from '@/components/TaskRow'
-import { Relations } from '@/components/Relations'
-import {
-  getAreaById,
-  getProjectProgress,
-  getSnapshot,
-  getTaskById,
-  getTasksByProject,
-} from '@/lib/data'
-import { isTaskDone } from '@/lib/mutations'
+import { ProjectDetail } from '@/components/ProjectDetail'
+import { useToast } from '@/context/ToastContext'
+import { getAreaById, getAreas, getProjectProgress, getSnapshot, getTaskById } from '@/lib/data'
+import { createProject, restoreEntity, trashEntity, updateEntity } from '@/lib/mutations'
+import { errorText } from '@/lib/api'
 import { useDataRevision, useUndoableToggle } from '@/lib/hooks'
 import { PROJECT_STATUS_EN, PROJECT_STATUS_LABEL, tagLabel } from '@/lib/format'
 import { humanizeDay } from '@/lib/date'
-import type { Project, Task } from '@/types'
+import type { Project } from '@/types'
 
 /** 行密度：active 完整；onHold/someday 紧凑（隐藏下一步）；done 最紧凑 */
 type RowVariant = 'active' | 'compact' | 'done'
@@ -40,8 +37,12 @@ const GROUPS: ProjectGroupSpec[] = [
 export function Projects() {
   useDataRevision()
   const toggleTask = useUndoableToggle()
+  const { toast } = useToast()
   const [searchParams, setSearchParams] = useSearchParams()
   const [drawerId, setDrawerId] = useState<string | null>(null)
+  const [editing, setEditing] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [quick, setQuick] = useState('')
   const projects = getSnapshot().projects
 
   // 深链直达项目抽屉：/projects?project=p-0002
@@ -52,6 +53,11 @@ export function Projects() {
     }
   }, [searchParams, projects])
 
+  // 切换抽屉时退出编辑态
+  useEffect(() => {
+    setEditing(false)
+  }, [drawerId])
+
   const closeDrawer = (): void => {
     setDrawerId(null)
     if (searchParams.get('project') !== null) {
@@ -60,6 +66,107 @@ export function Projects() {
   }
 
   const selected = drawerId !== null ? projects.find((p) => p.id === drawerId) : undefined
+
+  const projectFields: EditFieldSpec[] = [
+    { key: 'title', label: '标题', type: 'text' },
+    { key: 'outcome', label: '完成定义', type: 'textarea' },
+    {
+      key: 'status',
+      label: '状态',
+      type: 'select',
+      options: (Object.keys(PROJECT_STATUS_LABEL) as Project['status'][]).map((value) => ({
+        value,
+        label: PROJECT_STATUS_LABEL[value],
+      })),
+    },
+    {
+      key: 'areaId',
+      label: '区域',
+      type: 'select',
+      clearable: true,
+      options: getAreas().map((area) => ({ value: area.id, label: area.title })),
+    },
+    {
+      key: 'nextActionId',
+      label: '下一步',
+      type: 'select',
+      clearable: true,
+      options: getSnapshot()
+        .tasks.filter((task) => task.status !== 'done' && task.status !== 'dropped')
+        .map((task) => ({ value: task.id, label: task.title })),
+    },
+    {
+      key: 'goalId',
+      label: '目标',
+      type: 'select',
+      clearable: true,
+      options: getSnapshot().goals.map((goal) => ({ value: goal.id, label: goal.title })),
+    },
+    { key: 'dueAt', label: '截止', type: 'datetime' },
+    { key: 'tags', label: '标签（逗号分隔）', type: 'list' },
+  ]
+
+  const handleSave = (patch: Record<string, unknown>): void => {
+    if (selected === undefined) return
+    setSaving(true)
+    void (async () => {
+      try {
+        await updateEntity('projects', selected.id, patch)
+        setEditing(false)
+        toast('已保存')
+      } catch (err) {
+        toast(`保存失败：${errorText(err)}`, { tone: 'error' })
+      } finally {
+        setSaving(false)
+      }
+    })()
+  }
+
+  const handleDelete = (): void => {
+    if (selected === undefined) return
+    const id = selected.id
+    void (async () => {
+      try {
+        await trashEntity('projects', id)
+        toast('已移入回收站 · 撤销', {
+          action: {
+            label: '撤销',
+            onClick: () => {
+              void restoreEntity('projects', id).catch((err) => {
+                toast(`撤销失败：${errorText(err)}`, { tone: 'error' })
+              })
+            },
+          },
+        })
+      } catch (err) {
+        toast(`删除失败：${errorText(err)}`, { tone: 'error' })
+      }
+    })()
+  }
+
+  // 快速新建项目（镜像任务页 quick-add）：回车创建 → toast；撤销走回收站
+  const handleQuickAdd = (): void => {
+    const value = quick.trim()
+    if (value === '') return
+    void (async () => {
+      try {
+        const project = await createProject(value)
+        setQuick('')
+        toast('已创建项目 · 撤销', {
+          action: {
+            label: '撤销',
+            onClick: () => {
+              void trashEntity('projects', project.id).catch((err) => {
+                toast(`撤销失败：${errorText(err)}`, { tone: 'error' })
+              })
+            },
+          },
+        })
+      } catch (err) {
+        toast(`创建失败：${errorText(err)}`, { tone: 'error' })
+      }
+    })()
+  }
 
   // 跨分组连续编号（与设计稿一致：进行中 01–09、将来 10 …）
   const indexById = new Map<string, number>()
@@ -78,6 +185,24 @@ export function Projects() {
       <p className="k-view__intro">
         项目是"需要多个步骤达成"的结果承诺。纵向一览按状态分组，每行内嵌完成定义、下一步行动与任务进度。
       </p>
+
+      {/* 快速新建（镜像任务页）：回车创建，写入 data/projects */}
+      <div className="k-projects__toolbar">
+        <div className="k-quickadd">
+          <Plus size={16} strokeWidth={1.5} className="k-muted" aria-hidden />
+          <input
+            className="k-quickadd__input"
+            value={quick}
+            onChange={(event) => setQuick(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') handleQuickAdd()
+            }}
+            placeholder="新建项目，回车创建（写入 data/projects）"
+            aria-label="快速新建项目"
+          />
+          <span className="u-label k-muted">ENTER</span>
+        </div>
+      </div>
 
       {projects.length === 0 ? (
         <div className="k-plist__empty">
@@ -124,8 +249,31 @@ export function Projects() {
         onClose={closeDrawer}
         kicker={`项目 · ${selected?.id ?? ''} · ${selected !== undefined ? PROJECT_STATUS_LABEL[selected.status] : ''}`}
         title={selected?.title ?? ''}
+        footer={
+          selected !== undefined && !editing ? (
+            <div className="k-drawer__foot-actions">
+              <button type="button" className="k-btn k-btn--sm" onClick={() => setEditing(true)}>
+                编辑
+              </button>
+              <button type="button" className="k-btn k-btn--sm is-danger" onClick={handleDelete}>
+                删除
+              </button>
+            </div>
+          ) : undefined
+        }
       >
-        {selected !== undefined && <ProjectDetail project={selected} onToggleTask={toggleTask} />}
+        {selected !== undefined &&
+          (editing ? (
+            <EntityEditForm
+              fields={projectFields}
+              initial={selected as unknown as Record<string, unknown>}
+              saving={saving}
+              onSubmit={handleSave}
+              onCancel={() => setEditing(false)}
+            />
+          ) : (
+            <ProjectDetail project={selected} onToggleTask={toggleTask} />
+          ))}
       </Drawer>
     </div>
   )
@@ -184,74 +332,4 @@ function ProjectRow({ project, index, variant, onOpen }: ProjectRowProps) {
   )
 }
 
-interface ProjectDetailProps {
-  project: Project
-  onToggleTask: (task: Task) => void
-}
 
-function ProjectDetail({ project, onToggleTask }: ProjectDetailProps) {
-  const tasks = getTasksByProject(project.id)
-  const progress = getProjectProgress(project.id)
-  const area = getAreaById(project.areaId)
-  const nextAction = project.nextActionId !== undefined ? getTaskById(project.nextActionId) : undefined
-  return (
-    <div className="k-detail-grid">
-      <dl className="k-dl">
-        <dt>完成定义</dt>
-        <dd className="k-dl__wide">{project.outcome}</dd>
-        <dt>状态</dt>
-        <dd>{PROJECT_STATUS_LABEL[project.status]}</dd>
-        <dt>区域</dt>
-        <dd>{area?.title ?? project.areaId}</dd>
-        <dt>下一步</dt>
-        <dd>
-          {nextAction !== undefined ? (
-            <Link to={`/tasks?task=${nextAction.id}`} viewTransition>
-              {nextAction.title}
-            </Link>
-          ) : (
-            '—'
-          )}
-        </dd>
-        <dt>进度</dt>
-        <dd>
-          {progress.done} / {progress.total}
-        </dd>
-        <dt>截止</dt>
-        <dd>{project.dueAt !== undefined ? humanizeDay(project.dueAt) : '—'}</dd>
-      </dl>
-      {project.tags.length > 0 && (
-        <div className="k-detail-block">
-          <span className="k-detail-block__label u-label">标签</span>
-          <div className="k-hstack">
-            {project.tags.map((tag) => (
-              <TagPill key={tag}>{tagLabel(tag)}</TagPill>
-            ))}
-          </div>
-        </div>
-      )}
-      <Relations kind="project" id={project.id} />
-      <div className="k-detail-block">
-        <span className="k-detail-block__label u-label">任务清单 · {tasks.length}</span>
-        {tasks.length === 0 ? (
-          <p className="k-muted">该项目暂无关联任务。</p>
-        ) : (
-          <div className="k-tasklist-mini">
-            {tasks.map((task) => (
-              <TaskRow
-                key={task.id}
-                task={task}
-                done={isTaskDone(task)}
-                onToggle={(id) => {
-                  const target = tasks.find((item) => item.id === id)
-                  if (target !== undefined) onToggleTask(target)
-                }}
-                onOpen={() => undefined}
-              />
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
