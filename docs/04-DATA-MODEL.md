@@ -57,13 +57,17 @@
 | source | `manual` \| `file` \| `notification` \| `voice` | 来源 |
 | capturedAt | ISO | |
 | status | `unprocessed` \| `clarified` \| `discarded` | |
-| linkedId? | string | 澄清后指向新实体 |
+| linkedId? | string | 澄清 / 应用后指向新实体（深链用；一揽子应用为**首个**产物，通常是新项目） |
+| linkedIds? | string[] | 一揽子应用创建的全部产物 id（Slice R1；撤回 / 撤销据此完整清理） |
+| appliedTagIds? | string[] | 一揽子应用时**新登记**的标签 id（Slice R1；撤销时清理未再使用的注册项，恢复注册表基线） |
 | note? | string | |
 | file? | `{ name, size, mime? }` | 文件投递附件元数据；二进制存 `data/files/<id>-<name>`（不进 git；见 ADR-0008） |
 
 > **文件投递（v0.5 · Slice D）**：`source:'file'` 的条目由 `POST /api/inbox/upload` 创建，`content` 取 caption（无则文件名）。二进制**不**进 JSON，仅存于 `data/files/`（`.gitignore`）；AI 解析时按「文本白名单 **或 Office Open XML（`.docx/.pptx/.xlsx`，Slice J）** + ≤5MB → 前 8000 字摘录，否则仅元数据」注入提示。删除条目经 `POST /api/inbox/:id/remove`（已澄清条目 409，需先 revert）。附件**本机动作**（Slice J2）经 `POST /api/inbox/:id/open`（系统默认程序打开）/ `POST /api/inbox/:id/reveal`（文件管理器定位）——服务端解析 `data/files/<id>-<name>` 并做条目 / 元数据 / 磁盘三重校验，缺一 404；`{dryRun:true}`（`/api/inbox/:id/(open|reveal)` 与 `/api/open`）仅解析校验、绝不 spawn（自动化测试用）。详见 ADR-0008。
 
 > **生命周期闭合（v0.5 · Slice V，见 ADR-0008 §6）**：文本捕捉成功后**自动运行一次 AI 解析**（与文件投递后自动解析节奏一致；AI 离线静默跳过、绝不自动应用，手动「AI 解析」保留）。UI 提供完整出口——未澄清 / 已丢弃条目「删除」（`POST /api/inbox/:id/remove`，服务端一并清理附件；已澄清仍 409 保护）；已丢弃条目「恢复」与已澄清条目「撤回」均复用 `POST /api/inbox/:id/revert`（discarded 无产物仅重置 `status:'unprocessed'`；clarified 先删除 `linkedId` 产物再回退）；已澄清条目「查看产物」按 `linkedId` 前缀深链跳转（`t-`→`/tasks?task=`、`p-`→`/projects?project=`、`n-`→`/library?note=`、`r-`→`/library?resource=`）。字段应用矩阵见 §4.13。
+
+> **一揽子处置（v0.5 · Slice R1，见 ADR-0015）**：`POST /api/inbox/:id/apply { actions }` 一次写入把条目拆解出的全部动作落位——先建新项目（`kind:'project'`，至多 1 个），再逐条建 `task` / `note` / `resource`（`task` / `note` 的 `linkToNewProject:true` 自动挂到新项目）；标签以 `origin:'ai'` 登记。条目置 `clarified`，`linkedId` = 首个产物、`linkedIds` = 全部产物、`appliedTagIds` = 本次新登记标签。撤销 `POST /api/inbox/:id/unapply` 删除全部 `linkedIds` 产物并 `pruneTags(appliedTagIds)` → 条目回 `unprocessed`（`revert` 同语义，兼容旧单 `linkedId`）。动作矩阵见 §4.14。
 
 ### 4.2 task（`t-`）
 
@@ -104,6 +108,8 @@
 | tags | string[] | |
 | createdAt | ISO | |
 | updatedAt | ISO | |
+
+> **创建可选字段（v0.5 · Slice R1，见 ADR-0015）**：`POST /api/projects` 除 `title`（必填）外接受可选 `outcome` / `areaId` / `tags`（项目快速新建草稿确认后一次性提交；`areaId` 须真实存在，否则 400）。缺省行为不变：`status:'active'`、`areaId:'a-0001'`、`outcome:'完成定义待整理'`、`tags:[]`。请求带 `ai:true` → 新标签 `origin:'ai'`；审计 `project.create` · `detail.fields`。
 
 ### 4.4 area（`a-`）
 
@@ -267,6 +273,21 @@ AI 建议卡「编辑」与手工澄清 `POST /api/inbox/:id/clarify` 的 `detai
 - `projectId` / `areaId` 落盘前校验形状与存在性（臆造即 400）；note 首次支持 `projectId` / `areaId`（Slice V 修复）；resource 的 `title` 对**文件条目同样应用**（此前被强制用原文，属静默丢弃，Slice V 修复）。
 - `discard` 不产出 `details`。切换到 note / resource 时，表单保留仍相关字段的编辑值（title / tags / projectId / areaId），隐藏任务专属字段。
 
+### 4.14 一揽子动作矩阵（Slice R1）
+
+收件箱解析输出动作数组（`aiActionSchema`，≤6 个；`server/schemas.mjs`）；`POST /api/inbox/:id/apply` 按 `kind` 落盘如下字段（服务端重新 Zod 校验 + 关联 id 存在性校验，绝不信任客户端形状）。前端逐条编辑只渲染该 kind 会应用的字段（`src/lib/aiForm.ts` `ACTION_FIELD_MATRIX`）。
+
+| kind | title | outcome | contexts | energy | importance | estimateMin | dueAt | projectId | areaId | tags | 备注 |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|---|
+| task | ✓ | — | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ / linkToNewProject | ✓ | ✓ | 新建 `status:'next'`，带 `sourceInboxId` |
+| note | ✓ | — | — | — | — | — | — | ✓ / linkToNewProject | ✓ | ✓ | `type:'fleeting'`，`body` = 条目原文 |
+| resource | ✓ | — | — | — | — | — | — | — | ✓ | ✓ | 文件条目 `kind:'file'` + `path` |
+| project | ✓ | ✓ | — | — | — | — | — | — | ✓ | ✓ | 新建 `status:'active'`，先于实体创建 |
+
+- 至多 1 个 `project` 动作；`linkToNewProject` 与 `projectId` 互斥（服务端强制）；`project` 动作缺省 `areaId` 为 `a-0001`、缺省 `outcome` 为「完成定义待整理（由收件箱一揽子应用创建）」。
+- 关联 id（`projectId` / `areaId` / `duplicateOf`）与标签仍走 `postValidateActions` 快照过滤（臆造即丢弃）；每个动作 tags ≤3。
+- 旧式单建议形状（`target` / `newProjectHint` 等）由 `legacyToActions` 归一化为动作数组（`newProjectHint` → 项目动作 + 实体 `linkToNewProject`），同步 / 流式两条路径共用。
+
 ## 5. 生命周期与状态流
 
 ### 5.1 inboxItem
@@ -274,7 +295,11 @@ AI 建议卡「编辑」与手工澄清 `POST /api/inbox/:id/clarify` 的 `detai
 ```text
 unprocessed ──澄清──> clarified（linkedId 指向新实体）
      │                    │
-     │                    └──撤回（revert：删除产物）──> unprocessed
+     │                    └──撤回（revert / unapply：删除全部产物）──> unprocessed
+     │
+     ├──一揽子应用（apply：建项目 + 实体，记录 linkedIds / appliedTagIds）──> clarified
+     │                    │
+     │                    └──撤销（unapply：删除全部 linkedIds + 清理本次新标签）──> unprocessed
      │
      └──丢弃──> discarded ──恢复（revert：无产物，仅重置 status）──> unprocessed
      │
@@ -282,7 +307,7 @@ unprocessed ──澄清──> clarified（linkedId 指向新实体）
 discarded ──删除（remove）──> ∅
 ```
 
-> 删除对 `clarified` 条目返回 409（保护已联动实体），须先「撤回」；`revert` 对 `unprocessed` 幂等。见 §4.1 与 ADR-0008 §6。
+> 删除对 `clarified` 条目返回 409（保护已联动实体），须先「撤回」；`revert` 对 `unprocessed` 幂等。一揽子应用（Slice R1）的 `revert` / `unapply` 会删除 `linkedIds` 全部产物并清理 `appliedTagIds`，恢复到应用前基线。见 §4.1 / §4.14 与 ADR-0008 §6 / ADR-0015。
 
 ### 5.2 task
 

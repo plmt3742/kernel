@@ -2462,6 +2462,70 @@ button.k-pill.is-danger:hover {
 }
 
 /* ---------------------------------------------------------------------------
+ * 一揽子处置卡（Slice R1）：动作列表 + 逐行勾选 / 编辑（全部走 token 表面阶）
+ * ------------------------------------------------------------------------- */
+
+.ic-actions {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.ic-action {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: var(--surface-elevated);
+  border-radius: var(--radius-inner);
+}
+.ic-action.is-excluded {
+  opacity: 0.5;
+}
+.ic-action__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.ic-action__kind {
+  flex: 0 0 auto;
+}
+.ic-action__title {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--ink);
+  font-size: var(--text-body-sm);
+  line-height: 1.4;
+}
+/* 行尾「编辑」开关：推到最右 */
+.ic-action__head > button.k-pill:last-child {
+  margin-left: auto;
+  flex: 0 0 auto;
+}
+.ic-action__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.ic-action__outcome {
+  color: var(--muted);
+  font-size: var(--text-caption);
+  line-height: 1.5;
+  max-width: var(--measure);
+}
+.ic-action__reason {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-caption);
+  line-height: 1.5;
+  max-width: var(--measure);
+}
+
+/* ---------------------------------------------------------------------------
  * 总览状态条（Slice G）：整宽、等分、左右对齐版心；替代左对齐 / 右边参差的胶囊行
  * ------------------------------------------------------------------------- */
 

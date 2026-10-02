@@ -33,6 +33,29 @@ KERNEL 的任务台账与迭代记录。记录当前迭代目标、未来待办�
 
 ---
 
+## AI 全链 · 多实体一揽子处置 · Slice R1（已完成 · 2026-10-03）
+
+以 owner 指令「我只负责往里面丢资料以及信息，你作为 AI 帮我做好幕后工作」为规格，修「需要做过多介入（手动建标签 / 项目）」的根因：一条内容此前只能解析出**一个**建议，而真实的一条通知常意味着「一件要推进的新事务 + 若干下一步 + 一份要点」。本切片把解析升级为**动作数组**（≤6）、新增**一揽子应用**（一次确认 → 先建项目、再落实体并自动挂接、标签登记）+ **精确撤销**（删产物 + 恢复标签注册表）、新增**项目快速新建 AI 草稿**。默认仍**先确认后写入**，不做自动应用。`npm run build`（tsc strict + vite）通过；服务端冒烟 **39/39** + 浏览器 E2E **36/36**（含路由拦截的确定性多动作流 + 真实 AI 多动作一次 + 项目草稿流）；零数据残留（inbox 12 / tasks 62 / notes 16 / resources 12 / projects 10；标签注册表回基线 26；所有者 i-0009/0010/0011/0012、t-0061/0062、rev-0001..0004、n-0016 未动）；控制台零 error；证据 `.qa/v34/`。
+
+- [x] Deliverable A · 多实体抽取：`aiActionSchema`（`kind` = task/note/resource/project；task 全字段 / project `outcome` / task·note `linkToNewProject`）+ `aiActionsSchema`（≤6）+ `inboxApplySchema`；`buildSystem` 改多动作提示词；`postValidateActions()`（快照过滤臆造 id、标签 ≤3、至多一个项目、同名现有项目丢弃、linkToNewProject 与 projectId 互斥、统一补 contexts）；`legacyToActions()`（旧单建议 → 动作数组，newProjectHint → 项目动作 + linkToNewProject）；`tryParseActions()` 兼容两形状，同步 / 流式共用，响应 `{ actions, model, ms }`。
+- [x] Deliverable B · 批量应用：`POST /api/inbox/:id/apply { actions }`——服务端重新校验 + 关联 id 存在性；先建项目（`project.create` · via `inbox.apply`）再落实体（自动挂接 / `sourceInboxId` / 文件 `path`）；标签 `origin:'ai'` 登记；条目 `clarified` + `linkedId`/`linkedIds`/`appliedTagIds`；审计 `inbox.apply` + 各实体 `*.create`。
+- [x] Deliverable C · 撤销：`POST /api/inbox/:id/unapply`（与扩展 `revert` 共用 `detachInbox`）删 `linkedIds` 全部产物 + `pruneTags(appliedTagIds)`（`store.mjs`，删除未再使用的本次新标签）→ 条目回 `unprocessed`；修复 Slice V 单 `linkedId` 对多产物不够。
+- [x] Deliverable D · 项目草稿：`POST /api/ai/project/draft { title }`（不落盘）+ `projectDraftSchema`；`POST /api/projects` 扩展接受 `outcome`/`areaId`/`tags`（缺省不变；`ai:true` → origin ai）；前端 `ProjectDraftModal.tsx`（镜像 TaskDraftModal）；Projects 页快速新建接入。
+- [x] Deliverable E · 前端处置卡：`AiActionsCard.tsx`（勾选 + 按 kind 编辑 + 页脚「全部应用（N 项）」/「重新解析」/「忽略」；toast「已应用 N 项 · 撤销」→ `unapplyInbox`）；`mutations.ts` 增 `AiAction`/`applyInbox`/`unapplyInbox`/`aiProjectDraft` + 扩展 `createProject`；`aiForm.ts` 增 `outcome` + `ACTION_FIELD_MATRIX` + `actionToForm`/`formToAction`；`AiSuggestionForm` 渲染 `outcome`；`Inbox.tsx` 接入。
+- [x] Deliverable F · 去重与一致性：`postValidateActions` 保证至多一个项目动作、同名现有项目丢弃、linkToNewProject 与 projectId 互斥；`newProjectHint` 仅作为旧形状输入，归一化为项目动作（不再双路径）；Slice V 的删除 / 恢复 / 撤回 / 字段矩阵全部保留。
+- [x] 验证：`.qa/v34/smoke-r1.mjs` 39/39（双形状 + 归一化 + 臆造过滤；apply 往返 1 项目 + 2 任务 + 1 笔记 + 1 资源含挂接 + 标签登记 + 审计；unapply 精确复原计数与注册表；revert 多产物；扩展项目创建；项目草稿；零残留 + 所有者未动）；`.qa/v34/verify-r1.py` 36/36（拦截合成 SSE → 3 可编辑动作 → 全部应用 → 撤销复原；项目草稿弹窗；真实 AI 多动作（容忍）；移动 390；控制台 0；零残留 + 所有者未动）。
+- [x] 记录：新增 ADR-0015；`docs/02`；`docs/04` §4.1 / §4.3 / §4.14 / §5.1；`docs/README.md`；`public/guide.html`；`CHANGELOG.md`、`AGENTS.md`。
+
+### Slice R1 · 动作 kind × 应用字段矩阵
+
+| kind | UI 展示 / 落盘字段 | 备注 |
+|---|---|---|
+| task | title / contexts / tags / energy / importance / estimateMin / dueAt / projectId（或 linkToNewProject）/ areaId | 全字段；新建 `status:'next'` + `sourceInboxId` |
+| note | title / tags / projectId（或 linkToNewProject）/ areaId | `type:'fleeting'`，`body` = 条目原文 |
+| resource | title / tags / areaId | 文件条目 `kind:'file'` + `path` |
+| project | title / outcome / tags / areaId | 新建 `status:'active'`，先于实体创建；至多 1 个 |
+| （旧形状）discard | 无 | 归一化为 `actions: []` |
+
 ## 收件箱生命周期闭合 + 澄清字段矩阵 · Slice V（已完成 · 2026-10-03）
 
 以 owner 面向的「碎片化 / 摩擦」审计为规格，修五组问题：①（F2）文本捕捉后不自动 AI 解析，与文件投递节奏不一致；②（F34）删除端点无 UI 入口、附件无法清理；③（F15/F37）已丢弃 / 已澄清条目 toast 消失后无出口；④（F16/F30）`newProjectHint` 不能一键建项；⑤（F19/F31）target=note/resource 时仍渲染任务专属字段，**编辑被静默丢弃**。不新增端点，复用既有 `remove` / `revert` / `clarify` / `projects`。`npm run build`（tsc strict + vite）通过；服务端冒烟 **43/43** + 浏览器 E2E **29/29**；零数据残留（inbox 回到基线 12 条；回收站 0；所有者 i-0009/i-0010、t-0061/t-0062、rev-0001/rev-0002 未动）；控制台零 error；证据 `.qa/v33/`。

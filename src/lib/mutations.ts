@@ -99,9 +99,30 @@ export async function createTask(input: TaskCreateInput): Promise<Task> {
   return task
 }
 
-/** 新建项目（Slice E2.5）：title 非空；默认 active + 区域 a-0001；成功后 upsert 本地快照 */
-export async function createProject(title: string, areaId?: string): Promise<Project> {
-  const body = areaId === undefined ? { title } : { title, areaId }
+/** 项目创建入参（Slice R1）：title 必填；outcome / areaId / tags 可选（草稿确认后提交） */
+export interface ProjectCreateInput {
+  title: string
+  outcome?: string
+  areaId?: string
+  tags?: string[]
+  /** 本次创建来自 AI 草稿确认——新标签按 origin:'ai' 登记 */
+  ai?: boolean
+}
+
+/**
+ * 新建项目：title 非空；默认 active + 区域 a-0001（Slice E2.5）。
+ * 兼容旧调用：传字符串（或 title + areaId）时行为不变；传对象时可携带 outcome / tags。
+ */
+export async function createProject(
+  titleOrInput: string | ProjectCreateInput,
+  areaId?: string,
+): Promise<Project> {
+  const body: Record<string, unknown> =
+    typeof titleOrInput === 'string'
+      ? areaId === undefined
+        ? { title: titleOrInput }
+        : { title: titleOrInput, areaId }
+      : { ...titleOrInput }
   const { project } = await api.post<{ project: Project }>('/api/projects', body)
   upsertEntity('projects', project)
   return project
@@ -226,12 +247,15 @@ export async function clarifyInbox(
 
 export interface RevertResult {
   inbox: InboxItem
+  /** 首个被移除产物（向后兼容；多产物应用时见 removedAll） */
   removed: { kind: CreatedKind; id: string } | null
+  /** 全部被移除产物（Slice R1：一揽子应用可能有多个产物） */
+  removedAll: Array<{ kind: CreatedKind; id: string }>
 }
 
 /**
- * 撤销澄清 / 恢复条目（Slice V · F15/F37）：服务端语义=
- *   · clarified → 删除已联动产物（若有）并回到 unprocessed；
+ * 撤销澄清 / 恢复条目（Slice V · F15/F37；Slice R1 扩展为多产物）：服务端语义=
+ *   · clarified → 删除全部联动产物（linkedIds）并回到 unprocessed；
  *   · discarded → 无产物，仅重置回 unprocessed（即「恢复」）；
  *   · unprocessed → 幂等无操作。
  * 前端同一函数承载「撤回」（澄清行）与「恢复」（丢弃行）两个入口。
@@ -239,7 +263,75 @@ export interface RevertResult {
 export async function revertInbox(id: string): Promise<RevertResult> {
   const result = await api.post<RevertResult>(`/api/inbox/${id}/revert`)
   upsertEntity('inbox', result.inbox)
-  if (result.removed !== null) removeEntity(result.removed.kind, result.removed.id)
+  const removed = result.removedAll ?? (result.removed === null ? [] : [result.removed])
+  for (const entry of removed) removeEntity(entry.kind, entry.id)
+  return result
+}
+
+/* ---------------------------------------------------------------------------
+ * 一揽子应用 / 撤销（v0.5 · Slice R1，见 ADR-0015）
+ * ------------------------------------------------------------------------- */
+
+/**
+ * AI 动作（对应服务端 aiActionSchema）：kind 决定字段子集；
+ * project = 本批次要新建的项目；task / note 可用 linkToNewProject 挂接它。
+ */
+export type AiActionKind = 'task' | 'note' | 'resource' | 'project'
+
+export interface AiAction {
+  kind: AiActionKind
+  title: string
+  /** task 专属 */
+  contexts: string[]
+  energy?: Task['energy']
+  importance?: number
+  estimateMin?: number
+  dueAt?: string
+  /** 归属（task / note / resource / project） */
+  projectId?: string
+  areaId?: string
+  tags: string[]
+  /** project 专属：完成定义 */
+  outcome?: string
+  /** task / note：挂到本批次新建的项目（与 projectId 互斥） */
+  linkToNewProject?: boolean
+  /** task：疑似重复的既有任务 id */
+  duplicateOf?: string
+  reason: string
+}
+
+export interface InboxApplyResult {
+  inbox: InboxItem
+  created: Array<{ kind: CreatedKind; record: Task | Project | Note | Resource }>
+  project: Project | null
+}
+
+/**
+ * 一揽子应用：一次写入创建新项目（若有）+ 全部实体，并把条目置 clarified。
+ * 成功后整体水合（应用会改变标签注册表）；水合失败时退回本地增量落位。
+ */
+export async function applyInbox(id: string, actions: AiAction[]): Promise<InboxApplyResult> {
+  const result = await api.post<InboxApplyResult>(`/api/inbox/${id}/apply`, { actions })
+  if (!(await hydrateFromServer())) {
+    upsertEntity('inbox', result.inbox)
+    for (const entry of result.created) upsertEntity(entry.kind, entry.record)
+  }
+  return result
+}
+
+export interface UnapplyResult {
+  inbox: InboxItem
+  removed: { kind: CreatedKind; id: string } | null
+  removedAll: Array<{ kind: CreatedKind; id: string }>
+}
+
+/** 撤销一揽子应用：删除全部产物并恢复标签注册表基线（服务端 pruneTags）；成功后整体水合 */
+export async function unapplyInbox(id: string): Promise<UnapplyResult> {
+  const result = await api.post<UnapplyResult>(`/api/inbox/${id}/unapply`)
+  if (!(await hydrateFromServer())) {
+    upsertEntity('inbox', result.inbox)
+    for (const entry of result.removedAll ?? []) removeEntity(entry.kind, entry.id)
+  }
   return result
 }
 
@@ -281,7 +373,8 @@ export interface AiSuggestion {
 }
 
 export interface AiParseResult {
-  suggestion: AiSuggestion
+  /** 一揽子处置动作（Slice R1：一个条目可拆出 0~6 个动作） */
+  actions: AiAction[]
   model: string | null
   ms: number
 }
@@ -291,7 +384,7 @@ export type AiStreamEvent =
   | { kind: 'status'; status?: string }
   | { kind: 'delta'; field: string; delta: string }
   | { kind: 'retry'; reason: string }
-  | { kind: 'suggestion'; suggestion: AiSuggestion; model: string | null; ms: number }
+  | { kind: 'suggestion'; actions: AiAction[]; model: string | null; ms: number }
   | { kind: 'error'; message: string }
 
 /** 请求 AI 解析收件箱条目（同步，保留为回退路径）；不写数据（失败抛出由调用方提示） */
@@ -361,7 +454,7 @@ export async function aiParseInboxStream(
       return
     }
     if (event.kind === 'suggestion') {
-      state.result = { suggestion: event.suggestion, model: event.model, ms: event.ms }
+      state.result = { actions: event.actions, model: event.model, ms: event.ms }
     } else if (event.kind === 'error') {
       state.failure = event.message
     }
@@ -415,6 +508,29 @@ export interface TaskDraftResult {
 /** 请求 AI 为「只填标题」的新任务补全可推断字段；不写数据（失败抛出由调用方安静处理） */
 export async function aiTaskDraft(title: string): Promise<TaskDraftResult> {
   return api.post<TaskDraftResult>('/api/ai/task/draft', { title })
+}
+
+/* ---------------------------------------------------------------------------
+ * 项目快速新建 AI 补全（v0.5 · Slice R1：只填标题 → 建议完成定义 / 区域 / 标签）
+ * ------------------------------------------------------------------------- */
+
+/** AI 项目补全建议（对应服务端 projectDraftSchema；全部可选，拿不准则缺省） */
+export interface ProjectDraftSuggestion {
+  outcome?: string
+  areaId?: string
+  tags: string[]
+  reason: string
+}
+
+export interface ProjectDraftResult {
+  suggestion: ProjectDraftSuggestion
+  model: string | null
+  ms: number
+}
+
+/** 请求 AI 为「只填标题」的新项目补全可推断字段；不写数据（失败抛出由调用方安静处理） */
+export async function aiProjectDraft(title: string): Promise<ProjectDraftResult> {
+  return api.post<ProjectDraftResult>('/api/ai/project/draft', { title })
 }
 
 /* ---------------------------------------------------------------------------

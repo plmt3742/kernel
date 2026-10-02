@@ -3,12 +3,13 @@ import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Plus } from 'lucide-react'
 import { ProjectDetailModal } from '@/components/ProjectDetailModal'
+import { ProjectDraftModal } from '@/components/ProjectDraftModal'
 import { MeterBar } from '@/components/MeterBar'
 import { TagPill } from '@/components/TagPill'
 import { EmptyState } from '@/components/EmptyState'
 import { useToast } from '@/context/ToastContext'
 import { getAreaById, getProjectProgress, getSnapshot, getTaskById } from '@/lib/data'
-import { createProject, trashEntity } from '@/lib/mutations'
+import { trashEntity } from '@/lib/mutations'
 import { errorText } from '@/lib/api'
 import { useDataRevision } from '@/lib/hooks'
 import { PROJECT_STATUS_EN, PROJECT_STATUS_LABEL, tagLabel } from '@/lib/format'
@@ -38,6 +39,8 @@ export function Projects() {
   const [searchParams, setSearchParams] = useSearchParams()
   const [drawerId, setDrawerId] = useState<string | null>(null)
   const [quick, setQuick] = useState('')
+  // 草稿确认弹窗（Slice R1）：回车后打开，AI 补全完成定义 / 区域 / 标签，确认才写入
+  const [draftTitle, setDraftTitle] = useState<string | null>(null)
   const projects = getSnapshot().projects
 
   // 深链直达项目弹窗：/projects?project=p-0002
@@ -55,28 +58,27 @@ export function Projects() {
     }
   }
 
-  // 快速新建项目（镜像任务页 quick-add）：回车创建 → toast；撤销走回收站
+  // 快速新建项目（Slice R1 · 草稿确认）：回车 → 弹窗（AI 补全完成定义 / 区域 / 标签）→
+  // 点「创建项目」才写入；确认前零落盘。撤销走回收站。
   const handleQuickAdd = (): void => {
     const value = quick.trim()
     if (value === '') return
-    void (async () => {
-      try {
-        const project = await createProject(value)
-        setQuick('')
-        toast('已创建项目 · 撤销', {
-          action: {
-            label: '撤销',
-            onClick: () => {
-              void trashEntity('projects', project.id).catch((err) => {
-                toast(`撤销失败：${errorText(err)}`, { tone: 'error' })
-              })
-            },
-          },
-        })
-      } catch (err) {
-        toast(`创建失败：${errorText(err)}`, { tone: 'error' })
-      }
-    })()
+    setDraftTitle(value)
+    setQuick('')
+  }
+
+  const handleCreated = (project: Project): void => {
+    setDraftTitle(null)
+    toast('已创建项目 · 撤销', {
+      action: {
+        label: '撤销',
+        onClick: () => {
+          void trashEntity('projects', project.id).catch((err) => {
+            toast(`撤销失败：${errorText(err)}`, { tone: 'error' })
+          })
+        },
+      },
+    })
   }
 
   // 跨分组连续编号（与设计稿一致：进行中 01–09、将来 10 …）
@@ -157,6 +159,14 @@ export function Projects() {
 
       {/* 项目详情居中弹窗（Slice K）：与总览就地弹窗共用同一组件，动作一致 */}
       <ProjectDetailModal projectId={drawerId} onClose={closeDrawer} />
+
+      {/* 新建项目草稿确认弹窗（Slice R1）：确认前零落盘 */}
+      <ProjectDraftModal
+        open={draftTitle !== null}
+        initialTitle={draftTitle ?? ''}
+        onClose={() => setDraftTitle(null)}
+        onCreated={handleCreated}
+      />
     </div>
   )
 }

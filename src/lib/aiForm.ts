@@ -4,12 +4,20 @@
 // 表单内部一律用字符串（逗号列表 / datetime-local），仅在提交时换算为 API 负载。
 // 纪律：AI 只负责预填；用户可任意编辑；提交前的任何失败都不落盘。
 import { toDate, toISODateTime } from '@/lib/date'
-import type { AiSuggestion, TaskCreateInput, TaskDraftSuggestion } from '@/lib/mutations'
+import type {
+  AiAction,
+  AiActionKind,
+  AiSuggestion,
+  TaskCreateInput,
+  TaskDraftSuggestion,
+} from '@/lib/mutations'
 import type { Energy } from '@/types'
 
 /** 表单值（全字符串，便于受控 input / select） */
 export interface AiSuggestionFormValues {
   title: string
+  /** 仅项目用：完成定义（'' = 未设置） */
+  outcome: string
   /** 逗号分隔（'' = 未设置） */
   contexts: string
   /** '' | 'low' | 'medium' | 'high' */
@@ -31,6 +39,7 @@ export interface AiSuggestionFormValues {
 /** 可编辑字段键（与 AiSuggestionForm 的渲染单元一一对应） */
 export type ClarifyFieldKey =
   | 'title'
+  | 'outcome'
   | 'contexts'
   | 'tags'
   | 'energy'
@@ -70,6 +79,7 @@ export const CLARIFY_FIELD_MATRIX: Record<AiSuggestion['target'], readonly Clari
 
 export const EMPTY_AI_FORM: AiSuggestionFormValues = {
   title: '',
+  outcome: '',
   contexts: '',
   energy: '',
   importance: '',
@@ -78,6 +88,20 @@ export const EMPTY_AI_FORM: AiSuggestionFormValues = {
   projectId: '',
   areaId: '',
   tags: '',
+}
+
+/**
+ * 动作 kind × 可编辑字段矩阵（Slice R1）——与服务端 applyInboxActions 真正落盘的字段一致：
+ *   · task     → 全字段（含 contexts / 能量 / 预估 / 截止 / tags / projectId / areaId）
+ *   · note     → title / tags / projectId / areaId
+ *   · resource → title / tags / areaId
+ *   · project  → title / outcome / tags / areaId
+ */
+export const ACTION_FIELD_MATRIX: Record<AiActionKind, readonly ClarifyFieldKey[]> = {
+  task: ALL_CLARIFY_FIELDS,
+  note: ['title', 'tags', 'projectId', 'areaId'],
+  resource: ['title', 'tags', 'areaId'],
+  project: ['title', 'outcome', 'tags', 'areaId'],
 }
 
 /** 逗号列表 → 去空去重后的字符串数组 */
@@ -105,6 +129,7 @@ function toLocalInput(value: string | undefined): string {
 export function suggestionToForm(suggestion: AiSuggestion): AiSuggestionFormValues {
   return {
     title: suggestion.title,
+    outcome: '',
     contexts: listToText(suggestion.contexts),
     energy: suggestion.energy,
     importance: String(suggestion.importance),
@@ -120,6 +145,7 @@ export function suggestionToForm(suggestion: AiSuggestion): AiSuggestionFormValu
 export function draftToForm(title: string, draft: TaskDraftSuggestion): AiSuggestionFormValues {
   return {
     title,
+    outcome: '',
     contexts: listToText(draft.contexts),
     energy: draft.energy ?? '',
     importance: draft.importance === undefined ? '' : String(draft.importance),
@@ -173,5 +199,55 @@ export function applyFormToSuggestion(
   else next.projectId = values.projectId
   if (values.areaId === '') delete next.areaId
   else next.areaId = values.areaId
+  return next
+}
+
+/* ---------------------------------------------------------------------------
+ * AI 动作（Slice R1）：动作 ⇄ 表单值换算（处置卡逐条编辑用）
+ * ------------------------------------------------------------------------- */
+
+/** AI 动作 → 表单值（缺省轴留空；project 动作带 outcome） */
+export function actionToForm(action: AiAction): AiSuggestionFormValues {
+  return {
+    title: action.title,
+    outcome: action.outcome ?? '',
+    contexts: listToText(action.contexts),
+    energy: action.energy ?? '',
+    importance: action.importance === undefined ? '' : String(action.importance),
+    estimateMin: action.estimateMin === undefined ? '' : String(action.estimateMin),
+    dueAt: toLocalInput(action.dueAt),
+    projectId: action.projectId ?? '',
+    areaId: action.areaId ?? '',
+    tags: listToText(action.tags),
+  }
+}
+
+/**
+ * 表单值套回 AI 动作：非表单字段（kind / reason / linkToNewProject / duplicateOf）原样保留；
+ * 空的可选字段从动作中删除（避免送出空串）；用户显式选了现有项目 → 取消 linkToNewProject（互斥）。
+ */
+export function formToAction(action: AiAction, values: AiSuggestionFormValues): AiAction {
+  const next: AiAction = {
+    ...action,
+    title: values.title.trim(),
+    contexts: splitList(values.contexts),
+    tags: splitList(values.tags),
+  }
+  if (values.energy === '') delete next.energy
+  else next.energy = values.energy as Energy
+  if (values.importance === '') delete next.importance
+  else next.importance = Number(values.importance)
+  if (values.estimateMin.trim() === '') delete next.estimateMin
+  else next.estimateMin = Number(values.estimateMin)
+  if (values.dueAt === '') delete next.dueAt
+  else next.dueAt = toISODateTime(new Date(values.dueAt))
+  if (values.projectId === '') delete next.projectId
+  else next.projectId = values.projectId
+  if (values.areaId === '') delete next.areaId
+  else next.areaId = values.areaId
+  const outcome = values.outcome.trim()
+  if (outcome === '') delete next.outcome
+  else next.outcome = outcome
+  if (next.projectId !== undefined) delete next.linkToNewProject
   return next
 }

@@ -16,6 +16,7 @@ import {
   nextId,
   normalizeTagList,
   nowIso,
+  pruneTags,
   purgeTrash,
   readActivity,
   readEntity,
@@ -29,6 +30,7 @@ import {
 import {
   clarifyDetailsSchema,
   ID_PATTERNS,
+  inboxApplySchema,
   taskCreateFieldsSchema,
   tagMergeSchema,
   tagUpdateSchema,
@@ -40,6 +42,7 @@ import {
   chatWithKernel,
   computeMonthMetrics,
   computeWeekMetrics,
+  draftProject,
   draftTask,
   generateReviewDraft,
   getAiHealth,
@@ -47,6 +50,7 @@ import {
   monthKey,
   parseInboxItem,
   parseInboxItemStream,
+  PROJECT_DRAFT_MAX_TITLE_CHARS,
   staleProjects,
   TASK_DRAFT_MAX_TITLE_CHARS,
 } from './ai.mjs'
@@ -318,30 +322,43 @@ async function createTask(body) {
   return { task: saved }
 }
 
-/** 新建项目：title 非空（400）；默认 active + 区域 a-0001 + 完成定义待整理（Slice E2.5） */
+/**
+ * 新建项目：title 非空（400）；默认 active + 区域 a-0001 + 完成定义待整理（Slice E2.5）。
+ * Slice R1：可携带草稿确认后的可选字段 outcome / areaId / tags（关联 id 须真实存在；
+ * areaId 缺省仍为 a-0001；仅传 title 的旧调用行为不变）；origin 'ai' 表示 AI 草稿确认。
+ */
 async function createProject(body) {
   const title = typeof body.title === 'string' ? body.title.trim() : ''
   if (title === '') throw Object.assign(new Error('标题不能为空'), { status: 400 })
   const rawArea = typeof body.areaId === 'string' ? body.areaId.trim() : ''
+  if (rawArea !== '' && (!validId('areas', rawArea) || (await readEntity('areas', rawArea)) === null)) {
+    throw Object.assign(new Error('区域不存在'), { status: 400 })
+  }
+  const rawOutcome = typeof body.outcome === 'string' ? body.outcome.trim() : ''
   const tags = normalizeTagList(body.tags)
+  const origin = body.ai === true ? 'ai' : 'manual'
   const now = nowIso()
   const project = {
     id: await nextId('projects'),
     title,
-    outcome: '完成定义待整理',
+    outcome: rawOutcome !== '' ? rawOutcome.slice(0, 200) : '完成定义待整理',
     status: 'active',
     areaId: rawArea !== '' ? rawArea : 'a-0001',
     tags,
     createdAt: now,
     updatedAt: now,
   }
+  const fields = []
+  if (rawOutcome !== '') fields.push('outcome')
+  if (rawArea !== '') fields.push('areaId')
+  if (tags.length > 0) fields.push('tags')
   const saved = await commit('projects', project, {
     action: 'project.create',
     entity: 'project',
     id: project.id,
-    detail: { title },
+    detail: { title, fields, ...(origin === 'ai' ? { ai: true } : {}) },
   })
-  if (tags.length > 0) await ensureTags(tags, { origin: 'manual', firstUsedIn: saved.id })
+  if (tags.length > 0) await ensureTags(tags, { origin, firstUsedIn: saved.id })
   return { project: saved }
 }
 
@@ -573,38 +590,254 @@ async function clarifyInbox(id, body) {
   return { inbox: savedItem, created: { kind, record: savedRecord } }
 }
 
-async function revertInbox(id) {
+/** 实体 id 前缀 → kind（用于撤销时定位产物） */
+function kindOfId(id) {
+  if (typeof id !== 'string') return null
+  if (id.startsWith('t-')) return 'tasks'
+  if (id.startsWith('n-')) return 'notes'
+  if (id.startsWith('r-')) return 'resources'
+  if (id.startsWith('p-')) return 'projects'
+  return null
+}
+
+/** 动作挂接的项目 id：优先本批次新建项目（linkToNewProject），否则显式 projectId */
+function resolveProjectForAction(action, newProject) {
+  if (action.linkToNewProject === true && newProject !== null) return newProject.id
+  return action.projectId
+}
+
+/**
+ * 一揽子应用（v0.5 · Slice R1，见 ADR-0015）：一次写入把条目拆解出的全部动作落位。
+ * 顺序：先建新项目（至多 1 个），再逐条建 task / note / resource（linkToNewProject 自动挂到新项目）。
+ * 服务端重新 Zod 校验（inboxApplySchema）+ 关联 id 存在性校验（不信任客户端形状）；
+ * 标签以 origin 'ai' 登记；条目置 clarified（linkedId 供深链、linkedIds 供完整撤销、
+ * appliedTagIds 供撤销时恢复注册表基线）；审计 inbox.apply + 各实体 create。
+ */
+async function applyInboxActions(id, body) {
   const item = await readEntity('inbox', id)
   if (item === null) throw Object.assign(new Error('条目不存在'), { status: 404 })
-  if (item.status === 'unprocessed') return { inbox: item, removed: null }
-
-  let removed = null
-  if (typeof item.linkedId === 'string') {
-    const kind =
-      item.linkedId.startsWith('t-') ? 'tasks'
-      : item.linkedId.startsWith('n-') ? 'notes'
-      : item.linkedId.startsWith('r-') ? 'resources'
-      : item.linkedId.startsWith('p-') ? 'projects'
-      : null
-    if (kind !== null && (await readEntity(kind, item.linkedId)) !== null) {
-      await remove(kind, item.linkedId, {
-        action: 'inbox.revert.remove',
-        entity: kind,
-        id: item.linkedId,
-        detail: { fromInbox: id },
-      })
-      removed = { kind, id: item.linkedId }
+  if (item.status !== 'unprocessed') {
+    throw Object.assign(new Error('该条目已澄清或已丢弃'), { status: 409 })
+  }
+  const parsed = inboxApplySchema.parse(body)
+  // 客户端的显式 null（"无关联"）统一移除，避免被当成臆造 id 拒绝
+  const actions = parsed.actions.map((action) => {
+    const out = { ...action }
+    for (const key of ['projectId', 'areaId', 'dueAt', 'outcome', 'duplicateOf']) {
+      if (out[key] === null) delete out[key]
     }
+    return out
+  })
+  if (actions.filter((a) => a.kind === 'project').length > 1) {
+    throw Object.assign(new Error('一揽子应用至多包含一个新项目'), { status: 400 })
+  }
+  const snapshot = await readSnapshot()
+  const areaIds = new Set((snapshot.areas ?? []).map((a) => a.id))
+  const projectIds = new Set((snapshot.projects ?? []).map((p) => p.id))
+  for (const action of actions) {
+    if (action.areaId !== undefined && !areaIds.has(action.areaId)) {
+      throw Object.assign(new Error('区域不存在'), { status: 400 })
+    }
+    if (action.projectId !== undefined && !projectIds.has(action.projectId)) {
+      throw Object.assign(new Error('项目不存在'), { status: 400 })
+    }
+  }
+
+  const now = nowIso()
+  const created = []
+  const linkedIds = []
+  const tagFirstUsed = new Map()
+  let newProject = null
+
+  const trackTags = (tags, recordId) => {
+    for (const name of tags) if (!tagFirstUsed.has(name)) tagFirstUsed.set(name, recordId)
+  }
+
+  const projectAction = actions.find((a) => a.kind === 'project')
+  if (projectAction !== undefined) {
+    const tags = normalizeTagList(projectAction.tags)
+    const project = {
+      id: await nextId('projects'),
+      title: projectAction.title,
+      outcome:
+        typeof projectAction.outcome === 'string' && projectAction.outcome !== ''
+          ? projectAction.outcome
+          : '完成定义待整理（由收件箱一揽子应用创建）',
+      status: 'active',
+      areaId: projectAction.areaId ?? 'a-0001',
+      tags,
+      createdAt: now,
+      updatedAt: now,
+    }
+    newProject = await commit('projects', project, {
+      action: 'project.create',
+      entity: 'project',
+      id: project.id,
+      detail: { title: project.title, via: 'inbox.apply' },
+    })
+    created.push({ kind: 'projects', record: newProject })
+    linkedIds.push(newProject.id)
+    trackTags(tags, newProject.id)
+  }
+
+  for (const action of actions) {
+    if (action.kind === 'project') continue
+    const tags = normalizeTagList(action.tags)
+    let saved
+    if (action.kind === 'task') {
+      const record = {
+        id: await nextId('tasks'),
+        title: action.title,
+        status: 'next',
+        contexts: action.contexts.length > 0 ? action.contexts : ['@computer'],
+        energy: action.energy ?? 'low',
+        importance: action.importance ?? 2,
+        tags,
+        createdAt: now,
+        updatedAt: now,
+        sourceInboxId: item.id,
+      }
+      if (action.estimateMin !== undefined) record.estimateMin = action.estimateMin
+      if (action.dueAt !== undefined) record.dueAt = action.dueAt
+      const projectId = resolveProjectForAction(action, newProject)
+      if (projectId !== undefined) record.projectId = projectId
+      if (action.areaId !== undefined) record.areaId = action.areaId
+      saved = await commit('tasks', record, {
+        action: 'task.create',
+        entity: 'task',
+        id: record.id,
+        detail: { title: record.title, via: 'inbox.apply' },
+      })
+      created.push({ kind: 'tasks', record: saved })
+    } else if (action.kind === 'note') {
+      const truncated = item.content.length > 24 ? `${item.content.slice(0, 24)}…` : item.content
+      const record = {
+        id: await nextId('notes'),
+        title: action.title !== '' ? action.title : truncated,
+        type: 'fleeting',
+        body: item.content,
+        links: [],
+        tags,
+        distillLevel: 0,
+        createdAt: now,
+        updatedAt: now,
+      }
+      const projectId = resolveProjectForAction(action, newProject)
+      if (projectId !== undefined) record.projectId = projectId
+      if (action.areaId !== undefined) record.areaId = action.areaId
+      saved = await commit('notes', record, {
+        action: 'note.create',
+        entity: 'note',
+        id: record.id,
+        detail: { title: record.title, via: 'inbox.apply' },
+      })
+      created.push({ kind: 'notes', record: saved })
+    } else {
+      const isFile = item.file !== undefined && item.file !== null
+      const record = {
+        id: await nextId('resources'),
+        title: action.title,
+        kind: isFile ? 'file' : 'article',
+        status: 'unread',
+        tags,
+        addedAt: now,
+      }
+      if (isFile) record.path = path.join(FILES_DIR, `${item.id}-${item.file.name}`)
+      if (action.areaId !== undefined) record.areaId = action.areaId
+      saved = await commit('resources', record, {
+        action: 'resource.create',
+        entity: 'resource',
+        id: record.id,
+        detail: { title: record.title, via: 'inbox.apply' },
+      })
+      created.push({ kind: 'resources', record: saved })
+    }
+    linkedIds.push(saved.id)
+    trackTags(tags, saved.id)
+  }
+
+  // 录入即生成：本批次新标签以 origin 'ai' 登记（撤销时按 appliedTagIds 清理）
+  let appliedTagIds = []
+  if (tagFirstUsed.size > 0) {
+    const registered = await ensureTags([...tagFirstUsed.keys()], {
+      origin: 'ai',
+      firstUsedInMap: Object.fromEntries(tagFirstUsed),
+    })
+    appliedTagIds = registered.map((tag) => tag.id)
+  }
+
+  const savedItem = await commit(
+    'inbox',
+    { ...item, status: 'clarified', linkedId: linkedIds[0], linkedIds, appliedTagIds },
+    {
+      action: 'inbox.apply',
+      entity: 'inboxItem',
+      id,
+      detail: {
+        created: created.map((entry) => ({ kind: entry.kind, id: entry.record.id })),
+        projectId: newProject?.id ?? null,
+        ai: true,
+      },
+    },
+  )
+  return { inbox: savedItem, created, project: newProject }
+}
+
+/**
+ * 撤销 / 恢复条目（v0.5 · Slice V/F15/F37；Slice R1 扩展为多产物）：
+ *   · clarified → 删除全部联动产物（linkedIds，兼容旧单 linkedId）+ 清理本次新建标签 → unprocessed；
+ *   · discarded → 无产物，仅重置回 unprocessed（即「恢复」）；
+ *   · unprocessed → 幂等无操作。
+ * action 区分入口：revert（生命周期撤回 / 恢复）与 unapply（一揽子应用的撤销）。
+ */
+async function detachInbox(id, action) {
+  const item = await readEntity('inbox', id)
+  if (item === null) throw Object.assign(new Error('条目不存在'), { status: 404 })
+  if (item.status === 'unprocessed') return { inbox: item, removed: null, removedAll: [] }
+
+  const linked =
+    Array.isArray(item.linkedIds) && item.linkedIds.length > 0
+      ? item.linkedIds
+      : typeof item.linkedId === 'string'
+        ? [item.linkedId]
+        : []
+  const removedAll = []
+  for (const linkedId of linked) {
+    const kind = kindOfId(linkedId)
+    if (kind === null) continue
+    if ((await readEntity(kind, linkedId)) === null) continue
+    await remove(kind, linkedId, {
+      action: 'inbox.revert.remove',
+      entity: kind,
+      id: linkedId,
+      detail: { fromInbox: id },
+    })
+    removedAll.push({ kind, id: linkedId })
+  }
+  if (Array.isArray(item.appliedTagIds) && item.appliedTagIds.length > 0) {
+    await pruneTags(item.appliedTagIds)
   }
   const next = { ...item, status: 'unprocessed' }
   delete next.linkedId
+  delete next.linkedIds
+  delete next.appliedTagIds
   const saved = await commit('inbox', next, {
-    action: 'inbox.revert',
+    action,
     entity: 'inboxItem',
     id,
-    detail: removed !== null ? { removedKind: removed.kind, removedId: removed.id } : {},
+    detail: removedAll.length > 0 ? { removedCount: removedAll.length } : {},
   })
-  return { inbox: saved, removed }
+  return { inbox: saved, removed: removedAll[0] ?? null, removedAll }
+}
+
+/** 撤回已澄清 / 恢复已丢弃（生命周期入口） */
+async function revertInbox(id) {
+  return detachInbox(id, 'inbox.revert')
+}
+
+/** 撤销一揽子应用（Slice R1）：与 revert 同语义（删除全部产物并恢复注册表基线） */
+async function unapplyInbox(id) {
+  return detachInbox(id, 'inbox.unapply')
 }
 
 /* ---------------------------------------------------------------------------
@@ -834,6 +1067,9 @@ const INBOX_ID_RE = /^\/api\/inbox\/([^/]+)\/(clarify|revert)$/
 const INBOX_REMOVE_RE = /^\/api\/inbox\/([^/]+)\/remove$/
 /** 附件本机动作（Slice J2）：/api/inbox/<id>/(open|reveal) */
 const INBOX_FILE_ACTION_RE = /^\/api\/inbox\/([^/]+)\/(open|reveal)$/
+/** 一揽子应用 / 撤销（Slice R1）：/api/inbox/<id>/(apply|unapply) */
+const INBOX_APPLY_RE = /^\/api\/inbox\/([^/]+)\/apply$/
+const INBOX_UNAPPLY_RE = /^\/api\/inbox\/([^/]+)\/unapply$/
 const FILES_RE = /^\/api\/files\/([^/]+)$/
 const AI_INBOX_PARSE_RE = /^\/api\/ai\/inbox\/([^/]+)\/parse$/
 const AI_INBOX_PARSE_STREAM_RE = /^\/api\/ai\/inbox\/([^/]+)\/parse-stream$/
@@ -988,6 +1224,25 @@ const server = http.createServer(async (req, res) => {
         return fail(res, 502, err?.message ?? 'AI 调用失败')
       }
       console.log(`[ai] task.draft ok ${result.ms}ms`)
+      send(res, 200, result)
+      return
+    }
+    // 项目快速新建 AI 补全（Slice R1）：只填标题 → 建议完成定义 / 区域 / 标签（绝不自动落盘）
+    if (method === 'POST' && pathname === '/api/ai/project/draft') {
+      const body = await readBody(req)
+      const rawTitle = typeof body.title === 'string' ? body.title.trim() : ''
+      if (rawTitle === '') return fail(res, 400, '标题不能为空')
+      const title = rawTitle.slice(0, PROJECT_DRAFT_MAX_TITLE_CHARS)
+      const health = await getAiHealth()
+      if (health.available === false) return fail(res, 503, 'opencode 服务未就绪（127.0.0.1:4096）')
+      let result
+      try {
+        result = await draftProject(title)
+      } catch (err) {
+        console.error('[ai] project.draft 失败：', err?.message ?? err)
+        return fail(res, 502, err?.message ?? 'AI 调用失败')
+      }
+      console.log(`[ai] project.draft ok ${result.ms}ms`)
       send(res, 200, result)
       return
     }
@@ -1197,6 +1452,26 @@ const server = http.createServer(async (req, res) => {
       const action = inboxFileMatch[2]
       const result = await inboxFileAction(id, action, await readBody(req))
       console.log(`[data] inbox.${action} ${id}${result.dryRun === true ? ' (dryRun)' : ''}`)
+      send(res, 200, result)
+      return
+    }
+    // 一揽子应用（Slice R1）：一次写入创建新项目（若有）+ 全部实体（linkToNewProject 自动挂接）
+    const inboxApplyMatch = INBOX_APPLY_RE.exec(pathname)
+    if (method === 'POST' && inboxApplyMatch !== null) {
+      const id = decodeURIComponent(inboxApplyMatch[1])
+      if (!validId('inbox', id)) return fail(res, 400, '收件箱 id 格式不正确')
+      const result = await applyInboxActions(id, await readBody(req))
+      console.log(`[data] inbox.apply ${id}（${result.created.length} 项）`)
+      send(res, 200, result)
+      return
+    }
+    // 撤销一揽子应用（Slice R1）：删除全部产物并恢复标签注册表基线
+    const inboxUnapplyMatch = INBOX_UNAPPLY_RE.exec(pathname)
+    if (method === 'POST' && inboxUnapplyMatch !== null) {
+      const id = decodeURIComponent(inboxUnapplyMatch[1])
+      if (!validId('inbox', id)) return fail(res, 400, '收件箱 id 格式不正确')
+      const result = await unapplyInbox(id)
+      console.log(`[data] inbox.unapply ${id}（移除 ${result.removedAll.length} 项）`)
       send(res, 200, result)
       return
     }

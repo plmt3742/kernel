@@ -219,6 +219,63 @@ export const aiSuggestionSchema = z.object({
   reason: z.string().max(300).default(''),
 })
 
+/* ---------------------------------------------------------------------------
+ * AI 全链 · 多实体一揽子处置（v0.5 · Slice R1，见 ADR-0015）
+ * 一个收件箱条目可被拆解为多个动作（task / note / resource / project）；
+ * 模型输出 { actions: [...] }，旧式单建议形状仍被接受并由 ai.mjs 归一化为动作数组。
+ * ------------------------------------------------------------------------- */
+
+/** 动作类型：project 表示「本批次要新建的项目」，task/note 可用 linkToNewProject 挂接它 */
+export const aiActionKind = z.enum(['task', 'note', 'resource', 'project'])
+
+/**
+ * 单个 AI 动作（不完全对应持久化实体，仅作预览 / 批量应用入参）。
+ * 字段刻意做成并集：与 kind 无关的键会被忽略；postValidateActions 再按 kind 清洗。
+ * 关联 id / 标签经快照后校验（防臆造）；linkToNewProject 仅在存在 project 动作时保留。
+ */
+export const aiActionSchema = z.object({
+  kind: aiActionKind,
+  title: z.string().min(1).max(80),
+  // task 专属
+  contexts: z.array(z.string().min(1)).max(5).default([]),
+  energy: energy.optional(),
+  importance: z.number().int().min(1).max(3).optional(),
+  estimateMin: z.number().int().min(1).max(600).optional(),
+  dueAt: z.union([iso, z.null()]).optional(),
+  // 归属（note / resource / project；task 亦可用）
+  projectId: z.union([z.string(), z.null()]).optional(),
+  areaId: z.union([z.string(), z.null()]).optional(),
+  tags: z.array(z.string().min(1)).max(5).default([]),
+  // project 专属：完成定义
+  outcome: z.union([z.string().max(200), z.null()]).optional(),
+  // task / note：挂到本批次新建的项目（此时 projectId 须为空）
+  linkToNewProject: z.boolean().optional(),
+  // task：疑似重复的既有任务 id
+  duplicateOf: z.union([z.string(), z.null()]).optional(),
+  reason: z.string().max(300).default(''),
+})
+
+/** 模型整体输出形状（≤6 个动作；空数组表示无需创建） */
+export const aiActionsSchema = z.object({
+  actions: z.array(aiActionSchema).max(6).default([]),
+})
+
+/** 批量应用入参（客户端提交，服务端重新 Zod 校验，绝不信任客户端形状） */
+export const inboxApplySchema = z.object({
+  actions: z.array(aiActionSchema).min(1).max(6),
+})
+
+/**
+ * AI 项目快速新建草稿（v0.5 · Slice R1）：只给标题 → 推断完成定义 / 区域 / 标签。
+ * 全部可选：拿不准就缺省；关联 id / 标签经 postValidate 按快照过滤；绝不自动落盘。
+ */
+export const projectDraftSchema = z.object({
+  outcome: z.union([z.string().max(200), z.null()]).optional(),
+  areaId: z.union([z.string(), z.null()]).optional(),
+  tags: z.array(z.string().min(1)).max(5).default([]),
+  reason: z.string().max(300).default(''),
+})
+
 /**
  * AI 任务快速新建草稿（v0.5 · Slice H）：「只填标题」新建的任务 → AI 补全建议。
  * 全部字段可选：模型拿不准就不返回该键；前端按实际返回字段呈现「应用 / 忽略」。

@@ -513,6 +513,41 @@ export function removeTag(id) {
   })
 }
 
+/**
+ * 撤销一揽子应用时清理「本次新建的标签」（Slice R1）：仅删除传入 id 且当前 0 使用者的标签。
+ * 已被其它记录使用 → 保留（不破坏数据）；级联审计 tag.remove（detail.via 标记来源）。
+ * @param {string[]} ids 应用时新登记的标签 id
+ * @returns {Promise<Array>} 实际移除的注册项
+ */
+export function pruneTags(ids) {
+  return serialize(async () => {
+    const wanted = new Set((Array.isArray(ids) ? ids : []).filter((id) => typeof id === 'string'))
+    if (wanted.size === 0) return []
+    const reg = await readTagRegistryFile()
+    const tags = [...(reg.tags ?? [])]
+    const removed = []
+    for (const id of wanted) {
+      const index = tags.findIndex((item) => item.id === id)
+      if (index === -1) continue
+      const tag = tags[index]
+      const usage = await countTagUsage(tag.name)
+      if (usage > 0) continue
+      tags.splice(index, 1)
+      removed.push(tag)
+      await appendActivity({
+        action: 'tag.remove',
+        entity: 'tag',
+        id,
+        detail: { name: tag.name, via: 'inbox.unapply' },
+      })
+    }
+    if (removed.length === 0) return []
+    const parsed = tagRegistrySchema.parse({ tags })
+    await writeFileAtomic(TAGS_FILE, `${JSON.stringify(parsed, null, 2)}\n`, { encoding: 'utf8' })
+    return removed
+  })
+}
+
 /* ---------------------------------------------------------------------------
  * 回收站（v0.5 · Slice E2）：data/trash/<kind>/<id>.json（原记录 + trashedAt）
  * 纪律：先写副本再删原件；恢复先写回再删副本；全部走 serialize 串行队列。

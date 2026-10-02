@@ -56,6 +56,23 @@ export function AiSuggestionForm({
         </div>
       )}
 
+      {show('outcome') && (
+        <div className="k-field k-ai-form__full">
+          <label className="k-field__label u-label" htmlFor={fieldId('outcome')}>
+            完成定义
+          </label>
+          <input
+            id={fieldId('outcome')}
+            className="k-input"
+            type="text"
+            value={values.outcome}
+            placeholder="怎样算完成（如：决赛名单与分工落定）"
+            disabled={disabled}
+            onChange={(event) => onChange({ outcome: event.target.value })}
+          />
+        </div>
+      )}
+
       {show('contexts') && (
         <div className="k-field">
           <label className="k-field__label u-label" htmlFor={fieldId('contexts')}>

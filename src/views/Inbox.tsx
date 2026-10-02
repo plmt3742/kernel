@@ -7,7 +7,6 @@ import {
   useState,
   useSyncExternalStore,
   type DragEvent as ReactDragEvent,
-  type ReactNode,
 } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { useNavigate } from 'react-router-dom'
@@ -28,20 +27,20 @@ import { MeterBar } from '@/components/MeterBar'
 import { TagPill } from '@/components/TagPill'
 import { Checkbox } from '@/components/Checkbox'
 import { EmptyState } from '@/components/EmptyState'
-import { AiSuggestionForm } from '@/components/AiSuggestionForm'
+import { AiActionsCard } from '@/components/AiActionsCard'
 import { useToast } from '@/context/ToastContext'
-import { getAreaById, getInbox, getProjectById, getTaskById } from '@/lib/data'
+import { getInbox } from '@/lib/data'
 import {
+  applyInbox,
   captureInbox,
   clarifyInbox,
-  createProject,
   openInboxFile,
   removeInbox,
   revealInboxFile,
   revertInbox,
+  unapplyInbox,
   uploadInboxFile,
-  type AiSuggestion,
-  type ClarifyDetails,
+  type AiAction,
   type ClarifyTarget,
 } from '@/lib/mutations'
 import {
@@ -56,24 +55,16 @@ import {
   takeInboxAiFailures,
   type AiStage,
 } from '@/lib/inboxAi'
-import {
-  applyFormToSuggestion,
-  CLARIFY_FIELD_MATRIX,
-  suggestionToForm,
-  type AiSuggestionFormValues,
-} from '@/lib/aiForm'
 import { deepLinkOfId } from '@/lib/relations'
 import { api, errorText } from '@/lib/api'
 import { useDataRevision, useNow } from '@/lib/hooks'
-import { ENERGY_LABEL, humanSize, INBOX_SOURCE_LABEL, tagLabel } from '@/lib/format'
+import { humanSize, INBOX_SOURCE_LABEL } from '@/lib/format'
 import {
   addDays,
   daysFromToday,
   formatMonthDay,
   formatRelative,
-  formatTime,
   formatWeekdayShort,
-  humanizeDay,
 } from '@/lib/date'
 import { DUR, EASE_ENTER, EASE_EXIT } from '@/lib/motion'
 import type { InboxItem } from '@/types'
@@ -96,14 +87,6 @@ const CLARIFY_TARGETS: Array<{ key: ClarifyTarget; label: string }> = [
   { key: 'discard', label: '丢弃' },
 ]
 
-// AI 建议目标展示名（AI 不产出 project）
-const AI_TARGET_LABEL: Record<AiSuggestion['target'], string> = {
-  task: '任务',
-  note: '笔记',
-  resource: '资料',
-  discard: '丢弃',
-}
-
 // 解析过程阶段文案（由 SSE 事件驱动；安静、不夸大）
 const AI_STAGE_TEXT: Record<AiStage, string> = {
   connecting: '已连接，等待模型…',
@@ -111,248 +94,6 @@ const AI_STAGE_TEXT: Record<AiStage, string> = {
   generating: '生成中…',
   retry: '输出未通过校验，重试中…',
   validating: '校验通过',
-}
-
-/**
- * 由 AI 建议构造澄清覆盖字段（Slice V · F19/F31）：**严格按 target 只挑服务端会应用的字段**，
- * 与 src/lib/aiForm.ts 的 CLARIFY_FIELD_MATRIX 同源；目标之外的字段一律不发，杜绝「编辑了却被静默丢弃」。
- * discard 无需 details，返回 undefined。
- */
-function toClarifyDetails(
-  suggestion: AiSuggestion,
-  target: AiSuggestion['target'],
-): ClarifyDetails | undefined {
-  if (target === 'discard') return undefined
-  const fields = CLARIFY_FIELD_MATRIX[target]
-  const has = (key: (typeof fields)[number]): boolean => fields.includes(key)
-  const details: ClarifyDetails = {}
-  // 标题为空时省略，回退服务端用条目原文（编辑时用户可清空）
-  if (has('title') && suggestion.title !== '') details.title = suggestion.title
-  // 标签（Slice T）：任务 / 笔记 / 资料均落盘，服务端按 origin:'ai' 登记
-  if (has('tags') && suggestion.tags.length > 0) details.tags = suggestion.tags
-  if (has('contexts') && suggestion.contexts.length > 0) details.contexts = suggestion.contexts
-  if (has('energy')) details.energy = suggestion.energy
-  if (has('importance')) details.importance = suggestion.importance
-  if (has('estimateMin') && suggestion.estimateMin !== undefined) {
-    details.estimateMin = suggestion.estimateMin
-  }
-  if (has('dueAt') && suggestion.dueAt !== undefined) details.dueAt = suggestion.dueAt
-  if (has('projectId') && suggestion.projectId !== undefined) details.projectId = suggestion.projectId
-  if (has('areaId') && suggestion.areaId !== undefined) details.areaId = suggestion.areaId
-  return details
-}
-
-/**
- * AI 就绪建议卡（Slice O；Slice V 增强）：
- *   · 应用 / 重新解析 / 忽略 + 「编辑」——编辑态只渲染该 target 服务端会应用的字段（CLARIFY_FIELD_MATRIX）；
- *   · newProjectHint 存在且目标为任务时，提供「创建项目「X」」一键建项（F16/F30），
- *     建成后自动填入 projectId 便于随后「应用建议」挂接（绝不自动应用条目本身）；
- *   · 阅读态按 target 条件呈现元信息（note / resource 不展示任务专属轴）。
- * 关联信息按 id 查快照，仅提示不自动合并；编辑为纯客户端态，直到应用才落盘。
- */
-function AiReadyCard({
-  suggestion,
-  now,
-  onApply,
-  onRetry,
-  retryDisabled,
-  onClear,
-  onCreateProject,
-}: {
-  suggestion: AiSuggestion
-  now: Date
-  /** 应用当前（可能编辑过的）建议 */
-  onApply: (next: AiSuggestion) => void
-  onRetry: () => void
-  retryDisabled: boolean
-  onClear: () => void
-  /** 一键新建项目（F16/F30）：返回新建项目供填入 projectId；失败由上层 toast（本组件静默） */
-  onCreateProject: (hint: string) => Promise<{ id: string; title: string }>
-}): ReactNode {
-  const navigate = useNavigate()
-  const [editing, setEditing] = useState(false)
-  const [target, setTarget] = useState<AiSuggestion['target']>(suggestion.target)
-  const [values, setValues] = useState<AiSuggestionFormValues>(() => suggestionToForm(suggestion))
-  const [creatingProject, setCreatingProject] = useState(false)
-  const [createdProject, setCreatedProject] = useState<{ id: string; title: string } | null>(null)
-
-  // 建议变化（重新解析 / 缓存切换）→ 重置为全新建议的编辑态
-  useEffect(() => {
-    setEditing(false)
-    setTarget(suggestion.target)
-    setValues(suggestionToForm(suggestion))
-    setCreatedProject(null)
-  }, [suggestion])
-
-  const patchValues = (patch: Partial<AiSuggestionFormValues>): void => {
-    setValues((prev) => ({ ...prev, ...patch }))
-  }
-
-  const project =
-    suggestion.projectId !== undefined ? getProjectById(suggestion.projectId) : undefined
-  const area = suggestion.areaId !== undefined ? getAreaById(suggestion.areaId) : undefined
-  const duplicate =
-    suggestion.duplicateOf !== undefined ? getTaskById(suggestion.duplicateOf) : undefined
-  const newProjectHint = suggestion.newProjectHint
-  // 只要 AI 提出「建议新项目」就提供一键建项入口（F16/F30）
-  const showCreateProject = newProjectHint !== undefined
-  const formFields = CLARIFY_FIELD_MATRIX[target]
-  const showProjectLink = project !== undefined && target !== 'resource'
-  const showDuplicate = target === 'task' && duplicate !== undefined
-  const hasLinks =
-    target !== 'discard' &&
-    (showProjectLink || area !== undefined || showDuplicate || suggestion.tags.length > 0)
-
-  // 一键建项（F16/F30）：首次点击创建；已创建后按钮变为「查看项目」深链。绝不自动应用条目。
-  const handleCreateProject = (): void => {
-    if (createdProject !== null) {
-      navigate(`/projects?project=${createdProject.id}`, { viewTransition: true })
-      return
-    }
-    if (newProjectHint === undefined) return
-    setCreatingProject(true)
-    void (async () => {
-      try {
-        const created = await onCreateProject(newProjectHint)
-        setCreatedProject(created)
-        // 自动填入表单 projectId（供「应用建议」把条目挂到新项目；仍需用户点应用才落盘）。
-        // 仅 task / note 会应用 projectId（resource 无此字段、discard 无需字段），避免产生「填了不生效」的假象。
-        if (target === 'task' || target === 'note') {
-          setValues((prev) => ({ ...prev, projectId: created.id }))
-        }
-      } catch {
-        /* 失败提示由上层 onCreateProject 统一 toast，此处静默 */
-      } finally {
-        setCreatingProject(false)
-      }
-    })()
-  }
-
-  return (
-    <>
-      <div className="ic-ai__head">
-        <span className="k-pill">{AI_TARGET_LABEL[target]}</span>
-        <span className="ic-ai__title">
-          {editing ? values.title.trim() || '（未命名）' : suggestion.title}
-        </span>
-        <button
-          type="button"
-          className="k-pill is-ghost ic-ai__edit"
-          aria-expanded={editing}
-          onClick={() => setEditing((prev) => !prev)}
-        >
-          {editing ? '收起编辑' : '编辑'}
-        </button>
-      </div>
-
-      {showCreateProject && (
-        <div className="ic-ai__newproject">
-          {createdProject !== null ? (
-            <>
-              <span className="k-pill is-ghost">已创建项目「{createdProject.title}」</span>
-              <button type="button" className="k-pill" onClick={handleCreateProject}>
-                <ExternalLink size={12} strokeWidth={1.5} aria-hidden />
-                查看项目
-              </button>
-            </>
-          ) : (
-            <>
-              <span className="k-pill">建议新项目：{newProjectHint}</span>
-              <button
-                type="button"
-                className="k-pill"
-                disabled={creatingProject}
-                onClick={handleCreateProject}
-                title="按建议名在项目页新建一个项目"
-              >
-                {creatingProject ? '创建中…' : `创建项目「${newProjectHint}」`}
-              </button>
-            </>
-          )}
-        </div>
-      )}
-
-      {editing ? (
-        <>
-          <div className="k-field">
-            <span className="k-field__label u-label">目标</span>
-            <select
-              className="k-select"
-              aria-label="澄清目标"
-              value={target}
-              onChange={(event) => setTarget(event.target.value as AiSuggestion['target'])}
-            >
-              {(Object.keys(AI_TARGET_LABEL) as Array<AiSuggestion['target']>).map((key) => (
-                <option key={key} value={key}>
-                  {AI_TARGET_LABEL[key]}
-                </option>
-              ))}
-            </select>
-          </div>
-          {target === 'discard' ? (
-            <p className="ic-ai__reason">将按 AI 建议丢弃该条目（无需填写字段）。</p>
-          ) : (
-            <AiSuggestionForm values={values} onChange={patchValues} fields={formFields} />
-          )}
-        </>
-      ) : (
-        <>
-          {target === 'task' && (
-            <div className="ic-ai__meta">
-              {suggestion.contexts.map((ctx) => (
-                <TagPill key={ctx}>{ctx}</TagPill>
-              ))}
-              <span className="k-pill">{ENERGY_LABEL[suggestion.energy]}能</span>
-              <span className="k-pill">重要性 {suggestion.importance}/3</span>
-              {suggestion.estimateMin !== undefined && (
-                <span className="k-pill">≈{suggestion.estimateMin} 分钟</span>
-              )}
-              {suggestion.dueAt !== undefined && (
-                <span className="k-pill">
-                  截止 {humanizeDay(suggestion.dueAt, now)} {formatTime(suggestion.dueAt)}
-                </span>
-              )}
-            </div>
-          )}
-          <p className="ic-ai__reason">{suggestion.reason}</p>
-          {hasLinks && (
-            <div className="ic-ai__links">
-              {showProjectLink && <span className="k-pill">建议挂到 {project.title}</span>}
-              {area !== undefined && <span className="k-pill">建议归入 {area.title}</span>}
-              {suggestion.tags.map((tag) => (
-                <TagPill key={tag}>{tagLabel(tag)}</TagPill>
-              ))}
-              {showDuplicate && (
-                <span className="ic-ai__dup">疑似与「{duplicate.title}」重复</span>
-              )}
-            </div>
-          )}
-        </>
-      )}
-
-      <div className="ic-ai__actions">
-        <button
-          type="button"
-          className="k-btn is-solid"
-          onClick={() => onApply(applyFormToSuggestion(suggestion, values, target))}
-        >
-          应用建议
-        </button>
-        <button
-          type="button"
-          className="k-pill is-ghost"
-          disabled={retryDisabled}
-          onClick={onRetry}
-          title="丢弃本条缓存，重新请求一次解析"
-        >
-          重新解析
-        </button>
-        <button type="button" className="k-btn" onClick={onClear}>
-          忽略
-        </button>
-      </div>
-    </>
-  )
 }
 
 // 日期分组：今天 / 昨天 / 更早（按 capturedAt 的日历日相对今天）
@@ -639,24 +380,6 @@ export function Inbox() {
       .catch(() => {})
   }
 
-  // 一键建项（F16/F30）：由建议卡 newProjectHint 触发；成功后 toast（可「查看」深链）。
-  // 只创建项目，绝不自动应用收件箱条目本身。
-  const createProjectForHint = async (hint: string): Promise<{ id: string; title: string }> => {
-    try {
-      const project = await createProject(hint)
-      toast(`已创建项目「${project.title}」`, {
-        action: {
-          label: '查看',
-          onClick: () => navigate(`/projects?project=${project.id}`, { viewTransition: true }),
-        },
-      })
-      return project
-    } catch (err) {
-      toast(`创建项目失败：${errorText(err)}`, { tone: 'error' })
-      throw err
-    }
-  }
-
   // 删除条目（F34）：二次确认后经 removeInbox（服务端一并清理附件）；已澄清由服务端 409 保护，UI 不提供。
   const removeEntry = (item: InboxItem): void => {
     setPendingConfirm(null)
@@ -743,23 +466,18 @@ export function Inbox() {
     })()
   }
 
-  // 应用 AI 建议：复用单条澄清的 toast + 撤销路径（ai 审计标记 + details 覆盖）
-  const applyAi = (item: InboxItem, suggestion: AiSuggestion): void => {
-    const details = toClarifyDetails(suggestion, suggestion.target)
-    const label = suggestion.target === 'discard' ? '已按 AI 建议丢弃' : '已按 AI 建议创建'
+  // 一揽子应用（Slice R1）：一次写入创建全部动作；成功 toast「已应用 N 项 · 撤销」。
+  // 撤销经 unapplyInbox（删除全部产物 + 恢复标签注册表基线），确保回到应用前状态。
+  const applyActions = (item: InboxItem, actions: AiAction[]): void => {
     void (async () => {
       try {
-        await clarifyInbox(
-          item.id,
-          suggestion.target,
-          details === undefined ? { ai: true } : { ai: true, details },
-        )
+        const result = await applyInbox(item.id, actions)
         clearInboxAiActive()
-        toast(label, {
+        toast(`已应用 ${result.created.length} 项`, {
           action: {
             label: '撤销',
             onClick: () => {
-              void revertInbox(item.id).catch((err) => {
+              void unapplyInbox(item.id).catch((err) => {
                 toast(`撤销失败：${errorText(err)}`, { tone: 'error' })
               })
             },
@@ -1219,14 +937,12 @@ export function Inbox() {
                                     </>
                                   )}
                                   {panelPhase === 'ready' && panelResult !== null && (
-                                    <AiReadyCard
-                                      suggestion={panelResult.suggestion}
-                                      now={now}
-                                      onApply={(next) => applyAi(item, next)}
+                                    <AiActionsCard
+                                      actions={panelResult.actions}
+                                      onApply={(next) => applyActions(item, next)}
                                       onRetry={() => forceParse(item)}
                                       retryDisabled={running}
                                       onClear={clearInboxAiActive}
-                                      onCreateProject={createProjectForHint}
                                     />
                                   )}
                                 </div>

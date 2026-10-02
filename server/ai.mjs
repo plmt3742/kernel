@@ -7,7 +7,13 @@ import { createOpencodeClient } from '@opencode-ai/sdk/v2'
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import zlib from 'node:zlib'
-import { aiSuggestionSchema, reviewDraftSchema, taskDraftSchema } from './schemas.mjs'
+import {
+  aiActionsSchema,
+  aiSuggestionSchema,
+  projectDraftSchema,
+  reviewDraftSchema,
+  taskDraftSchema,
+} from './schemas.mjs'
 import { DATA_DIR, normalizeTagList, readActivity, readSnapshot } from './store.mjs'
 
 const OPENCODE_URL = process.env.KERNEL_OPENCODE_URL ?? 'http://127.0.0.1:4096'
@@ -299,35 +305,41 @@ export async function buildFileSection(item) {
   }
 }
 
-/** 构造系统提示词（注入当前本地时间 + 系统现状摘要 + 关联建议字段规则） */
+/** 构造系统提示词（注入当前本地时间 + 系统现状摘要 + 一揽子动作规则） */
 function buildSystem(digest) {
   const d = new Date()
   const pad = (n) => String(n).padStart(2, '0')
   const stamp = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${WEEKDAYS[d.getDay()]} ${pad(d.getHours())}:${pad(d.getMinutes())}`
-  return `你是 KERNEL 个人事务系统的收件箱解析器。把用户的收件箱内容解析为结构化 JSON。
-只输出一个 JSON 对象：不要 markdown 代码块、不要解释、不要多余文字。字段：
-- target: "task" | "note" | "resource" | "discard"
-- title: 提炼后的标题（不超过 40 字）
-- contexts: 字符串数组，只能从 ["@lab","@computer","@campus","@phone","@org-room"] 中选
-- energy: "low" | "medium" | "high"
-- importance: 1 | 2 | 3（整数）
-- estimateMin: 预计所需分钟数（整数，最少 1 分钟）
-- dueAt: ISO8601 带时区或 null。现在是 ${stamp}
-- projectId: 字符串或 null。仅当内容有明确依据属于下方某个项目时，填该项目 id；否则 null
-- areaId: 字符串或 null。仅当内容明确属于下方某个区域时，填该区域 id；否则 null
-- tags: 字符串数组。优先从下方【标签】中选已有标签名；仅当没有合适的已有标签、且该标签对日后检索明确有用时，才提出新标签名（必须写成 "topic:名称" 形式，名称 ≤12 字）；最多 3 个，去重；无把握则空数组
-- duplicateOf: 字符串或 null。仅当与下方某个未完成任务高度可能重复时，填该任务 id；否则 null
-- newProjectHint: 字符串或 null（不超过 40 字）。当内容像一件需要多步推进的新事务（如一个新比赛 / 新活动 / 新项目）且不属于任何现有项目时，给出建议项目名（例：「辩论赛筹备」）；否则 null
-- reason: 一句话说明判断理由
+  return `你是 KERNEL 个人事务系统的收件箱解析器。把用户丢进来的内容拆解为「一揽子处置动作」，交给用户一次确认后全部落位。
+只输出一个 JSON 对象：{ "actions": [ ... ] }，不要 markdown 代码块、不要解释、不要多余文字。
+
+每个 action 对象字段：
+- kind: "task" | "note" | "resource" | "project"（必填）
+- title: 提炼后的标题（不超过 40 字，必填）
+- reason: 一句话说明该动作的判断理由
+- contexts: 仅 task 用，字符串数组，只能从 ["@lab","@computer","@campus","@phone","@org-room"] 中选
+- energy: 仅 task 用，"low" | "medium" | "high"
+- importance: 仅 task 用，1 | 2 | 3（整数）
+- estimateMin: 仅 task 用，预计所需分钟数（整数，最少 1 分钟）
+- dueAt: 仅 task 用，ISO8601 带时区或 null。现在是 ${stamp}
+- projectId: 仅当有明确依据属于下方某个现有项目时填该项目 id；否则省略
+- areaId: 仅当明确属于下方某个区域时填该区域 id；否则省略
+- tags: 字符串数组。优先从下方【标签】中选已有标签名；仅当没有合适的已有标签、且该标签对日后检索明确有用时，才提出新标签名（写成 "topic:名称"，名称 ≤12 字）；每个动作最多 3 个，去重；无把握则空数组
+- outcome: 仅 project 用，完成定义（一句话，说明「怎样算完成」）
+- linkToNewProject: 仅 task / note 用。当本批次里有一个 kind:"project" 的新项目、且该动作应挂到它时填 true（此时不要填 projectId）
+- duplicateOf: 仅 task 用，仅当与下方某个未完成任务高度可能重复时填该任务 id；否则省略
 
 【系统现状摘要】
 ${digest}
 
 规则：
-1. 挂靠宁缺毋滥：projectId / areaId / duplicateOf 只能取摘要中列出的 id，且必须有明确依据；表面相似（例如都含「竞赛 / 比赛 / 规则」字样）不算依据；拿不准一律填 null。tags 优先取摘要中已有的标签名；仅当确实没有合适已有标签、且新标签是稳定的主题词（学科 / 领域，如「线性代数」「合唱排练」）时才提出新标签，写成 "topic:名称"（≤12 字）；禁止把日期、人名、整句话或临时描述当标签。
-2. 附件不可读时更保守：当【附件】无法直接读取（只有文件名 / 元数据）时，除非文件名直接指向某现有项目（名称 / 主题强匹配），否则 projectId 一律 null，并在 reason 中注明「仅基于文件名判断」。
-3. newProjectHint 与 projectId 互斥：要么挂现有项目（填 projectId、newProjectHint 为 null），要么提示新建（填 newProjectHint、projectId 为 null），要么都不填；绝不能既挂现有项目又提示新建。
-4. 若条目带【附件】，基于附件内容与文件名判断 target 与 title（读取失败则只凭文件名推断）。`
+1. 拆成一个自然包：例如一条「比赛通知」→ 1 个新项目 + 若干下一步任务 + 1 条要点笔记；一条纯资料链接 → 1 条 resource。宁少而精（1~4 个通常足够），最多 6 个动作。
+2. 确实无事可做（纯寒暄 / 无价值信息）时返回 { "actions": [] }。
+3. 挂靠宁缺毋滥：projectId / areaId / duplicateOf 只能取摘要中列出的 id，且必须有明确依据；表面相似（例如都含「竞赛 / 比赛 / 规则」字样）不算依据；拿不准一律省略。tags 优先取摘要中已有的标签名；仅当确实没有合适已有标签、且新标签是稳定的主题词（学科 / 领域，如「线性代数」「合唱排练」）时才提出新标签，写成 "topic:名称"（≤12 字）；禁止把日期、人名、整句话或临时描述当标签。
+4. 最多一个新项目：整包中 kind:"project" 至多出现 1 次，且仅当内容像一件需要多步推进的新事务（新比赛 / 新活动 / 新项目）时才产出；若属于现有项目，改填 projectId。
+5. 新项目与现有项目互斥：挂现有项目就填 projectId；新建项目就用 kind:"project" + 让相关 task/note 填 linkToNewProject:true，绝不同时填 projectId 和 linkToNewProject。
+6. 附件不可读时更保守：当【附件】无法直接读取（只有文件名 / 元数据）时，除非文件名直接指向某现有项目（名称 / 主题强匹配），否则 projectId 一律省略，并在 reason 中注明「仅基于文件名判断」。
+7. 若条目带【附件】，基于附件内容与文件名判断动作（读取失败则只凭文件名推断）。`
 }
 
 /** 从模型响应中抽取纯文本（多段拼接） */
@@ -418,8 +430,104 @@ export function postValidate(suggestion, snapshot) {
   return out
 }
 
-/** 解析 + 校验单次响应；返回 { ok, suggestion } 或 { ok:false, reason } */
-function tryParseSuggestion(res) {
+/**
+ * 旧式单建议 → 动作数组（Slice R1 向后兼容）。
+ * target 'discard' → []；task/note + newProjectHint → [新项目动作, 实体动作(linkToNewProject)]，
+ * 其余 → 1 个实体动作。newProjectHint 从此不再作为独立顶层字段返回（避免与项目动作双路径）。
+ */
+function legacyToActions(suggestion) {
+  if (suggestion.target === 'discard') return []
+  const base = {
+    kind: suggestion.target,
+    title: suggestion.title,
+    tags: suggestion.tags ?? [],
+    reason: suggestion.reason ?? '',
+  }
+  if (suggestion.target === 'task') {
+    base.contexts = suggestion.contexts ?? []
+    base.energy = suggestion.energy
+    base.importance = suggestion.importance
+    if (suggestion.estimateMin !== undefined) base.estimateMin = suggestion.estimateMin
+    if (suggestion.dueAt !== undefined) base.dueAt = suggestion.dueAt
+    if (suggestion.duplicateOf !== undefined) base.duplicateOf = suggestion.duplicateOf
+  }
+  if (suggestion.projectId !== undefined) base.projectId = suggestion.projectId
+  if (suggestion.areaId !== undefined) base.areaId = suggestion.areaId
+  const actions = [base]
+  if (typeof suggestion.newProjectHint === 'string' && suggestion.newProjectHint !== '') {
+    base.linkToNewProject = true
+    delete base.projectId
+    actions.unshift({
+      kind: 'project',
+      title: suggestion.newProjectHint,
+      tags: [],
+      reason: '根据 AI 建议新建项目',
+    })
+  }
+  return actions
+}
+
+/**
+ * 多动作按快照后校验（Slice R1）：臆造 id 一律丢弃；标签规格化保留（≤3）；
+ * 至多保留一个 project 动作（标题与现有项目完全相同者丢弃，防重复建项）；
+ * linkToNewProject 仅在存在 project 动作且为 task/note 时保留，且与 projectId 互斥。
+ * 导出供单测。返回清洗后的动作数组（可能为空）。
+ */
+export function postValidateActions(actions, snapshot) {
+  const projects = snapshot.projects ?? []
+  const projectIds = new Set(projects.map((p) => p.id))
+  const projectTitles = new Set(projects.map((p) => p.title))
+  const areaIds = new Set((snapshot.areas ?? []).map((a) => a.id))
+  const taskIds = new Set((snapshot.tasks ?? []).map((t) => t.id))
+  const tagNames = new Set((snapshot.tags ?? []).map((t) => t.name))
+
+  const cleaned = []
+  for (const raw of (Array.isArray(actions) ? actions : []).slice(0, 6)) {
+    const out = { ...raw }
+    for (const key of ['projectId', 'areaId', 'duplicateOf', 'outcome', 'dueAt', 'estimateMin', 'energy', 'importance']) {
+      if (out[key] === null) delete out[key]
+    }
+    const title = Array.from(String(out.title ?? '').trim()).slice(0, 40).join('')
+    if (title === '') continue
+    out.title = title
+    out.tags = cleanTagSuggestions(out.tags, tagNames)
+    // 统一形状：所有动作都带 contexts 数组，避免前端按 kind 读取时缺键
+    out.contexts = Array.isArray(out.contexts) ? out.contexts : []
+    if (out.projectId !== undefined && !projectIds.has(out.projectId)) delete out.projectId
+    if (out.areaId !== undefined && !areaIds.has(out.areaId)) delete out.areaId
+    if (out.duplicateOf !== undefined && !taskIds.has(out.duplicateOf)) delete out.duplicateOf
+    if (typeof out.outcome === 'string') {
+      const outcome = out.outcome.trim()
+      if (outcome === '') delete out.outcome
+      else out.outcome = outcome
+    }
+    cleaned.push(out)
+  }
+
+  const projectCandidates = cleaned.filter((a) => a.kind === 'project')
+  let projectAction = projectCandidates[0]
+  if (projectAction !== undefined && projectTitles.has(projectAction.title)) projectAction = undefined
+  const entityActions = cleaned.filter((a) => a.kind !== 'project')
+
+  const out = []
+  if (projectAction !== undefined) out.push(projectAction)
+  for (const raw of entityActions) {
+    const action = { ...raw }
+    delete action.outcome // project 专属字段不落在实体动作上
+    if (action.kind === 'resource') delete action.projectId // resource 无 projectId 结构
+    if (projectAction !== undefined && action.linkToNewProject === true) {
+      if (action.kind !== 'task' && action.kind !== 'note') delete action.linkToNewProject
+      else delete action.projectId // 与 projectId 互斥
+    } else {
+      delete action.linkToNewProject
+    }
+    out.push(action)
+  }
+  return out
+}
+
+/** 解析 + 校验单次响应：接受 {actions:[...]} 或旧式单建议；返回 { ok, actions } 或失败原因（导出供单测） */
+export function tryParseActions(res) {
   const cleaned = extractText(res)
     .trim()
     .replace(/^```(?:json)?/i, '')
@@ -432,7 +540,11 @@ function tryParseSuggestion(res) {
     return { ok: false, reason: `JSON 解析失败（${err.message}）` }
   }
   try {
-    return { ok: true, suggestion: normalizeSuggestion(aiSuggestionSchema.parse(obj)) }
+    if (obj !== null && typeof obj === 'object' && Array.isArray(obj.actions)) {
+      return { ok: true, actions: aiActionsSchema.parse(obj).actions }
+    }
+    // 向后兼容：旧式单建议形状
+    return { ok: true, actions: legacyToActions(aiSuggestionSchema.parse(obj)) }
   } catch (err) {
     return { ok: false, reason: `字段校验失败（${describeError(err)}）` }
   }
@@ -476,19 +588,19 @@ function modelOf(res) {
  */
 async function promptWithRetry(sessionID, system, userText, emit) {
   let res = await promptOnce(sessionID, system, userText)
-  let parsed = tryParseSuggestion(res)
+  let parsed = tryParseActions(res)
   if (!parsed.ok) {
     if (emit) emit({ kind: 'retry', reason: parsed.reason })
     console.warn(`[ai] inbox.parse 首次失败（${parsed.reason}），重试一次`)
     res = await promptOnce(
       sessionID,
       system,
-      `上次输出无法解析（${parsed.reason}）。请只输出一个合法 JSON 对象，不要任何多余文字。`,
+      `上次输出无法解析（${parsed.reason}）。请只输出一个合法 JSON 对象（形如 {"actions":[...]}），不要任何多余文字。`,
     )
-    parsed = tryParseSuggestion(res)
+    parsed = tryParseActions(res)
     if (!parsed.ok) throw new Error(`AI 输出无法解析：${parsed.reason}`)
   }
-  return { res, suggestion: parsed.suggestion }
+  return { res, actions: parsed.actions }
 }
 
 /**
@@ -503,12 +615,12 @@ export async function parseInboxItem(item) {
   const sessionID = await createSession()
   const fileSection = await buildFileSection(item)
   const userText = fileSection === '' ? item.content : `${item.content}\n\n${fileSection}`
-  const { res, suggestion } = await promptWithRetry(sessionID, system, userText, null)
-  const clean = postValidate(suggestion, snapshot)
+  const { res, actions } = await promptWithRetry(sessionID, system, userText, null)
+  const clean = postValidateActions(actions, snapshot)
   const model = modelOf(res)
   const ms = Date.now() - t0
-  console.log(`[ai] inbox.parse ${item.id} 完成 ${ms}ms（${model ?? '未知模型'}）`)
-  return { suggestion: clean, model, ms }
+  console.log(`[ai] inbox.parse ${item.id} 完成 ${ms}ms（${model ?? '未知模型'} · ${clean.length} 动作）`)
+  return { actions: clean, model, ms }
 }
 
 /**
@@ -570,12 +682,12 @@ export async function parseInboxItemStream(item, emit) {
     sessionID = await createSession()
     const fileSection = await buildFileSection(item)
     const userText = fileSection === '' ? item.content : `${item.content}\n\n${fileSection}`
-    const { res, suggestion } = await promptWithRetry(sessionID, system, userText, safeEmit)
-    const clean = postValidate(suggestion, snapshot)
+    const { res, actions } = await promptWithRetry(sessionID, system, userText, safeEmit)
+    const clean = postValidateActions(actions, snapshot)
     const model = modelOf(res)
     const ms = Date.now() - t0
-    safeEmit({ kind: 'suggestion', suggestion: clean, model, ms })
-    console.log(`[ai] inbox.parse-stream ${item.id} 完成 ${ms}ms（${model ?? '未知模型'}）`)
+    safeEmit({ kind: 'suggestion', actions: clean, model, ms })
+    console.log(`[ai] inbox.parse-stream ${item.id} 完成 ${ms}ms（${model ?? '未知模型'} · ${clean.length} 动作）`)
   } catch (err) {
     console.error(`[ai] inbox.parse-stream ${item.id} 失败：`, err?.message ?? err)
     safeEmit({ kind: 'error', message: err?.message ?? 'AI 调用失败' })
@@ -818,6 +930,90 @@ export async function draftTask(title) {
   const model = modelOf(res)
   const ms = Date.now() - t0
   console.log(`[ai] task.draft 完成 ${ms}ms（${model ?? '未知模型'}）`)
+  return { suggestion: clean, model, ms }
+}
+
+/* ---------------------------------------------------------------------------
+ * 项目快速新建 AI 草稿（v0.5 · Slice R1）：只填标题 → 建议完成定义 / 区域 / 标签
+ * 纪律：AI 只出建议，绝不自动落盘；应用走扩展后的 POST /api/projects（草稿确认）。
+ * ------------------------------------------------------------------------- */
+
+/** 输入标题硬上限（超长截断；有界输入） */
+export const PROJECT_DRAFT_MAX_TITLE_CHARS = 200
+
+/** 构造项目补全系统提示词（注入当前本地时间 + 系统现状摘要） */
+function buildProjectDraftSystem(digest) {
+  const d = new Date()
+  const pad = (n) => String(n).padStart(2, '0')
+  const stamp = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${WEEKDAYS[d.getDay()]} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+  return `你是 KERNEL 个人事务系统的项目补全器。用户只给了一个项目标题，请推断可安全补全的字段，只输出一个 JSON 对象：不要 markdown 代码块、不要解释、不要多余文字。
+可用字段（凡拿不准就省略该键，绝不编造）：
+- outcome: 完成定义（一句话，说明「怎样算完成」，≤60 字）
+- areaId: 字符串或 null。仅当标题明确属于下方某个区域时填该区域 id；否则省略
+- tags: 字符串数组。优先从下方【标签】中选已有标签名；仅当没有合适的已有标签、且该标签是稳定的主题词（学科 / 领域，如「线性代数」）时才提出新标签名（写成 "topic:名称"，≤12 字）；最多 3 个，去重；无把握则省略
+- reason: 一句话说明判断理由。现在是 ${stamp}
+
+【系统现状摘要】
+${digest}
+
+规则：
+1. 宁缺毋滥：areaId 只能取摘要中列出的 id，且必须有明确依据；表面相似不算；拿不准一律省略。tags 优先取已有标签名，仅在确有必要时提出稳定的主题词新标签（"topic:名称"，≤12 字），禁止日期 / 人名 / 整句话。
+2. outcome 要具体可判定（例如「决赛名单与分工落定」），不要套话（「顺利完成」「取得好成绩」）；不确定则省略。
+3. 一个字段都没把握时，返回 {"reason":"无明确可补全信息"}。`
+}
+
+/** 解析 + 校验单次项目补全响应；返回 { ok, draft } 或 { ok:false, reason } */
+function tryParseProjectDraft(res) {
+  const cleaned = extractText(res)
+    .trim()
+    .replace(/^```(?:json)?/i, '')
+    .replace(/```$/, '')
+    .trim()
+  let obj
+  try {
+    obj = JSON.parse(cleaned)
+  } catch (err) {
+    return { ok: false, reason: `JSON 解析失败（${err.message}）` }
+  }
+  try {
+    return { ok: true, draft: projectDraftSchema.parse(obj) }
+  } catch (err) {
+    return { ok: false, reason: `字段校验失败（${describeError(err)}）` }
+  }
+}
+
+/** 单会话内「prompt → 解析 → 一次重试」；失败抛错 */
+async function promptProjectDraftWithRetry(sessionID, system, title) {
+  let res = await promptOnce(sessionID, system, `项目标题：${title}`)
+  let parsed = tryParseProjectDraft(res)
+  if (!parsed.ok) {
+    console.warn(`[ai] project.draft 首次失败（${parsed.reason}），重试一次`)
+    res = await promptOnce(
+      sessionID,
+      system,
+      `上次输出无法解析（${parsed.reason}）。请只输出一个合法 JSON 对象，不要任何多余文字。`,
+    )
+    parsed = tryParseProjectDraft(res)
+    if (!parsed.ok) throw new Error(`AI 输出无法解析：${parsed.reason}`)
+  }
+  return { res, draft: parsed.draft }
+}
+
+/**
+ * 项目快速新建 AI 补全：读系统摘要，对标题推断完成定义 / 区域 / 标签。
+ * @param {string} title 已裁剪的项目标题
+ * @returns {Promise<{ suggestion: object, model: string | null, ms: number }>}
+ */
+export async function draftProject(title) {
+  const t0 = Date.now()
+  const snapshot = await loadSnapshot()
+  const system = buildProjectDraftSystem(buildDigest(snapshot))
+  const sessionID = await createSession('kernel:project-draft')
+  const { res, draft } = await promptProjectDraftWithRetry(sessionID, system, title)
+  const clean = postValidate(draft, snapshot)
+  const model = modelOf(res)
+  const ms = Date.now() - t0
+  console.log(`[ai] project.draft 完成 ${ms}ms（${model ?? '未知模型'}）`)
   return { suggestion: clean, model, ms }
 }
 
