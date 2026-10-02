@@ -1,0 +1,946 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>KERNEL 设计稿 C · 柔暗夜色</title>
+<style>
+/* ============================================================
+   KERNEL — 设计稿 C · 柔暗夜色 (Soft Dark)
+   单文件、离线可用。仅使用系统 CJK 字体 + 本地 Inter 变量字体。
+   结构：字体 → 变量 → 基础重置 → 背景氛围 → 标注条 → 页头 →
+        状态条 → 统计 → 双栏 → 日程 → 行动 → 项目 → 组件样例 → 页脚
+   ============================================================ */
+
+/* ---------- 字体：本地 Inter 变量字体（无网络依赖） ---------- */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('fonts/inter-latin-wght-normal.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('fonts/inter-latin-ext-wght-normal.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
+    U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020,
+    U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+/* ---------- 设计变量 ---------- */
+:root {
+  /* 表面 */
+  --bg: #0F0F10;
+  --surface: #1A1A1C;
+  --surface-elevated: #212124;
+  --surface-hover: #232327;
+
+  /* 文字 */
+  --text-primary: #F4F4F5;
+  --text-secondary: #A1A1AA;
+  --text-tertiary: #6E6E73;
+
+  /* 描边 / 分隔 */
+  --outline: rgba(255, 255, 255, .06);
+  --outline-strong: rgba(255, 255, 255, .10);
+  --hairline: rgba(255, 255, 255, .05);
+
+  /* 填充 */
+  --fill-tag: rgba(255, 255, 255, .07);
+  --fill-subtle: rgba(255, 255, 255, .05);
+  --fill-secondary-btn: rgba(255, 255, 255, .08);
+
+  /* 语义色（克制） */
+  --danger-bg: rgba(248, 113, 113, .14);
+  --danger-text: #FCA5A5;
+
+  /* 圆角 */
+  --radius-card: 16px;
+  --radius-inner: 12px;
+  --radius-pill: 999px;
+
+  /* 阴影：只做柔辉光 */
+  --shadow-card: 0 12px 32px rgba(0, 0, 0, .45);
+  --shadow-soft: 0 6px 20px rgba(0, 0, 0, .35);
+
+  /* 动效 */
+  --ease: cubic-bezier(.22, .61, .36, 1);
+  --dur: 190ms;
+}
+
+/* ---------- 基础重置 ---------- */
+*, *::before, *::after { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'PingFang SC',
+    'Microsoft YaHei', 'Segoe UI', system-ui, sans-serif;
+  font-size: 15px;
+  line-height: 1.65;
+  color: var(--text-primary);
+  background-color: var(--bg);
+  /* 低亮度氛围：三处极淡的冷/暖辉光，避免纯平死黑 */
+  background-image:
+    radial-gradient(1100px 560px at 12% -8%, rgba(124, 124, 160, .06), transparent 62%),
+    radial-gradient(980px 620px at 98% 4%, rgba(96, 132, 168, .045), transparent 58%),
+    radial-gradient(900px 640px at 50% 112%, rgba(168, 150, 120, .035), transparent 60%);
+  background-attachment: fixed;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+h1, h2, h3, p { margin: 0; }
+ul { margin: 0; padding: 0; list-style: none; }
+button, input { font: inherit; }
+button { cursor: pointer; }
+
+::selection { background: rgba(244, 244, 245, .18); }
+
+:focus-visible {
+  outline: 2px solid rgba(244, 244, 245, .55);
+  outline-offset: 2px;
+}
+
+/* 极淡的胶片颗粒，增加质感（内联 SVG，无外部依赖） */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  opacity: .03;
+  mix-blend-mode: soft-light;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160' viewBox='0 0 160 160'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23g)' opacity='0.9'/%3E%3C/svg%3E");
+}
+
+/* ---------- 版心 ---------- */
+.container {
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 40px 32px 56px;
+}
+
+/* ============================================================
+   标注条（设计稿说明，独立于成品界面之外）
+   ============================================================ */
+.annot {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  height: 34px;
+  background: rgba(22, 22, 24, .82);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(255, 255, 255, .07);
+}
+.annot-inner {
+  max-width: 1240px;
+  height: 100%;
+  margin: 0 auto;
+  padding: 0 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  font-size: 12px;
+}
+.annot-left { display: flex; align-items: center; gap: 8px; color: var(--text-secondary); }
+.annot-dot {
+  width: 5px; height: 5px; border-radius: 50%;
+  background: #8E8E93;
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, .04);
+}
+.annot-right { color: #8E8E93; }
+
+/* ============================================================
+   页头
+   ============================================================ */
+.app-header { margin-top: 6px; }
+
+.header-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+}
+.date-line { font-size: 13.5px; color: var(--text-secondary); }
+
+.greeting {
+  margin: 10px 0 8px;
+  font-size: clamp(32px, 3.6vw, 42px);
+  line-height: 1.15;
+  font-weight: 600;
+  letter-spacing: -.01em;
+  color: var(--text-primary);
+}
+
+.sub-line { font-size: 14.5px; color: var(--text-secondary); }
+
+.avatar {
+  flex: 0 0 auto;
+  width: 44px; height: 44px;
+  display: grid; place-items: center;
+  border-radius: 50%;
+  font-size: 15px; font-weight: 500;
+  color: var(--text-primary);
+  background: linear-gradient(145deg, #2A2A2E, #1C1C1F);
+  border: 1px solid rgba(255, 255, 255, .08);
+  box-shadow: var(--shadow-soft);
+}
+
+/* 搜索胶囊 */
+.search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 50px;
+  margin-top: 24px;
+  padding: 0 16px 0 18px;
+  background: var(--surface-elevated);
+  border: 1px solid var(--outline);
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-soft);
+  transition: border-color var(--dur) var(--ease),
+              box-shadow var(--dur) var(--ease),
+              background-color var(--dur) var(--ease);
+}
+.search:hover { border-color: var(--outline-strong); }
+.search:focus-within {
+  background: var(--surface-hover);
+  border-color: rgba(255, 255, 255, .16);
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, .03), var(--shadow-soft);
+}
+.search-icon { flex: 0 0 auto; width: 18px; height: 18px; color: var(--text-tertiary); }
+.search-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text-primary);
+  font-size: 14.5px;
+}
+.search-input::placeholder { color: var(--text-tertiary); }
+.kbd {
+  flex: 0 0 auto;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--text-secondary);
+  padding: 5px 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, .06);
+  border: 1px solid rgba(255, 255, 255, .06);
+}
+
+/* ============================================================
+   状态 chips
+   ============================================================ */
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 24px;
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  height: 34px;
+  padding: 0 15px;
+  font-size: 13px;
+  color: #C7C7CC;
+  background: var(--fill-subtle);
+  border: 1px solid rgba(255, 255, 255, .04);
+  border-radius: var(--radius-pill);
+  transition: background-color var(--dur) var(--ease),
+              border-color var(--dur) var(--ease);
+}
+.chip:hover { background: rgba(255, 255, 255, .07); border-color: var(--outline-strong); }
+.chip-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: #D4D4D8;
+  box-shadow: 0 0 8px rgba(244, 244, 245, .28);
+}
+.chip-dot--alt { background: #8E8E93; box-shadow: none; }
+
+/* ============================================================
+   统计卡片
+   ============================================================ */
+.stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 28px;
+}
+.stat-card {
+  padding: 20px 20px 18px;
+  background: var(--surface);
+  border: 1px solid var(--outline);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+  transition: transform var(--dur) var(--ease),
+              border-color var(--dur) var(--ease),
+              box-shadow var(--dur) var(--ease);
+}
+.stat-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--outline-strong);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, .48);
+}
+.stat-value {
+  font-size: 30px;
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: -.01em;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+.stat-of { font-size: 16px; font-weight: 500; color: var(--text-tertiary); margin-left: 1px; }
+.stat-unit { font-size: 15px; font-weight: 500; color: var(--text-secondary); margin-left: 3px; }
+.stat-label { margin-top: 10px; font-size: 13.5px; color: var(--text-secondary); }
+.stat-sub { margin-top: 3px; font-size: 11.5px; color: var(--text-tertiary); }
+
+/* ============================================================
+   双栏布局
+   ============================================================ */
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+  margin-top: 24px;
+}
+.col { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+
+.card {
+  padding: 22px;
+  background: var(--surface);
+  border: 1px solid var(--outline);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+  transition: border-color var(--dur) var(--ease),
+              box-shadow var(--dur) var(--ease);
+}
+.card:hover { border-color: var(--outline-strong); box-shadow: 0 16px 40px rgba(0, 0, 0, .48); }
+
+/* 区块标题 */
+.sec-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 16px; }
+.sec-title { font-size: 15.5px; font-weight: 600; color: var(--text-primary); }
+.sec-en { font-size: 11px; color: var(--text-tertiary); }
+
+/* ============================================================
+   今日日程 · 时间线
+   ============================================================ */
+.tl { position: relative; }
+.tl::before {
+  content: '';
+  position: absolute;
+  left: 95px;
+  top: 26px;
+  bottom: 26px;
+  width: 1px;
+  background: linear-gradient(180deg,
+    rgba(255, 255, 255, .02),
+    rgba(255, 255, 255, .10) 22%,
+    rgba(255, 255, 255, .10) 78%,
+    rgba(255, 255, 255, .02));
+}
+.tl-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 12px 10px;
+  border-radius: var(--radius-inner);
+  transition: background-color var(--dur) var(--ease);
+}
+.tl-item:hover { background: rgba(255, 255, 255, .02); }
+.tl-time {
+  flex: 0 0 78px;
+  width: 78px;
+  padding-top: 1px;
+  text-align: right;
+  font-size: 13px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.tl-marker { flex: 0 0 8px; display: flex; justify-content: center; padding-top: 5px; }
+.tl-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: rgba(255, 255, 255, .30);
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, .02);
+}
+.tl-item--next .tl-dot {
+  background: var(--text-primary);
+  box-shadow: 0 0 0 4px rgba(244, 244, 245, .06), 0 0 12px rgba(244, 244, 245, .18);
+}
+.tl-title { font-size: 14.5px; color: var(--text-primary); }
+.tl-item--next .tl-title { font-weight: 500; }
+.tl-meta { margin-top: 3px; font-size: 12.5px; color: var(--text-tertiary); }
+
+/* ============================================================
+   下一步行动
+   ============================================================ */
+.actions { display: flex; flex-direction: column; }
+.action-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 13px;
+  padding: 13px 10px;
+  border-radius: var(--radius-inner);
+  transition: background-color var(--dur) var(--ease);
+  cursor: pointer;
+}
+.action-row + .action-row { border-top: 1px solid var(--hairline); }
+.action-row:hover { background: rgba(255, 255, 255, .022); }
+
+.cbx {
+  flex: 0 0 19px;
+  width: 19px; height: 19px;
+  margin-top: 1px;
+  display: grid; place-items: center;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255, 255, 255, .20);
+  transition: border-color var(--dur) var(--ease),
+              background-color var(--dur) var(--ease);
+}
+.action-row:hover .cbx { border-color: rgba(255, 255, 255, .36); }
+.cbx--done { background: var(--text-primary); border-color: var(--text-primary); }
+.cbx--done svg { width: 11px; height: 11px; }
+
+.action-title { font-size: 14.5px; line-height: 1.45; color: var(--text-primary); }
+.action-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
+.action-row--overdue .cbx { border-color: rgba(248, 113, 113, .35); }
+
+/* meta 小胶囊 */
+.meta-chip {
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, .05);
+}
+
+/* 徽章 */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  line-height: 1;
+  padding: 4px 9px;
+  border-radius: var(--radius-pill);
+  white-space: nowrap;
+}
+.badge-active { background: rgba(255, 255, 255, .08); color: #C7C7CC; }
+.badge-overdue { background: var(--danger-bg); color: var(--danger-text); }
+.badge-done { background: rgba(255, 255, 255, .05); color: #8E8E93; }
+
+/* ============================================================
+   项目
+   ============================================================ */
+.projects { display: flex; flex-direction: column; gap: 12px; }
+.project {
+  padding: 14px;
+  background: var(--surface-elevated);
+  border: 1px solid var(--outline);
+  border-radius: var(--radius-inner);
+  transition: background-color var(--dur) var(--ease),
+              border-color var(--dur) var(--ease);
+}
+.project:hover { background: var(--surface-hover); border-color: var(--outline-strong); }
+.project-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.project-name { font-size: 14px; line-height: 1.4; color: var(--text-primary); }
+
+/* 进度条 */
+.bar {
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, .07);
+  overflow: hidden;
+}
+.bar > i {
+  display: block;
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: linear-gradient(90deg, #C7C7CC, #F4F4F5);
+}
+.bar--wide { width: 100%; }
+
+.project-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 9px;
+  font-size: 12px;
+}
+.project-count { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.project-pct { color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
+
+/* ============================================================
+   组件样例（规格表）
+   ============================================================ */
+.spec { display: flex; flex-direction: column; }
+.spec-row {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  gap: 6px 14px;
+  align-items: center;
+  padding: 14px 0;
+  border-top: 1px solid var(--hairline);
+}
+.spec-row:first-child { border-top: none; padding-top: 4px; }
+.spec-label { font-size: 12px; color: var(--text-tertiary); }
+.spec-items { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.spec-items--full { width: 100%; }
+.spec-items--stack { flex-direction: column; align-items: flex-start; gap: 12px; }
+
+/* 按钮 */
+.btn {
+  height: 36px;
+  padding: 0 18px;
+  font-size: 13.5px;
+  font-weight: 500;
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  transition: background-color var(--dur) var(--ease),
+              color var(--dur) var(--ease),
+              border-color var(--dur) var(--ease),
+              transform var(--dur) var(--ease);
+}
+.btn:active { transform: translateY(1px); }
+.btn-primary { background: var(--text-primary); color: #131316; }
+.btn-primary:hover { background: #FFFFFF; }
+.btn-secondary { background: var(--fill-secondary-btn); color: #E4E4E7; }
+.btn-secondary:hover { background: rgba(255, 255, 255, .12); }
+.btn-ghost { background: transparent; color: var(--text-secondary); border-color: rgba(255, 255, 255, .10); }
+.btn-ghost:hover { color: var(--text-primary); border-color: rgba(255, 255, 255, .20); background: rgba(255, 255, 255, .03); }
+
+/* 标签 pills */
+.tag {
+  font-size: 12.5px;
+  color: #C7C7CC;
+  padding: 4px 12px;
+  border-radius: var(--radius-pill);
+  background: var(--fill-tag);
+}
+
+/* 输入框 */
+.capture {
+  width: 100%;
+  height: 42px;
+  padding: 0 16px;
+  font-size: 14px;
+  color: var(--text-primary);
+  background: var(--surface-elevated);
+  border: 1px solid var(--outline);
+  border-radius: var(--radius-inner);
+  outline: none;
+  transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+}
+.capture::placeholder { color: var(--text-tertiary); }
+.capture:hover { border-color: var(--outline-strong); }
+.capture:focus { border-color: rgba(255, 255, 255, .16); box-shadow: 0 0 0 4px rgba(255, 255, 255, .03); }
+
+/* 复选两态 */
+.check-line { display: flex; align-items: center; gap: 11px; font-size: 14px; color: var(--text-secondary); }
+.check-text { transition: color var(--dur) var(--ease); }
+.check-line.is-done .check-text { text-decoration: line-through; color: var(--text-tertiary); }
+
+/* toast */
+.toast {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 13px;
+  color: #C7C7CC;
+  padding: 9px 16px;
+  background: var(--surface-elevated);
+  border: 1px solid var(--outline);
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-soft);
+}
+.toast-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--text-secondary);
+  box-shadow: 0 0 8px rgba(255, 255, 255, .25);
+}
+
+/* ============================================================
+   页脚
+   ============================================================ */
+.foot {
+  margin-top: 32px;
+  padding-top: 22px;
+  border-top: 1px solid var(--hairline);
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--text-tertiary);
+}
+
+/* ============================================================
+   入场动效（克制的分段浮现）
+   ============================================================ */
+@keyframes riseIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.reveal {
+  animation: riseIn .58s var(--ease) both;
+  animation-delay: var(--delay, 0ms);
+}
+
+/* ============================================================
+   响应式
+   ============================================================ */
+@media (max-width: 1080px) {
+  .container { padding: 34px 24px 48px; }
+  .annot-inner { padding: 0 24px; }
+}
+@media (max-width: 1000px) {
+  .layout { grid-template-columns: 1fr; }
+}
+@media (max-width: 760px) {
+  .container { padding: 28px 18px 40px; }
+  .annot-inner { padding: 0 18px; font-size: 11px; }
+  .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .greeting { font-size: 32px; }
+  .card { padding: 18px; }
+  .action-row { padding: 12px 6px; }
+  .spec-row { grid-template-columns: 34px minmax(0, 1fr); }
+}
+@media (max-width: 520px) {
+  .stats { gap: 12px; }
+  .header-top { gap: 14px; }
+  .annot-right { display: none; }
+}
+
+/* 尊重减少动效偏好 */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+  }
+}
+</style>
+</head>
+<body>
+
+<!-- ============ 设计稿标注条 ============ -->
+<div class="annot">
+  <div class="annot-inner">
+    <div class="annot-left"><span class="annot-dot"></span>设计稿 C · 柔暗夜色</div>
+    <div class="annot-right">圆角 16 · 柔辉光 · 低对比 · 墨底</div>
+  </div>
+</div>
+
+<main class="container">
+
+  <!-- ============ 页头 ============ -->
+  <header class="app-header reveal" style="--delay:40ms">
+    <div class="header-top">
+      <div class="header-left">
+        <div class="date-line">10月2日 · 星期五</div>
+        <h1 class="greeting">下午好</h1>
+        <p class="sub-line">今天有 3 项日程，8 条待澄清收件。</p>
+      </div>
+      <div class="avatar" aria-hidden="true">K</div>
+    </div>
+
+    <div class="search">
+      <svg class="search-icon" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+        <circle cx="9" cy="9" r="5.5" stroke="currentColor" stroke-width="1.5"/>
+        <path d="M13.2 13.2 L17 17" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      </svg>
+      <input class="search-input" type="text" placeholder="搜索事务、资料或输入指令" aria-label="搜索事务、资料或输入指令">
+      <span class="kbd" aria-hidden="true">⌘K</span>
+    </div>
+  </header>
+
+  <!-- ============ 状态 chips ============ -->
+  <div class="chips reveal" style="--delay:100ms">
+    <span class="chip"><span class="chip-dot"></span>下一项 · 学生组织例会 19:30</span>
+    <span class="chip"><span class="chip-dot chip-dot--alt"></span>收件箱 · 8 待处理</span>
+  </div>
+
+  <!-- ============ 统计卡片 ============ -->
+  <section class="stats">
+    <div class="stat-card reveal" style="--delay:140ms">
+      <div class="stat-value">8</div>
+      <div class="stat-label">收件箱水位</div>
+      <div class="stat-sub">待澄清 INBOX</div>
+    </div>
+    <div class="stat-card reveal" style="--delay:180ms">
+      <div class="stat-value">3<span class="stat-of">/7</span></div>
+      <div class="stat-label">今日任务</div>
+      <div class="stat-sub">今日 TODAY</div>
+    </div>
+    <div class="stat-card reveal" style="--delay:220ms">
+      <div class="stat-value">4</div>
+      <div class="stat-label">进行中项目</div>
+      <div class="stat-sub">WIP</div>
+    </div>
+    <div class="stat-card reveal" style="--delay:260ms">
+      <div class="stat-value">12<span class="stat-unit">天</span></div>
+      <div class="stat-label">连续刷题</div>
+      <div class="stat-sub">STREAK</div>
+    </div>
+  </section>
+
+  <!-- ============ 双栏区域 ============ -->
+  <div class="layout">
+
+    <!-- 左栏：今日日程 + 下一步行动 -->
+    <div class="col col-left">
+
+      <!-- 今日日程 -->
+      <section class="card reveal" style="--delay:300ms">
+        <div class="sec-head">
+          <h2 class="sec-title">今日日程</h2>
+          <span class="sec-en">TODAY</span>
+        </div>
+        <ul class="tl">
+          <li class="tl-item">
+            <span class="tl-time">14:00–15:40</span>
+            <span class="tl-marker"><i class="tl-dot"></i></span>
+            <div class="tl-body">
+              <div class="tl-title">数据结构课</div>
+              <div class="tl-meta">8A-305</div>
+            </div>
+          </li>
+          <li class="tl-item">
+            <span class="tl-time">16:30–17:30</span>
+            <span class="tl-marker"><i class="tl-dot"></i></span>
+            <div class="tl-body">
+              <div class="tl-title">辅导员助理值班</div>
+              <div class="tl-meta">学工办</div>
+            </div>
+          </li>
+          <li class="tl-item tl-item--next">
+            <span class="tl-time">19:30–21:00</span>
+            <span class="tl-marker"><i class="tl-dot"></i></span>
+            <div class="tl-body">
+              <div class="tl-title">学生组织例会</div>
+              <div class="tl-meta">某教室</div>
+            </div>
+          </li>
+        </ul>
+      </section>
+
+      <!-- 下一步行动 -->
+      <section class="card reveal" style="--delay:340ms">
+        <div class="sec-head">
+          <h2 class="sec-title">下一步行动</h2>
+          <span class="sec-en">NEXT ACTIONS</span>
+        </div>
+        <ul class="actions">
+          <li class="action-row">
+            <span class="cbx" aria-hidden="true"></span>
+            <div class="action-main">
+              <div class="action-title">给 demo 实验室发面试确认邮件</div>
+              <div class="action-meta">
+                <span class="meta-chip">@computer</span>
+                <span class="meta-chip">15 分钟</span>
+                <span class="meta-chip">10-04 截止</span>
+              </div>
+            </div>
+          </li>
+          <li class="action-row">
+            <span class="cbx" aria-hidden="true"></span>
+            <div class="action-main">
+              <div class="action-title">完成学生组织程序设计大赛策划书终稿</div>
+              <div class="action-meta">
+                <span class="meta-chip">@org-room</span>
+                <span class="meta-chip">150 分钟</span>
+                <span class="meta-chip">10-04 截止</span>
+              </div>
+            </div>
+          </li>
+          <li class="action-row">
+            <span class="cbx" aria-hidden="true"></span>
+            <div class="action-main">
+              <div class="action-title">完成数据结构图论章节习题 P1–P12</div>
+              <div class="action-meta">
+                <span class="meta-chip">@lab</span>
+                <span class="meta-chip">90 分钟</span>
+              </div>
+            </div>
+          </li>
+          <li class="action-row">
+            <span class="cbx" aria-hidden="true"></span>
+            <div class="action-main">
+              <div class="action-title">Codeforces Round 补题（D 题）</div>
+              <div class="action-meta">
+                <span class="meta-chip">@lab</span>
+                <span class="meta-chip">120 分钟</span>
+              </div>
+            </div>
+          </li>
+          <li class="action-row action-row--overdue">
+            <span class="cbx" aria-hidden="true"></span>
+            <div class="action-main">
+              <div class="action-title">汇总班级国家助学金评议材料</div>
+              <div class="action-meta">
+                <span class="meta-chip">@campus</span>
+                <span class="badge badge-overdue">已逾期</span>
+              </div>
+            </div>
+          </li>
+        </ul>
+      </section>
+
+    </div>
+
+    <!-- 右栏：项目 + 组件样例 -->
+    <div class="col col-right">
+
+      <!-- 项目 -->
+      <section class="card reveal" style="--delay:380ms">
+        <div class="sec-head">
+          <h2 class="sec-title">项目</h2>
+          <span class="sec-en">PROJECTS</span>
+        </div>
+        <div class="projects">
+          <div class="project">
+            <div class="project-top">
+              <div class="project-name">学生组织 10 月程序设计大赛</div>
+              <span class="badge badge-active">进行中</span>
+            </div>
+            <div class="bar"><i style="width:66.7%"></i></div>
+            <div class="project-foot">
+              <span class="project-count">6 / 9</span>
+              <span class="project-pct">67%</span>
+            </div>
+          </div>
+          <div class="project">
+            <div class="project-top">
+              <div class="project-name">KERNEL v0.2 前端原型</div>
+              <span class="badge badge-active">进行中</span>
+            </div>
+            <div class="bar"><i style="width:62.5%"></i></div>
+            <div class="project-foot">
+              <span class="project-count">5 / 8</span>
+              <span class="project-pct">63%</span>
+            </div>
+          </div>
+          <div class="project">
+            <div class="project-top">
+              <div class="project-name">demo 实验室面试准备</div>
+              <span class="badge badge-active">进行中</span>
+            </div>
+            <div class="bar"><i style="width:50%"></i></div>
+            <div class="project-foot">
+              <span class="project-count">3 / 6</span>
+              <span class="project-pct">50%</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 组件样例 -->
+      <section class="card reveal" style="--delay:420ms">
+        <div class="sec-head">
+          <h2 class="sec-title">组件样例</h2>
+          <span class="sec-en">COMPONENTS</span>
+        </div>
+        <div class="spec">
+
+          <div class="spec-row">
+            <div class="spec-label">按钮</div>
+            <div class="spec-items">
+              <button class="btn btn-primary" type="button">主要按钮</button>
+              <button class="btn btn-secondary" type="button">次要按钮</button>
+              <button class="btn btn-ghost" type="button">幽灵按钮</button>
+            </div>
+          </div>
+
+          <div class="spec-row">
+            <div class="spec-label">标签</div>
+            <div class="spec-items">
+              <span class="tag">学生组织</span>
+              <span class="tag">ACM</span>
+              <span class="tag">学业</span>
+              <span class="tag">面试</span>
+            </div>
+          </div>
+
+          <div class="spec-row">
+            <div class="spec-label">徽章</div>
+            <div class="spec-items">
+              <span class="badge badge-active">进行中</span>
+              <span class="badge badge-overdue">已逾期</span>
+              <span class="badge badge-done">已完成</span>
+            </div>
+          </div>
+
+          <div class="spec-row">
+            <div class="spec-label">进度</div>
+            <div class="spec-items spec-items--full">
+              <div class="bar bar--wide"><i style="width:62.5%"></i></div>
+            </div>
+          </div>
+
+          <div class="spec-row">
+            <div class="spec-label">输入</div>
+            <div class="spec-items spec-items--full">
+              <input class="capture" type="text" placeholder="快速捕捉一条事务…" aria-label="快速捕捉一条事务">
+            </div>
+          </div>
+
+          <div class="spec-row">
+            <div class="spec-label">复选</div>
+            <div class="spec-items spec-items--stack">
+              <label class="check-line">
+                <span class="cbx" aria-hidden="true"></span>
+                <span class="check-text">未完成</span>
+              </label>
+              <label class="check-line is-done">
+                <span class="cbx cbx--done" aria-hidden="true">
+                  <svg viewBox="0 0 12 12"><path d="M2.6 6.3 L4.7 8.4 L9.4 3.4" fill="none" stroke="#131316" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </span>
+                <span class="check-text">已完成</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="spec-row">
+            <div class="spec-label">提示</div>
+            <div class="spec-items">
+              <span class="toast"><span class="toast-dot"></span>已添加到收件箱（原型态）</span>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+    </div>
+  </div>
+
+  <!-- ============ 页脚 ============ -->
+  <footer class="foot reveal" style="--delay:460ms">
+    KERNEL 设计稿 · 柔暗夜色 · 2026-10-02 · 供选型参考
+  </footer>
+
+</main>
+
+</body>
+</html>

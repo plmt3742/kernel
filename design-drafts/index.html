@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KERNEL · 设计方向选型</title>
+<style>
+  @font-face {
+    font-family: 'Inter';
+    font-style: normal;
+    font-weight: 100 900;
+    font-display: swap;
+    src: url('fonts/inter-latin-wght-normal.woff2') format('woff2');
+  }
+  :root {
+    --bg: #FAFAF9;
+    --card: #FFFFFF;
+    --ink: #1C1917;
+    --ink-2: #57534E;
+    --ink-3: #A8A29E;
+    --line: #E7E5E4;
+  }
+  * { box-sizing: border-box; }
+  a { color: inherit; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: Inter, -apple-system, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1240px; margin: 0 auto; padding: 48px 32px 72px; }
+  header h1 { font-size: 28px; font-weight: 650; margin: 0 0 8px; letter-spacing: -0.01em; }
+  header p { margin: 0; color: var(--ink-2); font-size: 15px; }
+  .meta { margin-top: 12px; font-size: 12.5px; color: var(--ink-3); }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-top: 32px; }
+  @media (max-width: 1080px) { .grid { grid-template-columns: 1fr; } }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    overflow: hidden;
+    display: flex; flex-direction: column;
+    transition: box-shadow .2s ease, transform .2s ease;
+  }
+  .card:hover { box-shadow: 0 14px 36px -14px rgba(28,25,23,.16); transform: translateY(-2px); }
+  .thumb { display: block; aspect-ratio: 16 / 10; overflow: hidden; border-bottom: 1px solid var(--line); background: #F5F5F4; }
+  .thumb img { width: 100%; height: 100%; object-fit: cover; object-position: top center; display: block; }
+  .body { padding: 18px 20px 20px; display: flex; flex-direction: column; gap: 6px; flex: 1; }
+  .name { font-size: 16px; font-weight: 650; }
+  .tag { font-size: 12px; color: var(--ink-3); }
+  .desc { font-size: 13.5px; color: var(--ink-2); margin: 6px 0 0; }
+  .notes { font-size: 12px; color: var(--ink-3); margin-top: 4px; }
+  .actions { margin-top: auto; padding-top: 16px; display: flex; gap: 10px; }
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    height: 36px; padding: 0 16px; border-radius: 999px;
+    font-size: 13px; text-decoration: none; font-weight: 550;
+    transition: background .18s ease, border-color .18s ease, color .18s ease;
+  }
+  .btn-primary { background: #1C1917; color: #FFFFFF; }
+  .btn-primary:hover { background: #292524; }
+  .btn-ghost { border: 1px solid var(--line); color: var(--ink-2); }
+  .btn-ghost:hover { border-color: #D6D3D1; color: var(--ink); }
+  footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid var(--line); font-size: 12.5px; color: var(--ink-3); }
+  @media (prefers-reduced-motion: reduce) {
+    .card, .btn { transition: none; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>KERNEL · 设计方向选型</h1>
+    <p>三份设计稿，同一套内容（真实数据），三种气质。选定编号后，全站将按该方向重做。</p>
+    <div class="meta">2026-10-02 · 供选型参考 · 点击卡片或按钮打开完整稿（支持离线）</div>
+  </header>
+
+  <div class="grid">
+    <article class="card">
+      <a class="thumb" href="a-ins-flat.html" target="_blank" rel="noopener">
+        <img src="previews/a-ins-flat-top.png" alt="设计稿 A 预览">
+      </a>
+      <div class="body">
+        <div class="name">A · 原生 INS 平铺</div>
+        <div class="tag">FLAT · INSTAGRAM-LIKE</div>
+        <p class="desc">纯白平铺、细柔边线、无阴影、全胶囊圆角。最接近 Instagram 本体的克制与干净。</p>
+        <div class="notes">圆角 12 · 无阴影 · 细柔边线 · 正白底 · 灰阶 #262626 / #8E8E8E</div>
+        <div class="actions">
+          <a class="btn btn-primary" href="a-ins-flat.html" target="_blank" rel="noopener">打开完整稿</a>
+          <a class="btn btn-ghost" href="previews/a-ins-flat.png" target="_blank" rel="noopener">整页截图</a>
+        </div>
+      </div>
+    </article>
+
+    <article class="card">
+      <a class="thumb" href="b-warm-mist.html" target="_blank" rel="noopener">
+        <img src="previews/b-warm-mist-top.png" alt="设计稿 B 预览">
+      </a>
+      <div class="body">
+        <div class="name">B · 暖雾柔光</div>
+        <div class="tag">WARM MIST · SOFT ELEVATED</div>
+        <p class="desc">暖白底、悬浮软影卡片、18px 大圆角。三份中最柔软、最舒服的一份。</p>
+        <div class="notes">圆角 18 · 柔影悬浮 · 暖白 #F7F6F3 · 零边线 · 暖灰阶</div>
+        <div class="actions">
+          <a class="btn btn-primary" href="b-warm-mist.html" target="_blank" rel="noopener">打开完整稿</a>
+          <a class="btn btn-ghost" href="previews/b-warm-mist.png" target="_blank" rel="noopener">整页截图</a>
+        </div>
+      </div>
+    </article>
+
+    <article class="card">
+      <a class="thumb" href="c-soft-dark.html" target="_blank" rel="noopener">
+        <img src="previews/c-soft-dark-top.png" alt="设计稿 C 预览">
+      </a>
+      <div class="body">
+        <div class="name">C · 柔暗夜色</div>
+        <div class="tag">SOFT DARK · QUIET MIDNIGHT</div>
+        <p class="desc">墨色深底、柔和辉光、低对比。夜里长时间看不刺眼，安静克制。</p>
+        <div class="notes">圆角 16 · 柔辉光 · 低对比 · 墨底 #0F0F10 · 非纯白文字</div>
+        <div class="actions">
+          <a class="btn btn-primary" href="c-soft-dark.html" target="_blank" rel="noopener">打开完整稿</a>
+          <a class="btn btn-ghost" href="previews/c-soft-dark.png" target="_blank" rel="noopener">整页截图</a>
+        </div>
+      </div>
+    </article>
+  </div>
+
+  <footer>
+    选定后告诉我编号即可（例如「选 B，但想更中性一点」也算数）；我会更新设计宪法（00-DESIGN-BRIEF v2）并把全站按该方向重做。
+  </footer>
+</div>
+</body>
+</html>

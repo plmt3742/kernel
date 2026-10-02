@@ -1,0 +1,984 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>KERNEL · 设计稿 A · 原生 INS 平铺</title>
+
+<style>
+/* ============================================================
+   KERNEL — 设计稿 A · 原生 INS 平铺 (Flat Instagram)
+   Palette / radius / shadow / typography tokens live at :root.
+   Zero hard-coded magic values below the token layer.
+   ============================================================ */
+
+/* ---------- Fonts (local, offline) ---------- */
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("fonts/inter-latin-wght-normal.woff2") format("woff2"),
+       url("fonts/inter-latin-ext-wght-normal.woff2") format("woff2");
+}
+
+/* ---------- Design tokens ---------- */
+:root {
+  /* surface */
+  --bg:            #FFFFFF;
+  --surface:       #FAFAFA;
+  --surface-soft:  #F5F5F5;
+
+  /* ink */
+  --text:          #262626;
+  --text-strong:   #1A1A1A;
+  --text-soft:     #6B6B6B;
+  --text-muted:    #8E8E8E;
+
+  /* lines — soft hairlines, never harsh */
+  --border:        #EFEFEF;
+  --divider:       #F0F0F0;
+  --border-mid:    #DBDBDB;
+
+  /* quiet status tints */
+  --danger-bg:     #FDEDED;
+  --danger-text:   #C53030;
+  --accent-red:    #ED4956;
+
+  /* shape */
+  --radius-card:   12px;
+  --radius-sm:     10px;
+  --radius-pill:   999px;
+
+  /* elevation — intentionally near-flat */
+  --shadow-hover:  0 1px 2px rgba(0, 0, 0, .03);
+  --shadow-none:   none;
+
+  /* spacing scale (4px base) */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-7: 32px;
+  --sp-8: 40px;
+  --sp-9: 56px;
+
+  /* motion */
+  --ease: cubic-bezier(.22, .61, .36, 1);
+  --dur:  200ms;
+
+  /* type */
+  --font-sans: "Inter", -apple-system, "PingFang SC", "Microsoft YaHei",
+               system-ui, sans-serif;
+}
+
+/* ---------- Reset ---------- */
+*,
+*::before,
+*::after { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.65;
+  font-weight: 400;
+  letter-spacing: .001em;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+h1, h2, h3, p { margin: 0; }
+button, input { font: inherit; color: inherit; }
+
+::selection { background: #E9E9E9; }
+
+/* ============================================================
+   Draft annotation strip (separate from the mock)
+   ============================================================ */
+.annotation {
+  height: 36px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--sp-8);
+  font-size: 12px;
+  color: var(--text-muted);
+  letter-spacing: .01em;
+}
+.annotation .tag-a { color: var(--text); font-weight: 600; }
+
+/* ============================================================
+   Page shell
+   ============================================================ */
+.page {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: var(--sp-8) var(--sp-8) var(--sp-9);
+}
+
+/* ============================================================
+   Header / hero
+   ============================================================ */
+.hero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-6);
+}
+.hero-top { display: flex; align-items: center; }
+.date {
+  font-size: 13px;
+  color: var(--text-muted);
+  letter-spacing: .01em;
+}
+.hero h1 {
+  margin-top: var(--sp-2);
+  font-size: 26px;
+  line-height: 1.3;
+  font-weight: 600;
+  color: var(--text-strong);
+  letter-spacing: -.01em;
+}
+.hero-sub {
+  margin-top: var(--sp-2);
+  font-size: 15px;
+  color: var(--text-muted);
+}
+.avatar {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  color: var(--text-strong);
+  font-size: 15px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+  transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+.avatar:hover { background: #EDEDED; border-color: var(--border-mid); }
+
+/* ---------- Search pill ---------- */
+.searchbar {
+  margin-top: var(--sp-6);
+  max-width: 620px;
+  height: 46px;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: 0 var(--sp-4) 0 var(--sp-5);
+  background: var(--bg);
+  border: 1px solid var(--border-mid);
+  border-radius: var(--radius-pill);
+  transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease);
+}
+.searchbar:hover { border-color: #CFCFCF; }
+.searchbar:focus-within { border-color: #C2C2C2; background: var(--surface); }
+.searchbar .ico { flex: none; color: var(--text-muted); display: flex; }
+.search-placeholder {
+  flex: 1;
+  font-size: 14.5px;
+  color: var(--text-muted);
+}
+.kbd {
+  flex: none;
+  font-size: 11.5px;
+  color: var(--text-soft);
+  background: var(--surface-soft);
+  border-radius: var(--radius-pill);
+  padding: 2px 9px;
+  letter-spacing: .02em;
+}
+
+/* ---------- Chips row ---------- */
+.chips {
+  margin-top: var(--sp-5);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: 34px;
+  padding: 0 var(--sp-4);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  font-size: 13px;
+  color: var(--text);
+  transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+.chip:hover { background: var(--surface-soft); border-color: #E6E6E6; }
+.chip .dot {
+  width: 6px; height: 6px; border-radius: var(--radius-pill);
+  background: #C7C7C7; flex: none;
+}
+.chip .dot.accent { background: var(--accent-red); }
+.chip .chip-strong { font-weight: 500; }
+.chip .chip-soft { color: var(--text-muted); }
+
+/* ============================================================
+   Stats row
+   ============================================================ */
+.stats {
+  margin-top: var(--sp-7);
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--sp-4);
+}
+.stat {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  padding: var(--sp-5) var(--sp-5) var(--sp-5);
+  transition: box-shadow var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+.stat:hover { box-shadow: var(--shadow-hover); border-color: #E8E8E8; }
+.stat-label {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  letter-spacing: .01em;
+}
+.stat-value {
+  margin-top: var(--sp-2);
+  font-size: 27px;
+  line-height: 1.15;
+  font-weight: 600;
+  color: var(--text-strong);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.015em;
+}
+.stat-value .unit {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-soft);
+  margin-left: 2px;
+}
+.stat-sub {
+  margin-top: var(--sp-1);
+  font-size: 11.5px;
+  color: var(--text-muted);
+  letter-spacing: .04em;
+}
+
+/* ============================================================
+   Two-column workspace
+   ============================================================ */
+.workspace {
+  margin-top: var(--sp-7);
+  display: grid;
+  grid-template-columns: minmax(0, 1.16fr) minmax(0, 1fr);
+  gap: var(--sp-6);
+  align-items: start;
+}
+.col { display: flex; flex-direction: column; gap: var(--sp-6); min-width: 0; }
+
+/* ---------- Card / section ---------- */
+.card {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  padding: var(--sp-6) var(--sp-6) var(--sp-6);
+  transition: box-shadow var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+.card:hover { box-shadow: var(--shadow-hover); border-color: #E8E8E8; }
+
+.section-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-4);
+}
+.section-head h2 {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-strong);
+  letter-spacing: -.005em;
+}
+.section-head .en {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  letter-spacing: .02em;
+}
+.section-head .count {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Agenda rows ---------- */
+.agenda { display: flex; flex-direction: column; }
+.agenda-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-5);
+  padding: var(--sp-4) var(--sp-3);
+  border-radius: var(--radius-sm);
+  transition: background var(--dur) var(--ease);
+}
+.agenda-row + .agenda-row { border-top: 1px solid var(--divider); }
+.agenda-row:hover { background: var(--surface); }
+.agenda-time {
+  flex: none;
+  width: 108px;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--text-strong);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.005em;
+}
+.agenda-body { min-width: 0; }
+.agenda-title { font-size: 14.5px; color: var(--text); }
+.agenda-place { font-size: 13px; color: var(--text-muted); }
+
+/* ---------- Action rows ---------- */
+.actions { display: flex; flex-direction: column; }
+.action-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-4);
+  padding: var(--sp-4) var(--sp-3);
+  border-radius: var(--radius-sm);
+  cursor: default;
+  transition: background var(--dur) var(--ease);
+}
+.action-row + .action-row { border-top: 1px solid var(--divider); }
+.action-row:hover { background: var(--surface); }
+
+.check {
+  flex: none;
+  width: 21px;
+  height: 21px;
+  margin-top: 1px;
+  border-radius: var(--radius-pill);
+  border: 1.5px solid var(--border-mid);
+  background: var(--bg);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease);
+}
+.check:hover { border-color: #BDBDBD; }
+.check.checked {
+  background: var(--text-strong);
+  border-color: var(--text-strong);
+}
+.check svg { display: block; }
+
+.action-body { min-width: 0; flex: 1; }
+.action-title {
+  font-size: 14.5px;
+  color: var(--text);
+  line-height: 1.5;
+}
+.action-title.done {
+  color: var(--text-muted);
+  text-decoration: line-through;
+  text-decoration-color: #CFCFCF;
+}
+.action-meta {
+  margin-top: var(--sp-2);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+.meta {
+  font-size: 12px;
+  color: var(--text-soft);
+  background: var(--surface-soft);
+  border-radius: var(--radius-pill);
+  padding: 2px 10px;
+  line-height: 1.5;
+  letter-spacing: .005em;
+}
+.meta.overdue {
+  background: transparent;
+  padding-left: 0;
+  color: var(--danger-text);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.meta.overdue::before {
+  content: "";
+  width: 5px; height: 5px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-red);
+  flex: none;
+}
+
+/* ============================================================
+   Projects
+   ============================================================ */
+.projects { display: flex; flex-direction: column; gap: var(--sp-4); }
+.project {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: var(--sp-4) var(--sp-4) var(--sp-4);
+  background: var(--bg);
+  transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+}
+.project:hover { border-color: #E6E6E6; box-shadow: var(--shadow-hover); }
+.project-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+.project-name {
+  font-size: 14px;
+  color: var(--text);
+  line-height: 1.5;
+  min-width: 0;
+}
+.project-count {
+  flex: none;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-strong);
+  font-variant-numeric: tabular-nums;
+}
+.project-foot {
+  margin-top: var(--sp-3);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+.progress {
+  flex: 1;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--divider);
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: var(--text-strong);
+}
+
+/* ---------- Status badges ---------- */
+.badge {
+  flex: none;
+  font-size: 11.5px;
+  line-height: 1.4;
+  padding: 2px 10px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-soft);
+  color: var(--text-soft);
+  white-space: nowrap;
+}
+.badge.overdue { background: var(--danger-bg); color: var(--danger-text); }
+.badge.done { background: var(--surface-soft); color: var(--text-muted); }
+
+/* ============================================================
+   Component showcase
+   ============================================================ */
+.showcase { display: flex; flex-direction: column; gap: var(--sp-5); }
+.spec {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.spec-label {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  letter-spacing: .01em;
+}
+.spec-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+/* ---------- Buttons ---------- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 38px;
+  padding: 0 var(--sp-5);
+  border-radius: var(--radius-pill);
+  border: 1px solid transparent;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  user-select: none;
+  transition: background var(--dur) var(--ease),
+              border-color var(--dur) var(--ease),
+              color var(--dur) var(--ease);
+}
+.btn-primary {
+  background: var(--text-strong);
+  color: #FFFFFF;
+}
+.btn-primary:hover { background: #333333; }
+.btn-primary:active { background: #2A2A2A; }
+.btn-secondary {
+  background: var(--bg);
+  border-color: var(--border-mid);
+  color: var(--text);
+}
+.btn-secondary:hover { background: var(--surface); border-color: #CFCFCF; }
+.btn-ghost {
+  background: transparent;
+  color: var(--text-muted);
+  padding: 0 var(--sp-3);
+}
+.btn-ghost:hover { color: var(--text); }
+
+/* ---------- Tags ---------- */
+.tag {
+  font-size: 12.5px;
+  color: var(--text-soft);
+  background: var(--surface-soft);
+  border-radius: var(--radius-pill);
+  padding: 3px 12px;
+  line-height: 1.5;
+}
+
+/* ---------- Input ---------- */
+.capture {
+  width: 100%;
+  height: 44px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  padding: 0 var(--sp-5);
+  font-size: 14px;
+  color: var(--text);
+  outline: none;
+  transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease);
+}
+.capture::placeholder { color: var(--text-muted); }
+.capture:hover { border-color: var(--border-mid); }
+.capture:focus { background: var(--bg); border-color: #C2C2C2; }
+
+/* ---------- Checkbox demo ---------- */
+.demo-check {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-3);
+  font-size: 14px;
+  color: var(--text);
+}
+.demo-check.done span.txt {
+  color: var(--text-muted);
+  text-decoration: line-through;
+  text-decoration-color: #CFCFCF;
+}
+
+/* ---------- Toast ---------- */
+.toast {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-3);
+  background: var(--text-strong);
+  color: #FFFFFF;
+  border-radius: var(--radius-card);
+  padding: var(--sp-3) var(--sp-5);
+  font-size: 13.5px;
+  box-shadow: var(--shadow-none);
+}
+
+/* ============================================================
+   Footer
+   ============================================================ */
+.footer {
+  margin-top: var(--sp-9);
+  padding-top: var(--sp-6);
+  border-top: 1px solid var(--divider);
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-muted);
+  letter-spacing: .02em;
+}
+
+/* ============================================================
+   Motion — gentle page reveal
+   ============================================================ */
+@keyframes rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+.reveal { animation: rise 420ms var(--ease) both; }
+.r1 { animation-delay: 40ms; }
+.r2 { animation-delay: 90ms; }
+.r3 { animation-delay: 140ms; }
+.r4 { animation-delay: 190ms; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+}
+
+/* ============================================================
+   Responsive
+   ============================================================ */
+@media (max-width: 1024px) {
+  .page { padding: var(--sp-7) var(--sp-6) var(--sp-8); }
+  .workspace { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--sp-5); }
+  .stats { gap: var(--sp-3); }
+}
+
+@media (max-width: 768px) {
+  .annotation { padding: 0 var(--sp-5); }
+  .annotation .note { display: none; }
+  .page { padding: var(--sp-6) var(--sp-5) var(--sp-8); }
+  .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .workspace { grid-template-columns: minmax(0, 1fr); }
+  .agenda-time { width: 92px; }
+  .hero h1 { font-size: 23px; }
+}
+</style>
+</head>
+<body>
+
+<!-- ===== Draft annotation strip (visually separate) ===== -->
+<div class="annotation">
+  <span class="tag-a">设计稿 A · 原生 INS 平铺</span>
+  <span class="note">圆角 12 · 无阴影 · 细柔边线 · 正白底</span>
+</div>
+
+<main class="page">
+
+  <!-- ===== Header ===== -->
+  <header class="hero reveal r1">
+    <div class="hero-main">
+      <div class="hero-top">
+        <span class="date">10月2日 · 星期五</span>
+      </div>
+      <h1>下午好</h1>
+      <p class="hero-sub">今天有 3 项日程，8 条待澄清收件。</p>
+    </div>
+    <div class="avatar" title="K">K</div>
+  </header>
+
+  <!-- ===== Search ===== -->
+  <div class="searchbar reveal r1">
+    <span class="ico" aria-hidden="true">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+        <circle cx="11" cy="11" r="7"></circle>
+        <path d="M20 20l-3.5-3.5"></path>
+      </svg>
+    </span>
+    <span class="search-placeholder">搜索事务、资料或输入指令</span>
+    <span class="kbd">⌘K</span>
+  </div>
+
+  <!-- ===== Chips ===== -->
+  <div class="chips reveal r2">
+    <span class="chip">
+      <span class="dot"></span>
+      <span class="chip-strong">下一项</span>
+      <span class="chip-soft">· 学生组织例会 19:30</span>
+    </span>
+    <span class="chip">
+      <span class="dot"></span>
+      <span class="chip-strong">收件箱</span>
+      <span class="chip-soft">· 8 待处理</span>
+    </span>
+  </div>
+
+  <!-- ===== Stats ===== -->
+  <section class="stats reveal r2">
+    <div class="stat">
+      <div class="stat-label">收件箱水位</div>
+      <div class="stat-value">8</div>
+      <div class="stat-sub">待澄清 INBOX</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">今日任务</div>
+      <div class="stat-value">3/7</div>
+      <div class="stat-sub">今日 TODAY</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">进行中项目</div>
+      <div class="stat-value">4</div>
+      <div class="stat-sub">WIP</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">连续刷题</div>
+      <div class="stat-value">12<span class="unit">天</span></div>
+      <div class="stat-sub">STREAK</div>
+    </div>
+  </section>
+
+  <!-- ===== Workspace ===== -->
+  <div class="workspace reveal r3">
+
+    <!-- Left column -->
+    <div class="col">
+
+      <!-- 今日日程 -->
+      <section class="card">
+        <div class="section-head">
+          <h2>今日日程</h2>
+          <span class="en">TODAY</span>
+          <span class="count">3 项</span>
+        </div>
+        <div class="agenda">
+          <div class="agenda-row">
+            <div class="agenda-time">14:00–15:40</div>
+            <div class="agenda-body">
+              <div class="agenda-title">数据结构课</div>
+              <div class="agenda-place">8A-305</div>
+            </div>
+          </div>
+          <div class="agenda-row">
+            <div class="agenda-time">16:30–17:30</div>
+            <div class="agenda-body">
+              <div class="agenda-title">辅导员助理值班</div>
+              <div class="agenda-place">学工办</div>
+            </div>
+          </div>
+          <div class="agenda-row">
+            <div class="agenda-time">19:30–21:00</div>
+            <div class="agenda-body">
+              <div class="agenda-title">学生组织例会</div>
+              <div class="agenda-place">某教室</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 下一步行动 -->
+      <section class="card">
+        <div class="section-head">
+          <h2>下一步行动</h2>
+          <span class="en">NEXT ACTIONS</span>
+          <span class="count">5 项</span>
+        </div>
+        <div class="actions">
+
+          <div class="action-row">
+            <span class="check" aria-hidden="true"></span>
+            <div class="action-body">
+              <div class="action-title">给 demo 实验室发面试确认邮件</div>
+              <div class="action-meta">
+                <span class="meta">@computer</span>
+                <span class="meta">15 分钟</span>
+                <span class="meta">10-04 截止</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="action-row">
+            <span class="check" aria-hidden="true"></span>
+            <div class="action-body">
+              <div class="action-title">完成学生组织程序设计大赛策划书终稿</div>
+              <div class="action-meta">
+                <span class="meta">@org-room</span>
+                <span class="meta">150 分钟</span>
+                <span class="meta">10-04 截止</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="action-row">
+            <span class="check" aria-hidden="true"></span>
+            <div class="action-body">
+              <div class="action-title">完成数据结构图论章节习题 P1–P12</div>
+              <div class="action-meta">
+                <span class="meta">@lab</span>
+                <span class="meta">90 分钟</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="action-row">
+            <span class="check" aria-hidden="true"></span>
+            <div class="action-body">
+              <div class="action-title">Codeforces Round 补题（D 题）</div>
+              <div class="action-meta">
+                <span class="meta">@lab</span>
+                <span class="meta">120 分钟</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="action-row">
+            <span class="check" aria-hidden="true"></span>
+            <div class="action-body">
+              <div class="action-title">汇总班级国家助学金评议材料</div>
+              <div class="action-meta">
+                <span class="meta">@campus</span>
+                <span class="meta overdue">已逾期</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+    </div>
+
+    <!-- Right column -->
+    <div class="col">
+
+      <!-- 项目 -->
+      <section class="card">
+        <div class="section-head">
+          <h2>项目</h2>
+          <span class="en">PROJECTS</span>
+          <span class="count">3 个</span>
+        </div>
+        <div class="projects">
+
+          <div class="project">
+            <div class="project-top">
+              <div class="project-name">学生组织 10 月程序设计大赛</div>
+              <div class="project-count">6/9</div>
+            </div>
+            <div class="project-foot">
+              <div class="progress"><div class="progress-fill" style="width:66.7%"></div></div>
+              <span class="badge">进行中</span>
+            </div>
+          </div>
+
+          <div class="project">
+            <div class="project-top">
+              <div class="project-name">KERNEL v0.2 前端原型</div>
+              <div class="project-count">5/8</div>
+            </div>
+            <div class="project-foot">
+              <div class="progress"><div class="progress-fill" style="width:62.5%"></div></div>
+              <span class="badge">进行中</span>
+            </div>
+          </div>
+
+          <div class="project">
+            <div class="project-top">
+              <div class="project-name">demo 实验室面试准备</div>
+              <div class="project-count">3/6</div>
+            </div>
+            <div class="project-foot">
+              <div class="progress"><div class="progress-fill" style="width:50%"></div></div>
+              <span class="badge">进行中</span>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- 组件样例 -->
+      <section class="card">
+        <div class="section-head">
+          <h2>组件样例</h2>
+          <span class="en">COMPONENTS</span>
+        </div>
+
+        <div class="showcase">
+
+          <!-- 按钮 -->
+          <div class="spec">
+            <div class="spec-label">按钮</div>
+            <div class="spec-row">
+              <button class="btn btn-primary" type="button">新建事务</button>
+              <button class="btn btn-secondary" type="button">次要操作</button>
+              <button class="btn btn-ghost" type="button">了解更多</button>
+            </div>
+          </div>
+
+          <!-- 标签 -->
+          <div class="spec">
+            <div class="spec-label">标签</div>
+            <div class="spec-row">
+              <span class="tag">学生组织</span>
+              <span class="tag">ACM</span>
+              <span class="tag">学业</span>
+              <span class="tag">面试</span>
+            </div>
+          </div>
+
+          <!-- 状态徽章 -->
+          <div class="spec">
+            <div class="spec-label">状态徽章</div>
+            <div class="spec-row">
+              <span class="badge">进行中</span>
+              <span class="badge overdue">已逾期</span>
+              <span class="badge done">已完成</span>
+            </div>
+          </div>
+
+          <!-- 进度条 -->
+          <div class="spec">
+            <div class="spec-label">进度条</div>
+            <div class="project-foot" style="margin-top:0">
+              <div class="progress"><div class="progress-fill" style="width:66.7%"></div></div>
+              <span class="badge">6/9</span>
+            </div>
+          </div>
+
+          <!-- 输入框 -->
+          <div class="spec">
+            <div class="spec-label">输入框</div>
+            <input class="capture" type="text" placeholder="快速捕捉一条事务…" />
+          </div>
+
+          <!-- 复选框 -->
+          <div class="spec">
+            <div class="spec-label">复选框</div>
+            <div class="spec-row">
+              <span class="demo-check">
+                <span class="check" aria-hidden="true"></span>
+                <span class="txt">未完成</span>
+              </span>
+              <span class="demo-check done">
+                <span class="check checked" aria-hidden="true">
+                  <svg width="12" height="12" viewBox="0 0 16 16" fill="none"
+                       stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M3.5 8.5l3 3 6-7"></path>
+                  </svg>
+                </span>
+                <span class="txt">已完成</span>
+              </span>
+            </div>
+          </div>
+
+          <!-- Toast -->
+          <div class="spec">
+            <div class="spec-label">反馈</div>
+            <div class="spec-row">
+              <span class="toast">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none"
+                     stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M3.5 8.5l3 3 6-7"></path>
+                </svg>
+                已添加到收件箱（原型态）
+              </span>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+    </div>
+  </div>
+
+  <!-- ===== Footer ===== -->
+  <footer class="footer">
+    KERNEL 设计稿 · 原生 INS 平铺 · 2026-10-02 · 供选型参考
+  </footer>
+
+</main>
+
+</body>
+</html>
