@@ -4,6 +4,17 @@
 
 ## [Unreleased]
 
+### 先确认后写入 · Slice O（已完成 · 2026-10-03）
+以 owner 两条强制指令为规格：①「我输入你好后居然没经过 AI 建议我确认然后直接入库，这是不行的」——任务快速新建在用户确认前**绝不能写库**；②「AI 初步处理后需要给到我充足的编辑以及操作空间，每个类似的地方都要这样」——凡 AI 产出即须先可编辑、确认、再落盘。「先确认后写入」成为统一模式。`npm run build`（tsc strict + vite）通过；服务端冒烟 **35/35** + 浏览器 E2E **31/31**；零数据残留（计数回到基线：收件箱 10 / 任务 62 / 项目 10 / 笔记 15 / 资料 12 / 回顾 2 / 回收站 0；所有者 t-0061/t-0062 「你好」与 i-0009/i-0010 未动）；控制台零 error；证据 `.qa/v28/`。
+
+- **任务快速新建改为「草稿确认」弹窗（Deliverable A）**：回车不再即时创建，而是打开居中弹窗（复用 `src/components/Modal.tsx`，新增加宽变体 `.k-modal--compose`）。打开即异步请求 `POST /api/ai/task/draft`（安静「AI 正在补全…」态），返回后把 `contexts / energy / importance / estimateMin / dueAt / projectId / areaId / tags` 预填为**全部可编辑控件**（宽松两列网格，标题独占整行）；**绝不改写用户标题**，且 AI 返回时**跳过用户已改动的字段**（`touchedRef`），不覆盖用户输入。底部「创建任务」（主，标题非空才可用）「取消」「重新补全」。ESC / 遮罩 / 取消 → **零写入**；AI 离线 / 慢 / 失败时表单仍完全可用，创建不被阻断（空白字段走服务端默认）。成功后沿用 toast「已创建任务 · 撤销」（撤销＝移入回收站，复用既有机制）。旧「创建后内联 AI 建议面板」及其 `.k-ai-draft*` 样式整体退役。
+- **`POST /api/tasks` 扩展（服务端）**：在 `title` 必填不变的前提下，接受可选白名单字段（`server/schemas.mjs` 新增 `taskCreateFieldsSchema`，与澄清覆盖同口径）；`projectId / areaId` 做形状 + 存在性校验（臆造即 400）；缺省维持既有默认（`contexts ['@computer']` / `energy 'low'` / `importance 2` / `tags []`）；审计 `task.create` 的 `detail.fields` 列出本次携带的字段。仅传 `{ title }` 的旧调用行为完全不变。
+- **收件箱建议卡可编辑（Deliverable B）**：`AiReadyCard` 增加「编辑」开关，展开统一字段表单（`src/components/AiSuggestionForm.tsx`）——目标（task/note/resource/discard 下拉）/ 标题 / 上下文 / 标签 / 能量 / 重要性 / 预估 / 截止 / 项目 / 区域，宽松两列、全行宽。应用时提交**当前（可能编辑过的）值**，仍走既有 `POST /api/inbox/:id/clarify`（`details` + `ai:true` 审计不变）；「忽略」「重新解析」语义不变，重新解析重置为全新建议；编辑为纯客户端态，应用前不落盘。批量解析自动继承同一组件，编辑互不干扰。
+- **共享层（新增）**：`src/lib/aiForm.ts`（表单值类型 + `suggestionToForm` / `draftToForm` / `applyFormToSuggestion` / `formToTaskCreate` 换算）+ `src/components/AiSuggestionForm.tsx`（受控字段网格，token only）；`src/components/TaskDraftModal.tsx`（弹窗编排）。`src/lib/mutations.ts` 的 `createTask` 改为 `TaskCreateInput` 对象。
+- **「每个类似的地方」审计（Deliverable C）**：结论表见 `TASK_BOOK.md` Slice O 节——收件箱建议卡（已改）、任务补全（已改）、回顾报告弹窗（本就为可编辑 textarea，确认后保留）、AI 对话（无落盘动作，不适用）、`newProjectHint`（收件箱卡内，已随卡可编辑）；**项目快速新建无 AI 处理 → 明确不在范围**（记录理由）。
+- **验证**：`.qa/v28/smoke-o.mjs` **35/35**（仅标题默认值 / 全字段往返 / 审计 detail.fields / 8 类失败分支 400 / 所有者数据未动 / 零残留）；`.qa/v28/slice-o-verify.py` **31/31**（弹窗打开**确认前快照计数不变**这一核心断言 → AI 补全就绪 → 编辑 importance=3 → 创建 → 新任务带该值 + 审计 → 撤销入回收站；ESC 取消零写入；收件箱建议卡编辑目标/标题/重要性 → 应用 → 新任务带编辑值 + `inbox.clarify.task ai:true`；移动 390 弹窗 + 表单零横溢；控制台 0；零残留 + 所有者数据未动）。
+- **记录**：ADR-0011 §6 修订（草稿先行取代即时创建 + 补全，保留历史与反转理由）；`docs/02 §3.2 / §4.3`；`docs/04 §9`；`docs/05`（新文件）；`public/guide.html` 快速新建措辞；`AGENTS.md`。
+
 ### 收件箱附件「打开文件 / 位置」· Slice J2（已完成 · 2026-10-03）
 以 owner 反馈为规格：收件箱点附件「查看文件」得到的是浏览器**下载**，而不是用本地默认程序打开文件、或定位到文件管理器。改为两个安静 pill（「打开文件」/「位置」）经数据服务本机动作执行；UI 不再有下载链接。`npm run build`（tsc strict + vite）通过；服务端冒烟 **33/33** + 浏览器 E2E **21/21**；零数据写入（前后快照计数一致、trash 0、i-0009/i-0010/i-0011 未变、`data/files/` 无增删）；控制台零应用 error；证据 `.qa/v27/`。
 

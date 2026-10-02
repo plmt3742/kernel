@@ -1002,7 +1002,7 @@ body.demo-locked { overflow: hidden; }
             <ul>
               <li>计数：未完成 / 逾期 / 今日</li>
               <li>筛选：状态 / 时间 / 更多（上下文 · 能量 · 区域 · 身份）；分组：平铺 / 按项目 / 按上下文</li>
-              <li>快速新建：只填标题，AI 随后给出补全建议（可应用 / 忽略 / 重试）</li>
+              <li>快速新建：只填标题回车 → 弹窗预览 AI 补全，全部字段可编辑，点「创建任务」才写入</li>
               <li class="signal">详情抽屉与总览就地弹窗共用同一份详情；可编辑 / 删除（撤销进回收站）</li>
             </ul>
             <button class="demo-trigger" type="button" data-demo-open aria-haspopup="dialog">点开看：任务详情面板</button>
@@ -1089,8 +1089,8 @@ body.demo-locked { overflow: hidden; }
           <figcaption>对话盒的示例。清空时，这段记录会先归档为一条「AI 对话归档」笔记。</figcaption>
         </figure>
 
-        <h3>快速新建后的建议</h3>
-        <p>在任务页只写一个标题回车，任务是立刻建好的；随后 AI 会安静地补一份建议（上下文、能量、预估、截止、区域、标签），你可以应用、忽略或重试。建议迟到、失败都不会拖住创建。</p>
+        <h3>快速新建：先确认，再写入</h3>
+        <p>在任务页只写一个标题回车，会先弹出确认窗口；AI 在窗口里安静地补全字段（上下文、能量、重要性、预估、截止、项目、区域、标签），你可以任意修改。只有点「创建任务」，数据才会写入。按 ESC、点遮罩或「取消」则什么都不写；AI 迟到或失败也不影响你继续填写与创建。</p>
 
         <h3>回顾报告（周 / 月）</h3>
         <p>回顾页的周、月两张卡各有「AI 解析」。点一下，AI 读整个系统生成该周期的报告：指标 + 摘要 + 决策 + 停滞项目的处置建议。生成后点「查阅报告」，在弹窗里读；草稿可以编辑，满意就保存落盘，保存也能撤销。</p>
@@ -1140,7 +1140,7 @@ body.demo-locked { overflow: hidden; }
           <div class="mind"><strong>能量匹配</strong><span>低能量时做 <code class="inl">@phone</code> 这类低耗任务，而不是硬啃大块工作。</span></div>
           <div class="mind"><strong>撤销兜底</strong><span>完成、澄清、批量、AI 应用——5 秒内全可撤，放心操作。</span></div>
           <div class="mind"><strong>清空即归档</strong><span>对话清空不是删除：先归档成一条笔记，想找回就去资料库。</span></div>
-          <div class="mind hot"><strong>建议要你点头</strong><span>解析、快速新建、回顾报告——AI 只给建议，落盘永远等你点「应用」或「保存」。</span></div>
+          <div class="mind hot"><strong>建议要你点头</strong><span>解析、快速新建、回顾报告——AI 只给建议，落盘永远等你点「应用建议」「创建任务」或「保存」。</span></div>
           <div class="mind hot"><strong>周回顾是心跳</strong><span>每周固定一晚，短、可视。系统靠它维持节奏。</span></div>
         </div>
       </section>
@@ -1208,7 +1208,7 @@ body.demo-locked { overflow: hidden; }
 
           <article class="qa">
             <h3>AI 的建议会自动应用吗？</h3>
-            <p>不会，任何建议都要你点头。收件箱解析、任务快速新建的补全、回顾报告都只是建议——只有你点「应用建议」「应用」或「保存回顾」，数据才会写入，且写入后 5 秒内可撤销。</p>
+            <p>不会，任何建议都要你点头。收件箱解析、任务快速新建的补全、回顾报告都只是建议——只有你点「应用建议」「创建任务」或「保存回顾」，数据才会写入，且写入后 5 秒内可撤销。收件箱的建议还可以先「编辑」成你要的样子再应用。</p>
           </article>
 
           <article class="qa">

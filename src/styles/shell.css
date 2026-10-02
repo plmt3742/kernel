@@ -453,6 +453,10 @@
 .k-modal--report {
   width: min(720px, calc(100vw - 32px));
 }
+/* 任务草稿确认弹窗（Slice O）：加宽以容纳 AI 补全表单的两列字段 */
+.k-modal--compose {
+  width: min(720px, calc(100vw - 32px));
+}
 .k-modal__head {
   display: flex;
   align-items: flex-start;

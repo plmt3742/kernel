@@ -26,6 +26,7 @@ import { MeterBar } from '@/components/MeterBar'
 import { TagPill } from '@/components/TagPill'
 import { Checkbox } from '@/components/Checkbox'
 import { EmptyState } from '@/components/EmptyState'
+import { AiSuggestionForm } from '@/components/AiSuggestionForm'
 import { useToast } from '@/context/ToastContext'
 import { getAreaById, getInbox, getProjectById, getTaskById } from '@/lib/data'
 import {
@@ -51,6 +52,11 @@ import {
   takeInboxAiFailures,
   type AiStage,
 } from '@/lib/inboxAi'
+import {
+  applyFormToSuggestion,
+  suggestionToForm,
+  type AiSuggestionFormValues,
+} from '@/lib/aiForm'
 import { errorText } from '@/lib/api'
 import { useDataRevision, useNow } from '@/lib/hooks'
 import { ENERGY_LABEL, humanSize, INBOX_SOURCE_LABEL, tagLabel } from '@/lib/format'
@@ -105,10 +111,11 @@ const AI_STAGE_TEXT: Record<AiStage, string> = {
 function toClarifyDetails(suggestion: AiSuggestion): ClarifyDetails | undefined {
   if (suggestion.target === 'discard') return undefined
   const details: ClarifyDetails = {
-    title: suggestion.title,
     energy: suggestion.energy,
     importance: suggestion.importance,
   }
+  // 标题为空时省略，回退服务端用条目原文（编辑时用户可清空）
+  if (suggestion.title !== '') details.title = suggestion.title
   if (suggestion.contexts.length > 0) details.contexts = suggestion.contexts
   if (suggestion.estimateMin !== undefined) details.estimateMin = suggestion.estimateMin
   if (suggestion.dueAt !== undefined) details.dueAt = suggestion.dueAt
@@ -120,7 +127,12 @@ function toClarifyDetails(suggestion: AiSuggestion): ClarifyDetails | undefined 
   return details
 }
 
-/** AI 就绪建议卡（应用 / 重新解析 / 忽略；关联信息按 id 查快照，仅提示不自动合并） */
+/**
+ * AI 就绪建议卡（Slice O）：应用 / 重新解析 / 忽略 + 「编辑」——展开后可用统一字段表单
+ * 修改全部建议字段（目标 / 标题 / 上下文 / 能量 / 重要性 / 预估 / 截止 / 项目 / 区域 / 标签）。
+ * 应用时提交「当前（可能编辑过的）值」，仍走既有 clarify 路径（details + ai 审计）。
+ * 关联信息按 id 查快照，仅提示不自动合并；编辑为纯客户端态，直到应用才落盘。
+ */
 function AiReadyCard({
   suggestion,
   now,
@@ -131,11 +143,27 @@ function AiReadyCard({
 }: {
   suggestion: AiSuggestion
   now: Date
-  onApply: () => void
+  /** 应用当前（可能编辑过的）建议 */
+  onApply: (next: AiSuggestion) => void
   onRetry: () => void
   retryDisabled: boolean
   onClear: () => void
 }): ReactNode {
+  const [editing, setEditing] = useState(false)
+  const [target, setTarget] = useState<AiSuggestion['target']>(suggestion.target)
+  const [values, setValues] = useState<AiSuggestionFormValues>(() => suggestionToForm(suggestion))
+
+  // 建议变化（重新解析 / 缓存切换）→ 重置为全新建议的编辑态
+  useEffect(() => {
+    setEditing(false)
+    setTarget(suggestion.target)
+    setValues(suggestionToForm(suggestion))
+  }, [suggestion])
+
+  const patchValues = (patch: Partial<AiSuggestionFormValues>): void => {
+    setValues((prev) => ({ ...prev, ...patch }))
+  }
+
   const project =
     suggestion.projectId !== undefined ? getProjectById(suggestion.projectId) : undefined
   const area = suggestion.areaId !== undefined ? getAreaById(suggestion.areaId) : undefined
@@ -151,45 +179,88 @@ function AiReadyCard({
   return (
     <>
       <div className="ic-ai__head">
-        <span className="k-pill">{AI_TARGET_LABEL[suggestion.target]}</span>
-        <span className="ic-ai__title">{suggestion.title}</span>
+        <span className="k-pill">{AI_TARGET_LABEL[target]}</span>
+        <span className="ic-ai__title">
+          {editing ? values.title.trim() || '（未命名）' : suggestion.title}
+        </span>
+        <button
+          type="button"
+          className="k-pill is-ghost ic-ai__edit"
+          aria-expanded={editing}
+          onClick={() => setEditing((prev) => !prev)}
+        >
+          {editing ? '收起编辑' : '编辑'}
+        </button>
       </div>
-      <div className="ic-ai__meta">
-        {suggestion.contexts.map((ctx) => (
-          <TagPill key={ctx}>{ctx}</TagPill>
-        ))}
-        <span className="k-pill">{ENERGY_LABEL[suggestion.energy]}能</span>
-        <span className="k-pill">重要性 {suggestion.importance}/3</span>
-        {suggestion.estimateMin !== undefined && (
-          <span className="k-pill">≈{suggestion.estimateMin} 分钟</span>
-        )}
-        {suggestion.dueAt !== undefined && (
-          <span className="k-pill">
-            截止 {humanizeDay(suggestion.dueAt, now)} {formatTime(suggestion.dueAt)}
-          </span>
-        )}
-      </div>
-      <p className="ic-ai__reason">{suggestion.reason}</p>
-      {hasLinks && (
-        <div className="ic-ai__links">
-          {project !== undefined && <span className="k-pill">建议挂到 {project.title}</span>}
-          {newProjectHint !== undefined && (
-            <>
-              <span className="k-pill">建议新项目：{newProjectHint}</span>
-              <span className="ic-ai__dup">可到项目页新建</span>
-            </>
+
+      {editing ? (
+        <>
+          <div className="k-field">
+            <span className="k-field__label u-label">目标</span>
+            <select
+              className="k-select"
+              aria-label="澄清目标"
+              value={target}
+              onChange={(event) => setTarget(event.target.value as AiSuggestion['target'])}
+            >
+              {(Object.keys(AI_TARGET_LABEL) as Array<AiSuggestion['target']>).map((key) => (
+                <option key={key} value={key}>
+                  {AI_TARGET_LABEL[key]}
+                </option>
+              ))}
+            </select>
+          </div>
+          {target === 'discard' ? (
+            <p className="ic-ai__reason">将按 AI 建议丢弃该条目（无需填写字段）。</p>
+          ) : (
+            <AiSuggestionForm values={values} onChange={patchValues} />
           )}
-          {area !== undefined && <span className="k-pill">建议归入 {area.title}</span>}
-          {suggestion.tags.map((tag) => (
-            <TagPill key={tag}>{tagLabel(tag)}</TagPill>
-          ))}
-          {duplicate !== undefined && (
-            <span className="ic-ai__dup">疑似与「{duplicate.title}」重复</span>
+        </>
+      ) : (
+        <>
+          <div className="ic-ai__meta">
+            {suggestion.contexts.map((ctx) => (
+              <TagPill key={ctx}>{ctx}</TagPill>
+            ))}
+            <span className="k-pill">{ENERGY_LABEL[suggestion.energy]}能</span>
+            <span className="k-pill">重要性 {suggestion.importance}/3</span>
+            {suggestion.estimateMin !== undefined && (
+              <span className="k-pill">≈{suggestion.estimateMin} 分钟</span>
+            )}
+            {suggestion.dueAt !== undefined && (
+              <span className="k-pill">
+                截止 {humanizeDay(suggestion.dueAt, now)} {formatTime(suggestion.dueAt)}
+              </span>
+            )}
+          </div>
+          <p className="ic-ai__reason">{suggestion.reason}</p>
+          {hasLinks && (
+            <div className="ic-ai__links">
+              {project !== undefined && <span className="k-pill">建议挂到 {project.title}</span>}
+              {newProjectHint !== undefined && (
+                <>
+                  <span className="k-pill">建议新项目：{newProjectHint}</span>
+                  <span className="ic-ai__dup">可到项目页新建</span>
+                </>
+              )}
+              {area !== undefined && <span className="k-pill">建议归入 {area.title}</span>}
+              {suggestion.tags.map((tag) => (
+                <TagPill key={tag}>{tagLabel(tag)}</TagPill>
+              ))}
+              {duplicate !== undefined && (
+                <span className="ic-ai__dup">疑似与「{duplicate.title}」重复</span>
+              )}
+            </div>
           )}
-        </div>
+        </>
       )}
+
       <div className="ic-ai__actions">
-        <button type="button" className="k-btn is-solid" onClick={onApply}>
+        <button
+          type="button"
+          className="k-btn is-solid"
+          onClick={() => onApply(applyFormToSuggestion(suggestion, values, target))}
+        >
           应用建议
         </button>
         <button
@@ -960,7 +1031,7 @@ export function Inbox() {
                                     <AiReadyCard
                                       suggestion={panelResult.suggestion}
                                       now={now}
-                                      onApply={() => applyAi(item, panelResult.suggestion)}
+                                      onApply={(next) => applyAi(item, next)}
                                       onRetry={() => forceParse(item)}
                                       retryDisabled={running}
                                       onClear={clearInboxAiActive}

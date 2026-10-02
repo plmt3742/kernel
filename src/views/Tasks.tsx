@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
-import { AlertTriangle, ChevronRight, Plus, Sparkles, X } from 'lucide-react'
+import { AlertTriangle, ChevronRight, Plus } from 'lucide-react'
 import { clsx } from 'clsx'
 import { FilterBar, type FilterGroup } from '@/components/FilterBar'
 import { Checkbox } from '@/components/Checkbox'
@@ -11,17 +11,10 @@ import { EntityEditForm, type EditFieldSpec } from '@/components/EntityEditForm'
 import { EmptyState } from '@/components/EmptyState'
 import { TagPill } from '@/components/TagPill'
 import { TaskDetail } from '@/components/TaskDetail'
+import { TaskDraftModal } from '@/components/TaskDraftModal'
 import { useToast } from '@/context/ToastContext'
-import { getAreaById, getAreas, getProjectById, getSnapshot, getTags } from '@/lib/data'
-import {
-  aiTaskDraft,
-  createTask,
-  isTaskDone,
-  restoreEntity,
-  trashEntity,
-  updateEntity,
-  type TaskDraftSuggestion,
-} from '@/lib/mutations'
+import { getAreas, getProjectById, getSnapshot, getTags } from '@/lib/data'
+import { isTaskDone, restoreEntity, trashEntity, updateEntity } from '@/lib/mutations'
 import { errorText } from '@/lib/api'
 import { ENERGY_LABEL, TASK_STATUS_LABEL, tagLabel } from '@/lib/format'
 import {
@@ -55,87 +48,9 @@ function byDueTask(a: Task, b: Task): number {
 }
 
 /* ---------------------------------------------------------------------------
- * 快速新建 AI 补全（Slice H）：创建后异步取建议，安静呈现，绝不自动应用
+ * 快速新建（Slice O）：回车打开「草稿确认」弹窗（TaskDraftModal）——AI 先补全，
+ * 用户在弹窗内编辑并点「创建任务」后才写入。确认前零写入。
  * ------------------------------------------------------------------------- */
-
-interface TaskDraftState {
-  taskId: string
-  title: string
-  status: 'loading' | 'ready' | 'error'
-  suggestion?: TaskDraftSuggestion
-}
-
-/** 建议是否含可应用字段（只有 reason 不算，不弹面板） */
-function draftHasFields(suggestion: TaskDraftSuggestion): boolean {
-  return (
-    suggestion.contexts.length > 0 ||
-    suggestion.energy !== undefined ||
-    suggestion.importance !== undefined ||
-    suggestion.estimateMin !== undefined ||
-    suggestion.dueAt !== undefined ||
-    suggestion.projectId !== undefined ||
-    suggestion.areaId !== undefined ||
-    suggestion.tags.length > 0
-  )
-}
-
-/** 建议 → updateEntity patch（只含有值的字段；空建议返回 {}） */
-function draftPatch(suggestion: TaskDraftSuggestion): Record<string, unknown> {
-  const patch: Record<string, unknown> = {}
-  if (suggestion.contexts.length > 0) patch.contexts = suggestion.contexts
-  if (suggestion.energy !== undefined) patch.energy = suggestion.energy
-  if (suggestion.importance !== undefined) patch.importance = suggestion.importance
-  if (suggestion.estimateMin !== undefined) patch.estimateMin = suggestion.estimateMin
-  if (suggestion.dueAt !== undefined) patch.dueAt = suggestion.dueAt
-  if (suggestion.projectId !== undefined) patch.projectId = suggestion.projectId
-  if (suggestion.areaId !== undefined) patch.areaId = suggestion.areaId
-  if (suggestion.tags.length > 0) patch.tags = suggestion.tags
-  return patch
-}
-
-interface DraftChip {
-  key: string
-  label: string
-  value: string
-}
-
-/** 建议 → 人类可读 chips（只列实际给出的字段） */
-function draftChips(suggestion: TaskDraftSuggestion): DraftChip[] {
-  const chips: DraftChip[] = []
-  if (suggestion.contexts.length > 0) {
-    chips.push({ key: 'ctx', label: '上下文', value: suggestion.contexts.map(tagLabel).join(' · ') })
-  }
-  if (suggestion.energy !== undefined) {
-    chips.push({ key: 'energy', label: '能量', value: ENERGY_LABEL[suggestion.energy] })
-  }
-  if (suggestion.importance !== undefined) {
-    chips.push({ key: 'importance', label: '重要性', value: `${suggestion.importance} / 3` })
-  }
-  if (suggestion.estimateMin !== undefined) {
-    chips.push({ key: 'estimate', label: '预估', value: `${suggestion.estimateMin} 分钟` })
-  }
-  if (suggestion.dueAt !== undefined) {
-    chips.push({ key: 'due', label: '截止', value: humanizeDay(suggestion.dueAt) })
-  }
-  if (suggestion.projectId !== undefined) {
-    chips.push({
-      key: 'project',
-      label: '项目',
-      value: getProjectById(suggestion.projectId)?.title ?? suggestion.projectId,
-    })
-  }
-  if (suggestion.areaId !== undefined) {
-    chips.push({
-      key: 'area',
-      label: '区域',
-      value: getAreaById(suggestion.areaId)?.title ?? suggestion.areaId,
-    })
-  }
-  if (suggestion.tags.length > 0) {
-    chips.push({ key: 'tags', label: '标签', value: suggestion.tags.map(tagLabel).join(' · ') })
-  }
-  return chips
-}
 
 export function Tasks() {
   useDataRevision()
@@ -153,7 +68,9 @@ export function Tasks() {
   const [pendingDone, setPendingDone] = useState<string[]>([])
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [draft, setDraft] = useState<TaskDraftState | null>(null)
+  // 快速新建草稿确认弹窗（Slice O）：回车打开，确认前零写入
+  const [composeOpen, setComposeOpen] = useState(false)
+  const [composeTitle, setComposeTitle] = useState('')
 
   // 切换抽屉时退出编辑态
   useEffect(() => {
@@ -325,66 +242,28 @@ export function Tasks() {
     if (!wasDone) setPendingDone((prev) => [...prev, id])
   }
 
-  // 异步取 AI 建议；只更新仍在对应该任务的面板（并发创建时以最新为准）
-  const runDraft = (taskId: string, title: string): void => {
-    void (async () => {
-      try {
-        const result = await aiTaskDraft(title)
-        setDraft((prev) =>
-          prev !== null && prev.taskId === taskId
-            ? { taskId, title, status: 'ready', suggestion: result.suggestion }
-            : prev,
-        )
-      } catch {
-        // 失败不阻断 / 不降级创建：仅在面板内安静提示 + 可重试
-        setDraft((prev) =>
-          prev !== null && prev.taskId === taskId ? { taskId, title, status: 'error' } : prev,
-        )
-      }
-    })()
-  }
-
+  // 回车：打开草稿确认弹窗（只读预览，不写任何数据）；标题随入弹窗预填
   const handleQuickAdd = (): void => {
     const value = quick.trim()
     if (value === '') return
-    void (async () => {
-      try {
-        const task = await createTask(value)
-        setQuick('')
-        toast('已创建任务 · 写入 data/tasks')
-        // 创建即时完成；AI 建议随后异步到达（绝不自动应用）
-        setDraft({ taskId: task.id, title: task.title, status: 'loading' })
-        runDraft(task.id, task.title)
-      } catch (err) {
-        toast(`创建失败：${errorText(err)}`, { tone: 'error' })
-      }
-    })()
+    setComposeTitle(value)
+    setComposeOpen(true)
   }
 
-  const applyDraft = (): void => {
-    if (draft === null || draft.suggestion === undefined) return
-    const patch = draftPatch(draft.suggestion)
-    if (Object.keys(patch).length === 0) {
-      setDraft(null)
-      return
-    }
-    const taskId = draft.taskId
-    void (async () => {
-      try {
-        await updateEntity('tasks', taskId, patch)
-        setDraft(null)
-        toast('已应用 AI 建议')
-      } catch (err) {
-        toast(`应用失败：${errorText(err)}`, { tone: 'error' })
-      }
-    })()
-  }
-
-  const retryDraft = (): void => {
-    if (draft === null) return
-    const { taskId, title } = draft
-    setDraft({ taskId, title, status: 'loading' })
-    runDraft(taskId, title)
+  // 弹窗内确认创建成功：清空输入 + 撤销 toast（撤销＝移入回收站，复用既有机制）
+  const handleCreated = (task: Task): void => {
+    setComposeOpen(false)
+    setQuick('')
+    toast('已创建任务 · 撤销', {
+      action: {
+        label: '撤销',
+        onClick: () => {
+          void trashEntity('tasks', task.id).catch((err) => {
+            toast(`撤销失败：${errorText(err)}`, { tone: 'error' })
+          })
+        },
+      },
+    })
   }
 
   const selected = drawerId !== null ? allTasks.find((task) => task.id === drawerId) : undefined
@@ -489,15 +368,6 @@ export function Tasks() {
     })()
   }
 
-  // 有可应用字段才展示建议面板（仅有 reason / 空建议不弹，避免噪声）
-  const draftVisible =
-    draft !== null &&
-    !(
-      draft.status === 'ready' &&
-      draft.suggestion !== undefined &&
-      !draftHasFields(draft.suggestion)
-    )
-
   return (
     <div className="k-view">
       {/* 工具条：计数并入一行 + 快速新建（把纵向空间留给表格） */}
@@ -528,66 +398,12 @@ export function Tasks() {
             onKeyDown={(event) => {
               if (event.key === 'Enter') handleQuickAdd()
             }}
-            placeholder="快速新建任务，回车加入（写入 data/tasks）"
+            placeholder="快速新建任务，回车预览 AI 补全（先确认后写入）"
             aria-label="快速新建任务"
           />
           <span className="u-label k-muted">ENTER</span>
         </div>
       </div>
-
-      {/* 快速新建 AI 补全（Slice H）：创建即时完成，建议随后安静到达，绝不自动应用 */}
-      {draftVisible && draft !== null && (
-        <div className="k-ai-draft" role="status" aria-live="polite">
-          <div className="k-ai-draft__head">
-            <Sparkles size={14} strokeWidth={1.5} className="k-muted" aria-hidden />
-            <span className="u-label k-ai-draft__title">AI 建议 · {draft.title}</span>
-            <button
-              type="button"
-              className="k-iconbtn k-ai-draft__close"
-              onClick={() => setDraft(null)}
-              aria-label="忽略 AI 建议"
-            >
-              <X size={14} strokeWidth={1.5} aria-hidden />
-            </button>
-          </div>
-          {draft.status === 'loading' && (
-            <p className="k-ai-draft__line k-muted">正在补充建议…（已创建的任务不受影响）</p>
-          )}
-          {draft.status === 'error' && (
-            <div className="k-ai-draft__foot">
-              <span className="k-ai-draft__line k-muted">
-                AI 建议暂不可用（任务已创建，不受影响）。
-              </span>
-              <button type="button" className="k-btn k-btn--sm" onClick={retryDraft}>
-                重试
-              </button>
-            </div>
-          )}
-          {draft.status === 'ready' && draft.suggestion !== undefined && (
-            <>
-              <div className="k-hstack k-ai-draft__chips">
-                {draftChips(draft.suggestion).map((chip) => (
-                  <span className="k-ai-draft__chip" key={chip.key}>
-                    <span className="u-label k-muted">{chip.label}</span>
-                    <span>{chip.value}</span>
-                  </span>
-                ))}
-              </div>
-              {draft.suggestion.reason !== '' && (
-                <p className="k-ai-draft__reason k-muted">{draft.suggestion.reason}</p>
-              )}
-              <div className="k-ai-draft__foot">
-                <button type="button" className="k-btn k-btn--sm is-solid" onClick={applyDraft}>
-                  应用建议
-                </button>
-                <button type="button" className="k-btn k-btn--sm" onClick={() => setDraft(null)}>
-                  忽略
-                </button>
-              </div>
-            </>
-          )}
-        </div>
-      )}
 
       {/* 筛选压缩为一行（状态 + 时间；结构不变，仅排版收敛） */}
       <div className="k-tasks__filters">
@@ -824,8 +640,16 @@ export function Tasks() {
             />
           ) : (
             <TaskDetail task={selected} />
-          ))}
+          )          )}
       </Drawer>
+
+      {/* 快速新建草稿确认弹窗（Slice O）：ESC / 遮罩 / 取消 → 零写入 */}
+      <TaskDraftModal
+        open={composeOpen}
+        initialTitle={composeTitle}
+        onClose={() => setComposeOpen(false)}
+        onCreated={handleCreated}
+      />
     </div>
   )
 }

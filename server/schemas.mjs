@@ -209,6 +209,22 @@ export const reviewDraftSchema = z.object({
   staleAdvice: z.array(staleAdviceSchema).default([]),
 })
 
+/**
+ * 任务创建可选字段（v0.5 · Slice O）：「先确认后写入」的草稿确认流经 `POST /api/tasks`
+ * 一次性携带用户确认（含编辑）后的字段；与 clarifyDetailsSchema 同口径（title 单独校验，
+ * 保持仅传标题的旧调用行为不变）。zod 默认剥离未知键，故 body 中多余的 title 会被忽略。
+ */
+export const taskCreateFieldsSchema = z.object({
+  contexts: z.array(z.string().min(1)).max(8).optional(),
+  energy: energy.optional(),
+  importance: z.number().int().min(1).max(3).optional(),
+  estimateMin: z.number().int().min(1).max(600).optional(),
+  dueAt: iso.optional(),
+  tags: z.array(z.string().min(1)).max(8).optional(),
+  projectId: z.string().min(1).optional(),
+  areaId: z.string().min(1).optional(),
+})
+
 /** 澄清时的可选覆盖字段（AI 应用或手工预填；全部可选） */
 export const clarifyDetailsSchema = z.object({
   title: z.string().min(1).max(120).optional(),

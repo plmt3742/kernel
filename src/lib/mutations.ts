@@ -74,8 +74,24 @@ export async function reopenTask(id: string): Promise<Task> {
   }
 }
 
-export async function createTask(title: string): Promise<Task> {
-  const { task } = await api.post<{ task: Task }>('/api/tasks', { title })
+/**
+ * 创建任务入参（v0.5 · Slice O）：title 必填；可选字段在「预览确认」后一次性提交。
+ * 仅传 { title } 时行为与旧版一致（服务端补默认值）。
+ */
+export interface TaskCreateInput {
+  title: string
+  contexts?: string[]
+  energy?: Task['energy']
+  importance?: number
+  estimateMin?: number
+  dueAt?: string
+  projectId?: string
+  areaId?: string
+  tags?: string[]
+}
+
+export async function createTask(input: TaskCreateInput): Promise<Task> {
+  const { task } = await api.post<{ task: Task }>('/api/tasks', input)
   upsertEntity('tasks', task)
   return task
 }

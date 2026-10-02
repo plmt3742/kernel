@@ -2184,72 +2184,48 @@
 }
 
 /* ---------------------------------------------------------------------------
- * 快速新建 AI 建议（Slice H）：工具栏下方的安静内联面板（草稿预览，非写入）
+ * AI 建议可编辑表单（Slice O）：任务草稿确认弹窗 + 收件箱建议卡共用
+ * 宽松两列网格（标题独占整行）；≤640px 收为单列。全部走既有 token / 表单组件类。
  * ------------------------------------------------------------------------- */
 
-.k-ai-draft {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-4);
-  border: var(--hairline) solid var(--outline);
-  border-radius: var(--radius-card);
-  background: var(--surface-elevated);
+.k-ai-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4) var(--space-5);
 }
-.k-ai-draft__head {
+.k-ai-form__full {
+  grid-column: 1 / -1;
+}
+.k-ai-form__status {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-}
-.k-ai-draft__title {
-  flex: 1 1 auto;
-  min-width: 0;
-  color: var(--muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.k-ai-draft__close {
-  flex: 0 0 auto;
-}
-.k-ai-draft__line,
-.k-ai-draft__reason {
   margin: 0;
-  font-size: var(--text-body-sm);
-  line-height: var(--text-body-sm-leading);
-}
-.k-ai-draft__reason {
   font-size: var(--text-caption);
   line-height: var(--text-caption-leading);
 }
-.k-ai-draft__chips {
-  flex-wrap: wrap;
+.k-ai-form__refill {
+  margin-left: auto;
 }
-.k-ai-draft__chip {
-  display: inline-flex;
-  align-items: baseline;
-  gap: var(--space-1);
-  padding: var(--space-1) var(--space-3);
-  border-radius: var(--radius-pill);
-  background: var(--fill-subtle);
-  color: var(--ink-2);
+.k-ai-form__error {
+  margin: 0;
+  color: var(--danger-text);
   font-size: var(--text-caption);
+  line-height: var(--text-caption-leading);
 }
-.k-ai-draft__foot {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  flex-wrap: wrap;
-}
-.k-ai-draft__foot .k-ai-draft__line {
-  flex: 1 1 auto;
+@media (max-width: 640px) {
+  .k-ai-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .k-ai-form__refill {
+    margin-left: 0;
+  }
 }
 
-@container route (max-width: 640px) {
-  .k-ai-draft__foot {
-    align-items: stretch;
-    flex-direction: column;
-  }
+/* 收件箱建议卡「编辑」开关：推到行尾，安静胶囊 */
+.ic-ai__edit {
+  margin-left: auto;
+  flex: 0 0 auto;
 }
 
 /* ---------------------------------------------------------------------------

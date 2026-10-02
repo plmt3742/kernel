@@ -67,11 +67,11 @@ kernel/
 │  ├─ main.tsx                  # 挂载入口（样式导入、字体自托管）
 │  ├─ App.tsx                   # 应用壳与路由
 │  ├─ views/                    # 八个视图（Overview/Inbox/Tasks/Calendar/Projects/Library/Review/Settings）
-│  ├─ components/               # 通用组件（Panel / Drawer / Modal / Toast / EntityEditForm / CommandPalette / TaskDetail / ProjectDetail / OverviewChat …）
+│  ├─ components/               # 通用组件（Panel / Drawer / Modal / Toast / EntityEditForm / CommandPalette / TaskDetail / ProjectDetail / OverviewChat / AiSuggestionForm / TaskDraftModal …）
 │  │  ├─ shell/                 # 应用壳（RailNav / TopBar / StatusBar / AppLayout）
 │  │  └─ charts/                # 图表（TrendLine / EnergyBars）
 │  ├─ context/                  # React Context（Theme / Toast / Palette）
-│  ├─ lib/                      # 数据访问与工具（data 可变快照 / api 客户端 / mutations 写入动作 / inboxAi 收件箱 AI 解析状态 / derive / relations 互链派生 / date / format / motion / focus / hooks）
+│  ├─ lib/                      # 数据访问与工具（data 可变快照 / api 客户端 / mutations 写入动作 / inboxAi 收件箱 AI 解析状态 / aiForm AI 建议表单换算 / derive / relations 互链派生 / date / format / motion / focus / hooks）
 │  └─ styles/                   # 全局样式与 token（tokens / base / shell / components / views）
 │
 ├─ design-drafts/               # 设计选型稿（v1 视觉方向 a/b/c；v2 页面排版多版本 29 方案 + 选型页 index.html + 三版对比页 _sheets/）
@@ -128,9 +128,9 @@ kernel/
 | `src/main.tsx` | 应用挂载入口，样式导入；主题 FOUC 防护在 `index.html` 内联脚本中先于其执行 |
 | `src/App.tsx` | 应用壳：Router + Provider 链 + 路由出口 |
 | `src/views/` | 八个视图页面，一一对应宪法 §4 的视图规格 |
-| `src/components/` | 可复用组件（含 `shell/` 与 `charts/` 子目录），命名遵循设计系统签名词汇 |
+| `src/components/` | 可复用组件（含 `shell/` 与 `charts/` 子目录），命名遵循设计系统签名词汇；`AiSuggestionForm`（AI 建议可编辑字段网格，任务弹窗 / 收件箱卡共用）、`TaskDraftModal`（先确认后写入的任务草稿弹窗） |
 | `src/context/` | React Context：主题、Toast、命令面板开关 |
-| `src/lib/` | 数据访问与写入动作（data 可变快照 / api 客户端 / mutations / inboxAi 收件箱 AI 解析模块级状态 / derive / relations 实体互链）、日期、格式化、动效常量、焦点工具、共享 hooks |
+| `src/lib/` | 数据访问与写入动作（data 可变快照 / api 客户端 / mutations / inboxAi 收件箱 AI 解析模块级状态 / aiForm AI 建议表单值类型与换算 / derive / relations 实体互链）、日期、格式化、动效常量、焦点工具、共享 hooks |
 | `src/styles/` | 全局样式、CSS 变量 token、主题定义（唯一事实源 `tokens.css`） |
 
 ## 5. 维护规则

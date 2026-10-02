@@ -89,6 +89,8 @@ v0.5 增补（Slice G，见 ADR-0010）：通用笔记创建 `POST /api/notes`�
 
 v0.5 增补（Slice H，见 ADR-0011）：任务快速新建 AI 补全 `POST /api/ai/task/draft { title }`（标题非空 400 / 有界 ≤200 字；读快照摘要 + 指令式 JSON + Zod + 单次重试；返回 `{ suggestion, model, ms }`，**不落盘**，health 503 / 失败 502）；通用编辑白名单扩充（见 ADR-0009 路径）——`notes` 增 `areaId/projectId/distillLevel`、`resources` 增 `areaId`、`projects` 增 `goalId/nextActionId`，使「已显示」的状态 / 字段全部可设。
 
+v0.5 增补（Slice O，见 ADR-0011 §6）：**先确认后写入**成为统一模式。`POST /api/tasks` 扩展——`title` 必填不变，接受可选白名单字段 `contexts/energy/importance/estimateMin/dueAt/projectId/areaId/tags`（`taskCreateFieldsSchema`，与澄清覆盖同口径），创建前校验 `projectId/areaId` 形状与存在性（臆造即 400），审计 `task.create` 的 `detail.fields`；仅传 `{title}` 的旧调用行为不变。前端任务快速新建改为**居中草稿确认弹窗**（打开即 `POST /api/ai/task/draft` 预填、全字段可编辑、点「创建任务」才经扩展后的 `POST /api/tasks` 落盘，确认前零写入）；收件箱 AI 建议卡亦增「编辑」，应用提交编辑值走既有 `clarify`（`details` + `ai:true`）。
+
 派生值纪律在数据服务阶段依然适用：进度、计数、聚合必须运行时计算，不落盘。
 
 ## 4. opencode 集成计划（v0.5）
@@ -118,7 +120,7 @@ v0.5 增补（Slice H，见 ADR-0011）：任务快速新建 AI 补全 `POST /ap
 - **opencode 永不直接暴露到局域网**，仅监听 `127.0.0.1`。
 - 敏感操作需显式确认。
 - AI 已接入（v0.5：收件箱「AI 解析」→ 升级切片：上下文注入 + 挂接建议 + SSE 过程可视，见 ADR-0005 / ADR-0006）；状态条 / 设置页显示 AI 在线状态；命令面板 AI 入口留待后续。
-- AI 端点清单（均经本地 Node 服务代理，前端不直连 opencode）：`POST /api/ai/inbox/:id/parse`（同步）+ `…/parse-stream`（SSE 过程可视）；`POST /api/ai/review/draft`（周 / 月回顾草稿，ADR-0007）；`POST /api/ai/chat`（Slice G · 总览 AI 对话：读库摘要 + 有界历史，自然语言回答，**不落盘**，见 ADR-0010）；`POST /api/ai/task/draft`（Slice H · 任务快速新建补全：只填标题 → 建议 `contexts/energy/importance/estimateMin/dueAt/projectId/areaId/tags`，**不落盘**，应用走 `POST /api/tasks/:id/update`，见 ADR-0011）。配套通用创建 `POST /api/notes`（「清空对话」归档为 `type:'memo'` 笔记，审计 `note.create`）。
+- AI 端点清单（均经本地 Node 服务代理，前端不直连 opencode）：`POST /api/ai/inbox/:id/parse`（同步）+ `…/parse-stream`（SSE 过程可视）；`POST /api/ai/review/draft`（周 / 月回顾草稿，ADR-0007）；`POST /api/ai/chat`（Slice G · 总览 AI 对话：读库摘要 + 有界历史，自然语言回答，**不落盘**，见 ADR-0010）；`POST /api/ai/task/draft`（Slice H · 任务快速新建补全：只填标题 → 建议 `contexts/energy/importance/estimateMin/dueAt/projectId/areaId/tags`，**不落盘**；Slice O 改为**先确认后写入**——弹窗内编辑后经扩展的 `POST /api/tasks` 一次性创建，见 ADR-0011 §6）。配套通用创建 `POST /api/notes`（「清空对话」归档为 `type:'memo'` 笔记，审计 `note.create`）。
 - 本地服务与 opencode 之间使用 `OPENCODE_SERVER_PASSWORD` 保护（本机场景下的纵深防御）。
 
 ## 5. 托管拓扑（局域网）

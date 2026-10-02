@@ -20,7 +20,7 @@ import {
   remove,
   restoreFromTrash,
 } from './store.mjs'
-import { clarifyDetailsSchema, ID_PATTERNS } from './schemas.mjs'
+import { clarifyDetailsSchema, ID_PATTERNS, taskCreateFieldsSchema } from './schemas.mjs'
 import {
   CHAT_MAX_CHARS,
   CHAT_MAX_MESSAGES,
@@ -55,6 +55,10 @@ const CLARIFY_KINDS = { task: 'tasks', project: 'projects', note: 'notes', resou
 const EDITABLE_KINDS = ['tasks', 'projects', 'notes', 'resources']
 /** kind → 审计用单数名 */
 const SINGULAR = { tasks: 'task', projects: 'project', notes: 'note', resources: 'resource' }
+/** 任务创建可携带的可选字段顺序（Slice O；用于审计 detail.fields） */
+const CREATE_FIELD_KEYS = [
+  'contexts', 'energy', 'importance', 'estimateMin', 'dueAt', 'projectId', 'areaId', 'tags',
+]
 /** 各 kind 允许编辑的字段白名单（其余一律忽略，见 ADR-0009） */
 const EDITABLE_FIELDS = {
   tasks: [
@@ -251,26 +255,48 @@ async function serveFile(res, id) {
  * 动作
  * ------------------------------------------------------------------------- */
 
+/**
+ * 创建任务（v0.5 · Slice O）：title 必填；可一次性携带「预览确认（含编辑）」后的字段。
+ * 可选字段与澄清覆盖同口径（taskCreateFieldsSchema），关联 id 只接受真实存在的项目 / 区域；
+ * 缺省字段维持既有默认（contexts ['@computer'] / energy 'low' / importance 2 / tags []）。
+ * 仅传标题的旧调用行为不变（审计 detail.fields 为空数组）。
+ */
 async function createTask(body) {
   const title = typeof body.title === 'string' ? body.title.trim() : ''
   if (title === '') throw Object.assign(new Error('标题不能为空'), { status: 400 })
+  const fields = taskCreateFieldsSchema.parse(body)
   const now = nowIso()
   const task = {
     id: await nextId('tasks'),
     title,
     status: 'next',
-    contexts: ['@computer'],
-    energy: 'low',
-    importance: 2,
-    tags: [],
+    contexts: fields.contexts ?? ['@computer'],
+    energy: fields.energy ?? 'low',
+    importance: fields.importance ?? 2,
+    tags: fields.tags ?? [],
     createdAt: now,
     updatedAt: now,
   }
+  if (fields.estimateMin !== undefined) task.estimateMin = fields.estimateMin
+  if (fields.dueAt !== undefined) task.dueAt = fields.dueAt
+  if (fields.projectId !== undefined) {
+    if (!validId('projects', fields.projectId) || (await readEntity('projects', fields.projectId)) === null) {
+      throw Object.assign(new Error('项目不存在'), { status: 400 })
+    }
+    task.projectId = fields.projectId
+  }
+  if (fields.areaId !== undefined) {
+    if (!validId('areas', fields.areaId) || (await readEntity('areas', fields.areaId)) === null) {
+      throw Object.assign(new Error('区域不存在'), { status: 400 })
+    }
+    task.areaId = fields.areaId
+  }
+  const applied = CREATE_FIELD_KEYS.filter((key) => fields[key] !== undefined)
   const saved = await commit('tasks', task, {
     action: 'task.create',
     entity: 'task',
     id: task.id,
-    detail: { title },
+    detail: { title, fields: applied },
   })
   return { task: saved }
 }
