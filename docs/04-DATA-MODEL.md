@@ -233,6 +233,9 @@
 | locale | string |
 | weekStart | string |
 | createdAt | ISO |
+| aiAutomation | `'confirm'` \| `'auto'`（可选；Slice R2 起可写，缺省视作 `confirm`） |
+
+> **AI 自动化档位（v0.5 · Slice R2，见 ADR-0016）**：`aiAutomation` 经 `POST /api/config { aiAutomation }` 更新（白名单 + Zod + 原子写 + 审计 `config.update`）。`'confirm'`（默认）= 先确认后写入；`'auto'` = 自动解析完成后自动应用本次**创建类低风险动作**（`task`/`note`/`resource`/`project`），可一键撤销；**永不**删除 / 完成 / 归档 / 修改既有实体（能力边界见 ADR-0016 §2.3）。旧配置缺省时前端视作 `'confirm'`。
 
 **`data/meta/tags.json`**
 

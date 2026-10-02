@@ -282,6 +282,9 @@ export interface Review {
   updatedAt?: string
 }
 
+/** AI 自动化档位（Slice R2）：confirm = 先确认后写入（默认）；auto = 自动应用低风险动作 */
+export type AiAutomation = 'confirm' | 'auto'
+
 /** 标签来源（Slice T）：seed = 种子内置；manual = 用户录入自动登记；ai = AI 提议并应用 */
 export type TagOrigin = 'seed' | 'manual' | 'ai'
 
@@ -312,6 +315,8 @@ export interface AppConfig {
   locale: string
   weekStart: string
   createdAt: string
+  /** AI 自动化档位（Slice R2；旧配置缺省，UI 视作 'confirm'） */
+  aiAutomation?: AiAutomation
 }
 
 /* ---------------------------------------------------------------------------

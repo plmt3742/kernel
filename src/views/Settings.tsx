@@ -3,12 +3,16 @@
 import { useEffect, useState } from 'react'
 import { Panel } from '@/components/Panel'
 import { TagManager } from '@/components/TagManager'
+import { AiActivityFeed } from '@/components/AiActivityFeed'
 import { useTheme } from '@/context/ThemeContext'
-import { getSnapshot } from '@/lib/data'
+import { useToast } from '@/context/ToastContext'
+import { getConfig, getSnapshot } from '@/lib/data'
 import { getDataRecordCount } from '@/lib/derive'
 import { useAiHealth, useDataRevision, useDataSource } from '@/lib/hooks'
-import { api } from '@/lib/api'
+import { updateAiAutomation } from '@/lib/mutations'
+import { api, errorText } from '@/lib/api'
 import { formatTime } from '@/lib/date'
+import type { AiAutomation } from '@/types'
 
 interface ActivityEntry {
   ts: string
@@ -18,11 +22,12 @@ interface ActivityEntry {
 }
 
 /** 设置分类：左导航与右面板共用同一组 id，保证单区渲染 */
-type SectionId = 'appearance' | 'ai' | 'tags' | 'data' | 'service' | 'about'
+type SectionId = 'appearance' | 'ai' | 'automation' | 'tags' | 'data' | 'service' | 'about'
 
 const SECTIONS: Array<{ id: SectionId; cn: string; en: string }> = [
   { id: 'appearance', cn: '外观', en: 'APPEARANCE' },
   { id: 'ai', cn: 'AI 集成', en: 'OPENCODE' },
+  { id: 'automation', cn: 'AI 自动化', en: 'AUTOMATION' },
   { id: 'tags', cn: '标签管理', en: 'TAGS' },
   { id: 'data', cn: '数据统计', en: 'DATA' },
   { id: 'service', cn: '数据服务', en: 'SERVICE' },
@@ -41,8 +46,23 @@ export function Settings() {
   const { theme, setTheme } = useTheme()
   const source = useDataSource()
   const ai = useAiHealth()
+  const { toast } = useToast()
   const [section, setSection] = useState<SectionId>('appearance')
   const [activity, setActivity] = useState<ActivityEntry[]>([])
+  const config = getConfig()
+  // AI 自动化档位（Slice R2）：旧配置缺省视作确认模式（先确认后写入）
+  const automation: AiAutomation = config.aiAutomation ?? 'confirm'
+  const setAutomation = (level: AiAutomation): void => {
+    if (automation === level) return
+    void (async () => {
+      try {
+        await updateAiAutomation(level)
+        toast(level === 'auto' ? '已切换到自动模式' : '已切换到确认模式')
+      } catch (err) {
+        toast(`切换失败：${errorText(err)}`, { tone: 'error' })
+      }
+    })()
+  }
   const snapshot = getSnapshot()
   const total = getDataRecordCount(snapshot)
 
@@ -82,7 +102,7 @@ export function Settings() {
   return (
     <div className="k-view">
       <p className="k-view__intro">
-        按分类浏览设置：外观、AI 集成、数据统计、数据服务、关于。左侧选中分类决定右侧面板内容。
+        按分类浏览设置：外观、AI 集成、AI 自动化、标签管理、数据统计、数据服务、关于。左侧选中分类决定右侧面板内容。
       </p>
 
       <div className="k-settings__grid">
@@ -173,6 +193,53 @@ export function Settings() {
                   <code>opencode serve --port 4096</code>。
                 </p>
               )}
+            </Panel>
+          )}
+
+          {section === 'automation' && (
+            <Panel
+              title="AI 自动化"
+              en="AUTOMATION"
+              actions={
+                <span className="k-pill">{automation === 'auto' ? '自动模式' : '确认模式'}</span>
+              }
+            >
+              <div className="k-automation" role="radiogroup" aria-label="AI 自动化档位">
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={automation === 'confirm'}
+                  className={automation === 'confirm' ? 'k-automation__opt is-active' : 'k-automation__opt'}
+                  onClick={() => setAutomation('confirm')}
+                >
+                  <span className="k-automation__label">确认模式（默认）</span>
+                  <span className="k-automation__desc">
+                    AI 解析后只出建议；你点「应用」才写入。最稳妥，适合不放心自动落盘时。
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={automation === 'auto'}
+                  className={automation === 'auto' ? 'k-automation__opt is-active' : 'k-automation__opt'}
+                  onClick={() => setAutomation('auto')}
+                >
+                  <span className="k-automation__label">自动模式</span>
+                  <span className="k-automation__desc">
+                    捕捉后 AI 自动整理低风险内容（建任务 / 笔记 / 资料、打标签、归入项目），每条带「撤销」。绝不删除 /
+                    完成 / 归档任何东西。
+                  </span>
+                </button>
+              </div>
+              <p className="k-view__intro">
+                默认「确认模式」（先确认后写入）；「自动模式」需显式开启，仅自动执行创建类低风险动作，可随时撤销或切回确认模式。
+              </p>
+              <div className="k-settings__divider" aria-hidden />
+              <div className="k-between">
+                <span className="k-panel__cn">AI 动态</span>
+                <span className="u-label k-muted">AI 幕后动作记录 · 最近 50 条</span>
+              </div>
+              <AiActivityFeed />
             </Panel>
           )}
 

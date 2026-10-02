@@ -337,3 +337,66 @@ export const clarifyDetailsSchema = z.object({
   projectId: z.string().min(1).optional(),
   areaId: z.string().min(1).optional(),
 })
+
+/* ---------------------------------------------------------------------------
+ * AI 自动化档位（v0.5 · Slice R2，见 ADR-0016）：data/meta/config.json 的可写白名单。
+ * 缺省 'confirm'（先确认后写入）；'auto' 为显式选择（自动应用低风险动作，绝不删除/完成/归档）。
+ * ------------------------------------------------------------------------- */
+
+export const aiAutomationSchema = z.enum(['confirm', 'auto'])
+
+/** 配置更新入参（当前仅 aiAutomation；白名单外字段被 zod 剥离，不落盘） */
+export const configUpdateSchema = z.object({
+  aiAutomation: aiAutomationSchema,
+})
+
+/* ---------------------------------------------------------------------------
+ * 聚类立项（v0.5 · Slice R2，见 ADR-0016）：把「连续累积的相似任务 / 未澄清条目」
+ * 归纳为一个新项目。确定性预分组（共享 topic 标签 / 标题关键词）→ AI 命名 + 完成定义。
+ * AI 只出「建议提案」，绝不自动建项；应用经 POST /api/projects/cluster-apply。
+ * ------------------------------------------------------------------------- */
+
+/** AI 聚类草稿整体输出：按「预分组编号」引用成员（避免模型编造 id），0–3 个提案 */
+export const clusterDraftSchema = z.object({
+  proposals: z
+    .array(
+      z.object({
+        group: z.number().int().min(1),
+        title: z.string().min(1).max(60),
+        outcome: z.union([z.string().max(200), z.null()]).optional(),
+        reason: z.string().max(300).default(''),
+        areaId: z.union([z.string(), z.null()]).optional(),
+        tags: z.array(z.string().min(1)).max(5).default([]),
+      }),
+    )
+    .max(3)
+    .default([]),
+})
+
+/**
+ * 单条聚类提案（对外契约；成员 id 必须真实存在——postValidateClusters 按候选集过滤臆造，
+ * 且一律映射自服务端预分组，模型无法直接编造 id）。
+ */
+export const clusterProposalSchema = z.object({
+  title: z.string().min(1).max(60),
+  outcome: z.string().max(200).optional(),
+  reason: z.string().max(300).default(''),
+  taskIds: z.array(z.string()).default([]),
+  inboxIds: z.array(z.string()).default([]),
+  areaId: z.string().optional(),
+  tags: z.array(z.string().min(1)).max(5).default([]),
+})
+
+/** 聚类应用入参（客户端提交；服务端重新校验 + 任务存在性/未归属校验，绝不信任客户端形状） */
+export const clusterApplySchema = z.object({
+  title: z.string().min(1).max(60),
+  outcome: z.union([z.string().max(200), z.null()]).optional(),
+  areaId: z.union([z.string(), z.null()]).optional(),
+  tags: z.array(z.string().min(1)).max(5).default([]),
+  taskIds: z.array(z.string().regex(/^t-\d{4}$/)).min(1).max(50),
+})
+
+/** 聚类撤销入参：项目 id；受影响任务 id 从项目上的 clusterTaskIds 还原（服务端自持） */
+export const clusterUnapplySchema = z.object({
+  projectId: z.string().regex(/^p-\d{4}$/),
+})

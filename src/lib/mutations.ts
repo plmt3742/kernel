@@ -5,6 +5,7 @@ import { api } from '@/lib/api'
 import { getTaskById, removeEntity, replaceSnapshot, setDataSource, upsertEntity } from '@/lib/data'
 import { toISODateTime } from '@/lib/date'
 import type {
+  AppConfig,
   InboxItem,
   KernelSnapshot,
   Note,
@@ -531,6 +532,109 @@ export interface ProjectDraftResult {
 /** 请求 AI 为「只填标题」的新项目补全可推断字段；不写数据（失败抛出由调用方安静处理） */
 export async function aiProjectDraft(title: string): Promise<ProjectDraftResult> {
   return api.post<ProjectDraftResult>('/api/ai/project/draft', { title })
+}
+
+/* ---------------------------------------------------------------------------
+ * 聚类立项（v0.5 · Slice R2，见 ADR-0016）：连续累积的相似任务 → 新项目
+ * AI 只出「建议提案」，绝不自动建项；应用经 cluster-apply（一次写入建项 + 归入任务）。
+ * ------------------------------------------------------------------------- */
+
+/** 聚类提案（对应服务端 clusterProposalSchema；taskIds 均为无归属任务） */
+export interface ClusterProposal {
+  title: string
+  outcome?: string
+  reason: string
+  taskIds: string[]
+  /** 相关未澄清条目：仅作命名参考，澄清时 AI 会参考（本提案不写入它们） */
+  inboxIds: string[]
+  areaId?: string
+  tags: string[]
+}
+
+export interface ClusterDraftResult {
+  proposals: ClusterProposal[]
+  model: string | null
+  ms: number
+  candidates: number
+}
+
+/** 请求 AI 归纳候选（无归属任务 + 未澄清条目）；不写数据（失败抛出由调用方安静处理） */
+export async function aiClusterDraft(): Promise<ClusterDraftResult> {
+  return api.post<ClusterDraftResult>('/api/ai/cluster/draft')
+}
+
+export interface ClusterApplyInput {
+  title: string
+  outcome?: string
+  areaId?: string
+  tags?: string[]
+  taskIds: string[]
+}
+
+export interface ClusterApplyResult {
+  project: Project
+  assigned: string[]
+  createdTagIds: string[]
+}
+
+/** 应用聚类提案：一次写入创建项目并把列出的无归属任务归入（成功后整体水合） */
+export async function applyCluster(input: ClusterApplyInput): Promise<ClusterApplyResult> {
+  const result = await api.post<ClusterApplyResult>('/api/projects/cluster-apply', input)
+  if (!(await hydrateFromServer())) {
+    upsertEntity('projects', result.project)
+    for (const id of result.assigned) {
+      const task = getTaskById(id)
+      if (task !== undefined) upsertEntity('tasks', { ...task, projectId: result.project.id })
+    }
+  }
+  return result
+}
+
+export interface ClusterUnapplyResult {
+  trashed: { kind: 'projects'; id: string }
+  restoredTaskIds: string[]
+}
+
+/** 撤销聚类立项：清任务 projectId + 项目入回收站（成功后整体水合） */
+export async function unapplyCluster(projectId: string): Promise<ClusterUnapplyResult> {
+  const result = await api.post<ClusterUnapplyResult>('/api/projects/cluster-unapply', { projectId })
+  if (!(await hydrateFromServer())) {
+    removeEntity('projects', projectId)
+    for (const id of result.restoredTaskIds) {
+      const task = getTaskById(id)
+      if (task !== undefined) {
+        const next = { ...task }
+        delete next.projectId
+        upsertEntity('tasks', next)
+      }
+    }
+  }
+  return result
+}
+
+/* ---------------------------------------------------------------------------
+ * AI 自动化档位 + AI 动态（v0.5 · Slice R2，见 ADR-0016）
+ * ------------------------------------------------------------------------- */
+
+/** 更新 AI 自动化档位（白名单 aiAutomation）；成功后整体水合使设置即时生效 */
+export async function updateAiAutomation(level: AppConfig['aiAutomation']): Promise<void> {
+  await api.post<{ config: unknown }>('/api/config', { aiAutomation: level })
+  await hydrateFromServer()
+}
+
+/** 审计日志条目（GET /api/activity；detail 供「AI 动态」筛选） */
+export interface ActivityEntry {
+  ts: string
+  action: string
+  entity: string
+  id: string
+  detail?: Record<string, unknown>
+}
+
+/** 读取审计日志尾部（时间倒序；limit 上限 200） */
+export async function fetchActivity(limit = 200): Promise<ActivityEntry[]> {
+  const res = await api.get<{ items: ActivityEntry[] }>(`/api/activity?limit=${limit}`)
+  return res.items
 }
 
 /* ---------------------------------------------------------------------------

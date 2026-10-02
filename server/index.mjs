@@ -26,9 +26,13 @@ import {
   removeTag,
   renameTag,
   restoreFromTrash,
+  updateConfig,
 } from './store.mjs'
 import {
   clarifyDetailsSchema,
+  clusterApplySchema,
+  clusterUnapplySchema,
+  configUpdateSchema,
   ID_PATTERNS,
   inboxApplySchema,
   taskCreateFieldsSchema,
@@ -42,6 +46,7 @@ import {
   chatWithKernel,
   computeMonthMetrics,
   computeWeekMetrics,
+  draftClusters,
   draftProject,
   draftTask,
   generateReviewDraft,
@@ -360,6 +365,121 @@ async function createProject(body) {
   })
   if (tags.length > 0) await ensureTags(tags, { origin, firstUsedIn: saved.id })
   return { project: saved }
+}
+
+/**
+ * 聚类立项 · 应用（v0.5 · Slice R2，见 ADR-0016）：一次写入创建新项目，并把列出的
+ * 「无归属任务」归入该项目（projectId）。服务端重新 Zod 校验（clusterApplySchema）+
+ * 任务存在性 / 未归属校验，绝不信任客户端形状；标签以 origin 'ai' 登记；项目上记录
+ * clusterTaskIds / clusterTagIds 供精确撤销。收件箱条目无 projectId 结构，仅作命名参考，
+ * 本端点不触碰（澄清时由 AI 参考）。
+ */
+async function clusterApply(body) {
+  const parsed = clusterApplySchema.parse(body)
+  const title = parsed.title.trim()
+  if (title === '') throw Object.assign(new Error('项目名不能为空'), { status: 400 })
+  const snapshot = await readSnapshot()
+  const areaIds = new Set((snapshot.areas ?? []).map((a) => a.id))
+  const rawArea = typeof parsed.areaId === 'string' ? parsed.areaId.trim() : ''
+  if (rawArea !== '' && !areaIds.has(rawArea)) {
+    throw Object.assign(new Error('区域不存在'), { status: 400 })
+  }
+  const taskMap = new Map((snapshot.tasks ?? []).map((t) => [t.id, t]))
+  const targetIds = []
+  for (const id of parsed.taskIds) {
+    const task = taskMap.get(id)
+    if (task === undefined) continue // 已不存在 / 臆造：丢弃
+    if (task.projectId !== undefined && task.projectId !== '') continue // 已有归属：跳过
+    targetIds.push(id)
+  }
+  if (targetIds.length === 0) {
+    throw Object.assign(new Error('没有可归入的未归属任务'), { status: 400 })
+  }
+  const tags = normalizeTagList(parsed.tags ?? [])
+  const now = nowIso()
+  const projectId = await nextId('projects')
+  // 先登记标签（firstUsedIn = 预生成的 projectId），使 clusterTagIds 一并写入项目（一次写）
+  let createdTagIds = []
+  if (tags.length > 0) {
+    const registered = await ensureTags(tags, { origin: 'ai', firstUsedIn: projectId })
+    createdTagIds = registered.map((tag) => tag.id)
+  }
+  const rawOutcome = typeof parsed.outcome === 'string' ? parsed.outcome.trim() : ''
+  const project = {
+    id: projectId,
+    title: title.slice(0, 60),
+    outcome: rawOutcome !== '' ? rawOutcome.slice(0, 200) : '完成定义待整理（由 AI 归纳创建）',
+    status: 'active',
+    areaId: rawArea !== '' ? rawArea : 'a-0001',
+    tags,
+    createdAt: now,
+    updatedAt: now,
+    // 撤销凭据（catchall 允许）：本次归入的任务 + 本次新建的标签（仅删这类，绝不动既有标签）
+    clusterTaskIds: targetIds,
+    clusterTagIds: createdTagIds,
+  }
+  const savedProject = await commit('projects', project, {
+    action: 'project.create',
+    entity: 'project',
+    id: project.id,
+    detail: { title: project.title, via: 'cluster', memberCount: targetIds.length },
+  })
+  const assigned = []
+  for (const id of targetIds) {
+    const task = await readEntity('tasks', id)
+    if (task === null) continue
+    if (task.projectId !== undefined && task.projectId !== '') continue
+    const next = { ...task, projectId: savedProject.id, updatedAt: nowIso() }
+    await commit('tasks', next, {
+      action: 'task.update',
+      entity: 'task',
+      id,
+      detail: { fields: ['projectId'], projectId: savedProject.id, via: 'cluster' },
+    })
+    assigned.push(id)
+  }
+  return { project: savedProject, assigned, createdTagIds }
+}
+
+/**
+ * 聚类立项 · 撤销（v0.5 · Slice R2）：清除本次归入任务的 projectId（恢复为无归属）→
+ * 清理本次新建且已无人使用的标签 → 把项目移入回收站。精确回到应用前基线；审计各步。
+ */
+async function clusterUnapply(body) {
+  const { projectId } = clusterUnapplySchema.parse(body)
+  const project = await readEntity('projects', projectId)
+  if (project === null) throw Object.assign(new Error('项目不存在'), { status: 404 })
+  const taskIds = Array.isArray(project.clusterTaskIds) ? project.clusterTaskIds : []
+  const restoredTaskIds = []
+  for (const id of taskIds) {
+    const task = await readEntity('tasks', id)
+    if (task === null) continue
+    if (task.projectId !== projectId) continue
+    const next = { ...task, updatedAt: nowIso() }
+    delete next.projectId
+    await commit('tasks', next, {
+      action: 'task.update',
+      entity: 'task',
+      id,
+      detail: { fields: ['projectId'], cleared: true, via: 'cluster-unapply' },
+    })
+    restoredTaskIds.push(id)
+  }
+  const tagIds = Array.isArray(project.clusterTagIds) ? project.clusterTagIds : []
+  if (tagIds.length > 0) await pruneTags(tagIds)
+  await moveToTrash('projects', projectId, {
+    action: 'project.trash',
+    entity: 'project',
+    id: projectId,
+    detail: { via: 'cluster-unapply', restoredTasks: restoredTaskIds.length },
+  })
+  return { trashed: { kind: 'projects', id: projectId }, restoredTaskIds }
+}
+
+/** 更新配置（v0.5 · Slice R2）：白名单仅 aiAutomation；审计 config.update */
+async function applyConfigUpdate(body) {
+  const patch = configUpdateSchema.parse(body)
+  return { config: await updateConfig(patch) }
 }
 
 /**
@@ -1246,6 +1366,28 @@ const server = http.createServer(async (req, res) => {
       send(res, 200, result)
       return
     }
+    // 配置更新（Slice R2）：白名单 aiAutomation（confirm / auto）
+    if (method === 'POST' && pathname === '/api/config') {
+      const result = await applyConfigUpdate(await readBody(req))
+      console.log(`[data] config.update aiAutomation=${result.config.aiAutomation}`)
+      send(res, 200, result)
+      return
+    }
+    // 聚类立项草稿（Slice R2）：扫描无归属任务 + 未澄清条目 → 0~3 个「新项目」建议（只出建议，绝不落盘）
+    if (method === 'POST' && pathname === '/api/ai/cluster/draft') {
+      const health = await getAiHealth()
+      if (health.available === false) return fail(res, 503, 'opencode 服务未就绪（127.0.0.1:4096）')
+      let result
+      try {
+        result = await draftClusters(await readSnapshot())
+      } catch (err) {
+        console.error('[ai] cluster.draft 失败：', err?.message ?? err)
+        return fail(res, 502, err?.message ?? 'AI 调用失败')
+      }
+      console.log(`[ai] cluster.draft ok ${result.ms}ms（${result.proposals.length} 提案）`)
+      send(res, 200, result)
+      return
+    }
     if (method === 'POST' && pathname === '/api/ai/review/draft') {
       const body = await readBody(req)
       if (body.period !== undefined && body.period !== 'weekly' && body.period !== 'monthly') {
@@ -1406,6 +1548,21 @@ const server = http.createServer(async (req, res) => {
     }
     if (method === 'POST' && pathname === '/api/tasks') {
       send(res, 201, await createTask(await readBody(req)))
+      return
+    }
+    // 聚类立项 · 应用 / 撤销（Slice R2）：一次写入建项 + 归入任务；撤销精确复原
+    if (method === 'POST' && pathname === '/api/projects/cluster-apply') {
+      const result = await clusterApply(await readBody(req))
+      console.log(`[data] project.cluster-apply ${result.project.id}（归入 ${result.assigned.length} 项）`)
+      send(res, 201, result)
+      return
+    }
+    if (method === 'POST' && pathname === '/api/projects/cluster-unapply') {
+      const result = await clusterUnapply(await readBody(req))
+      console.log(
+        `[data] project.cluster-unapply ${result.trashed.id}（恢复 ${result.restoredTaskIds.length} 项）`,
+      )
+      send(res, 200, result)
       return
     }
     if (method === 'POST' && pathname === '/api/projects') {

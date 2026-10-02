@@ -1043,6 +1043,7 @@ writeMeta('config', {
   locale: 'zh-CN',
   weekStart: 'monday',
   createdAt: '2026-10-02T00:00:00+08:00',
+  aiAutomation: 'confirm',
 })
 writeMeta('tags', { tags })
 

@@ -10,6 +10,8 @@ import zlib from 'node:zlib'
 import {
   aiActionsSchema,
   aiSuggestionSchema,
+  clusterDraftSchema,
+  clusterProposalSchema,
   projectDraftSchema,
   reviewDraftSchema,
   taskDraftSchema,
@@ -1015,6 +1017,306 @@ export async function draftProject(title) {
   const ms = Date.now() - t0
   console.log(`[ai] project.draft 完成 ${ms}ms（${model ?? '未知模型'}）`)
   return { suggestion: clean, model, ms }
+}
+
+/* ---------------------------------------------------------------------------
+ * 聚类立项（v0.5 · Slice R2，见 ADR-0016）：连续累积的相似任务 / 未澄清条目 → 新项目
+ * 纪律：AI 只出「建议提案」，绝不自动建项；确定性预分组限定成员（模型按组编号引用，
+ *       无法编造 id）；应用经 POST /api/projects/cluster-apply（服务端一次写入 + 审计）。
+ * ------------------------------------------------------------------------- */
+
+/** 候选上限（有界成本） */
+export const CLUSTER_MAX_CANDIDATES = 50
+/** 构成一个提案所需的最少成员数 */
+export const CLUSTER_MIN_MEMBERS = 3
+/** 提案上限 */
+export const CLUSTER_MAX_PROPOSALS = 3
+/** 项目名硬上限 */
+export const CLUSTER_TITLE_MAX_CHARS = 60
+
+/** 连续 CJK 串（用于提取二元组） */
+const CLUSTER_CJK_RUN = /[\u4e00-\u9fa5]+/g
+/** 拉丁 / 数字词（≥2 字符） */
+const CLUSTER_LATIN = /[a-zA-Z0-9]{2,}/g
+/** 过泛的标题词（不作为关键词信号；避免把无关事务因通用动词并入一组） */
+const CLUSTER_STOPWORDS = new Set([
+  '任务', '项目', '事情', '一件', '进行', '处理', '完成', '准备', '相关', '整理',
+  '作业', '复习', '学习', '安排', '计划', '确认', '查看', '了解', '跟进', '记录',
+])
+
+/**
+ * 收集聚类候选（有界 ≤50）：无 projectId 的未完成任务（updatedAt 倒序）+ 未澄清收件箱
+ * （capturedAt 倒序）。任务优先，因其结构字段更利于主题判断。
+ */
+export function collectClusterCandidates(snapshot) {
+  const out = []
+  const tasks = [...(snapshot.tasks ?? [])]
+    .filter((t) => (t.projectId === undefined || t.projectId === '') && OPEN_TASK_STATUS.has(t.status))
+    .sort((a, b) => String(b.updatedAt ?? '').localeCompare(String(a.updatedAt ?? '')))
+  for (const t of tasks) {
+    out.push({ id: t.id, kind: 'task', title: String(t.title ?? ''), tags: normalizeTagList(t.tags ?? []) })
+    if (out.length >= CLUSTER_MAX_CANDIDATES) return out
+  }
+  const inbox = [...(snapshot.inbox ?? [])]
+    .filter((i) => i.status === 'unprocessed')
+    .sort((a, b) => String(b.capturedAt ?? '').localeCompare(String(a.capturedAt ?? '')))
+  for (const i of inbox) {
+    out.push({ id: i.id, kind: 'inbox', title: String(i.content ?? ''), tags: [] })
+    if (out.length >= CLUSTER_MAX_CANDIDATES) return out
+  }
+  return out
+}
+
+/** 标签信号集：完整标签名 + 可读后缀（topic:线性代数 → 线性代数） */
+function tagSignalSet(candidate) {
+  const set = new Set()
+  for (const raw of candidate.tags ?? []) {
+    const name = String(raw)
+    set.add(name)
+    if (name.startsWith('@')) {
+      if (name.length > 1) set.add(name.slice(1))
+    } else {
+      const colon = name.indexOf(':')
+      if (colon >= 0 && colon + 1 < name.length) set.add(name.slice(colon + 1))
+    }
+  }
+  return set
+}
+
+/** 标题关键词信号集：拉丁词（小写）+ CJK 二元组（去停用词） */
+function keywordSignalSet(candidate) {
+  const set = new Set()
+  const title = String(candidate.title ?? '')
+  for (const word of title.match(CLUSTER_LATIN) ?? []) {
+    const lower = word.toLowerCase()
+    if (!CLUSTER_STOPWORDS.has(lower)) set.add(lower)
+  }
+  for (const run of title.match(CLUSTER_CJK_RUN) ?? []) {
+    for (let i = 0; i + 2 <= run.length; i += 1) {
+      const bigram = run.slice(i, i + 2)
+      if (!CLUSTER_STOPWORDS.has(bigram)) set.add(bigram)
+    }
+  }
+  return set
+}
+
+/**
+ * 确定性预分组：先用共享标签（≥3 个候选）贪心成组，再用标题关键词（≥3）在剩余项上补组；
+ * 每个候选最多归入一组（强信号优先、按频次降序消费）。返回成员数组（组内 ≥3，按规模降序，≤6 组）。
+ */
+export function pregroupCandidates(candidates) {
+  if (candidates.length < CLUSTER_MIN_MEMBERS) return []
+  const signalOf = { tag: new Map(), keyword: new Map() }
+  for (const c of candidates) {
+    signalOf.tag.set(c.id, tagSignalSet(c))
+    signalOf.keyword.set(c.id, keywordSignalSet(c))
+  }
+  const groups = []
+  const assigned = new Set()
+  const runPass = (map) => {
+    const freq = new Map()
+    for (const set of map.values()) for (const token of set) freq.set(token, (freq.get(token) ?? 0) + 1)
+    const tokens = [...freq.entries()]
+      .filter(([, count]) => count >= CLUSTER_MIN_MEMBERS)
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    for (const [token] of tokens) {
+      const members = candidates.filter((c) => !assigned.has(c.id) && map.get(c.id).has(token))
+      if (members.length < CLUSTER_MIN_MEMBERS) continue
+      groups.push(members)
+      for (const m of members) assigned.add(m.id)
+    }
+  }
+  runPass(signalOf.tag)
+  runPass(signalOf.keyword)
+  return groups.sort((a, b) => b.length - a.length).slice(0, CLUSTER_MAX_PROPOSALS * 2)
+}
+
+/** 构造聚类命名摘要（组编号 → 成员；附现有项目 / 区域 / 标签供命名与去重） */
+function buildClusterDigest(snapshot, groups) {
+  const lines = []
+  groups.forEach((members, index) => {
+    lines.push(`组 ${index + 1}（${members.length} 项）：`)
+    for (const m of members) {
+      const kindLabel = m.kind === 'task' ? '任务' : '收件箱'
+      const tagText = (m.tags ?? []).length > 0 ? ` ｜ tags: ${m.tags.join(',')}` : ''
+      lines.push(`- ${kindLabel} ${m.id} · ${m.title}${tagText}`)
+    }
+  })
+  const projects = (snapshot.projects ?? []).map((p) => `${p.id} · ${p.title}`)
+  const areas = (snapshot.areas ?? []).map((a) => `${a.id} · ${a.title}`)
+  const tags = (snapshot.tags ?? []).map((t) => t.name)
+  return `【候选分组】\n${lines.join('\n') || '（无）'}\n【现有项目（避免重复）】\n${projects.join('\n') || '（无）'}\n【区域】\n${areas.join('\n') || '（无）'}\n【标签】\n${tags.join(', ') || '（无）'}`
+}
+
+/** 构造项目归纳系统提示词（注入当前本地时间 + 组内成员 + 去重约束） */
+function buildClusterSystem() {
+  const d = new Date()
+  const pad = (n) => String(n).padStart(2, '0')
+  const stamp = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${WEEKDAYS[d.getDay()]} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+  return `你是 KERNEL 个人事务系统的「项目归纳器」。用户连续、分散地记录了若干尚未归入项目的任务 / 未澄清条目；系统已用确定性规则把它们预分组（见下方【候选分组】）。请判断每个组是否确实属于同一件「需要多步推进的新事务」，若是，为它起一个项目名、写完成定义与理由；若否（主题松散、只是巧合共享词），不要输出该组。
+
+只输出一个 JSON 对象：{ "proposals": [ ... ] }，不要 markdown 代码块、不要解释、不要多余文字。
+每个 proposal 字段：
+- group: 整数，对应【候选分组】的组编号（必填）
+- title: 项目名（≤20 字，名词短语，能看出在做什么；不要「各类任务」「待整理」「TODOs」等套话）
+- outcome: 完成定义（一句话，说明「怎样算完成」，≤60 字；拿不准可省略）
+- reason: 一句话说明为什么这些条目属于同一项目
+- areaId: 仅当明确属于下方某个区域时填该区域 id；否则省略
+- tags: 字符串数组，优先从【标签】选已有名；仅当确无合适已有标签时提议 "topic:名称"（≤12 字）；每个最多 3 个；无把握省略
+现在是 ${stamp}。
+
+规则：
+1. 为每个【候选分组】给出提案（这些组已由系统按共享标签 / 关键词筛出，成员均 ≥3）；只有当某组已被现有项目覆盖（见规则 2）时，才跳过该组。最多 3 个提案。
+2. 不得与【现有项目】重复：若某组已被某个现有项目覆盖（标题 / 主题强匹配），不要输出该组。
+3. 只能引用被提供过的组编号；成员由系统按组展开，你不要自己写 id。
+4. 项目名与完成定义不得编造组内不存在的事实。
+5. 无需归纳时返回 {"proposals":[]}。`
+}
+
+/** 解析 + 校验单次聚类命名响应；返回 { ok, proposals } 或 { ok:false, reason } */
+function tryParseClusterDraft(res) {
+  const cleaned = extractText(res)
+    .trim()
+    .replace(/^```(?:json)?/i, '')
+    .replace(/```$/, '')
+    .trim()
+  let obj
+  try {
+    obj = JSON.parse(cleaned)
+  } catch (err) {
+    return { ok: false, reason: `JSON 解析失败（${err.message}）` }
+  }
+  try {
+    return { ok: true, proposals: clusterDraftSchema.parse(obj).proposals }
+  } catch (err) {
+    return { ok: false, reason: `字段校验失败（${describeError(err)}）` }
+  }
+}
+
+/** 单会话内「prompt → 解析 → 一次重试」；失败抛错 */
+async function promptClusterWithRetry(sessionID, system, digest) {
+  let res = await promptOnce(sessionID, system, digest)
+  let parsed = tryParseClusterDraft(res)
+  if (!parsed.ok) {
+    console.warn(`[ai] cluster.draft 首次失败（${parsed.reason}），重试一次`)
+    res = await promptOnce(
+      sessionID,
+      system,
+      `上次输出无法解析（${parsed.reason}）。请只输出一个合法 JSON 对象（形如 {"proposals":[...]}），不要任何多余文字。`,
+    )
+    parsed = tryParseClusterDraft(res)
+    if (!parsed.ok) throw new Error(`AI 输出无法解析：${parsed.reason}`)
+  }
+  return { res, proposals: parsed.proposals }
+}
+
+/**
+ * 聚类提案后校验（导出供单测 / 冒烟）：按组编号展开成员（模型无法编造 id）；
+ * 丢弃越界组 / 成员 <3 / 无任务成员 / 项目名与现有项目重复者；成员任务不跨提案复用；
+ * areaId 必须在 areas；标签规格化保留（≤3，新标签落盘时登记）。
+ */
+export function postValidateClusters(proposals, groups, snapshot) {
+  const areaIds = new Set((snapshot.areas ?? []).map((a) => a.id))
+  const projectTitles = new Set((snapshot.projects ?? []).map((p) => String(p.title ?? '').trim()))
+  const tagNames = new Set((snapshot.tags ?? []).map((t) => t.name))
+  const usedTaskIds = new Set()
+  const out = []
+  for (const raw of Array.isArray(proposals) ? proposals : []) {
+    const index = raw?.group
+    if (!Number.isInteger(index) || index < 1 || index > groups.length) continue
+    const members = groups[index - 1]
+    if (!Array.isArray(members) || members.length < CLUSTER_MIN_MEMBERS) continue
+    const title = Array.from(String(raw.title ?? '').trim()).slice(0, CLUSTER_TITLE_MAX_CHARS).join('')
+    if (title === '' || projectTitles.has(title)) continue
+    const taskIds = members.filter((m) => m.kind === 'task').map((m) => m.id)
+    const inboxIds = members.filter((m) => m.kind === 'inbox').map((m) => m.id)
+    if (taskIds.length === 0) continue
+    if (taskIds.some((id) => usedTaskIds.has(id))) continue
+    const proposal = {
+      title,
+      reason: String(raw.reason ?? '').slice(0, 300),
+      taskIds,
+      inboxIds,
+      tags: cleanTagSuggestions(raw.tags, tagNames),
+    }
+    if (typeof raw.outcome === 'string' && raw.outcome.trim() !== '') {
+      proposal.outcome = raw.outcome.trim().slice(0, 200)
+    }
+    if (typeof raw.areaId === 'string' && areaIds.has(raw.areaId)) proposal.areaId = raw.areaId
+    const parsed = clusterProposalSchema.safeParse(proposal)
+    if (!parsed.success) continue
+    for (const id of taskIds) usedTaskIds.add(id)
+    out.push(parsed.data)
+    if (out.length >= CLUSTER_MAX_PROPOSALS) break
+  }
+  return out
+}
+
+/** AI 命名不可用时的确定性回退：以组内最高频标签（或首条标题）命名 */
+function fallbackClusterProposals(groups) {
+  return groups.map((members, index) => {
+    const counts = new Map()
+    for (const m of members) for (const tag of m.tags ?? []) counts.set(tag, (counts.get(tag) ?? 0) + 1)
+    let best = ''
+    let bestCount = 0
+    for (const [tag, count] of counts) {
+      if (count > bestCount) {
+        best = tag
+        bestCount = count
+      }
+    }
+    let name = ''
+    if (best !== '') {
+      name = best.startsWith('@') ? best.slice(1) : best.includes(':') ? best.slice(best.indexOf(':') + 1) : best
+    }
+    if (name === '') name = Array.from(members[0].title).slice(0, 16).join('')
+    return {
+      group: index + 1,
+      title: `归纳：${name}`.slice(0, CLUSTER_TITLE_MAX_CHARS),
+      reason: '按共同标签 / 关键词自动归纳（AI 命名不可用）',
+    }
+  })
+}
+
+/**
+ * 聚类草稿：收集候选 → 确定性预分组 → AI 命名（失败回退确定性命名）→ 后校验。
+ * 不写任何数据；无候选或无 ≥3 成员分组时返回空提案。
+ * @returns {Promise<{ proposals: Array, model: string | null, ms: number, candidates: number }>}
+ */
+export async function draftClusters(snapshot) {
+  const t0 = Date.now()
+  const candidates = collectClusterCandidates(snapshot)
+  const groups = pregroupCandidates(candidates)
+  if (groups.length === 0) {
+    return { proposals: [], model: null, ms: Date.now() - t0, candidates: candidates.length }
+  }
+  const system = buildClusterSystem()
+  const digest = buildClusterDigest(snapshot, groups)
+  const sessionID = await createSession('kernel:cluster-draft')
+  let raw = []
+  let model = null
+  try {
+    const result = await promptClusterWithRetry(sessionID, system, digest)
+    raw = result.proposals
+    model = modelOf(result.res)
+  } catch (err) {
+    console.warn(`[ai] cluster.draft AI 命名失败，回退确定性命名：${err?.message ?? err}`)
+  }
+  // 覆盖兜底：AI 未覆盖（或提案被校验丢弃）的组，用确定性命名补上——保证每个
+  //「成员 ≥3 且未被现有项目覆盖」的组都被提议（用户仍可逐条忽略）；AI 命名正常时不会触发。
+  const firstPass = postValidateClusters(raw, groups, snapshot)
+  const coveredTaskIds = new Set(firstPass.flatMap((p) => p.taskIds))
+  const fill = fallbackClusterProposals(groups).filter((proposal) => {
+    const members = groups[proposal.group - 1] ?? []
+    const ids = members.filter((m) => m.kind === 'task').map((m) => m.id)
+    return ids.length > 0 && !ids.some((id) => coveredTaskIds.has(id))
+  })
+  const proposals = postValidateClusters([...raw, ...fill], groups, snapshot)
+  const ms = Date.now() - t0
+  console.log(
+    `[ai] cluster.draft 完成 ${ms}ms（${model ?? '回退'} · ${proposals.length} 提案 / ${candidates.length} 候选）`,
+  )
+  return { proposals, model, ms, candidates: candidates.length }
 }
 
 /* ---------------------------------------------------------------------------

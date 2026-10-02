@@ -28,9 +28,12 @@ import { TagPill } from '@/components/TagPill'
 import { Checkbox } from '@/components/Checkbox'
 import { EmptyState } from '@/components/EmptyState'
 import { AiActionsCard } from '@/components/AiActionsCard'
+import { ClusterProposalCard } from '@/components/ClusterProposalCard'
 import { useToast } from '@/context/ToastContext'
-import { getInbox } from '@/lib/data'
+import { getConfig, getInbox, getSnapshot } from '@/lib/data'
 import {
+  aiClusterDraft,
+  applyCluster,
   applyInbox,
   captureInbox,
   clarifyInbox,
@@ -38,10 +41,13 @@ import {
   removeInbox,
   revealInboxFile,
   revertInbox,
+  unapplyCluster,
   unapplyInbox,
   uploadInboxFile,
   type AiAction,
+  type AiParseResult,
   type ClarifyTarget,
+  type ClusterProposal,
 } from '@/lib/mutations'
 import {
   clearInboxAiActive,
@@ -71,6 +77,29 @@ import type { InboxItem } from '@/types'
 
 const WATER_MAX = 12
 const WATER_THRESHOLD = 8
+
+/** 参与聚类的未完成任务状态（与 server ai.mjs OPEN_TASK_STATUS 同口径） */
+const CLUSTER_OPEN_STATUS = new Set(['next', 'waiting', 'scheduled', 'someday'])
+/** 自动模式可自动应用的动作类型（构造上不含 discard；discard 表现为空动作 → 保留建议） */
+const AUTO_APPLY_KINDS: ReadonlySet<string> = new Set(['task', 'note', 'resource', 'project'])
+
+/* ---------------------------------------------------------------------------
+ * 聚类分析缓存（v0.5 · Slice R2，模块级：跨路由切换存活于本会话）
+ * - 自动运行每会话一次（clusterRequested），命中缓存不重跑（保持低成本）；
+ * - 手动「发现项目」总是重跑并刷新；「创建并归入」后从列表移除该提案。
+ * ------------------------------------------------------------------------- */
+let clusterCache: ClusterProposal[] | null = null
+let clusterRequested = false
+
+/** 聚类候选数（无归属未完成任务 + 未澄清条目；仅用于触发阈值判定） */
+function countClusterCandidates(): number {
+  const snapshot = getSnapshot()
+  const tasks = snapshot.tasks.filter(
+    (task) => task.projectId === undefined && CLUSTER_OPEN_STATUS.has(task.status),
+  ).length
+  const inbox = snapshot.inbox.filter((item) => item.status === 'unprocessed').length
+  return tasks + inbox
+}
 
 const SOURCE_ICON = {
   manual: PenLine,
@@ -138,6 +167,10 @@ export function Inbox() {
     id: string
     action: 'remove' | 'revert'
   } | null>(null)
+  // 聚类立项（Slice R2）：AI 归纳提案（模块级缓存恢复）+ 应用在途 / 归纳在途
+  const [clusterProposals, setClusterProposals] = useState<ClusterProposal[]>(() => clusterCache ?? [])
+  const [clusterBusy, setClusterBusy] = useState(false)
+  const [clusterApplying, setClusterApplying] = useState(false)
 
   useEffect(() => {
     inputRef.current?.focus()
@@ -215,6 +248,23 @@ export function Inbox() {
       if (failed > 0) toast(`AI 解析：${failed} 条失败，已跳过`, { tone: 'error' })
     }
   }, [ai.pendingCompletion, ai.pendingFailures, toast])
+
+  // 聚类自动运行（Slice R2）：本会话一次，候选 ≥3 且无缓存时静默归纳（只出建议，绝不自动建项）。
+  // 失败静默（保持低成本）；手动「发现项目」可随时重试。
+  useEffect(() => {
+    if (clusterRequested || clusterCache !== null) return
+    if (countClusterCandidates() < 3) return
+    clusterRequested = true
+    void (async () => {
+      try {
+        const result = await aiClusterDraft()
+        clusterCache = result.proposals
+        setClusterProposals(result.proposals)
+      } catch {
+        /* 自动归纳失败：静默（保持低成本） */
+      }
+    })()
+  }, [revision])
 
   const merged = [...getInbox()].sort(
     (a, b) => new Date(b.capturedAt).getTime() - new Date(a.capturedAt).getTime(),
@@ -355,11 +405,41 @@ export function Inbox() {
 
   // 运行 AI 解析：缓存命中则直接展开就绪卡（不重解析）；无缓存才发起流式解析。
   // 强制重新解析走 forceParse（「重新解析」/「重试」）。失败抛出由调用方提示。
-  const runParse = async (item: InboxItem): Promise<void> => {
+  /**
+   * 自动模式（Slice R2）：解析完成后自动应用低风险动作（仅 task/note/resource/project 的创建 +
+   * 标签 + 关联；构造上不含 discard，空动作保留建议）。confirm 模式不做任何事。
+   * 失败静默：条目保持 unprocessed、建议卡照常可见（绝不崩溃）。撤销走 unapplyInbox。
+   */
+  const maybeAutoApply = (item: InboxItem, result: AiParseResult): void => {
+    if (getConfig().aiAutomation !== 'auto') return
+    const actions = result.actions.filter((action) => AUTO_APPLY_KINDS.has(action.kind))
+    if (actions.length === 0) return
+    void (async () => {
+      try {
+        const applied = await applyInbox(item.id, actions)
+        clearInboxAiActive()
+        toast(`AI 已自动整理 ${applied.created.length} 项`, {
+          action: {
+            label: '撤销',
+            onClick: () => {
+              void unapplyInbox(item.id).catch((err) => {
+                toast(`撤销失败：${errorText(err)}`, { tone: 'error' })
+              })
+            },
+          },
+        })
+      } catch {
+        /* 自动应用失败：保留建议卡（条目不改变），绝不崩溃 */
+      }
+    })()
+  }
+
+  // 运行 AI 解析：缓存命中则直接展开就绪卡（不重解析）；无缓存才发起流式解析。返回结果供自动模式应用。
+  const runParse = async (item: InboxItem): Promise<AiParseResult | null> => {
     setExpandedId(item.id)
     const cached = getCachedSuggestion(item.id)
-    if (cached !== undefined && !(activeId === item.id && phase === 'parsing')) return
-    await runSingleAi(item)
+    if (cached !== undefined && !(activeId === item.id && phase === 'parsing')) return cached
+    return runSingleAi(item)
   }
 
   // 强制重新解析（丢弃展示缓存，重新请求一次；失败静默，错误态由面板承载）
@@ -370,12 +450,20 @@ export function Inbox() {
 
   // 捕捉后自动解析（Slice V · F2）：先探活，AI 离线 / 探活失败即静默跳过（不展开面板、不 toast）；
   // 在线则走与手动 / 文件投递同一流式路径（runParse）。任何失败都不冒泡成错误 toast。
+  // Slice R2：解析完成后若为自动模式，顺带自动应用低风险动作。
   const runParseSilent = (item: InboxItem): void => {
     void api
       .get<{ available: boolean }>('/api/ai/health')
       .then((health) => {
         if (!health.available) return
-        void runParse(item).catch(() => {})
+        void (async () => {
+          try {
+            const result = await runParse(item)
+            if (result !== null) maybeAutoApply(item, result)
+          } catch {
+            /* AI 解析失败静默（错误态由面板承载，不产生错误 toast） */
+          }
+        })()
       })
       .catch(() => {})
   }
@@ -457,7 +545,8 @@ export function Inbox() {
       for (let i = 0; i < uploaded.length; i += 1) {
         setBusyLabel(`AI 读取中 ${i + 1}/${uploaded.length}…`)
         try {
-          await runParse(uploaded[i])
+          const result = await runParse(uploaded[i])
+          if (result !== null) maybeAutoApply(uploaded[i], result)
         } catch (err) {
           toast(`AI 解析失败：${errorText(err)}`, { tone: 'error' })
         }
@@ -487,6 +576,65 @@ export function Inbox() {
         toast(`应用失败：${errorText(err)}`, { tone: 'error' })
       }
     })()
+  }
+
+  // 聚类归纳（Slice R2）：手动触发总是重跑；自动触发每会话一次（见上方 effect）。
+  const loadClusters = (manual: boolean): void => {
+    if (clusterBusy) return
+    setClusterBusy(true)
+    void (async () => {
+      try {
+        const result = await aiClusterDraft()
+        clusterCache = result.proposals
+        clusterRequested = true
+        setClusterProposals(result.proposals)
+        if (manual && result.proposals.length === 0) toast('暂无可归纳的相似任务')
+      } catch (err) {
+        if (manual) toast(`发现项目失败：${errorText(err)}`, { tone: 'error' })
+      } finally {
+        setClusterBusy(false)
+      }
+    })()
+  }
+
+  // 应用一条聚类提案：建项 + 归入任务；成功后从列表移除该提案，toast 撤销（unapplyCluster 精确复原）。
+  const applyClusterProposal = (proposal: ClusterProposal): void => {
+    void (async () => {
+      setClusterApplying(true)
+      try {
+        const result = await applyCluster({
+          title: proposal.title,
+          outcome: proposal.outcome,
+          areaId: proposal.areaId,
+          tags: proposal.tags,
+          taskIds: proposal.taskIds,
+        })
+        const remaining = clusterProposals.filter((entry) => entry !== proposal)
+        clusterCache = remaining
+        setClusterProposals(remaining)
+        toast(`已创建项目「${result.project.title}」· 归入 ${result.assigned.length} 项任务`, {
+          action: {
+            label: '撤销',
+            onClick: () => {
+              void unapplyCluster(result.project.id).catch((err) => {
+                toast(`撤销失败：${errorText(err)}`, { tone: 'error' })
+              })
+            },
+          },
+        })
+      } catch (err) {
+        toast(`建项失败：${errorText(err)}`, { tone: 'error' })
+      } finally {
+        setClusterApplying(false)
+      }
+    })()
+  }
+
+  // 忽略一条提案（仅从本次列表移除；不改数据，手动「发现项目」可再次归纳）
+  const ignoreClusterProposal = (proposal: ClusterProposal): void => {
+    const remaining = clusterProposals.filter((entry) => entry !== proposal)
+    clusterCache = remaining
+    setClusterProposals(remaining)
   }
 
   const toggleOne = (id: string): void => {
@@ -647,8 +795,28 @@ export function Inbox() {
           caption={`${unprocessed.length} / ${WATER_MAX}`}
           suffix={unprocessed.length > WATER_THRESHOLD ? '· 超阈' : '· 健康'}
         />
-        <span className="u-label k-muted">按捕捉日期分组浏览 · 勾选多项后可批量澄清或丢弃</span>
+        <div className="ic-head__discover">
+          <span className="u-label k-muted">按捕捉日期分组浏览 · 勾选多项后可批量澄清或丢弃</span>
+          <button
+            type="button"
+            className="k-pill is-ghost"
+            disabled={clusterBusy}
+            onClick={() => loadClusters(true)}
+            title="让 AI 归纳无归属的相似任务，建议一个新项目（只出建议，不自动建项）"
+          >
+            <Sparkles size={12} strokeWidth={1.5} aria-hidden />
+            {clusterBusy ? '归纳中…' : '发现项目'}
+          </button>
+        </div>
       </Panel>
+
+      {/* AI 归纳建议卡（Slice R2）：确认后建项并归入；绝不自动建项 */}
+      <ClusterProposalCard
+        proposals={clusterProposals}
+        applying={clusterApplying}
+        onApply={applyClusterProposal}
+        onIgnore={ignoreClusterProposal}
+      />
 
       {unprocessed.length === 0 ? (
         <Panel index="02" title="未澄清" en="UNPROCESSED">

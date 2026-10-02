@@ -33,6 +33,29 @@ KERNEL 的任务台账与迭代记录。记录当前迭代目标、未来待办�
 
 ---
 
+## 项目诞生：聚类立项 + AI 自动化档位 · Slice R2（已完成 · 2026-10-03）
+
+以 owner 提问「一个项目是怎么诞生的——连续输入多个类似任务会自动整合吗？项目里的子任务又怎么产生」为规格。Slice R1 回答了「一次性多条」，本切片补齐「**连续 / 累积的相似任务 → 新项目**」：新增**聚类立项**（确定性预分组 + AI 命名 + 一次建项归入 + 精确撤销）、**AI 自动化档位**（确认 ↔ 自动）、**AI 动态** 幕后日志。默认仍是**先确认后写入**；自动模式为显式 opt-in，且**只创建、永不删除 / 完成 / 归档**。`npm run build`（tsc strict + vite）通过；服务端冒烟 **44/44** + 浏览器 E2E **36/36**；零数据残留（inbox 12 / tasks 62 / notes 16 / resources 12 / projects 10；标签注册表回基线 26；`aiAutomation` 复位 `confirm`；所有者 i-0009..0012、t-0061/0062、rev-0001..0004、n-0016 未动）；控制台零 error；证据 `.qa/v35/`。
+
+- [x] Deliverable A · 聚类立项（核心）：`collectClusterCandidates`（无 projectId 未完成任务 + 未澄清收件箱，≤50）/ `pregroupCandidates`（共享标签 ≥3 → 标题关键词（拉丁 + CJK 二元组，去停用词）≥3；每候选至多一组，成员 ≥3）/ `draftClusters`（AI 按组号命名 + `outcome`/`reason`；成员 id 服务端展开、**抗幻觉由构造保证**；失败 / 未覆盖用确定性名兜底）/ `postValidateClusters`（越界组 / <3 / 无任务 / 与现有项目同名丢弃；成员不跨提案复用；`areaId` 真实；标签 ≤3）；`POST /api/ai/cluster/draft` 返回 0–3 提案。
+- [x] Deliverable A · 应用 / 撤销：`POST /api/projects/cluster-apply`（一次写入建项目 + 逐条归入无归属任务；审计 `project.create` · `via:'cluster'` + `task.update` · `via:'cluster'`；`clusterTaskIds`/`clusterTagIds` 撤销凭据）；`POST /api/projects/cluster-unapply`（清 `projectId` + `pruneTags` + 项目入回收站，**精确复原**）。收件箱条目不参与应用（无 `projectId` 结构），仅作命名参考。
+- [x] Deliverable A · UI：`ClusterProposalCard`（标题 + 成员数 + 任务标题截断 + 相关条目 + 「创建并归入」/「忽略」）；Inbox 头部「发现项目」手动触发 + **每会话自动运行一次**（候选 ≥3 且无缓存，失败静默）；**只出建议，绝不自动建项**。
+- [x] Deliverable B · AI 自动化档位：`config.json` 增 `aiAutomation`（默认 confirm）+ `POST /api/config`（白名单 + 审计 `config.update`）+ 设置页「AI 自动化」radio；`auto` 时捕捉自动解析完成后自动 `applyInbox`（仅创建类动作，空动作保留建议卡），toast「AI 已自动整理 N 项 · 撤销」（撤销 = `unapplyInbox`），失败静默回退。
+- [x] Deliverable C · AI 动态：`AiActivityFeed`（读 `/api/activity` 过滤 AI / 自动条目，时间倒序，动作中文摘要 + 实体深链，上限 50，随 revision 刷新）置于设置「AI 自动化」下方。
+- [x] Deliverable D · 自动化能力边界（不可违背）：自动模式只做 task/note/resource/project 的**创建** + 标签登记 + 关联；**永不**删除 / 完成 / 归档 / 修改既有实体；聚类立项**永远**只出建议。默认 confirm，auto 为显式 opt-in。
+- [x] 验证：`.qa/v35/smoke-r2.mjs` 44/44；`.qa/v35/verify-r2.py` 36/36；控制台 0 error；零残留 + 所有者未动。
+- [x] 记录：新增 ADR-0016（含能力边界表）；`docs/02`；`docs/04` §4.11；`docs/README.md`；`public/guide.html`；`CHANGELOG.md`、`AGENTS.md`。
+
+### Slice R2 · 聚类 vs 一揽子应用（两条「项目诞生」路径）
+
+| | 一次性多条（Slice R1） | 连续累积（Slice R2） |
+|---|---|---|
+| 触发 | 一条内容解析出多动作 | 扫描无归属任务 / 未澄清条目 |
+| 成员边界 | AI 从单条内容拆解 | 确定性预分组（共享标签 / 关键词 ≥3） |
+| AI 角色 | 抽取动作 + 命名新项目 | 按组命名 + 写完成度定义 |
+| 收件箱条目 | 被拆解应用（clarified） | 仅作命名参考，不落位 |
+| 应用 / 撤销 | `inbox/:id/apply` / `unapply` | `projects/cluster-apply` / `cluster-unapply` |
+
 ## AI 全链 · 多实体一揽子处置 · Slice R1（已完成 · 2026-10-03）
 
 以 owner 指令「我只负责往里面丢资料以及信息，你作为 AI 帮我做好幕后工作」为规格，修「需要做过多介入（手动建标签 / 项目）」的根因：一条内容此前只能解析出**一个**建议，而真实的一条通知常意味着「一件要推进的新事务 + 若干下一步 + 一份要点」。本切片把解析升级为**动作数组**（≤6）、新增**一揽子应用**（一次确认 → 先建项目、再落实体并自动挂接、标签登记）+ **精确撤销**（删产物 + 恢复标签注册表）、新增**项目快速新建 AI 草稿**。默认仍**先确认后写入**，不做自动应用。`npm run build`（tsc strict + vite）通过；服务端冒烟 **39/39** + 浏览器 E2E **36/36**（含路由拦截的确定性多动作流 + 真实 AI 多动作一次 + 项目草稿流）；零数据残留（inbox 12 / tasks 62 / notes 16 / resources 12 / projects 10；标签注册表回基线 26；所有者 i-0009/0010/0011/0012、t-0061/0062、rev-0001..0004、n-0016 未动）；控制台零 error；证据 `.qa/v34/`。

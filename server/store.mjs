@@ -14,6 +14,8 @@ const ACTIVITY_FILE = path.join(DATA_DIR, 'activity.jsonl')
 export const TRASH_DIR = path.join(DATA_DIR, 'trash')
 /** 标签注册表（v0.5 · Slice T）：data/meta/tags.json */
 const TAGS_FILE = path.join(DATA_DIR, 'meta', 'tags.json')
+/** 应用配置（v0.5 · Slice R2）：data/meta/config.json（含 aiAutomation 档位） */
+const CONFIG_FILE = path.join(DATA_DIR, 'meta', 'config.json')
 /** 带 tags 数组、参与标签级联 / 计数 / 登记的实体目录（events 只读但同样级联，见 ADR-0014） */
 const TAG_ENTITY_KINDS = ['tasks', 'projects', 'notes', 'resources', 'events']
 /** 可回收实体类型（与 index.mjs 路由白名单一致） */
@@ -90,7 +92,7 @@ export async function readEntity(kind, id) {
 export async function readSnapshot() {
   const entries = await Promise.all(KINDS.map(async (kind) => [kind, await readKind(kind)]))
   const byKind = Object.fromEntries(entries)
-  const config = await readJson(path.join(DATA_DIR, 'meta', 'config.json'))
+  const config = await readJson(CONFIG_FILE)
   const tagRegistry = await readJson(path.join(DATA_DIR, 'meta', 'tags.json'))
   return {
     inbox: byKind.inbox,
@@ -106,6 +108,52 @@ export async function readSnapshot() {
     config,
     tags: tagRegistry.tags ?? [],
   }
+}
+
+/**
+ * 读取应用配置（meta/config.json；缺失 / 损坏返回 null）。
+ * 含 v0.5 · Slice R2 的 aiAutomation 档位（缺省由前端视作 'confirm'）。
+ */
+export async function readConfig() {
+  try {
+    return await readJson(CONFIG_FILE)
+  } catch {
+    return null
+  }
+}
+
+/**
+ * 更新应用配置（v0.5 · Slice R2，见 ADR-0016）：白名单仅 aiAutomation；
+ * 合并保留既有字段，原子写 + 审计 config.update（detail.fields 记录实际改动键）。
+ * 值非法（非 confirm / auto）→ 400。返回新配置。
+ */
+export function updateConfig(patch) {
+  return serialize(async () => {
+    let current
+    try {
+      current = await readJson(CONFIG_FILE)
+    } catch {
+      throw Object.assign(new Error('配置文件不存在'), { status: 500 })
+    }
+    const next = { ...current }
+    const fields = []
+    const value = patch?.aiAutomation
+    if (value !== 'confirm' && value !== 'auto') {
+      throw Object.assign(new Error('aiAutomation 必须为 confirm 或 auto'), { status: 400 })
+    }
+    if (next.aiAutomation !== value) {
+      next.aiAutomation = value
+      fields.push('aiAutomation')
+    }
+    await writeFileAtomic(CONFIG_FILE, `${JSON.stringify(next, null, 2)}\n`, { encoding: 'utf8' })
+    await appendActivity({
+      action: 'config.update',
+      entity: 'config',
+      id: '-',
+      detail: { fields },
+    })
+    return next
+  })
 }
 
 /** 审计日志尾部（最近 limit 条，时间倒序） */
