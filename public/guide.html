@@ -1,0 +1,1351 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<meta name="description" content="KERNEL 使用指南 · 本地优先的个人事务内核 · 捕捉 → 澄清 → 组织 → 执行 → 回顾">
+<title>KERNEL · 使用指南</title>
+<style>
+/* =============================================================================
+ * KERNEL · 使用指南（自包含单文件）
+ * 复用应用暗色「柔暗夜色」token（docs/03-DESIGN-SYSTEM.md · src/styles/tokens.css）。
+ * 柔影悬浮、圆角 16、强调色仅作信号；无外链、无 CDN、无图标字体。
+ * ========================================================================== */
+:root {
+  /* 表面阶 */
+  --bg: #0f0f10;
+  --surface: #1a1a1c;
+  --surface-elevated: #212124;
+  --surface-hover: #232327;
+  --surface-sunken: #141416;
+
+  /* 文字 */
+  --ink: #f4f4f5;
+  --ink-2: #a1a1aa;
+  --muted: #929298;
+
+  /* 边缘 / 填充 */
+  --outline: rgba(255, 255, 255, 0.06);
+  --outline-strong: rgba(255, 255, 255, 0.12);
+  --rule: rgba(255, 255, 255, 0.1);
+  --rule-soft: rgba(255, 255, 255, 0.06);
+  --fill-tag: rgba(255, 255, 255, 0.07);
+  --fill-subtle: rgba(255, 255, 255, 0.05);
+  --fill-secondary: rgba(255, 255, 255, 0.08);
+  --hover-veil: rgba(255, 255, 255, 0.04);
+
+  /* 强调色：仅信号 / 焦点 / 激活（不用于大面积填充、不作图表系列） */
+  --accent: #ff5a52;
+  --accent-ink: #0f0f10;
+  --accent-text: #ff8a80;
+  --accent-veil: rgba(255, 90, 82, 0.16);
+
+  /* 语义色（克制，必伴随文字） */
+  --success: #4caf7d;
+  --warning: #d08a2b;
+  --danger: #f87171;
+  --danger-text: #fca5a5;
+
+  /* 柔影悬浮 */
+  --shadow-card: 0 16px 40px rgba(0, 0, 0, 0.45);
+  --shadow-soft: 0 8px 24px rgba(0, 0, 0, 0.35);
+  --shadow-hover: 0 22px 54px rgba(0, 0, 0, 0.55);
+  --shadow-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+
+  --focus-ring: rgba(244, 244, 245, 0.55);
+  --scrim: rgba(0, 0, 0, 0.62);
+  --z-modal: 500;
+
+  /* 字体（自包含：系统字体栈 + 等宽回退，含 CJK） */
+  --font-sans: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+  --font-mono: "JetBrains Mono", Consolas, "Cascadia Code", monospace;
+
+  /* 字号（镜像 tokens.css 流体锚点 390→1440） */
+  --text-micro: 11px;
+  --text-caption: clamp(11.5px, calc(11.314px + 0.0476vw), 12px);
+  --text-body-sm: clamp(12.4px, calc(12.177px + 0.0571vw), 13px);
+  --text-body: clamp(14.4px, calc(14.177px + 0.0571vw), 15px);
+  --text-h4: clamp(17px, calc(16.629px + 0.0952vw), 18px);
+  --text-h3: clamp(20px, calc(19.257px + 0.1905vw), 22px);
+  --text-h2: clamp(24px, calc(22.886px + 0.2857vw), 27px);
+  --text-h1: clamp(29px, calc(27.143px + 0.4762vw), 34px);
+
+  /* 间距（4px 基线） */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: clamp(20px, calc(18.514px + 0.381vw), 24px);
+  --space-6: clamp(26px, calc(23.771px + 0.5714vw), 32px);
+  --space-7: clamp(38px, calc(34.286px + 0.9524vw), 48px);
+  --space-8: clamp(48px, calc(42.057px + 1.5238vw), 64px);
+
+  /* 形状 / 动效 */
+  --radius-card: 16px;
+  --radius-inner: 12px;
+  --radius-pill: 999px;
+  --dur-fast: 180ms;
+  --dur-base: 240ms;
+  --ease-standard: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-enter: cubic-bezier(0.16, 1, 0.3, 1);
+
+  --page-max: 1180px;
+  --toc-w: 232px;
+  --measure: 72ch;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+* { margin: 0; }
+
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; scroll-behavior: smooth; }
+
+body {
+  background-color: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: var(--text-body);
+  line-height: 1.65;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  min-height: 100vh;
+}
+
+h1, h2, h3, h4 { font-weight: 600; text-wrap: balance; }
+h1 { font-size: var(--text-h1); line-height: 1.12; letter-spacing: -0.02em; }
+h2 { font-size: var(--text-h2); line-height: 1.2; letter-spacing: -0.015em; }
+h3 { font-size: var(--text-h3); line-height: 1.25; letter-spacing: -0.012em; }
+h4 { font-size: var(--text-h4); line-height: 1.3; letter-spacing: -0.01em; }
+p, li { text-wrap: pretty; }
+a { color: inherit; text-decoration: none; }
+a:hover { text-decoration: underline; text-underline-offset: 0.2em; }
+code, kbd, pre { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+ul, ol { list-style: none; padding: 0; }
+
+:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; border-radius: 4px; }
+:focus:not(:focus-visible) { outline: none; }
+
+::selection { background: rgba(244, 244, 245, 0.18); }
+* { scrollbar-width: thin; scrollbar-color: var(--rule-soft) transparent; }
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb { background: var(--rule-soft); border-radius: 999px; border: 3px solid transparent; background-clip: padding-box; }
+*::-webkit-scrollbar-thumb:hover { background: var(--muted); background-clip: padding-box; }
+
+/* -------------------------------------------------------------------------- */
+/* 内联件                                                                    */
+/* -------------------------------------------------------------------------- */
+
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.muted { color: var(--muted); }
+.ink2 { color: var(--ink-2); }
+
+code.inl,
+.k {
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+  letter-spacing: 0.01em;
+  background: var(--fill-subtle);
+  border: 1px solid var(--outline);
+  border-radius: 6px;
+  padding: 1px 6px;
+  color: var(--ink);
+  white-space: nowrap;
+}
+kbd.k { color: var(--ink-2); border-color: var(--outline); }
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  background: var(--fill-subtle);
+  border: 1px solid var(--outline);
+  border-radius: var(--radius-pill);
+  padding: 2px 10px;
+  font-size: var(--text-caption);
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+.pill--signal { color: var(--accent-text); border-color: transparent; background: var(--accent-veil); }
+
+.skip {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 100;
+  background: var(--surface-elevated);
+  border: 1px solid var(--outline-strong);
+  border-radius: var(--radius-inner);
+  padding: 10px 16px;
+  box-shadow: var(--shadow-card);
+}
+.skip:focus { left: 16px; top: 16px; }
+
+/* -------------------------------------------------------------------------- */
+/* 页面骨架                                                                  */
+/* -------------------------------------------------------------------------- */
+
+.page {
+  width: 100%;
+  max-width: var(--page-max);
+  margin: 0 auto;
+  padding: clamp(24px, 4vw, 64px) clamp(20px, 4vw, 44px) var(--space-8);
+}
+
+.hero {
+  max-width: 820px;
+  padding-bottom: var(--space-6);
+  border-bottom: 1px solid var(--outline);
+  margin-bottom: var(--space-7);
+}
+.hero__kicker {
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: var(--space-3);
+}
+.hero h1 { margin-bottom: var(--space-4); }
+.hero__quote {
+  font-size: var(--text-h4);
+  line-height: 1.5;
+  color: var(--ink-2);
+  border-left: 2px solid var(--accent);
+  padding-left: var(--space-4);
+  margin-bottom: var(--space-6);
+}
+.hero__sub { color: var(--ink-2); margin-bottom: var(--space-4); }
+
+.startbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  background: var(--surface);
+  border: 1px solid var(--outline);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card), var(--shadow-highlight);
+  padding: var(--space-4) var(--space-5);
+}
+.startbar__step { display: inline-flex; align-items: center; gap: var(--space-2); color: var(--ink-2); font-size: var(--text-body-sm); }
+.startbar__arrow { color: var(--muted); font-family: var(--font-mono); }
+.startbar__note { flex-basis: 100%; color: var(--muted); font-size: var(--text-caption); margin-top: var(--space-1); }
+.startbar__note .dot {
+  display: inline-block;
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--success);
+  margin: 0 2px 0 6px;
+  vertical-align: middle;
+}
+.startbar__note .dot--alt { background: var(--accent); }
+
+.layout {
+  display: grid;
+  grid-template-columns: var(--toc-w) minmax(0, 1fr);
+  gap: clamp(28px, 5vw, 72px);
+  align-items: start;
+}
+
+/* -------------------------------------------------------------------------- */
+/* 目录（桌面粘性 / 移动内联）                                               */
+/* -------------------------------------------------------------------------- */
+
+.toc {
+  position: sticky;
+  top: clamp(24px, 4vw, 48px);
+  align-self: start;
+  font-size: var(--text-body-sm);
+}
+.toc__label {
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: var(--space-3);
+}
+.toc ol { display: flex; flex-direction: column; gap: 1px; }
+.toc a {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  padding: 6px 10px;
+  border-radius: 8px;
+  color: var(--ink-2);
+  line-height: 1.4;
+  transition: background var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard);
+}
+.toc a .n {
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  color: var(--muted);
+  min-width: 1.6em;
+}
+.toc a:hover { background: var(--hover-veil); color: var(--ink); text-decoration: none; }
+.toc a.is-active { color: var(--ink); background: var(--fill-subtle); }
+.toc a.is-active .n { color: var(--accent-text); }
+
+/* -------------------------------------------------------------------------- */
+/* 正文                                                                      */
+/* -------------------------------------------------------------------------- */
+
+.doc { min-width: 0; max-width: var(--measure); }
+.doc > section { scroll-margin-top: clamp(24px, 4vw, 48px); }
+.doc > section + section { margin-top: var(--space-8); }
+
+.sec__head { margin-bottom: var(--space-5); }
+.sec__kicker {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  letter-spacing: 0.08em;
+  color: var(--accent-text);
+  margin-bottom: var(--space-2);
+}
+.sec__head h2 { margin-bottom: var(--space-3); }
+.sec__head p { color: var(--ink-2); }
+
+.doc p { color: var(--ink-2); }
+.doc p + p { margin-top: var(--space-4); }
+.doc strong { color: var(--ink); font-weight: 600; }
+.doc h3 { margin: var(--space-6) 0 var(--space-3); }
+.lead { font-size: var(--text-h4); line-height: 1.55; color: var(--ink); }
+
+.loop {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-4) 0;
+}
+.loop__step {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  background: var(--surface);
+  border: 1px solid var(--outline);
+  border-radius: var(--radius-inner);
+  box-shadow: var(--shadow-soft);
+  padding: 8px 14px;
+  font-size: var(--text-body-sm);
+  color: var(--ink);
+}
+.loop__step .n { font-family: var(--font-mono); font-size: var(--text-micro); color: var(--accent-text); }
+.loop__sep { color: var(--muted); font-family: var(--font-mono); }
+
+/* 步骤 */
+.steps { display: flex; flex-direction: column; gap: var(--space-3); margin-top: var(--space-5); counter-reset: st; }
+.step {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-4);
+  background: var(--surface);
+  border: 1px solid var(--outline);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card), var(--shadow-highlight);
+  padding: var(--space-5);
+}
+.step__n {
+  width: 30px; height: 30px;
+  display: grid; place-items: center;
+  border-radius: 50%;
+  background: var(--fill-secondary);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: var(--text-body-sm);
+}
+.step__body h3 { margin: 0 0 var(--space-2); font-size: var(--text-h4); }
+.step__body p { color: var(--ink-2); font-size: var(--text-body-sm); }
+.step__body p + p { margin-top: var(--space-2); }
+.step__meta {
+  margin-top: var(--space-3);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/* 表格 */
+.tablewrap {
+  overflow-x: auto;
+  border: 1px solid var(--outline);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card), var(--shadow-highlight);
+  background: var(--surface);
+  margin-top: var(--space-4);
+}
+table.tbl { width: 100%; border-collapse: collapse; font-size: var(--text-body-sm); min-width: 560px; }
+table.tbl th, table.tbl td {
+  text-align: left;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--rule-soft);
+  vertical-align: top;
+}
+table.tbl thead th {
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 500;
+  background: var(--surface-sunken);
+}
+table.tbl tbody tr:last-child td { border-bottom: none; }
+table.tbl td:first-child { color: var(--ink); font-weight: 600; white-space: nowrap; }
+table.tbl td { color: var(--ink-2); }
+
+/* 卡片栅格 */
+.cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+  margin-top: var(--space-5);
+}
+.card {
+  background: var(--surface);
+  border: 1px solid var(--outline);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card), var(--shadow-highlight);
+  padding: var(--space-5);
+  transition: transform var(--dur-base) var(--ease-standard), box-shadow var(--dur-base) var(--ease-standard), border-color var(--dur-base) var(--ease-standard);
+}
+.card:hover { transform: translateY(-2px); box-shadow: var(--shadow-hover), var(--shadow-highlight); border-color: var(--outline-strong); }
+.card__top { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-2); }
+.card__top h3 { margin: 0; font-size: var(--text-h4); }
+.card__tag { font-family: var(--font-mono); font-size: var(--text-micro); color: var(--muted); letter-spacing: 0.06em; }
+.card__desc { color: var(--ink-2); font-size: var(--text-body-sm); margin-bottom: var(--space-3); }
+.card ul { display: flex; flex-direction: column; gap: 6px; }
+.card li {
+  position: relative;
+  padding-left: 16px;
+  color: var(--ink-2);
+  font-size: var(--text-body-sm);
+  line-height: 1.55;
+}
+.card li::before {
+  content: "";
+  position: absolute;
+  left: 2px; top: 0.62em;
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+.card li.signal::before { background: var(--accent); }
+
+/* 通告 / 标注块 */
+.callout {
+  background: var(--surface);
+  border: 1px solid var(--outline);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card), var(--shadow-highlight);
+  padding: var(--space-5);
+  margin-top: var(--space-4);
+}
+.callout__label {
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: var(--space-2);
+}
+.callout p { font-size: var(--text-body-sm); }
+.callout p + p { margin-top: var(--space-3); }
+
+.redlines { display: flex; flex-direction: column; gap: var(--space-2); margin-top: var(--space-3); }
+.redline {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-3);
+  align-items: baseline;
+  background: var(--surface-sunken);
+  border: 1px solid var(--outline);
+  border-radius: var(--radius-inner);
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--text-body-sm);
+  color: var(--ink-2);
+}
+.redline__n { font-family: var(--font-mono); font-size: var(--text-micro); color: var(--accent-text); }
+.redline b { color: var(--ink); font-weight: 600; }
+
+/* 键位表 */
+.keys { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); margin-top: var(--space-4); }
+.keyrow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  background: var(--surface);
+  border: 1px solid var(--outline);
+  border-radius: var(--radius-inner);
+  box-shadow: var(--shadow-soft);
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--text-body-sm);
+}
+.keyrow .what { color: var(--ink-2); }
+
+/* FAQ */
+.faq { display: flex; flex-direction: column; gap: var(--space-3); margin-top: var(--space-4); }
+.qa {
+  background: var(--surface);
+  border: 1px solid var(--outline);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card), var(--shadow-highlight);
+  padding: var(--space-5);
+}
+.qa h3 { margin: 0 0 var(--space-2); font-size: var(--text-h4); }
+.qa p { color: var(--ink-2); font-size: var(--text-body-sm); }
+.qa p + p { margin-top: var(--space-2); }
+
+/* 心智条款 */
+.minds { display: flex; flex-direction: column; gap: var(--space-3); margin-top: var(--space-4); }
+.mind {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-1);
+  border-left: 2px solid var(--outline-strong);
+  padding: var(--space-1) 0 var(--space-1) var(--space-4);
+}
+.mind strong { color: var(--ink); font-size: var(--text-body); }
+.mind span { color: var(--ink-2); font-size: var(--text-body-sm); }
+.mind.hot { border-left-color: var(--accent); }
+.mind.hot strong { color: var(--accent-text); }
+
+/* 深链列表 */
+.deep { display: flex; flex-direction: column; gap: var(--space-2); margin-top: var(--space-3); }
+.deep__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-3);
+  background: var(--surface-sunken);
+  border: 1px solid var(--outline);
+  border-radius: var(--radius-inner);
+  padding: var(--space-2) var(--space-4);
+  font-size: var(--text-body-sm);
+}
+.deep__row .desc { color: var(--muted); font-size: var(--text-caption); }
+
+/* 页脚 */
+.foot {
+  max-width: var(--page-max);
+  margin: var(--space-8) auto 0;
+  padding: var(--space-6) clamp(20px, 4vw, 44px) var(--space-7);
+  border-top: 1px solid var(--outline);
+  color: var(--muted);
+  font-size: var(--text-caption);
+}
+.foot .mono { letter-spacing: 0.02em; }
+
+/* -------------------------------------------------------------------------- */
+/* 任务详情面板 · 交互演示（居中弹窗）                                        */
+/* -------------------------------------------------------------------------- */
+
+/* 触发入口：安静的行内链接式按钮（不抢视觉） */
+.demo-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-top: var(--space-4);
+  padding: 0;
+  color: var(--accent-text);
+  font-family: var(--font-sans);
+  font-size: var(--text-body-sm);
+  border-bottom: 1px solid transparent;
+  transition: border-color var(--dur-fast) var(--ease-standard);
+}
+.demo-trigger::after { content: "→"; font-family: var(--font-mono); font-size: 0.9em; }
+.demo-trigger:hover { border-bottom-color: currentColor; }
+
+.demo[hidden] { display: none; }
+.demo {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+  display: grid;
+  place-items: center;
+  padding: var(--space-4);
+}
+.demo__scrim {
+  position: absolute;
+  inset: 0;
+  background: var(--scrim);
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+}
+.demo__dialog {
+  position: relative;
+  width: min(460px, 100%);
+  max-height: min(90vh, 820px);
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--outline);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-hover), var(--shadow-highlight);
+  overflow: hidden;
+}
+.demo:not([hidden]) .demo__scrim { animation: demoScrim var(--dur-base) var(--ease-standard); }
+.demo:not([hidden]) .demo__dialog { animation: demoIn var(--dur-base) var(--ease-enter); }
+@keyframes demoScrim { from { opacity: 0; } to { opacity: 1; } }
+@keyframes demoIn { from { opacity: 0; transform: translateY(6px) scale(0.985); } to { opacity: 1; transform: none; } }
+
+.demo__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-5);
+  border-bottom: 1px solid var(--outline);
+}
+.demo__kicker {
+  display: block;
+  font-size: var(--text-micro);
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  margin-bottom: var(--space-2);
+}
+.demo__title { margin: 0; font-size: var(--text-h3); line-height: 1.25; letter-spacing: -0.012em; }
+.demo__close {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-pill);
+  background: var(--fill-subtle);
+  color: var(--ink-2);
+  font-size: 18px;
+  line-height: 1;
+  transition: background var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard);
+}
+.demo__close:hover { background: var(--fill-secondary); color: var(--ink); }
+
+.demo__body {
+  overflow-y: auto;
+  padding: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+.demo__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4) var(--space-5);
+}
+.demo__field { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.demo__label {
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.demo__value { color: var(--ink); font-size: var(--text-body-sm); line-height: 1.5; word-break: break-word; }
+.demo__value .dim { color: var(--muted); }
+
+.demo__block-title {
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: var(--space-3);
+}
+.demo__tags { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.demo__chips { display: flex; flex-direction: column; gap: var(--space-2); }
+.rchip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+  width: fit-content;
+  max-width: 100%;
+  background: var(--surface-sunken);
+  border: 1px solid var(--outline);
+  border-radius: var(--radius-pill);
+  padding: 6px 12px;
+  font-size: var(--text-caption);
+  color: var(--ink-2);
+}
+.rchip__label { color: var(--muted); font-family: var(--font-mono); font-size: var(--text-micro); }
+.rchip__title { color: var(--ink); }
+.rchip__id { color: var(--muted); font-family: var(--font-mono); font-size: var(--text-micro); }
+.rchip__sep { color: var(--muted); opacity: 0.6; }
+
+.demo__foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  border-top: 1px solid var(--outline);
+}
+.demo__caption {
+  padding: var(--space-3) var(--space-5) var(--space-4);
+  border-top: 1px solid var(--rule-soft);
+  color: var(--muted);
+  font-size: var(--text-caption);
+  line-height: 1.5;
+}
+
+/* 演示按钮（视觉用，不做真实动作） */
+.kbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 38px;
+  padding: 0 var(--space-5);
+  border-radius: var(--radius-pill);
+  background: var(--fill-subtle);
+  color: var(--ink-2);
+  font-size: var(--text-body-sm);
+  transition: background var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard),
+    transform var(--dur-fast) var(--ease-standard), box-shadow var(--dur-fast) var(--ease-standard);
+}
+.kbtn:hover { background: var(--fill-secondary); color: var(--ink); }
+.kbtn--solid { background: var(--ink); color: var(--bg); box-shadow: var(--shadow-soft); }
+.kbtn--solid:hover { background: var(--ink); color: var(--bg); transform: translateY(-1px); box-shadow: var(--shadow-hover); }
+
+body.demo-locked { overflow: hidden; }
+
+/* -------------------------------------------------------------------------- */
+/* AI 对话盒 · 静态示例（figure，非交互）                                     */
+/* -------------------------------------------------------------------------- */
+
+.chatmock {
+  margin-top: var(--space-5);
+  background: var(--surface);
+  border: 1px solid var(--outline);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card), var(--shadow-highlight);
+  padding: var(--space-5);
+}
+.chatmock__thread { display: flex; flex-direction: column; gap: var(--space-3); margin-bottom: var(--space-4); }
+.chatmock__msg { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--space-3); align-items: baseline; }
+.chatmock__who { font-family: var(--font-mono); font-size: var(--text-micro); letter-spacing: 0.04em; color: var(--muted); min-width: 3.6em; }
+.chatmock__msg p { color: var(--ink-2); font-size: var(--text-body-sm); }
+.chatmock__msg--me p { color: var(--ink); }
+.chatmock__composer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  background: var(--surface-sunken);
+  border: 1px solid var(--outline);
+  border-radius: var(--radius-pill);
+  padding: 9px 9px 9px var(--space-4);
+}
+.chatmock__ph { color: var(--muted); font-size: var(--text-body-sm); }
+.chatmock__send {
+  flex: 0 0 auto;
+  width: 30px; height: 30px;
+  display: grid; place-items: center;
+  border-radius: 50%;
+  background: var(--ink);
+  color: var(--bg);
+  font-size: var(--text-body-sm);
+}
+.chatmock figcaption { margin-top: var(--space-3); color: var(--muted); font-size: var(--text-caption); line-height: 1.5; }
+
+/* -------------------------------------------------------------------------- */
+/* 响应式                                                                    */
+/* -------------------------------------------------------------------------- */
+
+@media (max-width: 900px) {
+  .layout { grid-template-columns: minmax(0, 1fr); gap: var(--space-6); }
+  .toc {
+    position: static;
+    border: 1px solid var(--outline);
+    border-radius: var(--radius-card);
+    background: var(--surface);
+    box-shadow: var(--shadow-soft);
+    padding: var(--space-4);
+  }
+  .toc ol { flex-direction: row; flex-wrap: wrap; gap: var(--space-1); }
+  .toc a { padding: 5px 10px; background: var(--fill-subtle); border-radius: 999px; }
+  .toc a.is-active { background: var(--fill-secondary); }
+  .toc a .n { display: none; }
+}
+
+@media (max-width: 720px) {
+  .cards { grid-template-columns: minmax(0, 1fr); }
+  .keys { grid-template-columns: minmax(0, 1fr); }
+  .hero__quote { font-size: var(--text-body); }
+}
+
+@media (max-width: 480px) {
+  .step { grid-template-columns: minmax(0, 1fr); gap: var(--space-3); }
+  .startbar { padding: var(--space-4); }
+  .loop__sep { display: none; }
+  .demo__grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+  .card:hover { transform: none; }
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+
+<div class="page">
+  <!-- ===================== HERO ===================== -->
+  <header class="hero">
+    <p class="hero__kicker">KERNEL · 使用指南</p>
+    <h1>KERNEL · 使用指南</h1>
+    <p class="hero__quote">文件即数据库，opencode 即大脑，网页即驾驶舱。</p>
+    <p class="hero__sub">第一次用这套系统，先按本指南走一遍。读完全文约十分钟，但真正上手只需要五分钟（见「五分钟上手」）。</p>
+
+    <div class="startbar" role="group" aria-label="启动方式">
+      <span class="startbar__step"><span class="muted">① 终端运行</span> <code class="inl">npm run dev</code></span>
+      <span class="startbar__arrow">→</span>
+      <span class="startbar__step"><span class="muted">② 浏览器打开</span> <code class="inl">http://localhost:5173</code></span>
+      <span class="startbar__note">
+        数据服务 <span class="mono">4097</span> 与 opencode <span class="mono">4096</span> 会随 <code class="inl">npm run dev</code> 自动拉起；
+        底部状态条可看两个信号灯<span class="dot" aria-hidden="true"></span>数据服务<span class="dot dot--alt" aria-hidden="true"></span>AI。
+      </span>
+    </div>
+  </header>
+
+  <!-- ===================== 布局：目录 + 正文 ===================== -->
+  <div class="layout">
+    <!-- 目录 -->
+    <nav class="toc" aria-label="本页目录">
+      <p class="toc__label">目录 · Contents</p>
+      <ol>
+        <li><a href="#sec-30"><span class="n">01</span><span>30 秒理解</span></a></li>
+        <li><a href="#sec-start"><span class="n">02</span><span>五分钟上手</span></a></li>
+        <li><a href="#sec-life"><span class="n">03</span><span>一条内容的一生</span></a></li>
+        <li><a href="#sec-pages"><span class="n">04</span><span>八个页面速览</span></a></li>
+        <li><a href="#sec-ai"><span class="n">05</span><span>AI 怎么帮你</span></a></li>
+        <li><a href="#sec-links"><span class="n">06</span><span>系统是连起来的</span></a></li>
+        <li><a href="#sec-mind"><span class="n">07</span><span>用好它的心法</span></a></li>
+        <li><a href="#sec-keys"><span class="n">08</span><span>快捷键与全局</span></a></li>
+        <li><a href="#sec-faq"><span class="n">09</span><span>常见问题</span></a></li>
+      </ol>
+    </nav>
+
+    <main id="main" class="doc">
+      <!-- ============ 01 30 秒理解 ============ -->
+      <section id="sec-30" aria-labelledby="h-30">
+        <div class="sec__head">
+          <span class="sec__kicker">01 — 第一次接触</span>
+          <h2 id="h-30">30 秒理解</h2>
+          <p>KERNEL 是一个<strong>本地优先</strong>的个人事务内核。它把你散落的想法、待办、日程、项目与资料收进同一个循环里。</p>
+        </div>
+        <p>核心循环只有五步：</p>
+        <div class="loop" aria-label="核心循环五步">
+          <span class="loop__step"><span class="n">01</span>捕捉</span>
+          <span class="loop__sep">→</span>
+          <span class="loop__step"><span class="n">02</span>澄清</span>
+          <span class="loop__sep">→</span>
+          <span class="loop__step"><span class="n">03</span>组织</span>
+          <span class="loop__sep">→</span>
+          <span class="loop__step"><span class="n">04</span>执行</span>
+          <span class="loop__sep">→</span>
+          <span class="loop__step"><span class="n">05</span>回顾</span>
+        </div>
+        <p>侧栏的八个页面，就是这条循环的展开——收件箱负责捕捉，任务与项目负责澄清和组织，总览与日程负责执行，回顾负责收口。</p>
+        <p>所有数据都在本地的 <code class="inl">data/</code> 目录里，一条记录一个 JSON 文件，可读、可 diff、可备份。网页只是驾驶舱，不是数据的所有者；AI 也只是协作者，永远不越过你直接改数据。</p>
+      </section>
+
+      <!-- ============ 02 五分钟上手 ============ -->
+      <section id="sec-start" aria-labelledby="h-start">
+        <div class="sec__head">
+          <span class="sec__kicker">02 — 照着做一遍</span>
+          <h2 id="h-start">五分钟上手</h2>
+          <p>打开应用后，按下面五步走一遍，你就会用这个系统了。</p>
+        </div>
+
+        <div class="steps">
+          <article class="step">
+            <span class="step__n">1</span>
+            <div class="step__body">
+              <h3>捕捉一句话</h3>
+              <p>任何页面按 <kbd class="k">c</kbd>，或打开「收件箱」，在顶部输入框写下一句话，回车。</p>
+              <p>你会看到 toast：<strong>已捕捉 · 待澄清</strong>。有文件就拖进去或点回形针选择——它先入收件箱，AI 会先读一遍。</p>
+              <div class="step__meta"><span class="pill">快捷键 <kbd class="k">c</kbd></span><span class="pill">收件箱</span><span class="pill">文件投递</span></div>
+            </div>
+          </article>
+
+          <article class="step">
+            <span class="step__n">2</span>
+            <div class="step__body">
+              <h3>澄清它是什么</h3>
+              <p>点该条目的「澄清」，在五项里选一个：<strong>→ 任务 / → 项目 / → 笔记 / → 资源 / 丢弃</strong>。</p>
+              <p>拿不定主意时，点「AI 解析」，让本地 AI 先给一份建议。选中的多条也可以整体「批量 AI 解析」，或一次批量转成任务 / 丢弃。</p>
+              <div class="step__meta"><span class="pill pill--signal">AI 解析</span><span class="pill">5 项澄清操作</span></div>
+            </div>
+          </article>
+
+          <article class="step">
+            <span class="step__n">3</span>
+            <div class="step__body">
+              <h3>看 AI 解析的过程</h3>
+              <p>解析过程是可见的，逐字流式：<span class="mono ink2">已连接，等待模型… → 思考中… → 生成中…</span></p>
+              <p>建议卡包含 <strong>目标 / 标题 / 上下文 / 能量 / 重要性 / 预估 / 截止 / 理由</strong>，还会给出「建议挂到 XX 项目」「建议归入 XX 区域」、标签，以及疑似重复提示。</p>
+            </div>
+          </article>
+
+          <article class="step">
+            <span class="step__n">4</span>
+            <div class="step__body">
+              <h3>应用建议</h3>
+              <p>点「应用建议」，内容就写入了。写入后 5 秒内可以「撤销」，点错了也不怕。</p>
+              <div class="step__meta"><span class="pill">应用建议</span><span class="pill pill--signal">5 秒内可撤销</span></div>
+            </div>
+          </article>
+
+          <article class="step">
+            <span class="step__n">5</span>
+            <div class="step__body">
+              <h3>去执行</h3>
+              <p>去「任务」把它勾掉；去「总览」看今天到底该做什么。</p>
+              <div class="step__meta"><span class="pill">任务</span><span class="pill">总览</span></div>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <!-- ============ 03 一条内容的一生 ============ -->
+      <section id="sec-life" aria-labelledby="h-life">
+        <div class="sec__head">
+          <span class="sec__kicker">03 — 通用循环</span>
+          <h2 id="h-life">一条内容的一生</h2>
+          <p>不管是一条灵感、一个截止、还是一份资料，它在系统里都会走同一条路。</p>
+        </div>
+
+        <div class="tablewrap">
+          <table class="tbl">
+            <caption class="visually-hidden" style="position:absolute;left:-9999px">一条内容在系统里的五个阶段</caption>
+            <thead>
+              <tr><th scope="col">阶段</th><th scope="col">页面</th><th scope="col">操作</th><th scope="col">结果</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>捕捉</td>
+                <td>收件箱</td>
+                <td>按 <kbd class="k">c</kbd> 或输入框记一句话</td>
+                <td>生成一条未澄清条目，先存着不分类</td>
+              </tr>
+              <tr>
+                <td>澄清</td>
+                <td>收件箱</td>
+                <td>五选一：→ 任务 / → 项目 / → 笔记 / → 资源 / 丢弃</td>
+                <td>内容落到对应实体，条目归位</td>
+              </tr>
+              <tr>
+                <td>组织</td>
+                <td>任务</td>
+                <td>筛选 + 分组（平铺 / 按项目 / 按上下文）</td>
+                <td>该做的事按你需要的方式显现</td>
+              </tr>
+              <tr>
+                <td>执行</td>
+                <td>总览 · 日程</td>
+                <td>工作台看下一步、议程流按时段推进、勾选完成</td>
+                <td>完成状态落盘，进度推进</td>
+              </tr>
+              <tr>
+                <td>回顾</td>
+                <td>回顾</td>
+                <td>周 / 月卡点「AI 解析」→ 弹窗查阅 → 编辑并保存</td>
+                <td>本周期指标与决策归档，拖后腿的项目被重新决策</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ============ 04 八个页面速览 ============ -->
+      <section id="sec-pages" aria-labelledby="h-pages">
+        <div class="sec__head">
+          <span class="sec__kicker">04 — 地图</span>
+          <h2 id="h-pages">八个页面速览</h2>
+          <p>每个页面各司其职，对应循环里的一段。先记住一句话，细节用久了自然熟。</p>
+        </div>
+
+        <div class="cards">
+          <article class="card">
+            <div class="card__top"><h3>总览</h3><span class="card__tag">OVERVIEW</span></div>
+            <p class="card__desc">今天该做什么，先看这里。</p>
+            <ul>
+              <li>工作台：已结束日程 →「现在 · HH:mm」分界 → 下一步行动 TOP5</li>
+              <li>状态条：下一项 / 收件箱 / 逾期 三段等宽，点哪段就去哪页</li>
+              <li><strong>AI 对话盒</strong>：直接问「我今天有什么特别紧急需要做的事」，它读库作答</li>
+              <li>监视柱：收件箱水位、WIP 上限 3、连续刷题点阵、完成趋势、到期负载</li>
+              <li class="signal">工作台任务与项目条点开就地弹详情，不跳页、不丢位置</li>
+            </ul>
+          </article>
+
+          <article class="card">
+            <div class="card__top"><h3>收件箱</h3><span class="card__tag">INBOX</span></div>
+            <p class="card__desc">一切先到这里，再决定它是什么。</p>
+            <ul>
+              <li>快速捕捉，一句话回车即可</li>
+              <li><strong>文件投递</strong>：拖拽或点回形针选择文件，先入收件箱，AI 先读一遍</li>
+              <li>水位 ≤8 健康、&gt;8 超阈，该澄清了；按 今天 / 昨天 / 更早 分组</li>
+              <li>五项澄清操作；AI 解析过程流式可见，结果收起再展开不丢</li>
+              <li class="signal">批量条：批量 AI 解析 / 批量 → 任务 / 批量丢弃；滚出视口时贴右缘浮动跟随</li>
+            </ul>
+          </article>
+
+          <article class="card">
+            <div class="card__top"><h3>任务</h3><span class="card__tag">TASKS</span></div>
+            <p class="card__desc">所有「要做的事」都在这里。</p>
+            <ul>
+              <li>计数：未完成 / 逾期 / 今日</li>
+              <li>筛选：状态 / 时间 / 更多（上下文 · 能量 · 区域 · 身份）；分组：平铺 / 按项目 / 按上下文</li>
+              <li>快速新建：只填标题，AI 随后给出补全建议（可应用 / 忽略 / 重试）</li>
+              <li class="signal">详情抽屉与总览就地弹窗共用同一份详情；可编辑 / 删除（撤销进回收站）</li>
+            </ul>
+            <button class="demo-trigger" type="button" data-demo-open aria-haspopup="dialog">点开看：任务详情面板</button>
+          </article>
+
+          <article class="card">
+            <div class="card__top"><h3>日程</h3><span class="card__tag">CALENDAR</span></div>
+            <p class="card__desc">时间维度上的安排与场次。</p>
+            <ul>
+              <li>今天 / 明天 / 本周 / 下周 / 更远 议程流</li>
+              <li>「下一项」倒计时卡</li>
+              <li>迷你月历，标注今日与有安排的日期</li>
+              <li>「今天」「回到现在」两个定位按钮</li>
+            </ul>
+          </article>
+
+          <article class="card">
+            <div class="card__top"><h3>项目</h3><span class="card__tag">PROJECTS</span></div>
+            <p class="card__desc">需要多步完成的事，装在这里。</p>
+            <ul>
+              <li>进行中 / 暂停 / 将来 / 已完成 分组列表</li>
+              <li>每行有「下一步」与进度；输入标题回车即可快速新建</li>
+              <li class="signal">抽屉含任务清单，可标记完成并撤销；行可点开就地弹详情</li>
+            </ul>
+          </article>
+
+          <article class="card">
+            <div class="card__top"><h3>资料</h3><span class="card__tag">LIBRARY</span></div>
+            <p class="card__desc">知识的内存：笔记与资料。</p>
+            <ul>
+              <li>全部 / 笔记 / 资料；类型 / 状态 / 标签筛选</li>
+              <li>资料状态五档（未读 / 在读 / 读完 / 参考 / 归档）抽屉内快捷设置，每档附判断标准</li>
+              <li>笔记蒸馏层级 L0–L3 同样可设（L0 原文 → L3 永久）</li>
+              <li class="signal">阅读抽屉 +「关联」；文件类资料可在文件管理器中定位</li>
+            </ul>
+          </article>
+
+          <article class="card">
+            <div class="card__top"><h3>回顾</h3><span class="card__tag">REVIEW</span></div>
+            <p class="card__desc">每周心跳，给这一周收口。</p>
+            <ul>
+              <li>周回顾 / 月回顾两张卡并列一栏，排在能量分析之上</li>
+              <li>指标瓦片：捕获 / 新增 / 完成 / 逾期</li>
+              <li>点「AI 解析」生成报告，再点「查阅报告」在动画弹窗里读</li>
+              <li class="signal">停滞项目独立一栏，可迁移或归档（真实落盘，可撤销）</li>
+            </ul>
+          </article>
+
+          <article class="card">
+            <div class="card__top"><h3>设置</h3><span class="card__tag">SETTINGS</span></div>
+            <p class="card__desc">系统自身的配置与状态。</p>
+            <ul>
+              <li>外观（亮 / 暗）</li>
+              <li>AI 集成（在线状态）</li>
+              <li>数据统计</li>
+              <li>数据服务（最近活动）；关于</li>
+            </ul>
+          </article>
+        </div>
+      </section>
+
+      <!-- ============ 05 AI 怎么帮你 ============ -->
+      <section id="sec-ai" aria-labelledby="h-ai">
+        <div class="sec__head">
+          <span class="sec__kicker">05 — 协作者</span>
+          <h2 id="h-ai">AI 怎么帮你</h2>
+          <p>AI 走本地的 opencode（<span class="mono">127.0.0.1:4096</span>），不出本机。它做的事不多，但都在关键处：把一句话补成能用的事务，把一周收成一份能读的报告，把散在库里的东西替你答出来。</p>
+        </div>
+
+        <h3>收件箱 AI 解析</h3>
+        <p>对一条未澄清内容，AI 给出结构化建议：目标 / 标题 / 上下文 / 能量 / 重要性 / 预估 / 截止 / 理由，并给出<strong>挂接建议</strong>（挂到哪个项目、归入哪个区域、加什么标签）。解析过程是<strong>流式可见</strong>的——你能看到它在连接、思考、生成，而不是一个转圈的空等。</p>
+        <p>选中的多条可以一次性「批量 AI 解析」，逐条顺序进行、进度写在中途；某一条失败不影响其余。结果绝不自动应用，收起再展开也不会丢。文件条目会先被 AI 读一遍：文本文件读前八千字摘录，其余只凭文件名与元数据判断。</p>
+
+        <h3>对话盒：直接问库里的事</h3>
+        <p>总览的对话盒读整库回答你，比如「我今天有什么特别紧急需要去做的事情」。它按<strong>逾期 → 今日到期 → 日程</strong>的顺序给出最紧急的几件，话不多，但都落在库里的真实记录上。</p>
+        <p>清空对话不是删掉——它会先把这轮记录归档成一条按时间命名的笔记，从 toast 就能跳到资料库查看。归档成功，才会清空。</p>
+
+        <figure class="chatmock">
+          <div class="chatmock__thread">
+            <div class="chatmock__msg chatmock__msg--me"><span class="chatmock__who">我</span><p>我今天有什么特别紧急需要去做的事情？</p></div>
+            <div class="chatmock__msg"><span class="chatmock__who">KERNEL</span><p>最紧急的是今晚 23:59 到期的实验报告初稿；其次是 12:00 的群公告，再往后是下午的三节连排课。</p></div>
+          </div>
+          <div class="chatmock__composer"><span class="chatmock__ph">问点什么，回车发送…</span><span class="chatmock__send" aria-hidden="true">↵</span></div>
+          <figcaption>对话盒的示例。清空时，这段记录会先归档为一条「AI 对话归档」笔记。</figcaption>
+        </figure>
+
+        <h3>快速新建后的建议</h3>
+        <p>在任务页只写一个标题回车，任务是立刻建好的；随后 AI 会安静地补一份建议（上下文、能量、预估、截止、区域、标签），你可以应用、忽略或重试。建议迟到、失败都不会拖住创建。</p>
+
+        <h3>回顾报告（周 / 月）</h3>
+        <p>回顾页的周、月两张卡各有「AI 解析」。点一下，AI 读整个系统生成该周期的报告：指标 + 摘要 + 决策 + 停滞项目的处置建议。生成后点「查阅报告」，在弹窗里读；草稿可以编辑，满意就保存落盘，保存也能撤销。</p>
+
+        <div class="callout">
+          <p class="callout__label">三条红线</p>
+          <div class="redlines">
+            <div class="redline"><span class="redline__n">01</span><span><b>只出建议</b> — AI 从不直接改你的数据。</span></div>
+            <div class="redline"><span class="redline__n">02</span><span><b>确认才写入</b> — 只有你点「应用建议」「应用」或「保存回顾」，数据才会落盘；快速新建的建议同样要你点头。</span></div>
+            <div class="redline"><span class="redline__n">03</span><span><b>随时撤销</b> — 每次写入都带着 5 秒的撤销窗口。</span></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ 06 系统是连起来的 ============ -->
+      <section id="sec-links" aria-labelledby="h-links">
+        <div class="sec__head">
+          <span class="sec__kicker">06 — 联动</span>
+          <h2 id="h-links">系统是连起来的</h2>
+          <p>系统和系统之间不是孤岛。每个详情抽屉的底部都有「关联」区块，显示<strong>我指向谁</strong>与<strong>谁指向我</strong>两组链接，点击可以互相跳转。</p>
+        </div>
+
+        <p>此外，地址栏支持深链，任何一条内容都能被直达，适合收藏或分享给未来的自己。关闭抽屉时会自动清掉参数。</p>
+
+        <div class="deep">
+          <div class="deep__row"><code class="inl">/tasks?task=…</code><span class="desc">直达某条任务的详情抽屉</span></div>
+          <div class="deep__row"><code class="inl">/projects?project=…</code><span class="desc">直达某个项目</span></div>
+          <div class="deep__row"><code class="inl">/library?note=…</code><span class="desc">直达某条笔记（AI 对话归档也走这里）</span></div>
+          <div class="deep__row"><code class="inl">/library?resource=…</code><span class="desc">直达某份资料</span></div>
+          <div class="deep__row"><code class="inl">/calendar?event=…</code><span class="desc">直达某个日程事件</span></div>
+          <div class="deep__row"><code class="inl">/trash</code><span class="desc">回收站：恢复或彻底删除</span></div>
+        </div>
+      </section>
+
+      <!-- ============ 07 用好它的心法 ============ -->
+      <section id="sec-mind" aria-labelledby="h-mind">
+        <div class="sec__head">
+          <span class="sec__kicker">07 — 心法</span>
+          <h2 id="h-mind">用好它的心法</h2>
+          <p>工具本身不复杂，难的是持续对。这几条是这套系统的使用纪律。</p>
+        </div>
+
+        <div class="minds">
+          <div class="mind"><strong>水位 ≤8</strong><span>收件箱超过 8 条就先澄清再干活，别让它变成第二个待办堆。</span></div>
+          <div class="mind"><strong>WIP ≤3</strong><span>进行中的项目最多 3 个，超了就收口，而不是继续开新的。</span></div>
+          <div class="mind hot"><strong>迁移即重决策</strong><span>每周回顾时，过期或停滞的项必须迁移或丢弃，不许无声堆积。</span></div>
+          <div class="mind"><strong>能量匹配</strong><span>低能量时做 <code class="inl">@phone</code> 这类低耗任务，而不是硬啃大块工作。</span></div>
+          <div class="mind"><strong>撤销兜底</strong><span>完成、澄清、批量、AI 应用——5 秒内全可撤，放心操作。</span></div>
+          <div class="mind"><strong>清空即归档</strong><span>对话清空不是删除：先归档成一条笔记，想找回就去资料库。</span></div>
+          <div class="mind hot"><strong>建议要你点头</strong><span>解析、快速新建、回顾报告——AI 只给建议，落盘永远等你点「应用」或「保存」。</span></div>
+          <div class="mind hot"><strong>周回顾是心跳</strong><span>每周固定一晚，短、可视。系统靠它维持节奏。</span></div>
+        </div>
+      </section>
+
+      <!-- ============ 08 快捷键与全局 ============ -->
+      <section id="sec-keys" aria-labelledby="h-keys">
+        <div class="sec__head">
+          <span class="sec__kicker">08 — 键盘与设备</span>
+          <h2 id="h-keys">快捷键与全局</h2>
+          <p>键盘优先的人会更顺手；手机上也能用。</p>
+        </div>
+
+        <div class="keys">
+          <div class="keyrow"><kbd class="k">c</kbd><span class="what">随时捕捉</span></div>
+          <div class="keyrow"><kbd class="k">Ctrl / ⌘ + K</kbd><span class="what">命令面板（导航 / 新建任务 / 新建项目 / 收件箱捕捉 / 切换主题 / AI 解析）</span></div>
+          <div class="keyrow"><kbd class="k">ESC</kbd><span class="what">关闭抽屉、就地弹窗或报告弹窗</span></div>
+          <div class="keyrow"><kbd class="k">Enter</kbd><span class="what">对话盒发送（<kbd class="k">Shift + Enter</kbd> 换行）</span></div>
+          <div class="keyrow"><kbd class="k">npm run dev -- --host</kbd><span class="what">手机经局域网访问，打开 <code class="inl">http://电脑IP:5173</code></span></div>
+        </div>
+
+        <div class="callout">
+          <p class="callout__label">手机</p>
+          <p>手机与电脑处于同一 WiFi 时，用 <code class="inl">npm run dev -- --host</code> 启动，然后在手机浏览器打开 <code class="inl">http://电脑IP:5173</code>。移动端底部是标签栏，5 项 + 「更多」。</p>
+        </div>
+      </section>
+
+      <!-- ============ 09 常见问题 ============ -->
+      <section id="sec-faq" aria-labelledby="h-faq">
+        <div class="sec__head">
+          <span class="sec__kicker">09 — 排障</span>
+          <h2 id="h-faq">常见问题</h2>
+          <p>遇到问题先看这里，多半是服务没起来。</p>
+        </div>
+
+        <div class="faq">
+          <article class="qa">
+            <h3>数据在哪？</h3>
+            <p>全部在 <code class="inl">data/</code> 目录下，一条记录一个 JSON 文件；<code class="inl">data/activity.jsonl</code> 是审计日志，每次变更追加一行。</p>
+          </article>
+
+          <article class="qa">
+            <h3>想重置示例数据？</h3>
+            <p>运行 <code class="inl">npm run seed -- --force</code>。它会重新生成种子数据（维护用，绕过服务）。</p>
+          </article>
+
+          <article class="qa">
+            <h3>状态条显示「AI: 离线 · opencode 未启动」</h3>
+            <p><code class="inl">npm run dev</code> 会自动拉起 opencode serve；若你单独启动前端，也可以手动运行 <code class="inl">opencode serve --port 4096</code>。</p>
+          </article>
+
+          <article class="qa">
+            <h3>写入失败？</h3>
+            <p>先确认数据服务在跑：用 <code class="inl">npm run dev</code> 启动（数据服务在 <span class="mono">127.0.0.1:4097</span>）。服务离线时页面只读，写入会显式报错。</p>
+          </article>
+
+          <article class="qa">
+            <h3>手机能访问吗？</h3>
+            <p>可以，但仅限可信 WiFi。数据服务与 opencode 都只监听本机，不直接暴露到局域网。</p>
+          </article>
+
+          <article class="qa">
+            <h3>清空对话后，之前聊的去哪了？</h3>
+            <p>没有丢。清空对话会先把整段记录归档成一条笔记（标题形如「AI 对话归档 · 时间」），在「资料」页就能翻到。你可以点 toast 上的「查看」直接跳过去；归档成功，对话才会清空。</p>
+          </article>
+
+          <article class="qa">
+            <h3>AI 的建议会自动应用吗？</h3>
+            <p>不会，任何建议都要你点头。收件箱解析、任务快速新建的补全、回顾报告都只是建议——只有你点「应用建议」「应用」或「保存回顾」，数据才会写入，且写入后 5 秒内可撤销。</p>
+          </article>
+
+          <article class="qa">
+            <h3>误删了怎么办？</h3>
+            <p>删除都是软删除，先落入「回收站」（侧栏可进，或直达 <code class="inl">/trash</code>）。在回收站里点「恢复」即可；要彻底删掉，需要再点一次确认。删除后 5 秒的 toast 里也带「撤销」。</p>
+          </article>
+        </div>
+      </section>
+    </main>
+  </div>
+</div>
+
+<!-- ===================== 页脚 ===================== -->
+<footer class="foot">
+  <p class="mono">KERNEL v0.5.0（切片） · 2026-10-03 · 数据与界面均为本地运行</p>
+</footer>
+
+<!-- ===================== 任务详情面板 · 交互演示（居中弹窗） ===================== -->
+<div class="demo" id="demo" hidden>
+  <div class="demo__scrim" data-demo-close></div>
+  <div class="demo__dialog" role="dialog" aria-modal="true" aria-labelledby="demo-title" aria-describedby="demo-caption" tabindex="-1">
+    <header class="demo__head">
+      <div>
+        <span class="demo__kicker mono">任务 · t-0034</span>
+        <h2 class="demo__title" id="demo-title">通知同学提交医保信息（群公告）</h2>
+      </div>
+      <button class="demo__close" type="button" aria-label="关闭任务详情面板" data-demo-close>×</button>
+    </header>
+
+    <div class="demo__body">
+      <div class="demo__grid">
+        <div class="demo__field"><span class="demo__label">状态</span><span class="demo__value">下一步</span></div>
+        <div class="demo__field"><span class="demo__label">能量</span><span class="demo__value">中</span></div>
+        <div class="demo__field"><span class="demo__label">重要性</span><span class="demo__value">2 / 3</span></div>
+        <div class="demo__field"><span class="demo__label">上下文</span><span class="demo__value">手机 / 外出</span></div>
+        <div class="demo__field"><span class="demo__label">区域</span><span class="demo__value">学生工作</span></div>
+        <div class="demo__field"><span class="demo__label">项目</span><span class="demo__value">班长 · 班级事务与学风建设</span></div>
+        <div class="demo__field"><span class="demo__label">截止</span><span class="demo__value">2026-10-03 12:00 <span class="dim">· 明天</span></span></div>
+        <div class="demo__field"><span class="demo__label">预估</span><span class="demo__value">15 分钟</span></div>
+        <div class="demo__field"><span class="demo__label">创建</span><span class="demo__value">18 天前</span></div>
+      </div>
+
+      <div>
+        <p class="demo__block-title">标签</p>
+        <div class="demo__tags"><span class="pill">班长</span></div>
+      </div>
+
+      <div>
+        <p class="demo__block-title">关联</p>
+        <div class="demo__chips">
+          <span class="rchip"><span class="rchip__label">所属项目</span><span class="rchip__sep">·</span><span class="rchip__title">班长 · 班级事务与学风建设</span><span class="rchip__sep">·</span><span class="rchip__id">p-0006</span></span>
+          <span class="rchip"><span class="rchip__label">区域</span><span class="rchip__sep">·</span><span class="rchip__title">学生工作</span><span class="rchip__sep">·</span><span class="rchip__id">a-0002</span></span>
+          <span class="rchip"><span class="rchip__label">作为下一步行动</span><span class="rchip__sep">·</span><span class="rchip__title">班长 · 班级事务与学风建设</span><span class="rchip__sep">·</span><span class="rchip__id">p-0006</span></span>
+        </div>
+      </div>
+    </div>
+
+    <footer class="demo__foot">
+      <button class="kbtn kbtn--solid" type="button" title="演示按钮，无实际动作">标记完成</button>
+      <button class="kbtn" type="button" title="演示按钮，无实际动作">查看项目</button>
+    </footer>
+    <p class="demo__caption" id="demo-caption">这是任务详情面板的演示。在应用里它从右侧滑入（抽屉），这里为了并入指南，以居中弹窗呈现。</p>
+  </div>
+</div>
+
+<script>
+/* 目录滚动高亮（纯原生，无外链；失败也不影响阅读） */
+(function () {
+  try {
+    var links = Array.prototype.slice.call(document.querySelectorAll('.toc a[href^="#"]'));
+    if (!links.length || !('IntersectionObserver' in window)) return;
+    var byId = {};
+    links.forEach(function (a) {
+      var id = a.getAttribute('href').slice(1);
+      var el = document.getElementById(id);
+      if (el) byId[id] = a;
+    });
+    var observer = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (!entry.isIntersecting) return;
+        links.forEach(function (a) { a.classList.remove('is-active'); });
+        var active = byId[entry.target.id];
+        if (active) active.classList.add('is-active');
+      });
+    }, { rootMargin: '-20% 0px -70% 0px', threshold: 0 });
+    Object.keys(byId).forEach(function (id) {
+      observer.observe(document.getElementById(id));
+    });
+  } catch (e) { /* 静默降级 */ }
+})();
+
+/* 任务详情面板 · 交互演示（居中弹窗；纯原生，失败静默降级）
+   打开：点触发按钮；关闭：X / 遮罩 / ESC；焦点进入弹窗、关闭后还原；打开时锁定页面滚动。 */
+(function () {
+  try {
+    var modal = document.getElementById('demo');
+    var trigger = document.querySelector('[data-demo-open]');
+    if (!modal || !trigger) return;
+    var dialog = modal.querySelector('.demo__dialog');
+    var lastFocused = null;
+
+    function focusables() {
+      return Array.prototype.slice.call(
+        dialog.querySelectorAll('a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])')
+      );
+    }
+    function open() {
+      lastFocused = document.activeElement;
+      modal.removeAttribute('hidden');
+      document.body.classList.add('demo-locked');
+      dialog.focus();
+    }
+    function close() {
+      if (modal.hasAttribute('hidden')) return;
+      modal.setAttribute('hidden', '');
+      document.body.classList.remove('demo-locked');
+      var back = (lastFocused && lastFocused.isConnected) ? lastFocused : trigger;
+      if (back && typeof back.focus === 'function') back.focus();
+    }
+
+    trigger.addEventListener('click', open);
+    Array.prototype.forEach.call(modal.querySelectorAll('[data-demo-close]'), function (el) {
+      el.addEventListener('click', close);
+    });
+    document.addEventListener('keydown', function (e) {
+      if (modal.hasAttribute('hidden')) return;
+      if (e.key === 'Escape') { e.preventDefault(); close(); return; }
+      if (e.key !== 'Tab') return;
+      var f = focusables();
+      if (!f.length) { e.preventDefault(); dialog.focus(); return; }
+      var first = f[0];
+      var last = f[f.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    });
+  } catch (e) { /* 静默降级 */ }
+})();
+</script>
+</body>
+</html>

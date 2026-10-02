@@ -52,6 +52,10 @@ KERNEL 的完整文档集。本文件是导航中心，说明每份文档的职�
 | `decisions/0005-opencode-ai-v0.5.md` | ADR | v0.5 opencode 接入：收件箱「AI 解析」首个切片 |
 | `decisions/0006-ai-parse-upgrade.md` | ADR | AI 解析升级：上下文注入 + 挂接建议 + SSE 过程流 |
 | `decisions/0007-ai-weekly-review.md` | ADR | AI 周回顾（Slice C）：写入路径 + 草稿端点 + 指标口径 + 撤销 |
+| `decisions/0008-inbox-file-intake.md` | ADR | 收件箱文件投递（Slice D）：RAW 上传 + data/files + AI 摘录 |
+| `decisions/0009-edit-trash-reveal.md` | ADR | 详情操作 + 回收站 + 资源文件位置（Slice E2）：更新端点 + 软删除 + explorer /select |
+| `decisions/0010-overview-ai-chat.md` | ADR | 总览升级（Slice G）：AI 读库对话（不落盘）+ 清空先归档为笔记 + 状态条重做 + 就地详情弹窗 |
+| `decisions/0011-state-coherence-and-task-draft.md` | ADR | 状态贯通（Slice H）：资料状态 / 笔记蒸馏判断标准 + 快捷设置 + 白名单扩充 + 任务快速新建 AI 补全（不落盘） |
 
 ## 根目录文档（不在本目录）
 

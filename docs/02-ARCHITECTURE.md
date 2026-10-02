@@ -43,7 +43,7 @@ lucide-react  react-markdown  @fontsource-variable/inter  @fontsource/jetbrains-
 ### 2.2 状态与路由
 
 - 状态管理：React 内置（Context + hooks）；数据读取为模块级可变快照（`src/lib/data.ts`，挂载后经 `/api/snapshot` 水合），写入经 `src/lib/mutations.ts` → 数据服务 API（v0.4 起，localStorage 原型层已退役）。主题与轨道折叠等纯 UI 偏好仍存 localStorage。
-- 路由：`/` 总览 · `/inbox` · `/tasks` · `/calendar` · `/projects` · `/library` · `/review` · `/settings`。
+- 路由：`/` 总览 · `/inbox` · `/tasks` · `/calendar` · `/projects` · `/library` · `/review` · `/settings` · `/trash`（回收站）。
 
 ### 2.3 为什么不用 UI 框架 / Tailwind
 
@@ -83,6 +83,12 @@ lucide-react  react-markdown  @fontsource-variable/inter  @fontsource/jetbrains-
 - **写入路径收口**：浏览器（含手机经 Vite 代理）写入一律经 `/api`；服务仅监听 `127.0.0.1:4097`，永不暴露局域网。
 - **前端水合**：首帧使用构建期 seed；挂载与窗口聚焦时经 `/api/snapshot` 重水合（多标签同步由聚焦刷新承担，实时通道留待 v0.5）。
 
+v0.5 增补（Slice E2，见 ADR-0009）：可写实体通用编辑 `POST /api/<kind>/<id>/update`（字段白名单 + Zod + 审计）；回收站存储 `data/trash/<kind>/<id>.json`（原记录 + `trashedAt`），端点 `POST /api/<kind>/<id>/trash`、`GET /api/trash`、`POST /api/trash/<kind>/<id>/restore`、`POST /api/trash/<kind>/<id>/purge`；`POST /api/reveal` 经 `explorer.exe /select` 在本机文件管理器中定位（仅本机，见 ADR-0009）。
+
+v0.5 增补（Slice G，见 ADR-0010）：通用笔记创建 `POST /api/notes`（title 非空 + `type` 白名单缺省 `memo`；`nextId` + `commit` + 审计 `note.create`；201），供总览「AI 对话归档」等调用；只读 AI 对话 `POST /api/ai/chat`（有界历史 + 读快照摘要，自然语言回答，不落盘）。
+
+v0.5 增补（Slice H，见 ADR-0011）：任务快速新建 AI 补全 `POST /api/ai/task/draft { title }`（标题非空 400 / 有界 ≤200 字；读快照摘要 + 指令式 JSON + Zod + 单次重试；返回 `{ suggestion, model, ms }`，**不落盘**，health 503 / 失败 502）；通用编辑白名单扩充（见 ADR-0009 路径）——`notes` 增 `areaId/projectId/distillLevel`、`resources` 增 `areaId`、`projects` 增 `goalId/nextActionId`，使「已显示」的状态 / 字段全部可设。
+
 派生值纪律在数据服务阶段依然适用：进度、计数、聚合必须运行时计算，不落盘。
 
 ## 4. opencode 集成计划（v0.5）
@@ -112,6 +118,7 @@ lucide-react  react-markdown  @fontsource-variable/inter  @fontsource/jetbrains-
 - **opencode 永不直接暴露到局域网**，仅监听 `127.0.0.1`。
 - 敏感操作需显式确认。
 - AI 已接入（v0.5：收件箱「AI 解析」→ 升级切片：上下文注入 + 挂接建议 + SSE 过程可视，见 ADR-0005 / ADR-0006）；状态条 / 设置页显示 AI 在线状态；命令面板 AI 入口留待后续。
+- AI 端点清单（均经本地 Node 服务代理，前端不直连 opencode）：`POST /api/ai/inbox/:id/parse`（同步）+ `…/parse-stream`（SSE 过程可视）；`POST /api/ai/review/draft`（周 / 月回顾草稿，ADR-0007）；`POST /api/ai/chat`（Slice G · 总览 AI 对话：读库摘要 + 有界历史，自然语言回答，**不落盘**，见 ADR-0010）；`POST /api/ai/task/draft`（Slice H · 任务快速新建补全：只填标题 → 建议 `contexts/energy/importance/estimateMin/dueAt/projectId/areaId/tags`，**不落盘**，应用走 `POST /api/tasks/:id/update`，见 ADR-0011）。配套通用创建 `POST /api/notes`（「清空对话」归档为 `type:'memo'` 笔记，审计 `note.create`）。
 - 本地服务与 opencode 之间使用 `OPENCODE_SERVER_PASSWORD` 保护（本机场景下的纵深防御）。
 
 ## 5. 托管拓扑（局域网）

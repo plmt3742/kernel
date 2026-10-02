@@ -36,10 +36,13 @@ kernel/
 │     ├─ 0004-data-service-v0.4.md
 │     ├─ 0005-opencode-ai-v0.5.md
 │     ├─ 0006-ai-parse-upgrade.md
-│     └─ 0007-ai-weekly-review.md
+│     ├─ 0007-ai-weekly-review.md
+│     └─ 0008-inbox-file-intake.md
 │
 ├─ data/                        # 数据源（一记录一文件；v0.4 起写入经数据服务）
 │  ├─ activity.jsonl            # 审计日志（每次变更追加；服务创建）
+│  ├─ files/                    # 文件投递附件二进制（不进 git；见 ADR-0008）
+│  ├─ trash/                    # 回收站：<kind>/<id>.json（原记录 + trashedAt；见 ADR-0009）
 │  ├─ meta/
 │  │  ├─ config.json            # 全局配置
 │  │  └─ tags.json              # 标签命名空间
@@ -56,7 +59,7 @@ kernel/
 │
 ├─ server/                      # 数据服务（v0.4：单写者 · 原子写 · Zod 校验 · 审计；仅 127.0.0.1:4097）
 │  ├─ index.mjs                 # HTTP 入口与路由
-│  ├─ ai.mjs                    # AI 代理（opencode 接入：解析 / 挂接建议 / SSE 过程流）
+│  ├─ ai.mjs                    # AI 代理（opencode 接入：解析 / 挂接建议 / SSE 过程流 / 回顾草稿 / 读库对话）
 │  ├─ store.mjs                 # 存储层（读快照 / 串行写队列 / nextId / activity.jsonl）
 │  └─ schemas.mjs               # Zod schema（写入前校验的唯一事实源）
 │
@@ -64,7 +67,7 @@ kernel/
 │  ├─ main.tsx                  # 挂载入口（样式导入、字体自托管）
 │  ├─ App.tsx                   # 应用壳与路由
 │  ├─ views/                    # 八个视图（Overview/Inbox/Tasks/Calendar/Projects/Library/Review/Settings）
-│  ├─ components/               # 通用组件
+│  ├─ components/               # 通用组件（Panel / Drawer / Modal / Toast / EntityEditForm / CommandPalette / TaskDetail / ProjectDetail / OverviewChat …）
 │  │  ├─ shell/                 # 应用壳（RailNav / TopBar / StatusBar / AppLayout）
 │  │  └─ charts/                # 图表（TrendLine / EnergyBars）
 │  ├─ context/                  # React Context（Theme / Toast / Palette）
@@ -78,7 +81,7 @@ kernel/
 │  ├─ dev.mjs                   # 开发启动器（数据服务 + Vite 一体启动；--preview 走 preview）
 │  ├─ spawn-bg.mjs              # 后台安全启动器（detached spawn + 日志重定向；防工具调用挂起）
 │  └─ seed.mjs                  # 种子数据生成
-└─ public/                      # 静态资源（字体、图标）
+└─ public/                      # 静态资源（字体、图标、guide.html 使用指南）
 ```
 
 > 具体文件名（如组件文件名、token 文件拆分方式）由脚手架实现决定；本树表达的是**结构与职责**，结构变化时更新本文件。
@@ -90,11 +93,11 @@ kernel/
 | `docs/` | 全部文档：宪法、架构、设计、数据模型、ADR | 文档工程师 |
 | `design-drafts/` | 设计草案选型稿（方向参考，反映当次选型，非构建产物） | 设计 / 所有者 |
 | `.qa/` | 视觉 QA 证据：截图与报告（归档件只读；按批次入子目录） | QA 执行方 |
-| `data/` | 数据源，一记录一文件 JSON；v0.4 起写入一律经 `server/` 数据服务（单写者） | 数据服务（唯一写者） |
+| `data/` | 数据源，一记录一文件 JSON + 附件二进制 `data/files/` + 回收站 `data/trash/`；v0.4 起写入一律经 `server/` 数据服务（单写者） | 数据服务（唯一写者） |
 | `server/` | 数据服务：Zod 校验 + 原子写 + 审计日志；仅监听 127.0.0.1:4097 | 数据层实现方 |
 | `src/` | React + TypeScript 前端应用（只读数据经水合，写入经 API） | 前端实现方 |
 | `scripts/` | 开发启动器（`dev.mjs`）、后台安全启动器（`spawn-bg.mjs`）与种子数据生成（`seed.mjs`） | 工程 |
-| `public/` | 静态资源：自托管字体、图标 | 前端实现方 |
+| `public/` | 静态资源：自托管字体、图标、自包含使用指南 `guide.html`（`/guide.html`，亦可 file:// 双击打开） | 前端实现方 |
 | 根目录 `*.md` | 门面与台账（README / AGENTS / CHANGELOG / TASK_BOOK） | 文档工程师 |
 
 ## 3. 数据目录与实体的对应
@@ -113,6 +116,10 @@ kernel/
 | `data/notes/` | `n-` | note | §4.8 |
 | `data/resources/` | `r-` | resource | §4.9 |
 | `data/reviews/` | `rev-` | review | §4.10 |
+
+> 附件二进制：`data/files/<id>-<safeName>`（文件投递；`data/files/` 已在 `.gitignore`，随条目删除清理）。详见 ADR-0008。
+>
+> 回收站：`data/trash/<kind>/<id>.json`（原记录 + `trashedAt`；四种可写实体 task / project / note / resource 的软删除）。恢复写回正册并删副本；彻底删除仅删副本；`nextId` 同时扫描正册与回收站以防 id 复用。回收站不参与 `/api/snapshot`，经 `GET /api/trash` 读取。详见 ADR-0009。
 
 ## 4. 前端目录职责
 

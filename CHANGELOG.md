@@ -4,6 +4,108 @@
 
 ## [Unreleased]
 
+### 使用指南同步 · Slice I（已完成 · 2026-10-03）
+将自包含中文使用指南 `public/guide.html` 同步到 Slice D–H 的现状（指南此前停在上一个版本）。仍是单文件、内联 CSS/JS、零外部请求，`file://` 双击与 `http://localhost:5173/guide.html` 均可用；沿用既有「柔暗夜色」token，不引入新视觉语言。
+
+- **页面速览（04）**：八张卡逐页补入新交互——总览（状态条三段 / AI 对话盒 / 就地弹详情）、收件箱（文件投递 / 批量 AI 解析 / 侧挂批量条）、任务（快速新建 AI 建议 / 共用详情的编辑删除）、项目（快速新建 / 就地弹详情）、资料（状态五档与判断标准 / 笔记蒸馏 L0–L3 / 文件定位）、回顾（周月卡并列 / AI 解析弹窗报告 / 停滞项目迁移归档）。
+- **AI 章节（05）**：由「两件事」扩为解析（含批量与文件先读）/ 对话盒（读库问答 + 清空即归档为笔记）/ 快速新建建议 / 周月回顾报告，并更新「三条红线」措辞（强调建议永不自动应用）；新增一处**静态对话示例**（`figure.chatmock`，复用 token，非交互）。
+- **其余**：五分钟上手补文件投递与批量；「一条内容的一生」回顾行改周 / 月 + 弹窗；深链补 `/library?resource=` 与 `/trash`；心法增「清空即归档」「建议要你点头」；快捷键补对话盒 Enter 与 ESC 适用范围、命令面板增「新建项目」；FAQ 增三条（清空对话归档去向 / AI 建议是否自动应用 / 误删走回收站）；页脚版本串改 `KERNEL v0.5.0（切片） · 2026-10-03`。
+- **交互演示保留**：任务详情居中弹窗（`role=dialog` / ESC / 焦点还原 / 滚动锁定）原样保留，未回归。
+- **验证**：Python Playwright `.qa/v25/guide-verify.py` **65/65**——dev 桌面 1600×1000 / dev 移动 390×844 / `file://` 三态，新内容命中、控制台零 error、桌面与移动零横溢、`file://` 无外部子资源请求、TOC 滚动高亮 JS 生效、交互演示 a11y 通过。证据 `.qa/v25/`（四张截图 + `guide-verify.log`）。
+- **边界**：仅动 `public/guide.html` 与 `.qa/v25/**` + 三份文档；未触碰 `src/**`、`server/**`、`data/**`、`design-drafts/**`，未重启服务（静态文件）。
+
+### 状态贯通 + 全站同类审计 + 任务快速新建 AI 判断 · Slice H（已完成 · 2026-10-03）
+以 owner 三条指令为规格：① 资料页「状态」无判断标准 / 无设置按钮——解决后全面检查同类问题；② 笔记蒸馏层级可设；③ 任务快速新建需 AI 判断（否则「没有详细内容」）。`npm run build`（tsc strict + vite）通过；服务端冒烟 **21/21** + 浏览器 E2E **28/28**；零数据残留（回到基线：收件箱 9 / 任务 60 / 项目 10 / 笔记 14 / 资料 12 / 回顾 2 / 回收站 0）；控制台零 error；证据 `.qa/v24/`。
+
+- **状态判断标准**：`src/lib/format.ts` 新增 `RESOURCE_STATUS_DEF`（未读 / 在读 / 读完 / 参考 / 归档）与 `DISTILL_LEVEL_LABEL` / `DISTILL_LEVEL_DEF`（L0 原文 / L1 划线 / L2 摘要 / L3 永久）；抽屉内以安静 helper 文本呈现（每项 `title` 带该档定义），文案与 `docs/04 §4.8 / §4.9` 一致。
+- **快捷设置**：`src/views/Library.tsx` 新增本地 `QuickSegmented`（复用 `.k-lib__seg` 轨道 + `TagPill` 选中反转，token only）——资料抽屉「状态 · 判断标准」、笔记抽屉「蒸馏层级 · 判断标准」直接设置，经既有 `POST /api/(resources|notes)/:id/update` 写入（审计 `resource.update` / `note.update`）+ toast 撤销回原值。
+- **白名单扩充（让「已显示」的字段可设）**：`server/index.mjs` `EDITABLE_FIELDS`——`notes` 增 `areaId / projectId / distillLevel`、`resources` 增 `areaId`、`projects` 增 `goalId / nextActionId`；对应编辑表单补下拉（`Library.tsx` 笔记区域 / 项目、资料区域；`Projects.tsx` 下一步 / 目标）。
+- **任务快速新建 AI 补全（`POST /api/ai/task/draft`）**：`server/ai.mjs` 新增 `draftTask(title)` + `buildTaskDraftSystem` + `TASK_DRAFT_MAX_TITLE_CHARS=200`（沿用 `buildDigest` 上下文注入 + 指令式 JSON + `taskDraftSchema` + 快照后校验过滤臆造 id / 标签 + 单次重试 + 120s 超时；**只出建议，不落盘**）；路由标题非空 400 / health 503 / 失败 502。前端创建即时完成，随后异步取建议，在工具条下方显示安静、可忽略的内联面板（loading / ready / error + 重试；`role=status` + `aria-live`）；**应用建议** 经 `POST /api/tasks/:id/update` 写入（审计 `task.update`），**忽略** 零写入，失败不阻断创建；无可应用字段时不弹面板。`mutations.ts` 新增 `TaskDraftSuggestion` / `TaskDraftResult` / `aiTaskDraft`。
+- **全站同类审计**：扫描全部视图与详情，产出「已展示但不可操作 / 无判断标准」结论表（见 `TASK_BOOK.md` Slice H 节）——本切片修复上述可写实体的小口子；结构性缺口（事件全实体、区域 / 目标 / 习惯管理、笔记 `links`、任务 `parentTaskId`、已保存回顾编辑、`review.metrics.migrated` 恒空、回顾「迁移」实为 touch、收件箱内容编辑 / 删除入口、标签注册表管理）显式延后并记录；「笔记沉浸式阅读与撰写体验」（owner 15:58）作为延后 backlog。
+- **验证**：`.qa/v24/smoke-h.mjs` **21/21**（真实 AI 草稿 7.0s 返回含 `@lab / energy / estimateMin / dueAt / areaId / tags` 的建议；空标题 400；note / resource / project 新增字段往返 + 审计 + 零残留）；`.qa/v24/slice-h-verify.py` **28/28**（资料状态 / 笔记蒸馏快捷设置持久化 + 还原；三处编辑表单字段存在性；快速新建 AI 建议就绪 → 应用 → 字段更新 + 审计 `task.update`，第二条走忽略路径；移动 390 零横溢；控制台 0；零残留回到基线 + 回收站 0）。
+- **记录**：ADR-0011；`docs/02 §3.2 / §4.3`（端点）；`docs/04 §4.8 / §4.9 / §9`（判定标准 + 可设置 + 白名单）；`docs/README` 收录 ADR-0011；`AGENTS.md`。
+
+### 总览升级 · Slice G（已完成 · 2026-10-03）
+以 owner 三条指令为规格：① 状态条下方加「能对话的 AI 盒」——读库回答（例「我今天有什么特别紧急需要去做的事情」），清空对话前按时间命名归档为可查阅文本；② 顶部三胶囊左右不对齐、要换展示方式；③ 工作台条目点击就地弹详情（不跳转、不无高亮）。`npm run build`（tsc strict + vite）通过；浏览器 E2E **42/42**；零数据残留（回到基线：收件箱 9 / 任务 60 / 项目 10 / 笔记 14 / 资料 12 / 回顾 2 / 回收站 0）；控制台零 error；证据 `.qa/v23/`。
+
+- **AI 对话盒（新 `src/components/OverviewChat.tsx`）**：置于状态条之下、工作台之上；视觉复用收件箱编辑器 `.ic-composer`（圆角 / 抬升表面 / 柔影 / 圆环强调发送）；默认紧凑，消息存在时在其上方展开安静线程面板（`.k-chat__thread`，定高 `max-height` 可滚、纯文本渲染、无 `dangerouslySetInnerHTML`）；Enter 发送 / Shift+Enter 换行；发送后同步显示「思考中…」加载态；AI 离线 / 失败显示错误态 + 「重试」（对话保留）；「清空对话」在空 / 进行中禁用。
+- **AI 对话端点（`POST /api/ai/chat`，无状态）**：`server/ai.mjs` 新增 `buildChatDigest` / `buildChatSystem` / `chatWithKernel` 与 `CHAT_MAX_MESSAGES=20` / `CHAT_MAX_CHARS=4000` / `CHAT_TOTAL_CHARS=16000`。路由按有界历史裁剪（末条须为用户消息，否则 400）；摘要含 现在 / 逾期任务 / 今日到期 / 未来 7 天日程 / 收件箱积压 / 进行中项目 / 高优先下一步；系统提示要求只依据摘要事实、最紧急按「逾期 → 今日到期 → 日程」排序；自然语言输出（不解析 JSON）；`variant:'low'` + 120s 超时 + 单次重试；health 503 / 失败 502；**不落盘**。实测真实回复约 5s。
+- **清空即归档为笔记（通用 `POST /api/notes`）**：新增 `createNote`（`title` 非空 400；`type` 白名单缺省 `memo`；`nextId('notes')` + `commit` 审计 `note.create`；201）。前端「清空对话」非空时**先** `createNote({ title:'AI 对话归档 · YYYY-MM-DD HH:mm', body: transcript, type:'memo' })`（`**我**` / `**KERNEL**` 交替 markdown），**成功才清空**并 toast「已归档为笔记 · 查看」→ 跳 `/library?note=<id>`（深链打开该笔记）；归档失败不清空 + 错误 toast。`src/lib/mutations.ts` 新增 `chatWithAi` / `createNote` / `AiChatMessage`。对话为模块级 store 会话级持久（跨路由存活，刷新丢失）。
+- **状态条重做（owner 反馈「右缘参差」）**：`.k-status` 整宽 `grid-auto-flow:column; grid-auto-columns:minmax(0,1fr)`——三段（下一项 / 收件箱 / 逾期）等分、左右边缘严格贴版心（实测 228.00 / 1468.00，与 `.k-view` 一致）；三段均为可聚焦按钮（下一项 → `/calendar`、收件箱 → `/inbox`、逾期 → `/tasks`）；逾期恒显示（0 项用安静点）；≤640px 竖排、段间横线。原 `.k-chips` / `.k-chip` 样式保留未动。
+- **就地详情弹窗（owner 反馈「跳转后不知在哪」）**：抽出 `src/components/TaskDetail.tsx` 与 `src/components/ProjectDetail.tsx`（自 Tasks / Projects 抽屉内联 JSX 原样迁移），两页抽屉改为引用同一组件（行为不变）；`Overview` 用既有 `Modal.tsx` 承载——工作台任务行 → 任务弹窗（`role=dialog`、URL 仍为 `/`、标题一致、底部「标记完成 / 取消完成」+ 条件「查看项目」、ESC 关闭 + 焦点还原到触发行）；项目推进条 → 项目弹窗。日程行行为不变。
+- **验证**：`.qa/v23/slice-g-verify.py` **42/42**——状态条三段 / 左右边缘对齐 / 点击三条跳转；对话盒几何（状态条下、工作台上、左右对齐）；发送 → 加载态 → 真实 AI 回复（514–698 字）→ 多轮第二条回复；清空 → notes +1（标题正则 `AI 对话归档 · YYYY-MM-DD HH:mm`、body 含 `**我**`/`**KERNEL**`、`type=memo`）→ 线程清空 → toast「查看」跳 `/library?note=n-0015` 并打开；任务 / 项目就地弹窗（role/URL/标题/ESC/焦点还原）；移动 390 零横溢 + 弹窗在视口内；控制台 0；零残留 + 回收站归零。`npm run build` 通过。
+
+### 回顾页重构 · Slice F（已完成 · 2026-10-03）
+- **布局重排（owner 指令）**：周回顾 / 月回顾两张卡改为**并列一栏**，移到「能量分析」之上；停滞项目独立为全宽一栏；指标瓦片从页级移入各周期卡（有保存回顾或草稿时显示）；「能量分析」与「本周完成」并陈于图表区（route <900px 单列）。
+- **每卡 AI 解析 + 动画弹窗**：新增 `src/components/Modal.tsx`——居中弹窗，240ms 淡入 + 微缩放（`useReducedMotion` 降级），ESC / 点击遮罩关闭，`trapTab` 焦点圈闭 + 关闭还原焦点，`role="dialog"` / `aria-modal` / `aria-labelledby`，打开时锁定页面滚动；视觉取自 `public/guide.html` 任务详情演示。每张周期卡有「AI 解析 / 重新生成」按钮（进行中 / 错误态沿用安静样式）；「查阅报告」打开弹窗，展示指标 + 摘要 + 决策 + 停滞处置建议，并保留草稿编辑 → 保存 → 撤销 toast（撤销即删除）闭环；已保存回顾以只读方式查阅。
+- **月回顾 AI 支持（服务端）**：`server/ai.mjs` 新增 `computeMonthMetrics`（窗口 = 本机时区 1 日 00:00 → now；captured / created / completed / overdue 口径与 `computeWeekMetrics` **完全一致**）与 `monthKey`（`YYYY-MM`，镜像前端 `toMonthKey`）；`buildReviewDigest` / `buildReviewSystem` 参数化 `scope`（周 / 月）；`generateReviewDraft(period='weekly')` 缺省周行为不变。`server/index.mjs`：`POST /api/ai/review/draft` 接受 `{ period:'weekly'|'monthly' }`（非法 400，缺省 weekly）；`POST /api/reviews` 接受 `{ type:'monthly' }` → `type:'monthly'` + `periodKey:'YYYY-MM'` + 月指标，缺省周不变。保留单次重试 + Zod + 按实际停滞集合过滤臆造 id 的安全模式；`reviewSchema` 已支持 monthly（字段无需变更）。
+- **前端写入通道**：`src/lib/mutations.ts` `generateReviewDraft(period)` / `saveReview(summary, decisions, type)`（缺省 weekly，向后兼容）。
+- **验证**：`npm run build`（tsc strict + vite）通过；服务端冒烟 `.qa/v22/smoke-f.mjs` **13/13**（monthly 201 + `periodKey 2026-10` + 4 项指标 + 周缺省不变 + 非法 period 400 + 删除 + 零残留）；月度草稿真实 AI 返回 200（`periodKey:2026-10`，4.8s，证据 `.qa/v22/monthly-draft.json`）；浏览器 E2E `.qa/v22/slice-f-verify.py` **30/30**（卡片栏在能量之上几何断言 516≤543、两卡同行 y189/189、停滞独立栏空态、弹窗 role/aria/动画落定/焦点进入/ESC+焦点还原/遮罩关闭、周回顾真实 AI 草稿 → 弹窗报告 160 字摘要 + 5 指标、月度草稿端点 + `POST /api/reviews` 落盘 + 撤销删除 + 月度卡 UI 查阅、控制台零错误、零残留回到基线：收件箱 9 / 任务 60 / 项目 10 / 笔记 14 / 资料 12 / 回顾 2）；移动端 `.qa/v22/slice-f-mobile.py` **6/6**（390 零横溢 + 单列堆叠 + 弹窗适配 + ESC）。
+- **记录**：ADR-0007 §6 修订（月回顾扩展）；`docs/04 §4.10`（monthly 生效 + periodKey 口径）；`docs/05`（`Modal.tsx`）；`AGENTS.md` 变更记录。
+
+### 趋势图数据点裁切修复 · Slice E2.7（已完成 · 2026-10-03）
+- **问题（owner 反馈）**：总览「完成趋势 / 到期负载」sparkline 中，贴底数据点（值 0 → viewBox y=100）被 SVG 视口裁掉下半圆——owner 截图圈注「小圆点被遮盖」。
+- **修复**：`src/styles/components.css` `.k-line__svg` 增 `overflow: visible`——零长度路径 + 圆头端帽绘制的数据点在基线处完整显示（下溢约 3.5px 落入与下方元素的既有间隙，不影响布局）；总览 / 回顾两处 `TrendLine` 同步生效。
+- **验证**：`.qa/v21/slice-e27-verify.py` **8/8**——总览 / 回顾双页 `overflow=visible` 断言；总览完成趋势 7 点中 6 点为贴底点；像素级前后对照（基线下方墨色 0px → 290px，半圆修复为整圆）；控制台零错误；只读零写入（前后快照计数一致）。`npm run build` 通过。证据 `.qa/v21/`（before / after 对照 + 3x 放大 + 回顾页回归截图）。
+- **记录**：本条目 + `TASK_BOOK.md` + `AGENTS.md`。
+
+### 动效与布局稳定 · Slice E2.6（已完成 · 2026-10-03）
+以 owner 反馈五连为指令：批量 AI 解析看不见过程 / 展开区黏连 / 资料筛选横滚 / 流式抖动 / 列表重叠。
+- **批量解析过程可视**：批量 AI 解析复用单条流式路径（`runParse`）——当前条目自动展开并显示实时过程面板（阶段 + 增量预览），条目不在视口内时轻柔滚入（尊重 `reduced-motion` → 瞬时）；绝不自动应用。
+- **流式增量节流**：SSE delta 先入 ref 缓冲，约 100ms 节流 flush 到 React state——消除高频逐帧重渲染造成的抖动。
+- **展开区呼吸间距**：`.ic-subrow` 顶距 `--space-3`（实测 12px）——展开内容与条目行不再「黏在一块」（内边距不产生 box 间隙，故用外边距）。
+- **流式面板定高**：过程面板阶段行单行省略；预览固定 3 行高度（溢出隐藏 + 最新贴底 + 顶部渐隐遮罩）——解析期间面板高度极差 **0.00px**、下方元素零漂移；AI 卡阶段切换微淡入（`k-ai-fade`）。
+- **资料筛选条换行**：`.k-lib__filters` 由横向滚动改自然换行——1280 / 390 均无横向溢出（`scrollWidth === clientWidth`）。
+- **任务列表切换不重叠**：`motion.tr` 去 `layout` 与位移动画（保留透明度渐入 + stagger）——过滤切换过渡期间任意两行不相交（`overlaps=0`）。
+- **验证**：`.qa/v20/slice-e26-verify.py` **22/22**——含批量解析过程可视 / 缓存 3ms 就绪 / 间距 12px / 筛选条双断点零溢出 / 流式面板极差 0.00px / 任务列表 overlaps=0 / 零残留回到基线 / 控制台零错误；`npm run build` 通过。证据 `.qa/v20/`（`e26-batch-live.png` / `e26-stable.png` / `e26-task-transition.png`）。
+
+### AI 挂靠判断 + 项目闭环 + 批量条侧挂 · Slice E2.5（已完成 · 2026-10-03）
+- **AI 挂靠判断修正（宁缺毋滥 + 新事务提示）**：`server/ai.mjs` 系统提示词修订——① 挂靠宁缺毋滥：只有当内容与现有项目 / 区域 / 标签有明确依据时才填，**表面相似（如都含「竞赛 / 比赛 / 规则」字样）不算依据**，拿不准一律 null；② 附件不可读（仅文件名 / 元数据）时更保守：除非文件名直接指向某现有项目（名称 / 主题强匹配），否则 `projectId` 一律 null，并在 reason 注明「仅基于文件名判断」；③ 新增 `newProjectHint`（string|null，≤40 字）：内容像一件需要多步推进的**新事务**（新比赛 / 新活动 / 新项目）且不属于任何现有项目时给出建议项目名（例「辩论赛筹备」）；④ `newProjectHint` 与 `projectId` **互斥**。
+- **schema + 后校验**：`aiSuggestionSchema` 增 `newProjectHint: z.union([z.string(), z.null()]).optional()`；`normalizeSuggestion` 丢弃 null；`postValidate` trim + 截断 40 字 + 丢弃空串、与 `projectId` 互斥、与现有项目标题完全相同者丢弃。前端 `AiSuggestion.newProjectHint?`。
+- **收件箱建议卡**：`newProjectHint` 存在时安静显示「建议新项目：{X}」+ 小灰字「可到项目页新建」（仅提示，绝不自动建 / 不自动挂）。
+- **项目「新建」**：`server/index.mjs` 新增 `POST /api/projects { title, areaId? }`——title 非空（400）；创建 `{ id: nextId('projects'), title, outcome:'完成定义待整理', status:'active', areaId: areaId ?? 'a-0001', tags:[], createdAt, updatedAt }`；审计 `project.create`；201 `{ project }`。前端 `mutations.createProject`；`src/views/Projects.tsx` 增快速新建输入（镜像任务页 `.k-quickadd`，占位「新建项目，回车创建（写入 data/projects）」）→ Enter 创建 → upsert → toast「已创建项目 · 撤销」（撤销 `trashEntity` 进回收站，失败错误 toast）。
+- **回顾页停滞按钮真实接通**：`server/index.mjs` `updateEntity` 支持**空 patch = touch**——无白名单字段时仍 `updatedAt = nowIso()`，审计 `<singular>.touch`（有字段仍为 `.update`）；`src/views/Review.tsx` 归档 → `updateEntity('projects', id, { status:'archived' })` → toast「已归档 · 撤销」（撤销回 active）；迁移 → 空 patch touch → toast「已重决策：继续推进」（行消失至 14 天后）；两处「原型态」文案移除；`Review` 增 `useDataRevision()` 订阅以即时重渲染。
+- **批量条侧挂 dock**：`src/views/Inbox.tsx` 以 `IntersectionObserver` 观察内联批量条 `.ic-batchbar`；滚出视口时在右缘纵向居中显示窄列浮动 dock（`已选 N 项` + 「批量 AI 解析」/「批量 → 任务」/「批量丢弃」/「取消选择」，与内联条**同一状态与处理器**，禁用态一致，含批量进度播报）；`motion` fade/slide 进场（`useReducedMotion` 降级）；回到视口即隐藏；`z-index: calc(var(--z-drawer) - 1)` 位于抽屉层级之下、≤767px 隐藏；`pointer-events:none` 外壳 + `auto` 面板；真实按钮 / 可聚焦。
+- **验证**：`npm run build`（tsc strict + vite）通过；服务端冒烟 `.qa/v19/smoke-e25.mjs` **39/39**（辩论赛样例 `projectId=null` 且 `newProjectHint=新生辩论赛筹备`、`areaId=a-0003`；控制样例「学生组织：策划书要补个流程图」→ `p-0002`（明确依据，正确）；形状 / 互斥 / 标题去重断言；项目 create（201 + 形状 + 审计）→ 空 patch touch（`updatedAt` 递增 + 审计 `project.touch`，无 `project.update`）→ archived（审计 `project.update` + `fields:["status"]`）→ trash / purge 清理 + 审计；零残留）；浏览器 E2E `.qa/v19/slice-e25-verify.py` **21/21**（UI AI 解析建议卡未出现「建议挂到 学生组织」且「建议新项目」可见；dock 顶部隐藏 → 深滚出现 → 勾选计数 → 「取消选择」归零 → 滚回顶部隐藏；项目快速新建 toast + 行出现；零残留回到基线：收件箱 9 / 任务 60 / 项目 10 / 笔记 14 / 资料 12 / 回收站 0 / 附件 1；控制台零错误）。**提示词一次通过，无需迭代**。证据 `.qa/v19/`（`smoke-e25.mjs` + `.log`、`slice-e25-verify.py` + `.log`、`e25-hint.png` / `e25-dock.png`）。
+- **记录**：`docs/decisions/0006-ai-parse-upgrade.md` §2 修订（挂靠规则 v2 + newProjectHint）；`docs/decisions/0009-edit-trash-reveal.md` §2 修订（`project.create` + touch 语义）。
+
+### 详情操作 + 回收站 · Slice E2（2026-10-03）
+- **通用编辑端点**：`server/index.mjs` 新增 `POST /api/(tasks|projects|notes|resources)/:id/update`（单条正则路由）——读原记录（不存在 404）→ 仅合并**字段白名单**（tasks 12 字段 / projects 6 / notes 4 / resources 7；其余忽略）→ 保留 `id` / `createdAt`、`updatedAt = nowIso()` → 经 `SCHEMAS[kind]` 校验 → `commit` 审计 `<singular>.update` + `detail.fields`（变更键）→ 返回 `{ record }`；body 中 `null` 字段视为「清除」。
+- **回收站（软删除）**：`server/store.mjs` 新增 `TRASH_DIR`、`moveToTrash`（原子写 `data/trash/<kind>/<id>.json`（+`trashedAt`）→ 删正册）、`restoreFromTrash`（写回正册（去 `trashedAt`，经 schema 校验）→ 删副本）、`purgeTrash`、`readTrash`（`{kind,record}` 按 `trashedAt` 倒序），全部走既有写队列；**`nextId` 增扫回收站取最大值**（修复：防回收后 id 复用导致恢复冲突）。路由：`POST /api/<kind>/<id>/trash`（404 校验 / 审计）、`GET /api/trash`、`POST /api/trash/<kind>/<id>/restore`、`POST /api/trash/<kind>/<id>/purge`；kind 白名单 = 四种可写实体，id 经 `ID_PATTERNS`。
+- **资源文件位置 + 定位**：`resourceSchema` 增可选 `path`；文件投递条目澄清为资料时补 `kind:'file'` 与绝对 `path`（`data/files/<inboxId>-<name>`），title 取 `item.content`（非文件条目不变）；`POST /api/reveal { path }`——trim / 非空校验、`resolve` + `existsSync` 否则 404 `文件不存在`，**detached + stdio ignore + unref** 启动 `explorer.exe`（文件 `/select,` 定位、目录直开），返回 `{ ok:true }`（仅本机可用，无额外限制；见 ADR-0009）。
+- **前端 · 抽屉编辑 / 删除**：新增 `src/components/EntityEditForm.tsx`（字段规格驱动：text / textarea / number / select / datetime / list；datetime 用 `datetime-local` 显示并按本机时区转 ISO；contexts / tags 逗号文本；numeric select 转 number）。任务 / 项目 / 笔记 / 资料四种抽屉底部加「编辑 / 删除」安静动作——编辑态内联替换字段视图（保存实心 / 取消 ghost，成功 toast「已保存」）；删除 → `trashEntity` → 快照移除 → toast「已移入回收站 · 撤销」（撤销 `restoreEntity`，无确认弹窗）。
+- **前端 · 回收站页**：新增 `/trash`（nav `09 回收站` / 命令面板经 `NAV_ITEMS` 自动收录 / `App.tsx` 路由）；按类型分组（任务 / 项目 / 笔记 / 资料），行 = 标题 + id + 移入相对时间 + 「恢复」+「彻底删除」（双击确认：首点标签变「再点一次确认」，5s 复位）；空态「回收站为空」。
+- **前端 · 资料文件位置**：资料抽屉新增「文件位置」区块（有 `path` → 等宽截断路径 + 「在文件管理器中显示」→ `POST /api/reveal`；无 → 「未记录文件位置 · 可通过编辑补充」）。`src/types.ts` 增 `Resource.path?` 与 `TrashKind` / `TrashRecord` / `TrashItem`；`src/lib/mutations.ts` 增 `updateEntity` / `trashEntity` / `restoreEntity` / `purgeEntity` / `fetchTrash` / `revealPath`；`src/styles/views.css` 增表单 / 回收站 / 文件位置样式（token only，含 390 响应）。
+- **验证**：`npm run build`（tsc strict + vite）通过；服务端冒烟 **34/34**（编辑生效 + 白名单忽略未知字段 + `updatedAt` 递增 + 审计；trash / restore / purge 文件往返 + 审计；reveal 空路径 400 / 不存在 404 / 真实文件 200）；浏览器 E2E **19/19**（编辑保存 + UI 更新、删除 toast + 离场、回收站出现 / 恢复 / 再删 / 双击彻底删除、资源补 path + 文件位置行 + reveal HTTP 200、零残留回到基线、控制台零错误）；全站回归 smoke PASS。证据 `.qa/v18/`（`smoke-e2.mjs` + `.log`、`slice-e2-verify.py` + `.log`、`e2-edit.png` / `e2-trash.png` / `e2-resource-path.png`）。备注：验收含 2 次真实 reveal（冒烟 1 + E2E 1），各弹一次 Explorer，属预期。
+- **记录**：ADR-0009；`docs/04`（§4.9 `path?` + §5.4b 回收站 + §9 写入路径）；`docs/05`（`data/trash/`）；`docs/02`（路由 `/trash` + §3.2 端点）；`docs/README` 收录 ADR-0009；`AGENTS.md` 路由行 + 安全纪律 + 变更记录行。
+
+### 收件箱修复包 · Slice E1（2026-10-03）
+- **编辑器回位（owner 反馈）**：撤销 Slice D 的居中几何——`.ic-composer` 去掉 `max-width:760px` 居中与 `translateX` 光学补偿，回到原捕捉栏位置：占满版心宽度，左右边距与下方「水位」面板（`.ic-head`）严格一致（实测 composer.x=panel.x=228、宽度均 1240）。DeepSeek 式视觉（抬升表面 / 圆角 / 柔影 / pending-file chips / 回形针 / 拖拽遮罩 / 圆形发送 / `C` 角标 / 投递即自动 AI 先读）全部保留。
+- **「批量 → 任务」复现 + 反馈加固**：干净复现（API 造一文本 + 一文件临时项 → 勾选 → 批量 → 任务）**两条均成功澄清并离场，服务端流程无 bug**；owner 的「点了没用」为反馈不够醒目所致。加固：toast 改为目标感知的明确文案（`已批量创建 N 条任务` / `已批量丢弃 N 条`，仍带「撤销」）；成功后才收敛选中态（仅移除已处理项，中止时保留剩余选中，绝不提前清空）。
+- **AI 结果缓存（收起不丢）**：`src/views/Inbox.tsx` 新增模块级 `Map<inboxId, AiParseResult>`（会话内跨路由存活）；收起 / 切换条目后再展开直接命中缓存 → 秒级就绪卡（无阶段文案、不重解析，实测 0.00s）；条目离开未澄清列表（应用 / 撤销 / 刷新对账）即删除其缓存；就绪卡新增安静 ghost「重新解析」（覆盖该条缓存、强制新请求）；单活跃流在途守卫保持不变。
+- **批量 AI 解析**：批量条新增「批量 AI 解析」（置于 批量 → 任务 / 批量丢弃 旁）——顺序流式解析选中项（复用 `aiParseInboxStream` + 上述缓存），进度播报「AI 解析中 2/5…」，失败 toast 后**继续**剩余项，**绝不自动应用**（建议仍逐条查看 / 应用）；运行期间禁用批量动作与单条解析入口防重叠。
+- **验证**：`npm run build`（tsc strict + vite）通过；浏览器 E2E **24/24**（编辑器几何回位对齐 / 批量 AI 进度与完成 / 两条均缓存即时就绪 / 批量 → 任务两条离场 + 明确 toast / 批量丢弃两条离场 + 明确 toast / 零残留：收件箱回到 i-0001..i-0008 · 任务回到 t-0001..t-0060 · `data/files/` 空 / 控制台零错误）。证据 `.qa/v17/`（`slice-e1-verify.py` + `e1-composer.png` / `e1-batch-ai.png` / `slice-e1-verify.log`）。
+- **记录**：ADR-0008 §2.7 修订（标注「owner 反馈后回位，不居中」）与 §4 Slice E1 修订行。
+
+### 收件箱升级 · Slice D（文件投递 + 居中编辑器 + AI 先读）（2026-10-02）
+- 服务端投递：新增 `POST /api/inbox/upload?name=&type=&caption=`（RAW body 流式落盘，不走 JSON/`readBody`）；单文件上限 `MAX_UPLOAD_BYTES=25MB`（超出暂停读取 + 销毁写流 + 清理半成品 → `413 文件过大（上限 25MB）`）；文件名清洗（`basename` → 非法字符 `[\\/:*?"<>|]`→`_` → trim → 截断 120 字符保留扩展名 → 兜底 `file`）；落盘 `data/files/<id>-<safeName>`，条目 `source:'file'` + `file:{name,size,mime?}`，审计 `inbox.upload`；写失败清理半成品 → 500。
+- 附件端点：新增 `GET /api/files/:id`（流式 inline，`Content-Type` 取 mime、`filename*=UTF-8''` 兼容非 ASCII；缺失 404）与 `POST /api/inbox/:id/remove`（删除条目并清理附件，`ENOENT` 忽略；`clarified` → `409 已澄清条目请先撤销澄清`；审计 `inbox.remove`）。
+- 数据模型：`inboxItemSchema` 增可选 `file:{name,size,mime?}`；`.gitignore` 增 `data/files/`（二进制不进 git，元数据随 JSON 受版本管理）。
+- AI 先读：`server/ai.mjs` 新增 `buildFileSection(item)`（同步 / 流式共用）——文本扩展名白名单或 `text/*` 且 ≤5MB → 读前 8000 字摘录；否则仅元数据「无法直接读取内容，请依据文件名与上下文判断」；系统提示增一行附件判断规则；**无附件条目行为不变**。
+- 前端编辑器：`.k-capture` 全宽条退役 → `.ic-composer` 居中圆角编辑器（`max-width:760px`，抬升表面 + 柔影，仅 token）；待上传 chips（`name · humanSize` ×）→ 输入行 → 底行（回形针 + 「拖拽文件到此处」+ `C` 角标 | 圆形强调色发送）；光学居中（补偿固定轨道的一半，宽屏相对视口居中）；保留 `c` 聚焦与 Enter 发送。
+- 投递交互：点击回形针（隐藏 `<input type=file multiple>`）/ 拖拽（`dragenter/over/leave/drop` + `.is-dragover` 虚线强调 + 遮罩「松开：放入收件箱」）；发送时有文件则逐个 `uploadInboxFile(file, caption)` → 清空 → **顺序自动运行既有 AI `parse-stream`**（复用过程面板 / 建议卡；失败 toast 后继续）；`aria-live` 播报上传 / 解析状态。
+- 文件条目：行左侧文件字形；meta 增 `name · humanSize`；展开澄清区新增安静「查看文件」链接（`/api/files/<id>` 新标签打开）；`src/lib/format.ts` 增 `humanSize`。
+- 验证：`npm run build`（tsc strict + vite）通过；服务端冒烟 PASS（201 + 文件名清洗 + 落盘内容一致 + 真实 AI 解析建议含挂接 + `remove` 清文件/条目 + 审计 `inbox.upload`/`inbox.remove`，零残留）；浏览器 E2E **12/12**（编辑器几何居中 centerX=800、chip、文件行、自动建议卡、拖拽 chip、零残留、零控制台错误，证据 `.qa/v16/`）。重启后栈在线（4097 + 5173，未触碰 4096）。
+- 记录：ADR-0008；`docs/04 §4.1` 增 `file?` 行与说明；`docs/05` 目录树 / 职责 / 清单同步；`docs/README` 收录 ADR-0008。
+
+### 使用指南 · HTML（2026-10-02）
+- 新增 `public/guide.html`：单文件、自包含、中文「使用指南」，面向首次使用的所有者（读到会用）。
+- 视觉：复用暗色「柔暗夜色」token 原值（`bg #0F0F10` / `surface #1A1A1C` / `ink #F4F4F5` / `accent #FF5A52` / 柔影 / 圆角 16）；字体栈为自包含系统栈（不引用任何外部字体/图片/CDN）；无渐变/辉光/emoji；强调色仅作信号；正文 measure 72ch；桌面粘性左目录、≤900px 折叠为内联目录；响应式至 390px。
+- 内容：Hero（一句话哲学 + `npm run dev` → `localhost:5173` 启动条）· 30 秒理解（五步循环）· 五分钟上手（5 步照着做）· 一条内容的一生（阶段/页面/操作/结果表）· 八个页面速览（8 卡）· AI 怎么帮你（解析 + 周回顾 + 三条红线 + 本地 4096）· 系统是连起来的（关联区块 + 四类深链）· 用好它的心法（六条纪律）· 快捷键与全局（含手机）· 常见问题 + 页脚版本串；末尾内联原生 JS 仅做目录滚动高亮（无外链，失败静默降级）。
+- 验证：Python Playwright（`.qa/v15/guide-verify.py`）三态 25/25 通过——dev 桌面 1600×1000 / 移动 390×844 / `file:///…/public/guide.html` 双击；三处控制台 error == 0；关键区块（五分钟上手 / 关联 / 常见问题）命中；桌面与移动零横向溢出；file:// 无外部子资源请求。证据 `.qa/v15/`（`guide-desktop.png` / `guide-mobile.png` / `guide-file.png` / `guide-verify.log`）。
+- 交互演示（追加）：任务卡内「点开看：任务详情面板」触发**任务详情面板居中弹窗**——忠实复刻真实抽屉（kicker `任务 · t-0034` / 标题 / 2 列字段网格 / 标签胶囊 / 「关联」芯片 `label · title · id` / `标记完成` 实心 + `查看项目` ghost 底部按钮 + 关闭 X）；X / 遮罩 / ESC 关闭，焦点进入弹窗、关闭还原触发按钮，打开锁定页面滚动，`role="dialog"` + `aria-modal` + fade/微缩放（reduced-motion 降级），纯内联 CSS/JS。`.qa/v15/` 追加 `guide-demo-open.png`；三态 + 演示共 **39/39** 通过、控制台零错误。
+- 边界：未改动 `src/**`、`server/**`、`scripts/**`、`data/**`、`public/favicon.svg`、`index.html`；未触碰运行中的服务（5173 / 4097 / 4096）。
+
 ### AI 周回顾 · Slice C（2026-10-02）
 - 写入路径：`server/schemas.mjs` 新增 `reviewSchema`（`id /^rev-\d{4}$/` · `type` weekly|monthly · `periodKey` · `date` · `metrics{captured·created·completed·overdue·migrated?}` · `decisions` · `summary` · `staleProjectIds?`）与 `reviewDraftSchema`；`SCHEMAS.reviews` / `ID_PATTERNS.reviews` 落地；`store.nextId` 增 `reviews:'rev'`。
 - 服务端指标：`server/ai.mjs` 新增 `isoWeekKey`（ISO 周键）、`computeWeekMetrics`（本周 周一 00:00 → now：捕获 / 新增 / 完成 / 逾期；`migrated` 刻意不产出）、`staleProjects`（与前端 `getStaleProjects` 严格一致：active 且 ≥14 天未更新）。

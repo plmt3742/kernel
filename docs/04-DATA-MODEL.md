@@ -59,6 +59,9 @@
 | status | `unprocessed` \| `clarified` \| `discarded` | |
 | linkedId? | string | 澄清后指向新实体 |
 | note? | string | |
+| file? | `{ name, size, mime? }` | 文件投递附件元数据；二进制存 `data/files/<id>-<name>`（不进 git；见 ADR-0008） |
+
+> **文件投递（v0.5 · Slice D）**：`source:'file'` 的条目由 `POST /api/inbox/upload` 创建，`content` 取 caption（无则文件名）。二进制**不**进 JSON，仅存于 `data/files/`（`.gitignore`）；AI 解析时按「文本白名单 + ≤5MB → 前 8000 字摘录，否则仅元数据」注入提示。删除条目经 `POST /api/inbox/:id/remove`（已澄清条目 409，需先 revert）。详见 ADR-0008。
 
 ### 4.2 task（`t-`）
 
@@ -164,9 +167,11 @@
 | areaId? | string | |
 | projectId? | string | |
 | tags | string[] | |
-| distillLevel | 0 到 3 | 渐进蒸馏层级 |
+| distillLevel | 0 到 3 | 渐进蒸馏层级（判断标准见下） |
 | createdAt | ISO | |
 | updatedAt | ISO | |
+
+> **蒸馏层级可设置（v0.5 · Slice H）**：`distillLevel` 0–3 为渐进蒸馏（progressive summarization）层级——L0 原文（原始摘录 / 未加工）、L1 划线（已标出关键句）、L2 摘要（已用自己的话压缩）、L3 永久（已提炼为可复用的永久笔记）。笔记抽屉内以安静分段控件直接设置（经 `POST /api/notes/:id/update`，审计 `note.update`）；`areaId` / `projectId` 也可在编辑表单中设置（`notes` 编辑白名单已含 `areaId / projectId / distillLevel`，见 ADR-0011）。UI helper 文本与本文一致（`src/lib/format.ts` `DISTILL_LEVEL_DEF`）。
 
 ### 4.9 resource（`r-`）
 
@@ -175,12 +180,17 @@
 | id | string | |
 | title | string | |
 | url? | string | |
+| path? | string | 本地文件绝对路径（Slice E2：文件投递澄清为资料时写入；亦可编辑补充） |
 | kind | `article` \| `course` \| `book` \| `tool` \| `paper` \| `file` | |
-| status | `unread` \| `reading` \| `read` \| `reference` \| `archived` | |
+| status | `unread` \| `reading` \| `read` \| `reference` \| `archived` | 五档阅读状态（判断标准见下） |
 | tags | string[] | |
 | areaId? | string | |
 | addedAt | ISO | |
 | note? | string | |
+
+> **文件投递 → 资料（v0.5 · Slice E2）**：`source:'file'` 的收件箱条目澄清为资料时，记录 `kind:'file'` 且 `path` = `data/files/<inboxId>-<fileName>` 的绝对路径；非文件条目行为不变。资料抽屉据此显示「文件位置」并可经 `POST /api/reveal` 在本机文件管理器中定位（见 ADR-0009）。
+
+> **状态判断标准 + 可设置（v0.5 · Slice H）**：资料状态五档——`unread` 未读（收进资料库、尚未开始阅读）、`reading` 在读（正在读、有明确推进）、`read` 读完（已完整读完）、`reference` 参考（不打算通读，仅备查引用）、`archived` 归档（已处理完，退出主动视野）。资料抽屉内以安静分段控件直接设置（经 `POST /api/resources/:id/update`，审计 `resource.update`）；`areaId` 也可在编辑表单中设置（`resources` 编辑白名单已含 `areaId / status`，见 ADR-0011）。UI helper 文本与本文一致（`src/lib/format.ts` `RESOURCE_STATUS_DEF`）。
 
 ### 4.10 review（`rev-`）
 
@@ -194,6 +204,8 @@
 | decisions | string[] | |
 | summary | string | |
 | staleProjectIds? | string[] | |
+
+> **月回顾（v0.5 · Slice F）**：`type:'monthly'` 现已实际产出；`periodKey` 采用 `YYYY-MM`（如 `2026-10`，镜像前端 `toMonthKey` 与后端 `monthKey`）。指标窗口 = 本机时区 1 日 00:00 → now，`captured / created / completed / overdue` 口径与周回顾完全一致；`migrated` 同样可缺省（见 ADR-0007 §6）。
 
 ### 4.11 元数据
 
@@ -249,6 +261,16 @@ active ──暂停──> onHold ──恢复──> active
 ```text
 unread ──> reading ──> read ──> reference ──> archived
 ```
+
+### 5.4b 回收站（task / project / note / resource）
+
+```text
+正册 data/<kind>/<id>.json ──删除──> data/trash/<kind>/<id>.json（+ trashedAt）
+        ↑────────恢复（去 trashedAt）────────┘
+                                        └──彻底删除──> 不可恢复
+```
+
+四种可写实体（task / project / note / resource）的删除均为**软删除**：先写回收站副本再删正册文件（原子、串行）。恢复写回正册并删副本；彻底删除仅删副本。`nextId` 同时扫描正册与回收站，避免回收后 id 复用导致恢复冲突。回收站不出现在 `/api/snapshot` 中，单独经 `GET /api/trash` 读取（见 ADR-0009）。
 
 ### 5.5 event
 
@@ -328,5 +350,9 @@ confirmed ──取消──> cancelled
 - **已实现（v0.4）**：写入经 Node 单写者数据服务（`server/`）：Zod 校验 + 原子写入，审计日志 `data/activity.jsonl`；前端经 `/api` 访问（ADR-0004）。
 - **完成语义**：任务完成 = `status:'done'` + `doneAt` 落盘；重新打开从审计日志还原此前的 `status`。
 - **澄清联动**：收件箱条目澄清后 `status:'clarified'` 且 `linkedId` 指向新实体；新任务带 `sourceInboxId` 反指；撤销澄清（`revert`）会删除该次澄清创建的实体。
+- **编辑 / 回收站（v0.5 · Slice E2）**：四种可写实体（task / project / note / resource）经 `POST /api/<kind>/<id>/update` 部分更新（字段白名单，保留 id / createdAt，递增 updatedAt）；删除走回收站（`data/trash/`，见 §5.4b），可恢复或彻底删除；`POST /api/reveal` 在本机文件管理器中定位本地文件（见 ADR-0009）。
+- **通用笔记创建（v0.5 · Slice G）**：`POST /api/notes` 新建笔记（`title` 非空、`type` 白名单缺省 `memo`、`body` 为 markdown 文本；`nextId('notes')` + Zod + 原子写 + 审计 `note.create`）。总览「AI 对话归档」即经此端点落盘（标题 `AI 对话归档 · YYYY-MM-DD HH:mm`、`type:'memo'`、body 为 `**我**`/`**KERNEL**` 交替的 transcript）；只读对话 `POST /api/ai/chat` 不落盘（见 ADR-0010）。
+- **状态贯通（v0.5 · Slice H）**：编辑白名单扩充，使「已显示」的状态 / 字段可设置——`notes` 增 `areaId / projectId / distillLevel`、`resources` 增 `areaId`、`projects` 增 `goalId / nextActionId`（均经 `POST /api/<kind>/<id>/update`，审计 `<singular>.update`）。资料状态 / 笔记蒸馏层级在抽屉内以安静分段控件直接设置（判断标准见 §4.8 / §4.9）。任务快速新建 AI 补全 `POST /api/ai/task/draft { title }` 只产出建议（`contexts / energy / importance / estimateMin / dueAt / projectId / areaId / tags`，按快照过滤臆造 id / 标签），**绝不自动落盘**，应用经既有 update 端点（见 ADR-0011）。
+- 审计动作新增：`note.update` / `resource.update` / `project.update` 的 `detail.fields` 记录变更键；`task.update` 同。
 - schema 预留实体（`timeLog` / `person` / `journalEntry`）在 v1.0 前评估是否实现。
 - 字段演进必须同步更新本篇，并通过 ADR 记录重大结构变更。
