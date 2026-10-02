@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8" /><title>任务 · 三版对比</title>
+<style>
+  body { margin: 0; background: #0f0f10; color: #f4f4f5; font-family: "Inter Variable", Inter, "PingFang SC", sans-serif; }
+  .wrap { max-width: 1720px; margin: 0 auto; padding: 32px 24px 64px; }
+  h1 { font-size: 22px; margin: 0 0 20px; }
+  h1 a { color: #929298; font-size: 13px; margin-left: 12px; }
+  .row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+  figure { margin: 0; background: #1a1a1c; border: 1px solid rgba(255,255,255,.06); border-radius: 12px; overflow: hidden; }
+  figure img { display: block; width: 100%; }
+  figcaption { padding: 10px 12px 14px; font-size: 12px; color: #a1a1aa; line-height: 1.7; }
+</style>
+</head>
+<body><div class="wrap">
+<h1>任务 · 三版对比 <a href="../index.html">← 返回选型页</a></h1>
+<div class="row"><figure><img src="../previews/tasks-a.png" alt="tasks-a" /><figcaption><b>tasks-a</b><br />任务 TASKS · 变体 A · 代号：A「清单」 · 概念：单列时间分桶清单——逾期 / 今天 / 明天 / 本周 / 稍后 五组手风琴； · 点击某行在行下「就地展开」详情（描述 + 元数据 + 操作），不弹右侧抽屉。 · 阅读动线是自上而下一条线：先看清逾期的、再处理今天的，逐组往下。 · 与 B/C 的关键差异： · B 是横向状态看板（列 = 状态），一眼横向扫列； · C 是紧凑多列表格（列 = 字段），为 15+ 行扫描优化； · A 是纵向分组清单，靠「分组收合 + 行内展开」控制信息密度与阅读节奏。 · 风格：完全复用真实应用 token 与组件类（未新增色彩 / 字体 /</figcaption></figure>
+<figure><img src="../previews/tasks-b.png" alt="tasks-b" /><figcaption><b>tasks-b</b><br />任务 TASKS · 变体 B · 代号：B「看板」 · 概念：横向状态看板——列 = 状态（逾期 / 下一步 / 等待中 / 已排期 / 将来）， · 每个任务是一张紧凑卡片（勾选 + 标题 + 项目 + 上下文 + 能量 + 截止）。 · 逾期列加宽作为「每日分诊」焦点：先扫最左列，把逾期的清出去，再往右推。 · 与 A/C 的关键差异： · A 是纵向时间分桶清单（行内展开详情）； · C 是紧凑多列表格（字段列，15+ 行扫描）； · B 是横向状态分列（卡片列，按状态推进 / 拖拽的心智模型）。 · 风格：完全复用真实应用 token 与组件类（k-kanban / k-pcard </figcaption></figure>
+<figure><img src="../previews/tasks-c.png" alt="tasks-c" /><figcaption><b>tasks-c</b><br />任务 TASKS · 变体 C · 代号：C「表格」 · 概念：紧凑而舒适的多列表格——列 = 字段（完成勾选 / 标题 / 上下文 / 能量 / · 截止 / 项目），表头吸顶，一行一任务，为「15+ 行快速扫描」优化。 · 筛选压缩到一行、计数并入工具条，把纵向空间全部留给数据行。 · 与 A/B 的关键差异： · A 是纵向时间分桶清单（行内展开详情），阅读节奏优先； · B 是横向状态看板（卡片列），按状态推进； · C 是二维字段表格（行 × 列），扫描与比较优先、信息密度最高。 · 风格：完全复用真实应用 token 与组件类（k-table / k-task__* / k-pil</figcaption></figure></div>
+</div></body></html>

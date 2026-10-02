@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8" /><title>详情面板 · 三版对比</title>
+<style>
+  body { margin: 0; background: #0f0f10; color: #f4f4f5; font-family: "Inter Variable", Inter, "PingFang SC", sans-serif; }
+  .wrap { max-width: 1720px; margin: 0 auto; padding: 32px 24px 64px; }
+  h1 { font-size: 22px; margin: 0 0 20px; }
+  h1 a { color: #929298; font-size: 13px; margin-left: 12px; }
+  .row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+  figure { margin: 0; background: #1a1a1c; border: 1px solid rgba(255,255,255,.06); border-radius: 12px; overflow: hidden; }
+  figure img { display: block; width: 100%; }
+  figcaption { padding: 10px 12px 14px; font-size: 12px; color: #a1a1aa; line-height: 1.7; }
+</style>
+</head>
+<body><div class="wrap">
+<h1>详情面板 · 三版对比 <a href="../index.html">← 返回选型页</a></h1>
+<div class="row"><figure><img src="../previews/detail-task-a.png" alt="detail-task-a" /><figcaption><b>detail-task-a</b><br />详情抽屉 DETAIL · 任务 · 变体 A · 代号：A「单列」 · 概念：在现有抽屉基线上精化的单列阅读流——kicker / 放大标题 / 摘要胶囊行 / · 字段清单（.k-dl）/ 标签 / 备注 / 底部行动区；用「摘要 → 字段 → 备注 → · 操作」的单一纵向动线建立层级与间距节奏。 · 与 B/C 的关键差异： · B「双栏」把主内容（说明 / 子任务）与元数据（2 列字段网格）拆成两区； · C「行动优先」把关键操作提到顶部行动带，再分「关于 / 关联 / 记录」； · A 是「先看清是什么、再读字段、最后操作」的经典单列，最接近现状、改动最小。 · 风格：完全复用真实</figcaption></figure>
+<figure><img src="../previews/detail-task-b.png" alt="detail-task-b" /><figcaption><b>detail-task-b</b><br />详情抽屉 DETAIL · 任务 · 变体 B · 代号：B「双栏」 · 概念：把抽屉内容拆成两区——上区「主体」（说明 + 子任务清单，回答“要做什么”）， · 下区「元数据」（2 列紧凑字段网格 + 标签 + 项目/区域链接）置于下沉表面， · 用 2 列网格把 9 条字段压短一半；底部行动区收束。 · 与 A/C 的关键差异： · A 是单列纵向阅读流（字段与内容交错为一条线）； · C 把操作提到最顶部、再分「关于 / 关联 / 记录」； · B 用「内容区 vs 元数据区」的二分，把可读内容与可扫字段分层，字段密度最高。 · 风格：完全复用真实 token 与组件类（未新增色彩 / </figcaption></figure>
+<figure><img src="../previews/detail-task-c.png" alt="detail-task-c" /><figcaption><b>detail-task-c</b><br />详情抽屉 DETAIL · 任务 · 变体 C · 代号：C「行动优先」 · 概念：把操作提到最前——顶部行动带（大号「标记完成」+「延后」「改期」两次操作）， · 其后才是阅读区：分组为「关于」（2 列字段网格）/「关联」（同项目任务 + 来源）/ · 「记录」（创建 / 更新时间），底部只留一条极简出口。 · 与 A/B 的关键差异： · A 是「先读后做」的单列流，操作在底部； · B 是「内容区 vs 元数据区」二分，重字段密度； · C 是「先做后确认」的行动导向：一眼看到主操作，细节按需下读。 · 风格：完全复用真实 token 与组件类（未新增色彩 / 字体 / 圆角 / 阴影）</figcaption></figure>
+<figure><img src="../previews/detail-note-a.png" alt="detail-note-a" /><figcaption><b>detail-note-a</b><br />详情抽屉 DETAIL · 笔记 · 变体 A · 代号：A「单列」 · 概念：笔记阅读抽屉的精化单列——放大的标题 / 属性字段（类型·蒸馏·更新）/ · 标签 / 正文（.k-markdown 完整渲染真实 Markdown）/ 反向链接；用发际线分隔 · 建立「属性 → 正文 → 关联」三段阅读节奏。 · 与任务 A 同属「单列」方向，骨架一致而内容域不同：任务偏字段+操作，笔记偏正文阅读。 · 与任务 B/C 的差异：B 分内容/元数据两区，C 行动优先；笔记 A 保持纯阅读动线。 · 风格：完全复用真实 token 与组件类（未新增色彩 / 字体 / 圆角 / 阴影）。 · 内容：n</figcaption></figure>
+<figure><img src="../previews/detail-event-a.png" alt="detail-event-a" /><figcaption><b>detail-event-a</b><br />详情抽屉 DETAIL · 日程 · 变体 A · 代号：A「单列」 · 概念：日程条目的单列详情——kicker / 放大标题 / 字段清单（时间·日期·全天·地点 · 状态·区域·项目）/ 标签；无底部操作（事件只读，故 footer-less）。 · 与任务 A 同属「单列」方向，骨架一致；差异在字段域与「无操作」的克制收尾。 · 与任务 B/C 的差异：B 分内容/元数据两区，C 行动优先；事件 A 保持纯信息读取。 · 风格：完全复用真实 token 与组件类（未新增色彩 / 字体 / 圆角 / 阴影）。 · 内容：e-0003 取自 data/events（无 projectId，</figcaption></figure></div>
+</div></body></html>

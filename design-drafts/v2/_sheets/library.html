@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8" /><title>资料 · 三版对比</title>
+<style>
+  body { margin: 0; background: #0f0f10; color: #f4f4f5; font-family: "Inter Variable", Inter, "PingFang SC", sans-serif; }
+  .wrap { max-width: 1720px; margin: 0 auto; padding: 32px 24px 64px; }
+  h1 { font-size: 22px; margin: 0 0 20px; }
+  h1 a { color: #929298; font-size: 13px; margin-left: 12px; }
+  .row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+  figure { margin: 0; background: #1a1a1c; border: 1px solid rgba(255,255,255,.06); border-radius: 12px; overflow: hidden; }
+  figure img { display: block; width: 100%; }
+  figcaption { padding: 10px 12px 14px; font-size: 12px; color: #a1a1aa; line-height: 1.7; }
+</style>
+</head>
+<body><div class="wrap">
+<h1>资料 · 三版对比 <a href="../index.html">← 返回选型页</a></h1>
+<div class="row"><figure><img src="../previews/library-a.png" alt="library-a" /><figcaption><b>library-a</b><br />资料 LIBRARY · 变体 A「列表」 · 概念：现有行式清单的精化——清晰分段标签行 + 单一整合过滤条（把 笔记类型 / · 资料类型 / 状态 / 标签 四组筛选收进一条紧凑分段带）+ 笔记 / 资料两个 · 章节头；行内固定四段：类型标签 · 标题 · 蒸馏度 · 相对时间。 · 与 B/C 关键差异：唯一「单列双区连续清单」方案，一屏纵向扫读、信息密度最高； · B 是 2–3 列卡片网格（标签切页 + 极简筛选）；C 是三栏知识工作台 · （左导航带计数 / 中列表 / 右 Markdown 阅读区）。 · 移动端设想：过滤条横向可滚动不换行；行内类型标签与蒸馏、时间降为第二行</figcaption></figure>
+<figure><img src="../previews/library-b.png" alt="library-b" /><figcaption><b>library-b</b><br />资料 LIBRARY · 变体 B「卡片网格」 · 概念：把笔记与资料当作可平铺的文献卡——2–3 列卡片网格，每卡 = 类型胶囊 + · 标题 + 一行摘要（笔记取自正文首句；资料取自 url / 类型）+ 蒸馏点或状态 · + 相对时间；顶部用分段控件切换 全部 / 笔记 / 资料，筛选保持极简。 · 与 A/C 关键差异：唯一「网格平铺」方案，视觉节奏与浏览性优先于行密度； · A 是单列双区连续清单（信息密度最高）；C 是三栏知识工作台 · （左导航带计数 / 中列表 / 右 Markdown 阅读区）。 · 移动端设想：网格在 route 收窄时降为单列；分段控件与极简筛选行保持一行</figcaption></figure>
+<figure><img src="../previews/library-c.png" alt="library-c" /><figcaption><b>library-c</b><br />资料 LIBRARY · 变体 C「三栏」 · 概念：知识工作台——左栏为类型 / 状态 / 标签导航（每项带计数，可当筛选器）， · 中栏为结果列表（当前定位 n-0001），右栏为阅读区：用 .k-markdown 原样 · 渲染真实笔记正文（标题 / 列表 / 小节），下方接 .k-detail-block 反向链接 · 与引用外链。三栏并置，导航 → 扫描 → 阅读一气呵成。 · 与 A/B 关键差异：唯一「常驻导航 + 常驻阅读区」方案，三栏同屏、无抽屉； · A 是单列双区连续清单；B 是 2–3 列卡片网格平铺。 · 移动端设想：route 收窄时左导航先隐藏（降为顶部横向筛选）</figcaption></figure></div>
+</div></body></html>

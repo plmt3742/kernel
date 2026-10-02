@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>KERNEL · 设计稿 v2 · 基础模板</title>
+    <!-- 本地字体（设计草稿专用：Inter；等宽回退到系统栈） -->
+    <style>
+      @font-face {
+        font-family: 'Inter Variable';
+        src: url('/design-drafts/fonts/inter-latin-wght-normal.woff2') format('woff2-variations');
+        font-weight: 100 900;
+        font-display: swap;
+      }
+      @font-face {
+        font-family: 'Inter Variable';
+        src: url('/design-drafts/fonts/inter-latin-ext-wght-normal.woff2') format('woff2-variations');
+        font-weight: 100 900;
+        font-display: swap;
+      }
+    </style>
+    <!-- 真实应用样式（唯一风格来源；变体只在此基础上做排版与组件编排，不改色彩/圆角/阴影/字体） -->
+    <link rel="stylesheet" href="/src/styles/tokens.css" />
+    <link rel="stylesheet" href="/src/styles/base.css" />
+    <link rel="stylesheet" href="/src/styles/shell.css" />
+    <link rel="stylesheet" href="/src/styles/components.css" />
+    <link rel="stylesheet" href="/src/styles/views.css" />
+    <style>
+      /* =========================================================================
+       * 变体局部样式区（每个变体文件在此定义自己的排版网格 / 布局）
+       * 纪律：颜色、圆角、阴影、字号只用 var(--token)；结构性尺寸（grid/flex/gap）
+       *       可以用 px / minmax / fr / clamp。不要引入新色值、新字体、新依赖。
+       * 示例：
+       * .d-grid { display: grid; grid-template-columns: 2fr 1fr; gap: var(--space-5); }
+       * ========================================================================= */
+    </style>
+  </head>
+  <body>
+    <!--
+      ============================================================================
+      KERNEL 设计稿 v2 · 基础模板（_base.html）
+      用法：复制本文件为 <page>-<variant>.html，替换「变体内容」区的示例内容。
+      说明：
+      - 应用壳（rail / topbar / statusbar）保持与真实应用一致，供页面在真实上下文中被评审。
+      - 图标为简化内联 SVG（布局评估用，不必与 lucide 完全一致）。
+      - 内容一律用真实感的示例数据（可从 src/views/*.tsx 与 data/ 取材）。
+      ============================================================================
+    -->
+    <div class="k-app" data-rail="expanded">
+      <!-- 左侧索引轨道 -->
+      <nav class="k-rail" aria-label="主导航">
+        <div class="k-rail__brand">
+          <span class="k-rail__mark" aria-hidden>K</span>
+          <span class="k-rail__brandtext">
+            <b>KERNEL</b>
+            <span class="u-label k-muted">v0.4.0</span>
+          </span>
+        </div>
+        <ul class="k-rail__list">
+          <li>
+            <a class="k-rail__item is-active" href="#">
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+              <span class="k-rail__cn">总览</span>
+            </a>
+          </li>
+          <li>
+            <a class="k-rail__item" href="#">
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-5.5l-1.5 2.5h-6L7.5 12H2"/><path d="M6 4h12l4 7v7a1.5 1.5 0 0 1-1.5 1.5h-17A1.5 1.5 0 0 1 2 18v-7z"/></svg>
+              <span class="k-rail__cn">收件箱</span>
+            </a>
+          </li>
+          <li>
+            <a class="k-rail__item" href="#">
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h12M3 12h12M3 18h12"/><path d="m18 5.5 1.6 1.6L22.5 4"/><path d="m18 17.5 1.6 1.6 2.9-3.1"/></svg>
+              <span class="k-rail__cn">任务</span>
+            </a>
+          </li>
+          <li>
+            <a class="k-rail__item" href="#">
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></svg>
+              <span class="k-rail__cn">日程</span>
+            </a>
+          </li>
+          <li>
+            <a class="k-rail__item" href="#">
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+              <span class="k-rail__cn">项目</span>
+            </a>
+          </li>
+          <li>
+            <a class="k-rail__item" href="#">
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h4v16H4zM10.5 4h4v16h-4z"/><path d="m17 5 4 1-2.5 14-4-1z"/></svg>
+              <span class="k-rail__cn">资料</span>
+            </a>
+          </li>
+          <li>
+            <a class="k-rail__item" href="#">
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 2.6-6.3"/><path d="M3 4v4h4"/></svg>
+              <span class="k-rail__cn">回顾</span>
+            </a>
+          </li>
+          <li>
+            <a class="k-rail__item" href="#">
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.2 5.2l2.1 2.1M16.7 16.7l2.1 2.1M18.8 5.2l-2.1 2.1M7.3 16.7l-2.1 2.1"/></svg>
+              <span class="k-rail__cn">设置</span>
+            </a>
+          </li>
+        </ul>
+        <div class="k-rail__foot">
+          <button class="k-rail__toggle" type="button">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/><path d="m14 9 3 3-3 3"/></svg>
+            <span class="u-label">COLLAPSE</span>
+          </button>
+        </div>
+      </nav>
+
+      <div class="k-main">
+        <!-- 顶栏（标题对：中文 + 英文小标签；右侧工具） -->
+        <header class="k-topbar">
+          <div class="k-topbar__inner">
+            <div class="k-topbar__id">
+              <h1 class="k-topbar__title">总览</h1>
+              <span class="k-topbar__en u-label">OVERVIEW</span>
+            </div>
+            <div class="k-topbar__tools">
+              <button class="k-btn" type="button">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3"/></svg>
+                <span class="u-label">命令</span>
+                <kbd class="k-kbd">Ctrl K</kbd>
+              </button>
+              <button class="k-iconbtn" type="button" aria-label="切换主题">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+              </button>
+            </div>
+          </div>
+        </header>
+
+        <main class="k-content">
+          <div class="k-route">
+            <div class="k-view">
+              <!-- ============================================================
+                   变体内容区（示例：状态胶囊 + 统计瓦片 + 面板）
+                   替换为你的变体排版；以下是组件的标准用法示例，供参考与复用。
+                   ============================================================ -->
+
+              <!-- 状态胶囊行 -->
+              <div class="k-chips">
+                <span class="k-chip"><span class="k-chip__dot"></span>下一项 · ACM 实验室训练赛 19:00</span>
+                <span class="k-chip"><span class="k-chip__dot k-chip__dot--quiet"></span>收件箱 · 6 待处理</span>
+                <span class="k-chip"><span class="k-chip__dot k-chip__dot--accent"></span>逾期 · 5 项</span>
+              </div>
+
+              <!-- 统计瓦片（示例两个） -->
+              <div class="k-overview__stats">
+                <div class="k-stat">
+                  <span class="k-stat__label">收件箱水位</span>
+                  <span class="k-stat__value">6<span class="k-stat__suffix">/ 10</span></span>
+                  <span class="k-stat__foot">低于阈值 · 存量健康</span>
+                </div>
+                <div class="k-stat k-stat--accent">
+                  <span class="k-stat__label">进行中项目</span>
+                  <span class="k-stat__value">9<span class="k-stat__suffix">/ 3</span></span>
+                  <span class="k-stat__foot">超出在制品上限</span>
+                </div>
+              </div>
+
+              <!-- 面板 + 任务行（示例） -->
+              <section class="k-panel">
+                <header class="k-panel__head">
+                  <h2 class="k-panel__cn">下一步行动</h2>
+                  <span class="k-panel__en u-label">NEXT ACTIONS</span>
+                  <div class="k-panel__actions">
+                    <span class="u-label k-muted">3 项</span>
+                  </div>
+                </header>
+                <div class="k-tasklist-mini">
+                  <div class="k-task">
+                    <button class="k-check" type="button" aria-label="完成"></button>
+                    <button class="k-task__open" type="button">
+                      <span class="k-task__titlewrap">
+                        <span class="k-task__title">给 demo 实验室发面试确认邮件</span>
+                        <span class="k-task__strike" aria-hidden></span>
+                      </span>
+                      <span class="k-task__meta">
+                        <span class="k-pill">@computer</span>
+                        <span class="k-task__energy">低能</span>
+                        <span class="k-task__due">截止 后天</span>
+                      </span>
+                    </button>
+                  </div>
+                  <div class="k-task">
+                    <button class="k-check" type="button" aria-label="完成"></button>
+                    <button class="k-task__open" type="button">
+                      <span class="k-task__titlewrap">
+                        <span class="k-task__title">数据结构实验报告二（二叉树）提交</span>
+                        <span class="k-task__strike" aria-hidden></span>
+                      </span>
+                      <span class="k-task__meta">
+                        <span class="k-pill">@campus</span>
+                        <span class="k-task__energy">中能</span>
+                        <span class="k-task__due">截止 3 天后</span>
+                      </span>
+                    </button>
+                  </div>
+                </div>
+              </section>
+
+              <!-- 变体内容区结束 -->
+            </div>
+          </div>
+        </main>
+      </div>
+
+      <!-- 底部状态条 -->
+      <footer class="k-statusbar u-label">
+        <span class="k-statusbar__cell k-statusbar__cell--ink">16:20:16</span>
+        <span class="k-statusbar__sep"></span>
+        <span class="k-statusbar__cell">INBOX <b>6</b></span>
+        <span class="k-statusbar__sep k-statusbar__desktop-only"></span>
+        <span class="k-statusbar__cell k-statusbar__desktop-only">WIP 9</span>
+        <span class="k-statusbar__sep k-statusbar__desktop-only"></span>
+        <span class="k-statusbar__cell k-statusbar__desktop-only">DATA · 146 RECORDS</span>
+        <span class="k-statusbar__spacer"></span>
+        <span class="k-statusbar__cell k-statusbar__cell--accent k-statusbar__desktop-only">AI: OFFLINE · 待接入 v0.5</span>
+        <span class="k-statusbar__sep k-statusbar__desktop-only"></span>
+        <span class="k-statusbar__cell k-svc-pill is-ok">数据 · 在线</span>
+      </footer>
+    </div>
+  </body>
+</html>

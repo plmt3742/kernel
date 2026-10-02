@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8" /><title>项目 · 三版对比</title>
+<style>
+  body { margin: 0; background: #0f0f10; color: #f4f4f5; font-family: "Inter Variable", Inter, "PingFang SC", sans-serif; }
+  .wrap { max-width: 1720px; margin: 0 auto; padding: 32px 24px 64px; }
+  h1 { font-size: 22px; margin: 0 0 20px; }
+  h1 a { color: #929298; font-size: 13px; margin-left: 12px; }
+  .row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+  figure { margin: 0; background: #1a1a1c; border: 1px solid rgba(255,255,255,.06); border-radius: 12px; overflow: hidden; }
+  figure img { display: block; width: 100%; }
+  figcaption { padding: 10px 12px 14px; font-size: 12px; color: #a1a1aa; line-height: 1.7; }
+</style>
+</head>
+<body><div class="wrap">
+<h1>项目 · 三版对比 <a href="../index.html">← 返回选型页</a></h1>
+<div class="row"><figure><img src="../previews/projects-a.png" alt="projects-a" /><figcaption><b>projects-a</b><br />项目 PROJECTS · 变体 A「看板」 · 概念：现状四列看板的精化——保留状态分列的心智，但把「空列」从占半屏的大虚框 · 降级为一条安静的窄列（00 · 暂无项目），版面还给进行中的承诺；卡片信息 · 重新分层（ID/区域 → 标题 → 完成定义 → 下一步 → 进度 → 脚注），让每张卡 · 都能被 3 秒读懂。 · 与 B/C 关键差异：唯一按「状态列」组织的方案；卡片纵向堆叠在各自状态列内。 · B 是单列可纵扫的列表；C 是按进度卡片的 2–3 列网格（非状态列）。 · 移动端设想：route 容器 &lt;1120px 收为 2 列、&lt;640px 收为单列；空列提示仍成立。</figcaption></figure>
+<figure><img src="../previews/projects-b.png" alt="projects-b" /><figcaption><b>projects-b</b><br />项目 PROJECTS · 变体 B「列表」 · 概念：纵向一览——每个项目一行（标题 + 状态胶囊 + 完成定义 + 下一步 + 内联进度 · 计 + 截止），按状态分组、组头安静收敛。目标是一屏扫完全部承诺，比较 · 各项目推进度与下一步，而不是在四列间左右找。 · 与 A/C 关键差异：唯一「单列纵扫」方案，行内信息密度最高；不按状态分列，而是 · 分组纵向排列。A 是状态看板；C 是 2–3 列卡片网格并把非活跃项目折进脚条。 · 移动端设想：route 容器收窄时行内右栏（进度/截止）下移为第二行，标题行不换行。</figcaption></figure>
+<figure><img src="../previews/projects-c.png" alt="projects-c" /><figcaption><b>projects-c</b><br />项目 PROJECTS · 变体 C「卡片网格」 · 概念：把项目当作「进度卡片」平铺进 2–3 列响应式网格，用 CSS 圆环（conic-gradient， · 仅 token 取色）一眼读出推进度；进行中的项目优先铺满网格，非活跃项目 · （暂停/将来/已完成）折进底部一条紧凑脚条，避免空网格与空列占地。 · 与 A/B 关键差异：唯一「卡片网格」方案，不按状态分列；进度用环 + 数字而非横条； · 非活跃状态折叠为「暂停 0 · 将来 1 · 已完成 0」计数脚条。A 是状态看板； · B 是单列纵扫列表。 · 移动端设想：route 容器 &lt;1000px 收为 2 列、&lt;640px </figcaption></figure></div>
+</div></body></html>
