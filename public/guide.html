@@ -1049,7 +1049,8 @@ body.demo-locked { overflow: hidden; }
             <ul>
               <li>周回顾 / 月回顾两张卡并列一栏，排在能量分析之上</li>
               <li>指标瓦片：捕获 / 新增 / 完成 / 逾期</li>
-              <li>点「AI 解析」生成报告，再点「查阅报告」在动画弹窗里读</li>
+              <li>点「AI 解析」生成七段报告：结论速览 → 数据解读 → 趋势对比 → 问题诊断 → 值得保留 → 下期行动 → 风险预警</li>
+              <li>报告历史按时间倒序自动归档，点开即可查阅、可删除</li>
               <li class="signal">停滞项目独立一栏，可迁移或归档（真实落盘，可撤销）</li>
             </ul>
           </article>
@@ -1096,13 +1097,14 @@ body.demo-locked { overflow: hidden; }
         <p>在任务页只写一个标题回车，会先弹出确认窗口；AI 在窗口里安静地补全字段（上下文、能量、重要性、预估、截止、项目、区域、标签），你可以任意修改。只有点「创建任务」，数据才会写入。按 ESC、点遮罩或「取消」则什么都不写；AI 迟到或失败也不影响你继续填写与创建。</p>
 
         <h3>回顾报告（周 / 月）</h3>
-        <p>回顾页的周、月两张卡各有「AI 解析」。点一下，AI 读整个系统生成该周期的报告：指标 + 摘要 + 决策 + 停滞项目的处置建议。生成后点「查阅报告」，在弹窗里读；草稿可以编辑，满意就保存落盘，保存也能撤销。</p>
+        <p>回顾页的周、月两张卡各有「AI 解析」。点一下，AI 读整个系统生成一份<strong>七段结构报告</strong>：结论速览、本期数据解读、趋势与对比、问题诊断、值得保留、下期行动、风险预警——每个判断都带具体数字或对象，绝对值一律带环比基准，行动写成「如果…，那么…」并注明何时完成、完成标准是什么。全篇尽量短句、通俗，且随时可编辑。</p>
+        <p>每次生成都会<strong>按时间自动归档</strong>到「报告历史」：随时点开查阅、可删除；编辑后点「保存回顾」更新同一条，不会重复堆记录。</p>
 
         <div class="callout">
           <p class="callout__label">三条红线</p>
           <div class="redlines">
             <div class="redline"><span class="redline__n">01</span><span><b>只出建议</b> — AI 从不直接改你的数据。</span></div>
-            <div class="redline"><span class="redline__n">02</span><span><b>确认才写入</b> — 只有你点「应用建议」「应用」或「保存回顾」，数据才会落盘；快速新建的建议同样要你点头。</span></div>
+            <div class="redline"><span class="redline__n">02</span><span><b>确认才写入</b> — 任务 / 项目等记录只有你点「应用建议」「应用」或「创建任务」才落盘；回顾报告生成即自动归档（可删除、编辑保存更新同一条）。</span></div>
             <div class="redline"><span class="redline__n">03</span><span><b>随时撤销</b> — 每次写入都带着 5 秒的撤销窗口。</span></div>
           </div>
         </div>
@@ -1143,7 +1145,7 @@ body.demo-locked { overflow: hidden; }
           <div class="mind"><strong>能量匹配</strong><span>低能量时做 <code class="inl">@phone</code> 这类低耗任务，而不是硬啃大块工作。</span></div>
           <div class="mind"><strong>撤销兜底</strong><span>完成、澄清、批量、AI 应用——5 秒内全可撤，放心操作。</span></div>
           <div class="mind"><strong>清空即归档</strong><span>对话清空不是删除：先归档成一条笔记，想找回就去资料库。</span></div>
-          <div class="mind hot"><strong>建议要你点头</strong><span>解析、快速新建、回顾报告——AI 只给建议，落盘永远等你点「应用建议」「创建任务」或「保存」。</span></div>
+            <div class="mind hot"><strong>建议要你点头</strong><span>解析、快速新建——AI 只给建议，落盘永远等你点「应用建议」「创建任务」。回顾报告生成即自动归档（可删除），编辑保存更新同一条。</span></div>
           <div class="mind hot"><strong>周回顾是心跳</strong><span>每周固定一晚，短、可视。系统靠它维持节奏。</span></div>
         </div>
       </section>
@@ -1211,7 +1213,7 @@ body.demo-locked { overflow: hidden; }
 
           <article class="qa">
             <h3>AI 的建议会自动应用吗？</h3>
-            <p>不会，任何建议都要你点头。收件箱解析、任务快速新建的补全、回顾报告都只是建议——只有你点「应用建议」「创建任务」或「保存回顾」，数据才会写入，且写入后 5 秒内可撤销。收件箱的建议还可以先「编辑」成你要的样子再应用。</p>
+            <p>不会，任何建议都要你点头。收件箱解析、任务快速新建的补全都只是建议——只有你点「应用建议」「创建任务」，任务 / 项目等记录才会写入，且写入后 5 秒内可撤销。回顾报告是个例外：生成即自动归档（可删除、可编辑后保存更新同一条）。收件箱的建议还可以先「编辑」成你要的样子再应用。</p>
           </article>
 
           <article class="qa">

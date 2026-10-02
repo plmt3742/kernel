@@ -406,23 +406,36 @@ export interface StaleAdvice {
   reason: string
 }
 
-/** AI 周回顾草稿（对应服务端 /api/ai/review/draft 响应） */
+/** AI 周回顾草稿（对应服务端 /api/ai/review/draft 响应；Slice L 起含自动归档 id） */
 export interface ReviewDraft {
+  /** 生成时自动归档的 review id——「保存回顾」据此更新同一记录（不重复建） */
+  reviewId: string
+  /** 归档时间（生成时刻） */
+  archivedAt?: string
   periodKey: string
   metrics: ReviewMetrics
+  /** 上一同等周期指标（环比基准，供 UI 参考；可选） */
+  prevMetrics?: ReviewMetrics
   summary: string
   decisions: string[]
   staleAdvice: StaleAdvice[]
+  /** 实际停滞项目 id（服务端计算；报告归档用） */
+  staleProjectIds?: string[]
+  /** 数字落地护栏结果：false 表示有越界数字（仍保留并记录） */
+  grounded?: boolean
   model: string | null
   ms: number
 }
 
-/** 请求 AI 生成回顾草稿（周 / 月，Slice F）；不写数据（失败抛出由调用方提示） */
+/**
+ * 请求 AI 生成回顾草稿（周 / 月，Slice F）；服务端成功后**自动归档**一条 review
+ * （审计 review.create · auto），返回其 reviewId（Slice L）。失败抛出由调用方提示。
+ */
 export async function generateReviewDraft(period: ReviewType = 'weekly'): Promise<ReviewDraft> {
   return api.post<ReviewDraft>('/api/ai/review/draft', { period })
 }
 
-/** 保存回顾：服务端计算 id / 周期 / 指标 / 停滞项目；返回落盘记录（type 缺省周，行为不变） */
+/** 保存回顾（fallback）：服务端计算 id / 周期 / 指标 / 停滞项目；返回落盘记录 */
 export async function saveReview(
   summary: string,
   decisions: string[],
@@ -437,7 +450,24 @@ export async function saveReview(
   return review
 }
 
-/** 删除回顾（撤销保存） */
+/**
+ * 更新已归档回顾（Slice L）：编辑并保存「保存回顾」更新**同一**记录——
+ * 服务端白名单仅 summary / decisions + 递增 updatedAt + 审计 review.update。
+ */
+export async function updateReview(
+  id: string,
+  summary: string,
+  decisions: string[],
+): Promise<Review> {
+  const { review } = await api.post<{ review: Review }>(`/api/reviews/${id}/update`, {
+    summary,
+    decisions,
+  })
+  upsertEntity('reviews', review)
+  return review
+}
+
+/** 删除回顾（撤销保存 / 删除归档报告） */
 export async function removeReview(id: string): Promise<void> {
   await api.post<{ removed: { kind: 'reviews'; id: string } }>(`/api/reviews/${id}/remove`)
   removeEntity('reviews', id)

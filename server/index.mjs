@@ -584,13 +584,55 @@ async function createReview(body) {
     decisions,
     summary,
     staleProjectIds: staleProjects(snapshot, 14, now).map((project) => project.id),
+    source: body.source === 'ai' ? 'ai' : 'manual',
   }
-  const source = body.source === 'ai' || body.source === 'manual' ? body.source : undefined
   const saved = await commit('reviews', review, {
     action: 'review.create',
     entity: 'review',
     id: review.id,
-    detail: { source },
+    detail: { source: review.source },
+  })
+  return { review: saved }
+}
+
+/**
+ * 编辑回顾（v0.5 · Slice L，见 ADR-0013）：白名单仅 summary / decisions；
+ * 保留 id / type / periodKey / date / metrics / staleProjectIds；递增 updatedAt；
+ * 审计 review.update（detail.fields 记录改动键）。供「保存回顾」更新自动归档的同一记录
+ * （避免重复建记录）。
+ */
+async function updateReview(id, body) {
+  const review = await readEntity('reviews', id)
+  if (review === null) throw Object.assign(new Error('回顾不存在'), { status: 404 })
+  const next = { ...review }
+  const fields = []
+  if (Object.prototype.hasOwnProperty.call(body, 'summary')) {
+    const summary = typeof body.summary === 'string' ? body.summary.trim() : ''
+    if (summary === '') throw Object.assign(new Error('摘要不能为空'), { status: 400 })
+    if (next.summary !== summary) {
+      next.summary = summary
+      fields.push('summary')
+    }
+  }
+  if (Object.prototype.hasOwnProperty.call(body, 'decisions')) {
+    if (!Array.isArray(body.decisions)) {
+      throw Object.assign(new Error('决策必须为数组'), { status: 400 })
+    }
+    const decisions = body.decisions.map((item) => (typeof item === 'string' ? item.trim() : ''))
+    if (decisions.some((item) => item === '')) {
+      throw Object.assign(new Error('决策不能为空字符串'), { status: 400 })
+    }
+    if (JSON.stringify(next.decisions) !== JSON.stringify(decisions)) {
+      next.decisions = decisions
+      fields.push('decisions')
+    }
+  }
+  next.updatedAt = nowIso()
+  const saved = await commit('reviews', next, {
+    action: 'review.update',
+    entity: 'review',
+    id,
+    detail: { fields },
   })
   return { review: saved }
 }
@@ -737,6 +779,8 @@ const FILES_RE = /^\/api\/files\/([^/]+)$/
 const AI_INBOX_PARSE_RE = /^\/api\/ai\/inbox\/([^/]+)\/parse$/
 const AI_INBOX_PARSE_STREAM_RE = /^\/api\/ai\/inbox\/([^/]+)\/parse-stream$/
 const REVIEW_REMOVE_RE = /^\/api\/reviews\/([^/]+)\/remove$/
+/** 编辑归档回顾（Slice L）：/api/reviews/<id>/update */
+const REVIEW_UPDATE_RE = /^\/api\/reviews\/([^/]+)\/update$/
 /** 编辑 / 移入回收站（Slice E2）：/api/<kind>/<id>/(update|trash) */
 const EDITABLE_GROUP = EDITABLE_KINDS.join('|')
 const ENTITY_ACTION_RE = new RegExp(`^/api/(${EDITABLE_GROUP})/([^/]+)/(update|trash)$`)
@@ -901,12 +945,47 @@ const server = http.createServer(async (req, res) => {
         console.error('[ai] review.draft 失败：', err?.message ?? err)
         return fail(res, 502, err?.message ?? 'AI 调用失败')
       }
-      console.log(`[ai] review.draft ok ${result.ms}ms`)
-      send(res, 200, result)
+      // 自动归档（Slice L）：每次成功生成即落一条 review（审计 review.create + auto 标记），
+      // 前端据此在「报告历史」按时间查阅；保存编辑走 /api/reviews/:id/update（不重复建）。
+      const review = {
+        id: await nextId('reviews'),
+        type: period,
+        periodKey: result.periodKey,
+        // date 即归档时间（生成时刻）；updatedAt 由编辑路径 bump
+        date: nowIso(),
+        metrics: result.metrics,
+        decisions: result.decisions,
+        summary: result.summary,
+        staleProjectIds: result.staleProjectIds,
+        source: 'ai',
+      }
+      let saved
+      try {
+        saved = await commit('reviews', review, {
+          action: 'review.create',
+          entity: 'review',
+          id: review.id,
+          detail: { source: 'ai', auto: true, periodKey: review.periodKey, grounded: result.grounded },
+        })
+      } catch (err) {
+        console.error('[ai] review.draft 归档失败：', err?.message ?? err)
+        return fail(res, 500, `报告归档失败：${err?.message ?? err}`)
+      }
+      console.log(`[ai] review.draft ok ${result.ms}ms · 归档 ${saved.id}`)
+      send(res, 200, { ...result, reviewId: saved.id, archivedAt: saved.date })
       return
     }
     if (method === 'POST' && pathname === '/api/reviews') {
       send(res, 201, await createReview(await readBody(req)))
+      return
+    }
+    const reviewUpdateMatch = REVIEW_UPDATE_RE.exec(pathname)
+    if (method === 'POST' && reviewUpdateMatch !== null) {
+      const id = decodeURIComponent(reviewUpdateMatch[1])
+      if (!validId('reviews', id)) return fail(res, 400, '回顾 id 格式不正确')
+      const result = await updateReview(id, await readBody(req))
+      console.log(`[data] review.update ${id}`)
+      send(res, 200, result)
       return
     }
     const reviewRemoveMatch = REVIEW_REMOVE_RE.exec(pathname)

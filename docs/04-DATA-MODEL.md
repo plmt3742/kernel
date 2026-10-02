@@ -201,11 +201,15 @@
 | periodKey | string | 如 `2026-W40` |
 | date | ISO | |
 | metrics | object | `{captured, created, completed, overdue, migrated?}` —— `migrated` 可缺省（生成流程暂不产出；编辑追踪落地后补，见 ADR-0007） |
-| decisions | string[] | |
-| summary | string | |
+| decisions | string[] | 1–3 条 if-then 行动（服务端后校验截断至 3 条 × ≤200 字） |
+| summary | string | 七段结构正文（结论速览 → 数据解读 → 趋势对比 → 问题诊断 → 值得保留 → 下期行动 → 风险预警），≤800 字；schema 上限 2000（Slice L） |
 | staleProjectIds? | string[] | |
+| source? | `ai` \| `manual` | 来源：`ai` = 生成即自动归档；`manual` = 手工保存（旧记录缺省，Slice L） |
+| updatedAt? | ISO | 最近编辑时间（`review.update` 时 bump；旧记录缺省，Slice L） |
 
 > **月回顾（v0.5 · Slice F）**：`type:'monthly'` 现已实际产出；`periodKey` 采用 `YYYY-MM`（如 `2026-10`，镜像前端 `toMonthKey` 与后端 `monthKey`）。指标窗口 = 本机时区 1 日 00:00 → now，`captured / created / completed / overdue` 口径与周回顾完全一致；`migrated` 同样可缺省（见 ADR-0007 §6）。
+
+> **报告升级 + 自动归档（v0.5 · Slice L，见 ADR-0013）**：`summary` 升级为七段结构正文，摘要注入上一周期指标 + 环比 + 阈值 + 带 id 的清单；模型输出经「数字子集护栏」校验（越界单次纠正重试，仍越界保留并记录）。`POST /api/ai/review/draft` 成功后**自动归档**一条 `review`（`source:'ai'`、`date` = 归档时刻、审计 `review.create` · `detail.auto`），响应附 `reviewId`；前端「保存回顾」经新增的 `POST /api/reviews/:id/update` 更新**同一**记录（保留 id / type / periodKey / date / metrics / staleProjectIds，递增 `updatedAt`，审计 `review.update`），不重复建。**每次生成 = 新增一个归档版本**（时间序可查阅）；`/api/reviews/:id/remove` 删除（审计 `review.remove`）。
 
 ### 4.11 元数据
 
@@ -355,5 +359,6 @@ confirmed ──取消──> cancelled
 - **状态贯通（v0.5 · Slice H）**：编辑白名单扩充，使「已显示」的状态 / 字段可设置——`notes` 增 `areaId / projectId / distillLevel`、`resources` 增 `areaId`、`projects` 增 `goalId / nextActionId`（均经 `POST /api/<kind>/<id>/update`，审计 `<singular>.update`）。资料状态 / 笔记蒸馏层级在详情弹窗内以安静分段控件直接设置（判断标准见 §4.8 / §4.9）。任务快速新建 AI 补全 `POST /api/ai/task/draft { title }` 只产出建议（`contexts / energy / importance / estimateMin / dueAt / projectId / areaId / tags`，按快照过滤臆造 id / 标签），**绝不自动落盘**，应用经既有 update 端点（见 ADR-0011）。
 - **先确认后写入（v0.5 · Slice O）**：`POST /api/tasks` 创建时接受可选字段 `contexts / energy / importance / estimateMin / dueAt / projectId / areaId / tags`（`title` 必填不变；缺省默认同旧：`contexts ['@computer'] / energy 'low' / importance 2 / tags []`）；`projectId / areaId` 需形状合法且存在（否则 400）；审计 `task.create` 的 `detail.fields` 列出本次携带字段。任务快速新建改为**草稿确认弹窗**（确认前零写入；AI 仅预填，绝不改写标题 / 用户已改字段；AI 失败不阻断创建）；收件箱 AI 建议卡增「编辑」，应用提交编辑值经既有 `clarify`（`details` + `ai:true`）。见 ADR-0011 §6。
 - 审计动作新增：`note.update` / `resource.update` / `project.update` 的 `detail.fields` 记录变更键；`task.update` 同。
+- **回顾报告归档（v0.5 · Slice L，见 ADR-0013）**：`POST /api/ai/review/draft` 成功后自动 `commit('reviews', …)`（`source:'ai'`，审计 `review.create` · `detail.auto`）；`POST /api/reviews/:id/update` 编辑归档报告（白名单 `summary` / `decisions`，递增 `updatedAt`，审计 `review.update` · `detail.fields`）；`POST /api/reviews/:id/remove` 删除（审计 `review.remove`）。前端回顾页「报告历史」按 `date` 倒序查阅。
 - schema 预留实体（`timeLog` / `person` / `journalEntry`）在 v1.0 前评估是否实现。
 - 字段演进必须同步更新本篇，并通过 ADR 记录重大结构变更。

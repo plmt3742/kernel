@@ -850,44 +850,50 @@ function inRange(isoValue, start, end) {
 }
 
 /**
- * 本周指标：当前周（本机时区周一 00:00 → 现在）。
+ * 通用窗口指标（Slice L）：口径与周 / 月指标**完全一致**，仅参数化窗口 [start, end]。
  * captured = 收件箱 capturedAt 入区间；created = 任务 createdAt 入区间；
- * completed = 任务 doneAt 入区间；overdue = dueAt < now 且 status ∈ next/waiting/scheduled。
+ * completed = 任务 doneAt 入区间；overdue = dueAt < ref 且 status ∈ next/waiting/scheduled。
+ * `ref` 为逾期判定参考时刻（缺省 = 窗口末端 end）——算上期时传上期末尾，得到该期末的历史存量。
  * 注：migrated 刻意不产出（无编辑追踪来源），见 ADR-0007。
  */
-export function computeWeekMetrics(snapshot, now = new Date()) {
-  const weekStart = startOfWeekMonday(now)
-  const captured = (snapshot.inbox ?? []).filter((i) => inRange(i.capturedAt, weekStart, now)).length
-  const created = (snapshot.tasks ?? []).filter((t) => inRange(t.createdAt, weekStart, now)).length
-  const completed = (snapshot.tasks ?? []).filter((t) => inRange(t.doneAt, weekStart, now)).length
+export function computeMetricsForWindow(snapshot, start, end, ref = end) {
+  const captured = (snapshot.inbox ?? []).filter((i) => inRange(i.capturedAt, start, end)).length
+  const created = (snapshot.tasks ?? []).filter((t) => inRange(t.createdAt, start, end)).length
+  const completed = (snapshot.tasks ?? []).filter((t) => inRange(t.doneAt, start, end)).length
   const overdue = (snapshot.tasks ?? []).filter(
     (t) =>
       typeof t.dueAt === 'string' &&
-      new Date(t.dueAt).getTime() < now.getTime() &&
+      new Date(t.dueAt).getTime() < ref.getTime() &&
       ['next', 'waiting', 'scheduled'].includes(t.status),
   ).length
   return { captured, created, completed, overdue }
 }
 
+/** 本周指标：当前周（本机时区周一 00:00 → 现在） */
+export function computeWeekMetrics(snapshot, now = new Date()) {
+  return computeMetricsForWindow(snapshot, startOfWeekMonday(now), now, now)
+}
+
 /**
  * 本月指标（Slice F 月回顾）：窗口为本机时区 1 日 00:00 → 现在；
- * 口径与 computeWeekMetrics **完全一致**，仅换窗口起点：
- * captured = 收件箱 capturedAt 入区间；created = 任务 createdAt 入区间；
- * completed = 任务 doneAt 入区间；overdue = dueAt < now 且 status ∈ next/waiting/scheduled。
- * 注：migrated 同样刻意不产出（无编辑追踪来源），见 ADR-0007。
+ * 口径与 computeWeekMetrics 完全一致，仅换窗口起点。
  */
 export function computeMonthMetrics(snapshot, now = new Date()) {
-  const monthStart = startOfMonth(now)
-  const captured = (snapshot.inbox ?? []).filter((i) => inRange(i.capturedAt, monthStart, now)).length
-  const created = (snapshot.tasks ?? []).filter((t) => inRange(t.createdAt, monthStart, now)).length
-  const completed = (snapshot.tasks ?? []).filter((t) => inRange(t.doneAt, monthStart, now)).length
-  const overdue = (snapshot.tasks ?? []).filter(
-    (t) =>
-      typeof t.dueAt === 'string' &&
-      new Date(t.dueAt).getTime() < now.getTime() &&
-      ['next', 'waiting', 'scheduled'].includes(t.status),
-  ).length
-  return { captured, created, completed, overdue }
+  return computeMetricsForWindow(snapshot, startOfMonth(now), now, now)
+}
+
+/** 上一个完整周起点（本周一 − 7 天，00:00；Slice L 环比窗口） */
+export function startOfPrevWeek(now = new Date()) {
+  const d = startOfWeekMonday(now)
+  d.setDate(d.getDate() - 7)
+  return d
+}
+
+/** 上一个完整月起点（本月 1 日 − 1 个月，00:00；Slice L 环比窗口） */
+export function startOfPrevMonth(now = new Date()) {
+  const d = startOfMonth(now)
+  d.setMonth(d.getMonth() - 1)
+  return d
 }
 
 /** 停滞项目：active 且 updatedAt 距 now ≥ staleDays 个日历日（镜像前端 getStaleProjects） */
@@ -912,18 +918,119 @@ function habitHitsLastDays(habit, days, now) {
   }).length
 }
 
+/** 习惯在 [start, end] 闭区间内的命中数（log.date 为 YYYY-MM-DD，value > 0） */
+function habitHitsRange(habit, start, end) {
+  return (habit.log ?? []).filter((entry) => {
+    if (typeof entry?.date !== 'string' || !(entry.value > 0)) return false
+    const d = new Date(`${entry.date}T00:00:00`)
+    return Number.isFinite(d.getTime()) && d >= start && d <= end
+  }).length
+}
+
+/** now 往回 offset 天的当日边界（'start' 00:00 / 'end' 23:59:59.999） */
+function dayBack(now, offset, edge) {
+  const d = new Date(now)
+  d.setDate(d.getDate() - offset)
+  if (edge === 'start') d.setHours(0, 0, 0, 0)
+  else d.setHours(23, 59, 59, 999)
+  return d
+}
+
 /**
- * 构造紧凑中文回顾摘要（指标 / 完成 / 逾期 / 停滞 / 习惯 / 活动计数）。
- * `scope` 为 '周' | '月'：窗口起点 `periodStart` 由调用方给出（周首 / 月首），
- * 文案中的「本周 / 本月」随之切换；其余口径完全一致（Slice F）。
+ * 习惯连续未达标周数（近似值：以「近 7 天」为滚动窗口逐周回看，命中 < 目标
+ * 记为未达标并继续，命中 ≥ 目标即停止；最多回看 8 周）。当前周尚未走完时也会
+ * 计入，故报告可据此提示「数据不足」——不把近似值当精确结论。
  */
-async function buildReviewDigest(snapshot, metrics, now, periodStart, scope) {
+function habitMissStreak(habit, now, maxWeeks = 8) {
+  const target = typeof habit.target === 'number' ? habit.target : 0
+  if (!(target > 0)) return 0
+  let miss = 0
+  for (let k = 0; k < maxWeeks; k += 1) {
+    const start = dayBack(now, 7 * k + 6, 'start')
+    const end = k === 0 ? now : dayBack(now, 7 * k, 'end')
+    if (habitHitsRange(habit, start, end) >= target) break
+    miss += 1
+  }
+  return miss
+}
+
+/* ---------------------------------------------------------------------------
+ * 数字落地护栏（Slice L）：从摘要抽取数字，断言其为 digest 数字的子集。
+ * 允许：digest 中的字面数字；由 digest 数字加减 / 百分比派生出的数字；
+ *       结构性小数字（≤3：段号 / 行动条数）；年份（1900–2099）。
+ * 越界 → promptReviewWithRetry 做一次纠正重试；仍越界则保留并记录（不阻断）。
+ * ------------------------------------------------------------------------- */
+
+/** 从文本抽取「量词性」数字（剔除周键 / 完整日期 / 月键 / 行首序号 / 圈号） */
+export function extractQuantities(text) {
+  const cleaned = String(text)
+    .replace(/\bW\d+\b/g, ' ')
+    .replace(/\d{4}-\d{2}-\d{2}/g, ' ')
+    .replace(/\d{4}-\d{2}\b/g, ' ')
+    .replace(/^\s*\d+[.、)]/gm, ' ')
+    .replace(/[①②③④⑤⑥⑦⑧⑨⑩]/g, ' ')
+  const out = []
+  const re = /\d+(?:\.\d+)?/g
+  let m
+  while ((m = re.exec(cleaned)) !== null) out.push(Number(m[0]))
+  return out
+}
+
+/**
+ * 数字落地审计：summary 中的数字是否都能在 digest 中找到依据。
+ * @param {string} summary AI 生成的摘要正文
+ * @param {string} digest 注入模型的数据摘要（事实源）
+ * @returns {{ ok: boolean, offenders: number[] }} ok=false 时 offenders 为越界数字
+ */
+export function auditNumbers(summary, digest) {
+  const base = extractQuantities(digest)
+  const baseSet = new Set(base)
+  const derived = new Set()
+  for (const a of base) {
+    for (const b of base) {
+      derived.add(Math.abs(a - b))
+      derived.add(a + b)
+      if (b !== 0) derived.add(Math.round((a * 100) / b))
+    }
+  }
+  const offenders = []
+  for (const n of extractQuantities(summary)) {
+    if (baseSet.has(n) || derived.has(n)) continue
+    if (n <= 3) continue // 结构性小数字（段号 / 行动条数）
+    if (n >= 1900 && n <= 2099) continue // 年份
+    offenders.push(n)
+  }
+  return { ok: offenders.length === 0, offenders: [...new Set(offenders)] }
+}
+
+/** 环比展示：cur 相对 prev 的增量与百分比（prev 为 0 时百分比记 —） */
+function deltaText(cur, prev) {
+  const delta = cur - prev
+  const sign = delta > 0 ? '+' : ''
+  const pct = prev === 0 ? '—' : `${sign}${Math.round((delta / prev) * 100)}%`
+  return `${sign}${delta}（${pct}）`
+}
+
+/** 日期短标签：M/D */
+function shortDate(d) {
+  return `${d.getMonth() + 1}/${d.getDate()}`
+}
+
+/**
+ * 构造紧凑中文回顾摘要（指标 + 环比 + 完成/逾期/停滞清单 + 习惯 + 活动 + 阈值）。
+ * `scope` 为 '周' | '月'；`periodStart` 为窗口起点（周首 / 月首）；
+ * `prevMetrics` 为上一同等周期指标（调用方偏移窗口计算）——为报告提供
+ * 「环比 / 与上周 / 上月对照」基准；每条清单带 id，便于报告引用具体对象。
+ */
+async function buildReviewDigest(snapshot, metrics, now, periodStart, scope, prevMetrics, monthly) {
   const label = `本${scope}`
+  const prevLabel = `上${scope}`
   const daysLate = (due) => Math.max(0, calendarDayDiff(now, new Date(due)))
+  const periodLabel = monthly ? monthKey(now) : isoWeekKey(now)
 
   const completed = (snapshot.tasks ?? [])
     .filter((t) => inRange(t.doneAt, periodStart, now))
-    .map((t) => t.title)
+    .map((t) => `${t.id} · ${t.title}`)
 
   const overdue = (snapshot.tasks ?? [])
     .filter(
@@ -932,7 +1039,7 @@ async function buildReviewDigest(snapshot, metrics, now, periodStart, scope) {
         new Date(t.dueAt).getTime() < now.getTime() &&
         ['next', 'waiting', 'scheduled'].includes(t.status),
     )
-    .map((t) => `${t.title}（逾期 ${daysLate(t.dueAt)} 天）`)
+    .map((t) => `${t.id} · ${t.title} · 逾期 ${daysLate(t.dueAt)} 天`)
 
   const staleList = staleProjects(snapshot, 14, now)
   const stale = staleList.map((p) => {
@@ -941,9 +1048,12 @@ async function buildReviewDigest(snapshot, metrics, now, periodStart, scope) {
     return `${p.id} · ${p.title} · 停滞 ${staleDays} 天 · 完成定义：${p.outcome}${next}`
   })
 
-  const habits = (snapshot.habits ?? []).map(
-    (h) => `${h.title} · 近 7 天命中 ${habitHitsLastDays(h, 7, now)} · 目标 ${h.target} · 节奏 ${h.cadence}`,
-  )
+  const habits = (snapshot.habits ?? []).map((h) => {
+    const current = habitHitsLastDays(h, 7, now)
+    const prior = habitHitsRange(h, dayBack(now, 13, 'start'), dayBack(now, 7, 'end'))
+    const miss = habitMissStreak(h, now)
+    return `${h.title} · 近 7 天命中 ${current} · 上 7 天命中 ${prior} · 目标 ${h.target} · 节奏 ${h.cadence} · 连续未达标 ${miss} 周`
+  })
 
   const activity = (await readActivity(200)).filter((entry) => {
     const t = Date.parse(entry.ts)
@@ -956,27 +1066,58 @@ async function buildReviewDigest(snapshot, metrics, now, periodStart, scope) {
     .map(([action, count]) => `${action} ×${count}`)
 
   return [
+    `【周期】${label} ${periodLabel} · 窗口 ${shortDate(periodStart)} → ${shortDate(now)}（本机时区）`,
     `【${label}指标】捕获 ${metrics.captured} · 新增 ${metrics.created} · 完成 ${metrics.completed} · 逾期 ${metrics.overdue}`,
-    `【${label}完成（${completed.length}）】\n${completed.join('\n') || '（无）'}`,
+    `【${prevLabel}指标（对照）】捕获 ${prevMetrics.captured} · 新增 ${prevMetrics.created} · 完成 ${prevMetrics.completed} · 逾期 ${prevMetrics.overdue}`,
+    `【环比（本${scope}相对上${scope}）】捕获 ${deltaText(metrics.captured, prevMetrics.captured)} · 新增 ${deltaText(metrics.created, prevMetrics.created)} · 完成 ${deltaText(metrics.completed, prevMetrics.completed)} · 逾期 ${deltaText(metrics.overdue, prevMetrics.overdue)}`,
+    `【${label}完成（${completed.length}，含 id）】\n${completed.join('\n') || '（无）'}`,
     `【当前逾期（${overdue.length}）】\n${overdue.join('\n') || '（无）'}`,
     `【停滞项目（≥14 天未更新，共 ${stale.length}）】\n${stale.join('\n') || '（无）'}`,
     `【可处置停滞项目 id】${staleList.map((p) => p.id).join(', ') || '（无）'}`,
-    `【习惯（近 7 天）】\n${habits.join('\n') || '（无）'}`,
+    `【习惯（近 7 天 / 上 7 天 / 连续未达标周数）】\n${habits.join('\n') || '（无）'}`,
     `【${label}活动计数】\n${activityLines.join('\n') || '（无）'}`,
+    `【阈值常量】逾期 = 任务截止时间已过且状态为 next/waiting/scheduled；停滞 = active 项目 ≥14 天未更新；习惯未达标 = 近 7 天命中数 < 目标数`,
   ].join('\n\n')
 }
 
-/** 构造回顾系统提示词（指令式 JSON）；scope = '周' | '月'（Slice F） */
+/**
+ * 构造回顾系统提示词（指令式 JSON；Slice L 升级为七段报告）。
+ * summary 为多段纯文本，恰好七段，每段以「结论式标题」开头；decisions 为 1–3 条
+ * if-then 行动；staleAdvice 语义不变。硬性规则保证：只用摘要数字 / 对象、
+ * 每个判断带证据、绝对值带对比基准、禁套话、行动含时间与完成标准。
+ */
 function buildReviewSystem(digest, scope) {
-  return `你是 KERNEL 的${scope}回顾助手。只输出一个 JSON 对象：不要 markdown、不要解释。字段：
-- summary（≤200 字中文，具体、克制、不夸大，总结本${scope}推进与问题）
-- decisions（2–4 条中文，动作导向，如迁移 / 聚焦 / 处置）
-- staleAdvice（数组，可空：{ projectId, action: 'archive'|'migrate'|'reactivate', reason }，仅针对摘要中列出的停滞项目）
+  return `你是 KERNEL 的${scope}回顾助手。只输出一个 JSON 对象：不要 markdown、不要解释、不要多余文字。字段：
+
+- summary：中文纯文本，恰好 7 段，段与段之间用一个换行分隔。每段以「结论式标题」开头，标题后接「：」。全篇不超过 800 字。七段依次为：
+  1. 结论速览：一句话结论 + 关键数字（数字必须带对比基准）
+  2. 本期数据解读：逐项数字 + 环比（与上${scope}对照）
+  3. 趋势与对比：方向（上升 / 下降 / 持平）+ 连续周数（摘要中有则写，没有就写「数据不足」）
+  4. 问题诊断：一层因果（现象 → 原因）+ 数据证据（引用摘要中的具体 id 或数字）
+  5. 值得保留：至少一条本${scope}在起作用的做法（带数据支撑）
+  6. 下期行动：1–3 条 if-then，格式「如果…，那么…」，每条写明 做什么 + 何时 + 完成标准，并绑定摘要中的任务 / 项目名或 id
+  7. 风险预警：越线阈值 + 触发对象（逾期任务 id / 停滞项目 id）
+- decisions：1–3 条中文 if-then 行动（与第 6 段一致，每条一行、含时间与完成标准）
+- staleAdvice：数组，可空：{ projectId, action: 'archive'|'migrate'|'reactivate', reason }，仅针对摘要中列出的停滞项目
 
 【本${scope}数据摘要】
 ${digest}
 
-规则：staleAdvice.projectId 只能取「可处置停滞项目 id」中列出的 id；没有把握就返回空数组。`
+硬性规则（违反即不合格）：
+1. 只能使用摘要中出现的数字、日期、标题、id；禁止编造任何数字或对象。
+2. 每个判断都要有具体数字或具体对象（id / 标题）作为证据。
+3. 任何绝对值都要带对比基准（环比 / 上${scope} / 目标）。
+4. 禁止套话：「显著 / 一定程度 / 多方面 / 持续发力 / 闭环 / 赋能 / 值得注意 / 综上所述 / 整体向好」等一律不许出现。
+5. 短句、主动语态；结论先行。
+6. 证据不足就写「数据不足」，不要硬凑。
+7. 行动必须 if-then，且含 何时 + 完成标准。
+8. 允许（并鼓励）指出不确定性；不夸大。
+
+对照示例（字母仅示形，写作时必须替换成摘要里的真实数字）：
+弱（禁止）："本${scope}整体推进顺利，效率显著提升，需持续发力。"
+强（合格）："完成 X 项，比上${scope} Y 项多 Z 项（+P%）；新增 M 项，比上${scope} N 项少 Q 项（-R%）。"
+
+staleAdvice.projectId 只能取「可处置停滞项目 id」中列出的 id；没有把握就返回空数组。`
 }
 
 /** 解析 + 校验单次周回顾响应；返回 { ok, draft } 或 { ok:false, reason } */
@@ -1001,19 +1142,30 @@ function tryParseReview(res) {
   }
 }
 
-/** 按实际停滞集合后校验 + 文本归一化（trim；丢弃臆造的 projectId） */
+/**
+ * 按实际停滞集合后校验 + 文本归一化（trim；丢弃臆造的 projectId）。
+ * summary / decisions 按 schema 上限截断（summary ≤2000 字；decisions ≤3 条、每条 ≤200 字），
+ * 避免模型超产导致落盘校验失败。
+ */
 function postValidateDraft(draft, staleIds) {
   return {
-    summary: draft.summary.trim(),
-    decisions: draft.decisions.map((d) => d.trim()).filter((d) => d !== ''),
+    summary: draft.summary.trim().slice(0, 2000),
+    decisions: draft.decisions
+      .map((d) => d.trim())
+      .filter((d) => d !== '')
+      .slice(0, 3)
+      .map((d) => d.slice(0, 200)),
     staleAdvice: draft.staleAdvice
       .filter((a) => staleIds.has(a.projectId))
       .map((a) => ({ projectId: a.projectId, action: a.action, reason: a.reason.trim() })),
   }
 }
 
-/** 单会话内「prompt → 解析 → 一次重试」；失败抛错 */
-async function promptReviewWithRetry(sessionID, system, text) {
+/**
+ * 单会话内「prompt → 解析 → 数字护栏 → 一次纠正重试」。
+ * 形状失败或数字越界各触发一次重试；数字仍越界则保留结果并记录（不阻断生成）。
+ */
+async function promptReviewWithRetry(sessionID, system, text, digest) {
   let res = await promptOnce(sessionID, system, text)
   let parsed = tryParseReview(res)
   if (!parsed.ok) {
@@ -1026,7 +1178,24 @@ async function promptReviewWithRetry(sessionID, system, text) {
     parsed = tryParseReview(res)
     if (!parsed.ok) throw new Error(`AI 输出无法解析：${parsed.reason}`)
   }
-  return { res, draft: parsed.draft }
+  let audit = auditNumbers(parsed.draft.summary, digest)
+  if (!audit.ok) {
+    console.warn(`[ai] review.draft 数字越界（${audit.offenders.join(',')}），纠正重试一次`)
+    res = await promptOnce(
+      sessionID,
+      system,
+      `上次输出含有数据摘要里不存在的数字：${audit.offenders.join('、')}。请只使用摘要中的数字（可做加减或百分比派生），重新输出合法 JSON。`,
+    )
+    const reparsed = tryParseReview(res)
+    if (reparsed.ok) {
+      parsed = reparsed
+      audit = auditNumbers(parsed.draft.summary, digest)
+    }
+  }
+  if (!audit.ok) {
+    console.warn(`[ai] review.draft 数字仍越界（保留并记录）：${audit.offenders.join(',')}`)
+  }
+  return { res, draft: parsed.draft, grounded: audit.ok, offenders: audit.offenders }
 }
 
 /**
@@ -1042,27 +1211,50 @@ export async function generateReviewDraft(period = 'weekly') {
   const snapshot = await loadSnapshot()
   const periodStart = monthly ? startOfMonth(now) : startOfWeekMonday(now)
   const metrics = monthly ? computeMonthMetrics(snapshot, now) : computeWeekMetrics(snapshot, now)
-  const staleIds = new Set(staleProjects(snapshot, 14, now).map((p) => p.id))
-  const system = buildReviewSystem(
-    await buildReviewDigest(snapshot, metrics, now, periodStart, scope),
+  // 上一同等周期指标：把 now 落在本周期起点前 1ms，窗口即自动回退一个周期（周对周 / 月对月）
+  const prevRef = new Date(periodStart.getTime() - 1)
+  const prevMetrics = monthly
+    ? computeMonthMetrics(snapshot, prevRef)
+    : computeWeekMetrics(snapshot, prevRef)
+  const staleList = staleProjects(snapshot, 14, now)
+  const staleIds = new Set(staleList.map((p) => p.id))
+  const digest = await buildReviewDigest(
+    snapshot,
+    metrics,
+    now,
+    periodStart,
     scope,
+    prevMetrics,
+    monthly,
   )
+  const system = buildReviewSystem(digest, scope)
   const created = pick(await getClient().session.create({ title: 'kernel:review-draft' }))
   const sessionID = created?.id
   if (typeof sessionID !== 'string' || sessionID === '') {
     throw new Error('无法创建 opencode 会话')
   }
-  const { res, draft } = await promptReviewWithRetry(sessionID, system, `请生成本${scope}回顾草稿。`)
+  const { res, draft, grounded, offenders } = await promptReviewWithRetry(
+    sessionID,
+    system,
+    `请生成本${scope}回顾草稿。`,
+    digest,
+  )
   const clean = postValidateDraft(draft, staleIds)
   const model = modelOf(res)
   const ms = Date.now() - t0
-  console.log(`[ai] review.draft(${period}) 完成 ${ms}ms（${model ?? '未知模型'}）`)
+  console.log(
+    `[ai] review.draft(${period}) 完成 ${ms}ms（${model ?? '未知模型'}）${grounded ? '' : ` · 数字未全部落地（${offenders.join(',')}）`}`,
+  )
   return {
     periodKey: monthly ? monthKey(now) : isoWeekKey(now),
     metrics,
+    prevMetrics,
     summary: clean.summary,
     decisions: clean.decisions,
     staleAdvice: clean.staleAdvice,
+    staleProjectIds: [...staleIds],
+    grounded,
+    offenders,
     model,
     ms,
   }

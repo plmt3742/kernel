@@ -1,7 +1,10 @@
-// KERNEL · 回顾 REVIEW（Slice F）：周 / 月回顾卡并列一栏（置于能量分析之上）+ 动画弹窗报告 +
-// AI 逐周期解析（周 / 月）+ 停滞项目独立一栏 + 编辑 → 保存 → 撤销删除的闭环。
-// 语义沿用 Slice C：AI 只出草稿；确认后经 /api/reviews 落盘（审计 review.create）；撤销即删除。
-import { useState } from 'react'
+// KERNEL · 回顾 REVIEW（Slice F 布局 + Slice L 升级）：
+// 周 / 月回顾卡并列一栏（置于能量分析之上）+ 动画弹窗报告 +
+// 七段结构报告（结论速览 → … → 风险预警）+ 每次生成自动归档（报告历史按时间查阅）+
+// 编辑「保存回顾」更新同一归档记录（不重复建）+ 停滞项目独立一栏。
+// 语义：AI 只出草稿；生成即自动归档（审计 review.create · auto），编辑确认后更新同一条
+// （审计 review.update）；报告可删除（review.remove）。见 ADR-0013。
+import { useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Panel } from '@/components/Panel'
 import { Modal } from '@/components/Modal'
@@ -11,14 +14,16 @@ import { EmptyState } from '@/components/EmptyState'
 import { useToast } from '@/context/ToastContext'
 import { getProjectById, getReviews, getStaleProjects } from '@/lib/data'
 import { getEnergyDistribution, getWeeklyCompletionSeries } from '@/lib/derive'
-import { daysFromToday, isoWeekKey, toMonthKey } from '@/lib/date'
+import { daysFromToday, formatDateTime, isoWeekKey, toMonthKey } from '@/lib/date'
 import { errorText } from '@/lib/api'
 import { useDataRevision } from '@/lib/hooks'
 import {
   generateReviewDraft,
+  hydrateFromServer,
   removeReview,
   saveReview,
   updateEntity,
+  updateReview,
   type ReviewDraft,
   type StaleAdvice,
 } from '@/lib/mutations'
@@ -71,8 +76,58 @@ interface CycleRuntime {
 
 const IDLE_RUNTIME: CycleRuntime = { phase: 'idle', draft: null, errorMsg: '' }
 
-/** 卡片当前应展示的报告：内存草稿优先，其次该周期最新已保存回顾 */
+/** 卡片当前应展示的报告：内存草稿优先，其次该周期最新已归档回顾 */
 type Preview = { draft: ReviewDraft } | { saved: Review } | null
+
+/** 弹窗状态：编辑某周期（最新可编辑）/ 只读查看某条归档 */
+type ModalState =
+  | { mode: 'edit'; kind: ReviewType; reviewId: string | null }
+  | { mode: 'view'; reviewId: string }
+  | null
+
+/** 指标瓦片（卡片 / 弹窗共用） */
+function MetricTiles({ metrics, withFoot }: { metrics: ReviewMetrics; withFoot?: boolean }): ReactNode {
+  return (
+    <div className="k-review__metrics">
+      {METRIC_LABELS.map((metric) => (
+        <div
+          className={metric.accent === true ? 'k-stat k-stat--accent' : 'k-stat'}
+          key={metric.key}
+        >
+          <span className="k-stat__label">{metric.label}</span>
+          <span className="k-stat__value">{metrics[metric.key] ?? '—'}</span>
+          {withFoot === true && <span className="k-stat__foot">{metric.foot}</span>}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/**
+ * 报告正文渲染（纯文本，无 dangerouslySetInnerHTML）：
+ * 按换行切段，每段若以「标题：」开头则把标题渲染为独立小标题行——
+ * 让七段彼此成为清晰区块，而不是挤成一行。
+ */
+function ReportText({ text }: { text: string }): ReactNode {
+  const paras = text
+    .split(/\n+/)
+    .map((para) => para.trim())
+    .filter((para) => para !== '')
+  return (
+    <div className="k-report__summary">
+      {paras.map((para, index) => {
+        const colon = para.indexOf('：')
+        const hasTitle = colon > 0 && colon <= 16
+        return (
+          <p className="k-report__para" key={`${index}-${para.slice(0, 6)}`}>
+            {hasTitle && <span className="k-report__para-title">{para.slice(0, colon)}</span>}
+            {hasTitle ? para.slice(colon + 1).trim() : para}
+          </p>
+        )
+      })}
+    </div>
+  )
+}
 
 export function Review() {
   const { toast } = useToast()
@@ -81,7 +136,7 @@ export function Review() {
     weekly: IDLE_RUNTIME,
     monthly: IDLE_RUNTIME,
   })
-  const [openKind, setOpenKind] = useState<ReviewType | null>(null)
+  const [modal, setModal] = useState<ModalState>(null)
   const [editSummary, setEditSummary] = useState('')
   const [editDecisions, setEditDecisions] = useState('')
 
@@ -99,6 +154,11 @@ export function Review() {
     monthly: toMonthKey(now),
   }
 
+  // 关闭动画期间保留最后一份内容（Modal 常挂载，open 切换以播退场）
+  const lastModalRef = useRef<ModalState>(null)
+  if (modal !== null) lastModalRef.current = modal
+  const renderedModal = modal ?? lastModalRef.current
+
   const setRuntime = (kind: ReviewType, next: CycleRuntime): void => {
     setRuntimes((prev) => ({ ...prev, [kind]: next }))
   }
@@ -110,14 +170,24 @@ export function Review() {
     return saved === undefined ? null : { saved }
   }
 
-  const openModal = (kind: ReviewType): void => {
+  /** 打开某周期的报告（最新可编辑）：种子取自内存草稿或最新归档 */
+  const openEdit = (kind: ReviewType): void => {
     const preview = previewOf(kind)
     if (preview === null) return
     if ('draft' in preview) {
       setEditSummary(preview.draft.summary)
       setEditDecisions(preview.draft.decisions.join('\n'))
+      setModal({ mode: 'edit', kind, reviewId: preview.draft.reviewId ?? null })
+      return
     }
-    setOpenKind(kind)
+    setEditSummary(preview.saved.summary)
+    setEditDecisions(preview.saved.decisions.join('\n'))
+    setModal({ mode: 'edit', kind, reviewId: preview.saved.id })
+  }
+
+  /** 只读查看某条归档报告（报告历史入口） */
+  const openView = (reviewId: string): void => {
+    setModal({ mode: 'view', reviewId })
   }
 
   const runDraft = (kind: ReviewType): void => {
@@ -126,23 +196,41 @@ export function Review() {
       try {
         const result = await generateReviewDraft(kind)
         setRuntime(kind, { phase: 'draft', draft: result, errorMsg: '' })
+        // 服务端已在生成时自动归档；刷新快照让「报告历史」立即出现该条
+        void hydrateFromServer()
+        // 新生成 → 自动归档出新 id：若弹窗正编辑该周期，切到新记录并同步编辑区
+        setEditSummary(result.summary)
+        setEditDecisions(result.decisions.join('\n'))
+        setModal((prev) =>
+          prev !== null && prev.mode === 'edit' && prev.kind === kind
+            ? { mode: 'edit', kind, reviewId: result.reviewId }
+            : prev,
+        )
       } catch (err) {
         setRuntime(kind, { phase: 'error', draft: null, errorMsg: errorText(err) })
       }
     })()
   }
 
-  const onSave = (kind: ReviewType): void => {
+  const onSave = (): void => {
+    if (modal === null || modal.mode !== 'edit') return
+    const kind = modal.kind
+    const reviewId = modal.reviewId
     const summary = editSummary.trim()
     if (summary === '') return
     const decisions = editDecisions
       .split('\n')
       .map((line) => line.trim())
       .filter((line) => line !== '')
-    setRuntime(kind, { ...runtimes[kind], phase: 'saving' })
+    const previous = runtimes[kind]
+    setRuntime(kind, { ...previous, phase: 'saving' })
     void (async () => {
       try {
-        const review = await saveReview(summary, decisions, kind)
+        // 已有归档 id → 更新同一条（不重复建）；否则回退到创建
+        const review =
+          reviewId !== null
+            ? await updateReview(reviewId, summary, decisions)
+            : await saveReview(summary, decisions, kind)
         toast(kind === 'weekly' ? '已保存周回顾' : '已保存月回顾', {
           action: {
             label: '撤销',
@@ -153,11 +241,33 @@ export function Review() {
             },
           },
         })
-        setOpenKind(null)
+        setModal(null)
         setRuntime(kind, IDLE_RUNTIME)
       } catch (err) {
-        setRuntime(kind, { ...runtimes[kind], phase: 'draft' })
+        setRuntime(kind, {
+          ...previous,
+          phase: previous.draft !== null ? 'draft' : 'idle',
+        })
         toast(`保存失败：${errorText(err)}`, { tone: 'error' })
+      }
+    })()
+  }
+
+  const onDeleteReview = (id: string): void => {
+    void (async () => {
+      try {
+        await removeReview(id)
+        setRuntimes((prev) => {
+          const next = { ...prev }
+          for (const kind of ['weekly', 'monthly'] as ReviewType[]) {
+            if (next[kind].draft?.reviewId === id) next[kind] = IDLE_RUNTIME
+          }
+          return next
+        })
+        setModal(null)
+        toast('已删除归档报告')
+      } catch (err) {
+        toast(`删除失败：${errorText(err)}`, { tone: 'error' })
       }
     })()
   }
@@ -212,7 +322,7 @@ export function Review() {
         className={draft !== null ? 'k-cycle is-draft' : 'k-cycle'}
         key={kind}
         onClick={() => {
-          if (hasReport && !loading) openModal(kind)
+          if (hasReport && !loading) openEdit(kind)
         }}
       >
         <header className="k-cycle__head">
@@ -228,16 +338,8 @@ export function Review() {
 
         {hasReport ? (
           <>
-            <div className="k-review__metrics k-cycle__metrics">
-              {METRIC_LABELS.map((metric) => (
-                <div
-                  className={metric.accent === true ? 'k-stat k-stat--accent' : 'k-stat'}
-                  key={metric.key}
-                >
-                  <span className="k-stat__label">{metric.label}</span>
-                  <span className="k-stat__value">{report.metrics[metric.key] ?? '—'}</span>
-                </div>
-              ))}
+            <div className="k-cycle__metrics">
+              <MetricTiles metrics={report.metrics} />
             </div>
             <p className="k-cycle__summary">{report.summary}</p>
           </>
@@ -273,10 +375,10 @@ export function Review() {
               className="k-btn k-btn--sm is-solid"
               onClick={(event) => {
                 event.stopPropagation()
-                openModal(kind)
+                openEdit(kind)
               }}
             >
-              查阅报告
+              查看 / 编辑
             </button>
           )}
         </footer>
@@ -286,121 +388,157 @@ export function Review() {
 
   /* ------------------------------- 弹窗 ------------------------------- */
 
-  const renderModal = (kind: ReviewType): ReactNode => {
-    const preview = previewOf(kind)
-    if (preview === null) return null
-    const draft = 'draft' in preview ? preview.draft : null
-    const report: ReviewDraft | Review = 'draft' in preview ? preview.draft : preview.saved
+  const renderModal = (): ReactNode => {
+    if (renderedModal === null) return null
+    const saving = renderedModal.mode === 'edit' && runtimes[renderedModal.kind].phase === 'saving'
+
+    if (renderedModal.mode === 'view') {
+      const review = sortedReviews.find((item) => item.id === renderedModal.reviewId)
+      return (
+        <Modal
+          open={modal !== null}
+          onClose={() => setModal(null)}
+          kicker={review === undefined ? '归档报告' : `${SCOPE_LABEL[review.type]} · ${review.periodKey}`}
+          title="归档报告"
+          className="k-modal--report"
+          footer={
+            review === undefined ? (
+              <button type="button" className="k-btn" onClick={() => setModal(null)}>
+                关闭
+              </button>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  className="k-btn"
+                  onClick={() => onDeleteReview(review.id)}
+                >
+                  删除
+                </button>
+                <button type="button" className="k-btn is-solid" onClick={() => setModal(null)}>
+                  关闭
+                </button>
+              </>
+            )
+          }
+        >
+          {review === undefined ? (
+            <p className="k-muted">该报告已被删除。</p>
+          ) : (
+            <>
+              <MetricTiles metrics={review.metrics} withFoot />
+              <div className="k-review__field">
+                <span className="k-review__label">报告正文 · REPORT（只读）</span>
+                <ReportText text={review.summary} />
+              </div>
+              <div className="k-review__field">
+                <span className="k-review__label">决策 · DECISIONS</span>
+                {review.decisions.length === 0 ? (
+                  <p className="k-muted">本期无决策记录。</p>
+                ) : (
+                  <div className="k-stack">
+                    {review.decisions.map((decision, index) => (
+                      <p className="k-decision" key={`${index}-${decision.slice(0, 6)}`}>
+                        <span className="u-mono k-accent">{String(index + 1).padStart(2, '0')}</span>
+                        {decision}
+                      </p>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </Modal>
+      )
+    }
+
+    // mode === 'edit'
+    const kind = renderedModal.kind
     const runtime = runtimes[kind]
-    const saving = runtime.phase === 'saving'
+    const draft = runtime.draft
+    const report: ReviewDraft | Review | null = draft !== null ? draft : savedReview(kind) ?? null
+    const editable = draft !== null || renderedModal.reviewId !== null
     const canSave = editSummary.trim() !== '' && !saving
 
     return (
       <Modal
-        key={kind}
-        open={openKind === kind}
-        onClose={() => setOpenKind(null)}
-        kicker={`${SCOPE_LABEL[kind]} · ${report.periodKey}`}
+        open={modal !== null}
+        onClose={() => setModal(null)}
+        kicker={report === null ? SCOPE_LABEL[kind] : `${SCOPE_LABEL[kind]} · ${report.periodKey}`}
         title={`${SCOPE_LABEL[kind]}报告`}
         className="k-modal--report"
         footer={
-          draft !== null ? (
+          report === null ? (
+            <button type="button" className="k-btn" onClick={() => setModal(null)}>
+              关闭
+            </button>
+          ) : (
             <>
-              <button
-                type="button"
-                className="k-btn"
-                onClick={() => runDraft(kind)}
-                disabled={saving}
-              >
+              <button type="button" className="k-btn" onClick={() => runDraft(kind)} disabled={saving}>
                 重新生成
               </button>
               <button
                 type="button"
                 className="k-btn is-solid"
-                onClick={() => onSave(kind)}
+                onClick={onSave}
                 disabled={!canSave}
               >
                 {saving ? '保存中…' : '保存回顾'}
               </button>
             </>
-          ) : (
-            <button type="button" className="k-btn" onClick={() => setOpenKind(null)}>
-              关闭
-            </button>
           )
         }
       >
-        <div className="k-review__metrics">
-          {METRIC_LABELS.map((metric) => (
-            <div
-              className={metric.accent === true ? 'k-stat k-stat--accent' : 'k-stat'}
-              key={metric.key}
-            >
-              <span className="k-stat__label">{metric.label}</span>
-              <span className="k-stat__value">{report.metrics[metric.key] ?? '—'}</span>
-              <span className="k-stat__foot">{metric.foot}</span>
+        {report === null ? (
+          <p className="k-muted">报告不存在。</p>
+        ) : (
+          <>
+            <MetricTiles metrics={report.metrics} withFoot />
+
+            <div className="k-review__field">
+              <label className="k-review__label" htmlFor={`review-summary-${kind}`}>
+                报告正文 · REPORT（七段：结论速览 → … → 风险预警，可编辑）
+              </label>
+              <textarea
+                id={`review-summary-${kind}`}
+                className="k-review__ta k-review__ta--report"
+                rows={14}
+                value={editSummary}
+                onChange={(event) => setEditSummary(event.target.value)}
+                placeholder="结论速览：…"
+                disabled={!editable}
+              />
             </div>
-          ))}
-        </div>
 
-        <div className="k-review__field">
-          <label className="k-review__label" htmlFor={`review-summary-${kind}`}>
-            摘要 · SUMMARY
-          </label>
-          {draft !== null ? (
-            <textarea
-              id={`review-summary-${kind}`}
-              className="k-review__ta"
-              rows={5}
-              value={editSummary}
-              onChange={(event) => setEditSummary(event.target.value)}
-              placeholder="本期推进与问题…"
-            />
-          ) : (
-            <p className="k-report__summary">{report.summary}</p>
-          )}
-        </div>
-
-        <div className="k-review__field">
-          <label className="k-review__label" htmlFor={`review-decisions-${kind}`}>
-            决策 · DECISIONS（每行一条）
-          </label>
-          {draft !== null ? (
-            <textarea
-              id={`review-decisions-${kind}`}
-              className="k-review__ta"
-              rows={4}
-              value={editDecisions}
-              onChange={(event) => setEditDecisions(event.target.value)}
-              placeholder="迁移 / 聚焦 / 处置…"
-            />
-          ) : report.decisions.length === 0 ? (
-            <p className="k-muted">本期无决策记录。</p>
-          ) : (
-            <div className="k-stack">
-              {report.decisions.map((decision, index) => (
-                <p className="k-decision" key={decision}>
-                  <span className="u-mono k-accent">{String(index + 1).padStart(2, '0')}</span>
-                  {decision}
-                </p>
-              ))}
+            <div className="k-review__field">
+              <label className="k-review__label" htmlFor={`review-decisions-${kind}`}>
+                决策 · DECISIONS（每行一条，1–3 条）
+              </label>
+              <textarea
+                id={`review-decisions-${kind}`}
+                className="k-review__ta"
+                rows={4}
+                value={editDecisions}
+                onChange={(event) => setEditDecisions(event.target.value)}
+                placeholder="如果…，那么…"
+              />
             </div>
-          )}
-        </div>
 
-        {draft !== null && draft.staleAdvice.length > 0 && (
-          <div className="k-review__field">
-            <span className="k-review__label">停滞项目处置建议</span>
-            <div className="k-review__advice">
-              {draft.staleAdvice.map((advice) => (
-                <div className="k-review__advice-row" key={advice.projectId}>
-                  <span>{getProjectById(advice.projectId)?.title ?? advice.projectId}</span>
-                  <span className="k-muted">建议{ADVICE_ACTION_LABEL[advice.action]}</span>
-                  {advice.reason !== '' && <span className="k-muted">{advice.reason}</span>}
+            {draft !== null && draft.staleAdvice.length > 0 && (
+              <div className="k-review__field">
+                <span className="k-review__label">停滞项目处置建议</span>
+                <div className="k-review__advice">
+                  {draft.staleAdvice.map((advice) => (
+                    <div className="k-review__advice-row" key={advice.projectId}>
+                      <span>{getProjectById(advice.projectId)?.title ?? advice.projectId}</span>
+                      <span className="k-muted">建议{ADVICE_ACTION_LABEL[advice.action]}</span>
+                      {advice.reason !== '' && <span className="k-muted">{advice.reason}</span>}
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-          </div>
+              </div>
+            )}
+          </>
         )}
       </Modal>
     )
@@ -419,7 +557,7 @@ export function Review() {
         </div>
       </div>
 
-      {/* 栏 1：周 / 月回顾卡并列（位于能量分析之上）；点击卡片弹窗查阅 */}
+      {/* 栏 1：周 / 月回顾卡并列（位于能量分析之上）；点击卡片弹窗查阅 / 编辑 */}
       <section className="k-review__cycles" aria-label="回顾周期">
         {renderCycle('weekly')}
         {renderCycle('monthly')}
@@ -447,7 +585,41 @@ export function Review() {
         </Panel>
       </div>
 
-      {/* 栏 3：停滞项目（独立一栏） */}
+      {/* 栏 3：报告历史（Slice L）：每次生成自动归档，按时间倒序可查阅 */}
+      <Panel
+        title="报告历史"
+        en="REPORT ARCHIVE"
+        actions={<span className="u-label k-muted">{sortedReviews.length}</span>}
+      >
+        {sortedReviews.length === 0 ? (
+          <EmptyState
+            title="暂无归档报告"
+            hint="在周 / 月卡点「AI 解析」，生成的报告会自动归档到这里。"
+          />
+        ) : (
+          <div className="k-archive">
+            {sortedReviews.map((review) => (
+              <button
+                type="button"
+                className="k-archive__row"
+                key={review.id}
+                onClick={() => openView(review.id)}
+                aria-label={`查看归档报告：${SCOPE_LABEL[review.type]} ${review.periodKey}`}
+              >
+                <span className="k-archive__period">
+                  {SCOPE_LABEL[review.type]} · {review.periodKey}
+                </span>
+                <span className="k-archive__meta k-mono">
+                  {formatDateTime(review.date)}
+                  {review.source === 'ai' ? ' · AI 归档' : ''}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+      </Panel>
+
+      {/* 栏 4：停滞项目（独立一栏） */}
       <Panel
         title="停滞项目"
         en="STALE · ≥14 天未更新"
@@ -490,8 +662,7 @@ export function Review() {
         )}
       </Panel>
 
-      {renderModal('weekly')}
-      {renderModal('monthly')}
+      {renderModal()}
     </div>
   )
 }

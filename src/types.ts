@@ -261,17 +261,25 @@ export interface ReviewMetrics {
   migrated?: number
 }
 
+/** 回顾来源（Slice L）：'ai' = 生成即自动归档；'manual' = 手工保存 */
+export type ReviewSource = 'ai' | 'manual'
+
 /** 回顾 · rev- */
 export interface Review {
   id: string
   type: ReviewType
   /** 如 "2026-W40" */
   periodKey: string
+  /** 归档时间（生成时刻；手工保存时为保存时刻） */
   date: string
   metrics: ReviewMetrics
   decisions: string[]
   summary: string
   staleProjectIds?: string[]
+  /** 来源（Slice L 自动归档；旧记录缺省） */
+  source?: ReviewSource
+  /** 最近编辑时间（review.update 时 bump；旧记录缺省） */
+  updatedAt?: string
 }
 
 /** 标签定义 */

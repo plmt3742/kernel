@@ -111,8 +111,13 @@ export const reviewSchema = z
     date: iso,
     metrics: reviewMetricsSchema,
     decisions: z.array(z.string().min(1).max(200)),
+    // 报告 v2（Slice L）：7 段结构正文（结论速览 → … → 风险预警），≤800 汉字；上限保持 2000
     summary: z.string().min(1).max(2000),
     staleProjectIds: z.array(z.string()).optional(),
+    // 自动归档（Slice L）：source='ai' 表示由 AI 生成后系统自动归档；旧记录缺省
+    source: z.enum(['ai', 'manual']).optional(),
+    // 用户编辑归档报告时 bump（review.update）；旧记录缺省
+    updatedAt: iso.optional(),
   })
   .catchall(z.unknown())
 

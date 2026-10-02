@@ -1702,12 +1702,63 @@
   align-items: start;
 }
 
-/* 弹窗内已保存回顾的摘要正文 */
+/* 弹窗内报告正文（Slice L）：七段各自成块，标题独立小标题行 */
 .k-report__summary {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.k-report__para {
   color: var(--ink-2);
   font-size: var(--text-body);
   line-height: 1.7;
-  white-space: pre-wrap;
+}
+.k-report__para-title {
+  display: block;
+  font-weight: 600;
+  color: var(--ink);
+  margin-bottom: var(--space-1);
+}
+/* 编辑态报告正文：给足高度、行距，便于编辑七段 */
+.k-review__ta--report {
+  min-height: 15rem;
+  line-height: 1.7;
+}
+
+/* 报告历史（Slice L）：安静的时间倒序列表，整行可点开只读报告 */
+.k-archive {
+  display: flex;
+  flex-direction: column;
+}
+.k-archive__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  width: 100%;
+  padding: var(--space-3);
+  text-align: left;
+  border-radius: var(--radius-inner);
+  color: var(--ink);
+  transition: background var(--dur-fast) var(--ease-standard);
+}
+.k-archive__row + .k-archive__row {
+  border-top: var(--hairline) solid var(--rule-soft);
+}
+.k-archive__row:hover {
+  background: var(--surface-hover);
+}
+.k-archive__row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.k-archive__period {
+  font-size: var(--text-body);
+}
+.k-archive__meta {
+  color: var(--muted);
+  font-size: var(--text-caption);
 }
 
 /* 回顾流程 stepper */

@@ -4,6 +4,19 @@
 
 ## [Unreleased]
 
+### 回顾报告升级（七段 · 有依据 · 可指导）+ 每次生成自动归档 · Slice L（已完成 · 2026-10-03）
+以 owner 两条指令为规格：①「报告不够详细，要写得有价值和有参考以及指导性意见」+「通俗易懂」；②「每次生成的报告都按时间归档保存、可在某处查阅」。报告从「≤200 字泛泛小结」升级为**七段结构正文**（结论速览 → 数据解读 → 趋势对比 → 问题诊断 → 值得保留 → 下期行动 → 风险预警），输入侧注入上一周期指标 + 环比 + 阈值 + 带 id 清单，输出侧加**数字落地护栏**（越界单次纠正重试）；每次成功生成即**自动归档**一条回顾（复用 `reviews` 实体），回顾页新增**报告历史**按时间查阅。`npm run build`（tsc strict + vite）通过；服务端冒烟 **40/40** + 护栏单测 **6/6** + 浏览器 E2E **32/32**；零数据残留（回顾回到基线 2 条，所有者 rev-0001/0002、t-0061/t-0062、i-0009/i-0010 未动）；控制台零 error；证据 `.qa/v30/`。
+
+- **输入侧加料（`server/ai.mjs` `buildReviewDigest`）**：新增「上一周期指标（对照）」与「环比（本 X 相对上 X）」两行（把 `now` 落在周期起点前 1ms 复用 `computeWeekMetrics` / `computeMonthMetrics` 回退一个周期）；习惯给出「近 7 天 / 上 7 天 / 目标 / 节奏 / 连续未达标周数」；完成 / 逾期 / 停滞清单改为带 id（`t-xxxx` / `p-xxxx` + 天数）；显式写出「逾期 / 停滞 / 习惯未达标」阈值常量。
+- **七段报告指令（`buildReviewSystem`）**：`summary` 要求恰好 7 段、每段以结论式标题开头（`结论速览 → … → 风险预警`），≤800 字；硬性规则——只用摘要数字 / 日期 / 标题 / id、每个判断带证据、绝对值带对比基准、禁套话（显著 / 一定程度 / 多方面 / 持续发力 / 闭环 / 赋能 / 值得注意 / 综上所述 / 整体向好）、行动必须 if-then 含时间与完成标准、证据不足写「数据不足」；附弱 / 强例对照（字母占位防数字污染）。`decisions` 为 1–3 条 if-then；`staleAdvice` 语义不变。
+- **数字落地护栏（`auditNumbers` / `extractQuantities`，导出于 `server/ai.mjs`）**：生成后抽取 `summary` 数字，断言其为摘要数字子集——允许字面命中、由摘要数字加减 / 百分比派生、结构性小数字（≤3）、年份；越界**单次纠正重试**（回喂越界数字），仍越界则保留并 `console.warn` 记录（不阻断）。服务端后校验再截断 summary ≤2000、decisions ≤3×200，防超产导致落盘失败。
+- **自动归档（`server/index.mjs`）**：`POST /api/ai/review/draft` 成功后经 `commit('reviews', …)` 自动落一条回顾（`source:'ai'`、`date`=归档时刻、审计 `review.create` · `detail.auto`+`grounded`），响应附 `reviewId` / `archivedAt`；新增 `POST /api/reviews/:id/update`（白名单仅 `summary` / `decisions`，保留 id/type/periodKey/date/metrics/staleProjectIds，递增 `updatedAt`，审计 `review.update` · `detail.fields`），「保存回顾」更新**同一条**、不重复建；`/api/reviews/:id/remove` 删除不变。**每次生成 = 新增一个归档版本**（时间序可查阅），生成是用户显式动作故数量有界。
+- **前端（`src/views/Review.tsx`）**：弹窗状态重构为「编辑最新（草稿或最新归档，保存即更新同条）/ 只读查看某条归档」；报告正文按换行切段、段首「标题：」渲染为独立小标题行（纯文本，无 `dangerouslySetInnerHTML`），编辑区加高（`rows=14`）；新增**报告历史**栏（`REPORT ARCHIVE`，按 `date` 倒序，显示类型 · 周期 + 归档时间 · AI 归档，点开只读弹窗、可删除）；生成后 `hydrateFromServer()` 让历史立即出现该条。新增 `src/lib/mutations.ts` `updateReview()`；`Review` / `ReviewDraft` 类型补 `source` / `updatedAt` / `reviewId` / `archivedAt` / `grounded`。
+- **schema / 文档**：`reviewSchema` 增可选 `source` / `updatedAt`（向后兼容旧记录）。新增 ADR-0013（报告格式 + 归档决策 + 版本语义 + 与 ADR-0007 §2.5「确认才写入」的差异说明）；ADR-0007 §7 修订指针；`docs/02` §4.3 端点；`docs/04` §4.10 / §9；`docs/README` 索引；`public/guide.html`（回顾卡片 + AI 回顾报告措辞 + 红线 / FAQ 说明「报告生成即归档、可删除、编辑保存更新同条」）。
+- **验证**：`.qa/v30/smoke-l.mjs` **40/40**（周 + 月各一次真实 AI：七段标记 / 段数≥5 / 环比存在 / 决策 1–3 条且 if-then；自动归档计数 +1、archive 记录含 summary 且 `source:'ai'`、审计 `review.create` · `auto`；update 同 id 往返 + `updatedAt` + 审计 `review.update` + 空摘要 400 / 不存在 404；remove 往返；零残留 + 所有者未动）；`.qa/v30/guard-unit.mjs` **6/6**（字面 / 派生通过、幻觉 987 判越界、结构小数字与年份放行、抽取器剔除周键 / 完整日期 / 行号）；`.qa/v30/slice-l-verify.py` **32/32**（生成 → 自动归档即时出现在报告历史 → 七段正文可编辑 → 保存后计数不变且同条更新 → 旧归档只读 → 删除回基线 → 移动 390 零横溢 → 控制台 0 → 零残留 + 所有者数据未动）。
+- **记录**：ADR-0013；`CHANGELOG.md`；`TASK_BOOK.md`；`AGENTS.md`；`docs/02`、`docs/04`、`docs/README.md`；`public/guide.html`。
+- **环境说明**：测试期间所有者（或并发进程）同时在用应用生成归档，E2E 改为**只跟踪并清理本次运行新增的 review id**、绝不删除基线已有记录；最终状态还原到提交基线（回顾 2 条）。
+
 ### 全站详情「居中弹窗」统一 + 操作统一 + 日历遮罩柔化 · Slice K（已完成 · 2026-10-03）
 以 owner 四条指令为规格：①「所有的卡片都是居中弹窗样式」（笔记等详情仍是侧边抽屉）；②「弹窗不是说要优化为屏幕居中弹窗详情页吗，怎么没优化」（日历事件详情仍是侧边抽屉）；③「除了标记为完成后，编辑、删除按钮等没有出现，不能进行常规操作，全系统统一审阅后处理」（总览就地弹窗缺常规操作）；④「这个地方遮罩不太自然，优化一下」（日历吸顶日期条）。纯前端切片（服务端零改动、无新增端点）。`npm run build`（tsc strict + vite）通过；浏览器 E2E **109/109**；零数据残留（计数回到基线：收件箱 10 / 任务 62 / 项目 10 / 笔记 15 / 资料 12 / 回顾 2 / 回收站 0；所有者 t-0061/t-0062 与 i-0009/i-0010 未动）；控制台零 error；证据 `.qa/v29/`。
 
