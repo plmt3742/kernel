@@ -10,6 +10,7 @@ import {
   RefreshCw,
   Settings,
   SlidersHorizontal,
+  Table2,
   Trash2,
 } from 'lucide-react'
 
@@ -31,11 +32,12 @@ export const NAV_ITEMS: NavItem[] = [
   { index: '02', path: '/inbox', en: 'INBOX', cn: '收件箱', icon: SlidersHorizontal },
   { index: '03', path: '/tasks', en: 'TASKS', cn: '任务', icon: ListChecks },
   { index: '04', path: '/calendar', en: 'CALENDAR', cn: '日程', icon: CalendarDays },
-  { index: '05', path: '/projects', en: 'PROJECTS', cn: '项目', icon: FolderKanban },
-  { index: '06', path: '/library', en: 'LIBRARY', cn: '资料', icon: Library, secondary: true },
-  { index: '07', path: '/review', en: 'REVIEW', cn: '回顾', icon: RefreshCw, secondary: true },
-  { index: '08', path: '/settings', en: 'SETTINGS', cn: '设置', icon: Settings, secondary: true },
-  { index: '09', path: '/trash', en: 'TRASH', cn: '回收站', icon: Trash2, secondary: true },
+  { index: '05', path: '/timetable', en: 'TIMETABLE', cn: '课表', icon: Table2 },
+  { index: '06', path: '/projects', en: 'PROJECTS', cn: '项目', icon: FolderKanban },
+  { index: '07', path: '/library', en: 'LIBRARY', cn: '资料', icon: Library, secondary: true },
+  { index: '08', path: '/review', en: 'REVIEW', cn: '回顾', icon: RefreshCw, secondary: true },
+  { index: '09', path: '/settings', en: 'SETTINGS', cn: '设置', icon: Settings, secondary: true },
+  { index: '10', path: '/trash', en: 'TRASH', cn: '回收站', icon: Trash2, secondary: true },
 ]
 
 /** 按路径匹配导航项（精确匹配；未知路径返回 undefined） */

@@ -8,6 +8,7 @@ import { useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Panel } from '@/components/Panel'
 import { Modal } from '@/components/Modal'
+import { ActivityTimeline } from '@/components/ActivityTimeline'
 import { TrendLine } from '@/components/charts/TrendLine'
 import { EnergyBars } from '@/components/charts/EnergyBars'
 import { EmptyState } from '@/components/EmptyState'
@@ -410,9 +411,9 @@ export function Review() {
       <article
         className={draft !== null ? 'k-cycle is-draft' : 'k-cycle'}
         key={kind}
-        onClick={() => {
-          if (hasReport && !loading) openEdit(kind)
-        }}
+        // Slice N0.6 · 交互反馈修复：仅在有报告且非生成中才挂整卡点击（→ 编辑弹窗）。
+        // 此前无报告时整卡点击为静默 no-op（且空态文案已指引点「AI 解析」按钮），故直接不挂处理器。
+        onClick={hasReport && !loading ? () => openEdit(kind) : undefined}
       >
         <header className="k-cycle__head">
           <div>
@@ -705,6 +706,9 @@ export function Review() {
           <TrendLine data={weeklySeries} />
         </Panel>
       </div>
+
+      {/* 栏 2.5：动作记录（Slice S）：审计日志时间线，按天分组 + 语义过滤 */}
+      <ActivityTimeline />
 
       {/* 栏 3：报告历史（Slice L）：每次生成自动归档，按时间倒序可查阅 */}
       <Panel

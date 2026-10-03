@@ -10,6 +10,7 @@ import { Overview } from '@/views/Overview'
 import { Inbox } from '@/views/Inbox'
 import { Tasks } from '@/views/Tasks'
 import { Calendar } from '@/views/Calendar'
+import { Timetable } from '@/views/Timetable'
 import { Projects } from '@/views/Projects'
 import { Review } from '@/views/Review'
 import { Settings } from '@/views/Settings'
@@ -32,6 +33,7 @@ export default function App() {
                   <Route path="inbox" element={<Inbox />} />
                   <Route path="tasks" element={<Tasks />} />
                   <Route path="calendar" element={<Calendar />} />
+                  <Route path="timetable" element={<Timetable />} />
                   <Route path="projects" element={<Projects />} />
                   <Route path="library" element={<Library />} />
                   <Route path="review" element={<Review />} />
