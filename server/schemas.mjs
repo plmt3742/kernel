@@ -201,6 +201,102 @@ export const habitSchema = z
   })
   .catchall(z.unknown())
 
+/**
+ * 课程时段（v0.5 · Slice H0）：dayOfWeek 1=周一 … 7=周日；节次 1..20（endPeriod ≥ startPeriod
+ * 由服务端 normalizeCourseSessions 强制，不在 schema 层交叉校验）；weeks 缺省 = 每周（全周次），
+ * 非空数组 1..60；location 为时段级覆盖（缺省时删除键）。见 docs/04。
+ */
+export const courseSessionSchema = z.object({
+  dayOfWeek: z.number().int().min(1).max(7),
+  startPeriod: z.number().int().min(1).max(20),
+  endPeriod: z.number().int().min(1).max(20),
+  weeks: z.array(z.number().int().min(1).max(60)).max(60).optional(),
+  location: z.string().min(1).max(60).optional(),
+})
+
+/**
+ * 课程 · c-（v0.5 · Slice H0）：可写 / 可回收实体，字段对齐课表语义。
+ * sessions 1..16；teacher / location / notes 可选（空则缺省）；有 createdAt / updatedAt
+ * （编辑会 bump updatedAt）。
+ */
+export const courseSchema = z
+  .object({
+    id: z.string().regex(/^c-\d{4}$/),
+    title: z.string().min(1),
+    teacher: z.string().optional(),
+    location: z.string().optional(),
+    sessions: z.array(courseSessionSchema).min(1).max(16),
+    notes: z.string().optional(),
+    createdAt: iso,
+    updatedAt: iso,
+  })
+  .catchall(z.unknown())
+
+/** 课程创建入参（Slice H0）：与存储同约束，去掉 id / 时间戳；title ≤80 / teacher·location ≤60 / notes ≤500 */
+export const courseCreateSchema = z.object({
+  title: z.string().min(1).max(80),
+  teacher: z.string().max(60).optional(),
+  location: z.string().max(60).optional(),
+  sessions: z.array(courseSessionSchema).min(1).max(16),
+  notes: z.string().max(500).optional(),
+})
+
+/**
+ * AI 课表草稿（v0.5 · Slice H1）：模型输出形状 { courses: [...] }；最多 30 门，
+ * 缺省空数组（模型判断无真实课程时不报错，交由上层清洗）。绝不自动落盘。
+ */
+export const timetableDraftSchema = z.object({
+  courses: z.array(courseCreateSchema).max(30).default([]),
+})
+
+/** 课表导入入参（Slice H1）：客户端确认后的课程数组；1..30 门，逐条 courseCreateSchema 校验 */
+export const coursesImportSchema = z.object({
+  courses: z.array(courseCreateSchema).min(1).max(30),
+})
+
+/** 学期信息更新入参（Slice H0）：两者皆可选；缺省 startDate 表示未设置学期 */
+export const termUpdateSchema = z.object({
+  startDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
+  totalWeeks: z.number().int().min(1).max(30).optional(),
+})
+
+/**
+ * 课程时段规格化（v0.5 · Slice H0）：非空数组 + endPeriod ≥ startPeriod（否则 400 中文可读）；
+ * weeks 排序去重（空数组 / 缺席则删除键，表示「每周」）；location trim（空则删除）。
+ * 放在 schemas.mjs（无副作用）以便创建 / 编辑 / 探测脚本共用同一实现（见报告说明）。
+ * 返回规格化后的时段数组。
+ */
+export function normalizeCourseSessions(sessions) {
+  if (!Array.isArray(sessions) || sessions.length === 0) {
+    throw Object.assign(new Error('课程至少需要一个上课时段'), { status: 400 })
+  }
+  return sessions.map((session) => {
+    if (session === null || typeof session !== 'object') {
+      throw Object.assign(new Error('上课时段格式不正确'), { status: 400 })
+    }
+    if (session.endPeriod < session.startPeriod) {
+      throw Object.assign(new Error('结束节次不能早于开始节次'), { status: 400 })
+    }
+    const next = { ...session }
+    if (Array.isArray(next.weeks) && next.weeks.length > 0) {
+      next.weeks = Array.from(new Set(next.weeks)).sort((a, b) => a - b)
+    } else {
+      delete next.weeks
+    }
+    if (typeof next.location === 'string') {
+      const trimmed = next.location.trim()
+      if (trimmed === '') delete next.location
+      else next.location = trimmed
+    } else {
+      delete next.location
+    }
+    return next
+  })
+}
+
 export const projectStatus = z.enum(['active', 'onHold', 'someday', 'done', 'archived'])
 
 /** 回顾类型（周 / 月） */
@@ -261,6 +357,7 @@ export const SCHEMAS = {
   areas: areaSchema,
   goals: goalSchema,
   habits: habitSchema,
+  courses: courseSchema,
 }
 
 /** 实体 kind → id 模式（防目录穿越；与 docs/04 ID 约定一致） */
@@ -276,6 +373,7 @@ export const ID_PATTERNS = {
   reviews: /^rev-\d{4}$/,
   tags: /^tag-\d{3,}$/,
   events: /^e-\d{4}$/,
+  courses: /^c-\d{4}$/,
 }
 
 /* ---------------------------------------------------------------------------
@@ -412,12 +510,20 @@ export const aiActionSchema = z.object({
   linkToNewProject: z.boolean().optional(),
   // task：疑似重复的既有任务 id
   duplicateOf: z.union([z.string(), z.null()]).optional(),
+  // task 专属（v0.5 · Slice N0）：该义务的适用条件（≤30 字，如「仅出国（境）者」）；
+  // 非 task 动作与空串由 postValidateActions 清除
+  condition: z.union([z.string().max(30), z.null()]).optional(),
   reason: z.string().max(300).default(''),
 })
 
-/** 模型整体输出形状（≤6 个动作；空数组表示无需创建） */
+/**
+ * 模型整体输出形状（v0.5 · Slice N0）：
+ * - actions：≤6 个动作；空数组表示无需创建；
+ * - facts：顶层硬事实 / 值得保留的提醒字符串数组（≤8 条，每条 ≤140 字），不产实体。
+ */
 export const aiActionsSchema = z.object({
   actions: z.array(aiActionSchema).max(6).default([]),
+  facts: z.array(z.string().min(1).max(140)).max(8).default([]),
 })
 
 /** 批量应用入参（客户端提交，服务端重新 Zod 校验，绝不信任客户端形状） */

@@ -16,10 +16,12 @@ export const TRASH_DIR = path.join(DATA_DIR, 'trash')
 const TAGS_FILE = path.join(DATA_DIR, 'meta', 'tags.json')
 /** 应用配置（v0.5 · Slice R2）：data/meta/config.json（含 aiAutomation 档位） */
 const CONFIG_FILE = path.join(DATA_DIR, 'meta', 'config.json')
+/** 学期信息（v0.5 · Slice H0）：data/meta/term.json（缺失 = 未设置学期） */
+const TERM_FILE = path.join(DATA_DIR, 'meta', 'term.json')
 /** 带 tags 数组、参与标签级联 / 计数 / 登记的实体目录（events 只读但同样级联，见 ADR-0014） */
 const TAG_ENTITY_KINDS = ['tasks', 'projects', 'notes', 'resources', 'events']
-/** 可回收实体类型（与 index.mjs 路由白名单一致；Slice X 增 areas / goals / habits） */
-const TRASH_KINDS = ['tasks', 'projects', 'notes', 'resources', 'events', 'areas', 'goals', 'habits']
+/** 可回收实体类型（与 index.mjs 路由白名单一致；Slice X 增 areas / goals / habits；Slice H0 增 courses） */
+const TRASH_KINDS = ['tasks', 'projects', 'notes', 'resources', 'events', 'areas', 'goals', 'habits', 'courses']
 
 /* ---------------------------------------------------------------------------
  * 时间戳：本地时区 ISO 8601 带偏移（对齐 docs/04 §1.2）
@@ -39,7 +41,7 @@ export function nowIso() {
  * 读
  * ------------------------------------------------------------------------- */
 
-const KINDS = ['tasks', 'inbox', 'projects', 'areas', 'goals', 'habits', 'events', 'notes', 'resources', 'reviews']
+const KINDS = ['tasks', 'inbox', 'projects', 'areas', 'goals', 'habits', 'events', 'notes', 'resources', 'reviews', 'courses']
 
 async function readJson(file) {
   const raw = await fs.readFile(file, 'utf8')
@@ -105,6 +107,8 @@ export async function readSnapshot() {
     notes: byKind.notes,
     resources: byKind.resources,
     reviews: byKind.reviews,
+    courses: byKind.courses,
+    term: await readTerm(),
     config,
     tags: tagRegistry.tags ?? [],
   }
@@ -149,6 +153,65 @@ export function updateConfig(patch) {
     await appendActivity({
       action: 'config.update',
       entity: 'config',
+      id: '-',
+      detail: { fields },
+    })
+    return next
+  })
+}
+
+/**
+ * 读取学期信息（v0.5 · Slice H0，见 docs/04）：data/meta/term.json；
+ * 文件缺失 / 损坏 → null（前端视作「学期未设置」）。
+ */
+export async function readTerm() {
+  try {
+    return await readJson(TERM_FILE)
+  } catch {
+    return null
+  }
+}
+
+/**
+ * 更新学期信息（v0.5 · Slice H0）：只合并 startDate / totalWeeks（白名单外忽略）；
+ * 文件缺失从 {} 起（首次设置）；startDate 格式非法或 totalWeeks 越界 → 400 中文可读。
+ * 原子写 + 审计 term.update（detail.fields 记录实际改动键；两者皆缺省 = 空审计）。返回新对象。
+ */
+export function updateTerm(patch) {
+  return serialize(async () => {
+    let current = {}
+    try {
+      current = await readJson(TERM_FILE)
+    } catch {
+      current = {}
+    }
+    const next = { ...current }
+    const fields = []
+    if (patch?.startDate !== undefined) {
+      const startDate = typeof patch.startDate === 'string' ? patch.startDate.trim() : ''
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate)) {
+        throw Object.assign(new Error('学期开始日期须为 YYYY-MM-DD 格式'), { status: 400 })
+      }
+      if (next.startDate !== startDate) {
+        next.startDate = startDate
+        fields.push('startDate')
+      }
+    }
+    if (patch?.totalWeeks !== undefined) {
+      const totalWeeks = patch.totalWeeks
+      if (!Number.isInteger(totalWeeks) || totalWeeks < 1 || totalWeeks > 30) {
+        throw Object.assign(new Error('学期周数须为 1–30 的整数'), { status: 400 })
+      }
+      if (next.totalWeeks !== totalWeeks) {
+        next.totalWeeks = totalWeeks
+        fields.push('totalWeeks')
+      }
+    }
+    next.updatedAt = nowIso()
+    await writeFileAtomic(TERM_FILE, `${JSON.stringify(next, null, 2)}\n`, { encoding: 'utf8' })
+    await appendActivity({
+      action: 'term.update',
+      entity: 'term',
       id: '-',
       detail: { fields },
     })
@@ -225,8 +288,15 @@ export function commit(kind, record, audit) {
     if (!schema) throw new Error(`未知实体类型：${kind}`)
     const parsed = schema.parse(record)
     const file = path.join(DATA_DIR, kind, `${parsed.id}.json`)
+    // 父目录可能不存在（新实体首写等）——先建目录再原子写（Slice H0 QA 修复）
+    await fs.mkdir(path.dirname(file), { recursive: true })
     await writeFileAtomic(file, `${JSON.stringify(parsed, null, 2)}\n`, { encoding: 'utf8' })
-    if (audit) await appendActivity(audit)
+    // 审计自描述（Slice S）：并入记录标题，供回顾页渲染人类可读时间线；不覆盖既有 detail 键
+    if (audit) {
+      const detail = { ...(audit.detail ?? {}) }
+      if (typeof parsed.title === 'string' && parsed.title !== '') detail.title = parsed.title
+      await appendActivity({ ...audit, detail })
+    }
     return parsed
   })
 }
@@ -617,7 +687,12 @@ export function moveToTrash(kind, id, audit) {
     await fs.mkdir(path.dirname(trashFile), { recursive: true })
     await writeFileAtomic(trashFile, `${JSON.stringify(trashed, null, 2)}\n`, { encoding: 'utf8' })
     await fs.unlink(source)
-    if (audit) await appendActivity(audit)
+    // 审计自描述（Slice S）：并入记录标题（record 已读）；不覆盖既有 detail 键
+    if (audit) {
+      const detail = { ...(audit.detail ?? {}) }
+      if (typeof record.title === 'string' && record.title !== '') detail.title = record.title
+      await appendActivity({ ...audit, detail })
+    }
     return trashed
   })
 }
@@ -638,9 +713,16 @@ export function restoreFromTrash(kind, id, audit) {
     delete record.trashedAt
     const parsed = schema.parse(record)
     const file = path.join(DATA_DIR, kind, `${parsed.id}.json`)
+    // 父目录可能不存在（目录被清 / 新实体）——先建目录再写回（Slice H0 QA 修复）
+    await fs.mkdir(path.dirname(file), { recursive: true })
     await writeFileAtomic(file, `${JSON.stringify(parsed, null, 2)}\n`, { encoding: 'utf8' })
     await fs.unlink(trashFile)
-    if (audit) await appendActivity(audit)
+    // 审计自描述（Slice S）：并入记录标题（parsed 已校验）；不覆盖既有 detail 键
+    if (audit) {
+      const detail = { ...(audit.detail ?? {}) }
+      if (typeof parsed.title === 'string' && parsed.title !== '') detail.title = parsed.title
+      await appendActivity({ ...audit, detail })
+    }
     return parsed
   })
 }
@@ -692,6 +774,7 @@ export async function nextId(kind) {
     habits: 'h',
     reviews: 'rev',
     events: 'e',
+    courses: 'c',
   }[kind]
   if (!prefix) throw new Error(`未知实体类型：${kind}`)
   const list = await readKind(kind)

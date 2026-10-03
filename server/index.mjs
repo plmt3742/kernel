@@ -21,12 +21,14 @@ import {
   readActivity,
   readEntity,
   readSnapshot,
+  readTerm,
   readTrash,
   remove,
   removeTag,
   renameTag,
   restoreFromTrash,
   updateConfig,
+  updateTerm,
 } from './store.mjs'
 import {
   areaCreateSchema,
@@ -34,16 +36,20 @@ import {
   clusterApplySchema,
   clusterUnapplySchema,
   configUpdateSchema,
+  courseCreateSchema,
+  coursesImportSchema,
   goalCreateSchema,
   habitCheckinSchema,
   habitCreateSchema,
   ID_PATTERNS,
   inboxApplySchema,
+  normalizeCourseSessions,
   noteDistillRequestSchema,
   resourceCreateSchema,
   taskCreateFieldsSchema,
   tagMergeSchema,
   tagUpdateSchema,
+  termUpdateSchema,
 } from './schemas.mjs'
 import {
   CHAT_MAX_CHARS,
@@ -56,6 +62,8 @@ import {
   draftNoteDistill,
   draftProject,
   draftTask,
+  draftTimetable,
+  draftTimetableStream,
   generateReviewDraft,
   getAiHealth,
   isoWeekKey,
@@ -79,8 +87,8 @@ const FILES_DIR = path.join(DATA_DIR, 'files')
 /** 澄清目标 → 实体 kind */
 const CLARIFY_KINDS = { task: 'tasks', project: 'projects', note: 'notes', resource: 'resources' }
 
-/** 可编辑 / 可回收的实体 kind 白名单（通用 /update · /trash 路由；areas/goals/habits 走专属路由） */
-const EDITABLE_KINDS = ['tasks', 'projects', 'notes', 'resources', 'events']
+/** 可编辑 / 可回收的实体 kind 白名单（通用 /update · /trash 路由；areas/goals/habits 走专属路由；Slice H0 增 courses） */
+const EDITABLE_KINDS = ['tasks', 'projects', 'notes', 'resources', 'events', 'courses']
 /** 可回收实体 kind（Slice X：areas / goals / habits 亦可恢复 / 彻底删除；回收站路由组） */
 const TRASHABLE_KINDS = [...EDITABLE_KINDS, 'areas', 'goals', 'habits']
 /** kind → 审计用单数名 */
@@ -93,6 +101,7 @@ const SINGULAR = {
   areas: 'area',
   goals: 'goal',
   habits: 'habit',
+  courses: 'course',
 }
 /** 无 createdAt / updatedAt 的实体（对齐既有形状；编辑时不 bump updatedAt） */
 const NO_TIMESTAMP_KINDS = new Set(['events', 'areas', 'goals', 'habits'])
@@ -115,6 +124,8 @@ const EDITABLE_FIELDS = {
   areas: ['title', 'standard', 'cadence', 'status'],
   goals: ['title', 'horizon', 'areaId', 'status', 'targetDate'],
   habits: ['title', 'cadence', 'metric', 'target', 'trigger', 'areaId'],
+  // 课程（Slice H0）：sessions 走 normalizeCourseSessions 交叉校验（≥1 且 end ≥ start）
+  courses: ['title', 'teacher', 'location', 'sessions', 'notes'],
 }
 
 function send(res, status, data) {
@@ -496,6 +507,89 @@ async function createEvent(body) {
   })
   if (tags.length > 0) await ensureTags(tags, { origin: 'manual', firstUsedIn: saved.id })
   return { event: saved }
+}
+
+/* ---------------------------------------------------------------------------
+ * 课程 · c-（v0.5 · Slice H0）：可写 / 可回收实体族。
+ * ------------------------------------------------------------------------- */
+
+/**
+ * 新建课程（Slice H0）：title 必填（trim 后非空，400）；sessions 经 courseCreateSchema +
+ * normalizeCourseSessions 双校验（1..16 / end ≥ start）；teacher / location / notes 可选
+ * （trim 后空则省略）；审计 course.create（detail 记 title + 时段数）。有 createdAt / updatedAt。
+ */
+async function createCourse(body) {
+  const parsed = courseCreateSchema.parse(body)
+  const title = parsed.title.trim()
+  if (title === '') throw Object.assign(new Error('课程名不能为空'), { status: 400 })
+  const sessions = normalizeCourseSessions(parsed.sessions)
+  const course = {
+    id: await nextId('courses'),
+    title,
+    sessions,
+    createdAt: nowIso(),
+    updatedAt: nowIso(),
+  }
+  const rawTeacher = parsed.teacher !== undefined ? parsed.teacher.trim() : ''
+  if (rawTeacher !== '') course.teacher = rawTeacher
+  const rawLocation = parsed.location !== undefined ? parsed.location.trim() : ''
+  if (rawLocation !== '') course.location = rawLocation
+  const rawNotes = parsed.notes !== undefined ? parsed.notes.trim() : ''
+  if (rawNotes !== '') course.notes = rawNotes
+  const saved = await commit('courses', course, {
+    action: 'course.create',
+    entity: 'course',
+    id: course.id,
+    detail: { title, sessions: sessions.length },
+  })
+  return { course: saved }
+}
+
+/**
+ * 课表导入（v0.5 · Slice H1）：一次写入多门课程（课程草稿确认后）。
+ * 先对**全部**课程做校验 + 规格化（title 非空 / sessions 经 normalizeCourseSessions），
+ * 全部通过后才逐条 commit——绝不因校验留下半成品（commit 失败属基础设施级，可接受）。
+ * 审计 course.create（detail.via = 'timetable-import'）。返回 { created }。
+ */
+async function importCourses(body) {
+  const parsed = coursesImportSchema.parse(body)
+  // 阶段一：全部校验 + 规格化（不触碰磁盘）
+  const prepared = parsed.courses.map((course) => {
+    const title = course.title.trim()
+    if (title === '') throw Object.assign(new Error('课程名不能为空'), { status: 400 })
+    const sessions = normalizeCourseSessions(course.sessions)
+    const record = { title, sessions }
+    const rawTeacher = course.teacher !== undefined ? course.teacher.trim() : ''
+    if (rawTeacher !== '') record.teacher = rawTeacher
+    const rawLocation = course.location !== undefined ? course.location.trim() : ''
+    if (rawLocation !== '') record.location = rawLocation
+    const rawNotes = course.notes !== undefined ? course.notes.trim() : ''
+    if (rawNotes !== '') record.notes = rawNotes
+    return { record, sessionCount: sessions.length }
+  })
+  // 阶段二：逐条落盘（id 生成 + 原子写 + 审计）
+  const created = []
+  for (const { record, sessionCount } of prepared) {
+    const id = await nextId('courses')
+    const course = {
+      id,
+      title: record.title,
+      sessions: record.sessions,
+      createdAt: nowIso(),
+      updatedAt: nowIso(),
+    }
+    if (record.teacher !== undefined) course.teacher = record.teacher
+    if (record.location !== undefined) course.location = record.location
+    if (record.notes !== undefined) course.notes = record.notes
+    const saved = await commit('courses', course, {
+      action: 'course.create',
+      entity: 'course',
+      id,
+      detail: { title: record.title, sessions: sessionCount, via: 'timetable-import' },
+    })
+    created.push(saved)
+  }
+  return { created }
 }
 
 /* ---------------------------------------------------------------------------
@@ -1309,6 +1403,16 @@ async function applyInboxActions(id, body) {
     appliedTagIds = registered.map((tag) => tag.id)
   }
 
+  // 政策信号（v0.5 · Slice N0）：本批次已应用动作里出现的义务适用条件（去重、保持首见顺序），
+  // 仅作审计留痕，不落实体字段
+  const conditions = []
+  for (const action of actions) {
+    if (action.kind !== 'task' || typeof action.condition !== 'string') continue
+    const condition = action.condition.trim()
+    if (condition === '' || conditions.includes(condition)) continue
+    conditions.push(condition)
+  }
+
   const savedItem = await commit(
     'inbox',
     { ...item, status: 'clarified', linkedId: linkedIds[0], linkedIds, appliedTagIds },
@@ -1319,6 +1423,7 @@ async function applyInboxActions(id, body) {
       detail: {
         created: created.map((entry) => ({ kind: entry.kind, id: entry.record.id })),
         projectId: newProject?.id ?? null,
+        signals: { conditions },
         ai: true,
       },
     },
@@ -1517,6 +1622,15 @@ async function updateEntity(kind, id, body) {
       throw Object.assign(new Error('结束时间不能早于开始时间'), { status: 400 })
     }
   }
+  // 课程时段校验（Slice H0）：sessions 变动时规格化 + 强制 ≥1 且 end ≥ start；
+  // null 清除 sessions 会令键被删除，normalize 收到 undefined → 可读 400「课程至少需要一个上课时段」
+  if (
+    kind === 'courses' &&
+    (Object.prototype.hasOwnProperty.call(body, 'sessions') ||
+      Object.prototype.hasOwnProperty.call(next, 'sessions'))
+  ) {
+    next.sessions = normalizeCourseSessions(next.sessions)
+  }
   // 空 patch = 「touch」（Slice E2.5 回顾页「迁移」）：仍 bump updatedAt，审计 <singular>.touch
   // 日程 / 区域 / 目标 / 习惯无 updatedAt 字段（对齐既有形状），仅审计、不加时间戳
   if (!NO_TIMESTAMP_KINDS.has(kind)) next.updatedAt = nowIso()
@@ -1524,7 +1638,8 @@ async function updateEntity(kind, id, body) {
     action: hasField ? `${SINGULAR[kind]}.update` : `${SINGULAR[kind]}.touch`,
     entity: SINGULAR[kind],
     id,
-    detail: { fields },
+    // 审计自描述（Slice S）：状态变更时留新状态原值（中文可读判断留给前端）；title 由 commit 自动并入
+    detail: { fields, ...(fields.includes('status') && typeof next.status === 'string' ? { status: next.status } : {}) },
   })
   // 录入即生成：编辑携带的新标签登记（origin 'manual'）
   if (tagList !== null && tagList.length > 0) await ensureTags(tagList, { origin: 'manual', firstUsedIn: id })
@@ -1535,8 +1650,12 @@ async function updateEntity(kind, id, body) {
  * 分离式启动本地进程（Slice E2 / J2）：detached + stdio ignore + unref——
  * 不阻塞请求、不随数据服务退出（本地个人工具，无额外限制；见 ADR-0009 / ADR-0008）。
  */
-function spawnDetached(command, args) {
-  const child = spawn(command, args, { detached: true, stdio: 'ignore', windowsHide: true })
+function spawnDetached(command, args, extra = {}) {
+  const child = spawn(command, args, { detached: true, stdio: 'ignore', windowsHide: true, ...extra })
+  // 启动失败（如可执行文件缺失）静默到 stdio ignore 后外部不可见——显式记入数据服务日志，便于诊断
+  child.on('error', (err) => {
+    console.error(`[local] ${command} 启动失败：`, err?.message ?? err)
+  })
   child.unref()
 }
 
@@ -1561,8 +1680,12 @@ async function statLocalPath(raw) {
 async function revealPath(body) {
   const raw = typeof body.path === 'string' ? body.path.trim() : ''
   const { resolved, isDirectory } = await statLocalPath(raw)
-  const args = isDirectory ? [resolved] : ['/select,', resolved]
-  spawnDetached('explorer.exe', args)
+  if (isDirectory) {
+    spawnDetached('explorer.exe', [resolved])
+  } else {
+    // 原生规范形式：`/select,"<path>"` 作为单参数整体传入，不加引号会被 explorer 二次解析
+    spawnDetached('explorer.exe', [`/select,"${resolved}"`], { windowsVerbatimArguments: true })
+  }
   return { ok: true }
 }
 
@@ -1608,7 +1731,8 @@ async function inboxFileAction(id, action, body) {
     spawnDetached('cmd.exe', ['/c', 'start', '', filePath])
     return { ok: true, path: filePath }
   }
-  spawnDetached('explorer.exe', ['/select,', filePath])
+  // 原生规范形式：`/select,"<path>"` 作为单参数整体传入（同 revealPath）
+  spawnDetached('explorer.exe', [`/select,"${filePath}"`], { windowsVerbatimArguments: true })
   return { ok: true, path: filePath }
 }
 
@@ -1635,6 +1759,8 @@ const EDITABLE_GROUP = EDITABLE_KINDS.join('|')
 const ENTITY_ACTION_RE = new RegExp(`^/api/(${EDITABLE_GROUP})/([^/]+)/(update|trash)$`)
 /** 日程删除（Slice W）：/api/events/<id>/remove（审计 event.remove；与通用 /trash 同语义） */
 const EVENT_REMOVE_RE = /^\/api\/events\/([^/]+)\/remove$/
+/** 课程删除（Slice H0）：/api/courses/<id>/remove（审计 course.remove；与通用 /trash 同语义） */
+const COURSE_REMOVE_RE = /^\/api\/courses\/([^/]+)\/remove$/
 /** 区域 / 目标 / 习惯（Slice X）：/api/<kind>/<id>/(update|remove) —— remove 带引用护栏 */
 const AREA_ACTION_RE = /^\/api\/areas\/([^/]+)\/(update|remove)$/
 const GOAL_ACTION_RE = /^\/api\/goals\/([^/]+)\/(update|remove)$/
@@ -1737,6 +1863,67 @@ const server = http.createServer(async (req, res) => {
       }
       return
     }
+    // 课表解析（Slice H1）：课表来源（xlsx / 截图 / 粘贴文本）→ 课程草稿（绝不自动落盘）
+    if (method === 'POST' && pathname === '/api/ai/timetable/draft') {
+      const body = await readBody(req)
+      const id = typeof body.id === 'string' ? body.id : ''
+      if (!validId('inbox', id)) return fail(res, 400, '收件箱 id 格式不正确')
+      const item = await readEntity('inbox', id)
+      if (item === null) return fail(res, 404, '条目不存在')
+      if (item.status !== 'unprocessed') return fail(res, 409, '该条目已澄清或已丢弃')
+      const health = await getAiHealth()
+      if (health.available === false) return fail(res, 503, 'opencode 服务未就绪（127.0.0.1:4096）')
+      let result
+      try {
+        result = await draftTimetable(item)
+      } catch (err) {
+        console.error(`[ai] timetable.draft ${id} 失败：`, err?.message ?? err)
+        // 不可读附件护栏（OLE2 .xls / 扫描件等）抛 status 400 → 原样返回其指引
+        if (typeof err?.status === 'number') return fail(res, err.status, err?.message ?? 'AI 调用失败')
+        return fail(res, 502, err?.message ?? 'AI 调用失败')
+      }
+      console.log(`[ai] timetable.draft ${id} ok ${result.ms}ms`)
+      send(res, 200, result)
+      return
+    }
+    // 课表解析 · 流式（Slice H1.6）：与同步端点同前置校验；校验通过后切 SSE，
+    // 脚手架逐字镜像 /api/ai/inbox/:id/parse-stream（id 取自 body，与同步端点同口径）。
+    if (method === 'POST' && pathname === '/api/ai/timetable/draft-stream') {
+      const body = await readBody(req)
+      const id = typeof body.id === 'string' ? body.id : ''
+      if (!validId('inbox', id)) return fail(res, 400, '收件箱 id 格式不正确')
+      const item = await readEntity('inbox', id)
+      if (item === null) return fail(res, 404, '条目不存在')
+      if (item.status !== 'unprocessed') return fail(res, 409, '该条目已澄清或已丢弃')
+      const health = await getAiHealth()
+      if (health.available === false) return fail(res, 503, 'opencode 服务未就绪（127.0.0.1:4096）')
+
+      // SSE：前置校验全部通过后才切入事件流
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream; charset=utf-8',
+        'Cache-Control': 'no-cache, no-transform',
+        Connection: 'keep-alive',
+        'X-Accel-Buffering': 'no',
+      })
+      res.flushHeaders()
+      let sseClosed = false
+      req.on('close', () => {
+        sseClosed = true
+      })
+      const emit = (event) => {
+        if (sseClosed || res.writableEnded) return
+        res.write(`data: ${JSON.stringify(event)}\n\n`)
+      }
+      try {
+        await draftTimetableStream(item, emit)
+      } catch (err) {
+        console.error(`[ai] timetable.draft-stream ${id} 失败：`, err?.message ?? err)
+        emit({ kind: 'error', message: err?.message ?? 'AI 调用失败' })
+      } finally {
+        if (!sseClosed && !res.writableEnded) res.end()
+      }
+      return
+    }
     // AI 对话（Slice G）：读库回答；历史有界（最近 20 条 / 单条 4000 字 / 合计 16000 字）
     if (method === 'POST' && pathname === '/api/ai/chat') {
       const body = await readBody(req)
@@ -1814,6 +2001,14 @@ const server = http.createServer(async (req, res) => {
       const result = await applyConfigUpdate(await readBody(req))
       console.log(`[data] config.update aiAutomation=${result.config.aiAutomation}`)
       send(res, 200, result)
+      return
+    }
+    // 学期信息更新（Slice H0）：startDate / totalWeeks 皆可选；审计 term.update
+    if (method === 'POST' && pathname === '/api/term') {
+      const patch = termUpdateSchema.parse(await readBody(req))
+      const term = await updateTerm(patch)
+      console.log('[data] term.update')
+      send(res, 200, { term })
       return
     }
     // 笔记 AI 蒸馏（Slice M）：把笔记压缩到目标层级 → 返回草稿文本（绝不自动落盘）
@@ -2046,6 +2241,16 @@ const server = http.createServer(async (req, res) => {
       send(res, 200, { trashed: { kind: 'events', id }, record })
       return
     }
+    // 课程删除（Slice H0）：/api/courses/<id>/remove → 回收站（审计 course.remove）
+    const courseRemoveMatch = COURSE_REMOVE_RE.exec(pathname)
+    if (method === 'POST' && courseRemoveMatch !== null) {
+      const id = decodeURIComponent(courseRemoveMatch[1])
+      if (!validId('courses', id)) return fail(res, 400, '课程 id 格式不正确')
+      const record = await moveToTrash('courses', id, { action: 'course.remove', entity: 'course', id })
+      console.log(`[data] course.remove ${id}`)
+      send(res, 200, { trashed: { kind: 'courses', id }, record })
+      return
+    }
     // 回收站恢复 / 彻底删除（Slice E2）
     const trashItemMatch = TRASH_ITEM_RE.exec(pathname)
     if (method === 'POST' && trashItemMatch !== null) {
@@ -2093,6 +2298,20 @@ const server = http.createServer(async (req, res) => {
     if (method === 'POST' && pathname === '/api/events') {
       const result = await createEvent(await readBody(req))
       console.log(`[data] event.create ${result.event.id}`)
+      send(res, 201, result)
+      return
+    }
+    // 课表导入（Slice H1）：一次写入多门课程（先全部校验，全部通过才逐条落盘）
+    if (method === 'POST' && pathname === '/api/courses/import') {
+      const result = await importCourses(await readBody(req))
+      console.log(`[data] course.import ${result.created.length} 门（via timetable-import）`)
+      send(res, 201, result)
+      return
+    }
+    // 新建课程（Slice H0）：title 必填；sessions 1..16 且 endPeriod ≥ startPeriod
+    if (method === 'POST' && pathname === '/api/courses') {
+      const result = await createCourse(await readBody(req))
+      console.log(`[data] course.create ${result.course.id}`)
       send(res, 201, result)
       return
     }
