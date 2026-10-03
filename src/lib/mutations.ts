@@ -8,6 +8,8 @@ import type {
   AppConfig,
   Area,
   CalendarEvent,
+  Course,
+  CourseSession,
   Goal,
   Habit,
   InboxItem,
@@ -20,6 +22,7 @@ import type {
   ReviewType,
   TagItem,
   Task,
+  TermInfo,
   TrashItem,
   TrashKind,
 } from '@/types'
@@ -165,6 +168,181 @@ export async function createEvent(input: EventCreateInput): Promise<CalendarEven
 export async function removeEvent(id: string): Promise<void> {
   await api.post<{ trashed: { kind: 'events'; id: string } }>(`/api/events/${id}/remove`)
   removeEntity('events', id)
+}
+
+/* ---------------------------------------------------------------------------
+ * 课表（v0.5 · Slice H0）：课程 + 学期元信息。
+ * 课程 = 标题 + 若干时段（星期 / 节次 / 周次）；删除走回收站（撤销即恢复）。
+ * 学期 `term` 是单例元信息，更新后整体水合（与 updateAiAutomation 同策略）。
+ * ------------------------------------------------------------------------- */
+
+/** 课程创建入参：title 必填；sessions 至少一个（服务端校验） */
+export interface CourseCreateInput {
+  title: string
+  teacher?: string
+  location?: string
+  sessions: CourseSession[]
+  notes?: string
+}
+
+/** 新建课程（成功后 upsert 本地快照） */
+export async function createCourse(input: CourseCreateInput): Promise<Course> {
+  const { course } = await api.post<{ course: Course }>('/api/courses', input)
+  upsertEntity('courses', course)
+  return course
+}
+
+/** 编辑课程（白名单 title / teacher / location / sessions / notes；成功后 upsert） */
+export async function updateCourse(id: string, patch: Record<string, unknown>): Promise<Course> {
+  const { record } = await api.post<{ record: Course }>(`/api/courses/${id}/update`, patch)
+  upsertEntity('courses', record)
+  return record
+}
+
+/** 删除课程（移入回收站，服务端审计 course.remove）。撤销走 restoreEntity('courses', id) */
+export async function removeCourse(id: string): Promise<void> {
+  await api.post<{ trashed: { kind: 'courses'; id: string } }>(`/api/courses/${id}/remove`)
+  removeEntity('courses', id)
+}
+
+/** 更新学期设置（白名单 startDate / totalWeeks）；返回服务端最终 term */
+export async function updateTerm(patch: {
+  startDate?: string
+  totalWeeks?: number
+}): Promise<TermInfo> {
+  const { term } = await api.post<{ term: TermInfo }>('/api/term', patch)
+  await hydrateFromServer()
+  return term
+}
+
+/* ---------------------------------------------------------------------------
+ * 课表导入（v0.5 · Slice H1）：从收件箱条目（xlsx / 截图 / 粘贴文本）提取课程。
+ * AI 只出「草稿」（CourseCreateInput[]），绝不自动落盘；用户勾选确认后经
+ * /api/courses/import 一次写入（成功后整体水合，使课表即时刷新）。
+ * ------------------------------------------------------------------------- */
+
+/** AI 课表提取草稿：courses 为待确认课程；model / ms 供状态展示 */
+export interface TimetableDraftResult {
+  courses: CourseCreateInput[]
+  model: string | null
+  ms: number
+}
+
+/** 请求 AI 从收件箱条目提取课程草稿（同步，保留为回退路径）；不写数据（失败抛出由调用方安静处理） */
+export async function aiTimetableDraft(id: string): Promise<TimetableDraftResult> {
+  return api.post<TimetableDraftResult>('/api/ai/timetable/draft', { id })
+}
+
+/** AI 课表流式提取过程事件（对应 POST /api/ai/timetable/draft-stream 的 SSE 帧；同 parse-stream 格式） */
+export type TimetableStreamEvent =
+  | { kind: 'status'; status?: string }
+  | { kind: 'delta'; field: string; delta: string }
+  | { kind: 'retry'; reason: string }
+  | { kind: 'suggestion'; courses: CourseCreateInput[]; model: string | null; ms: number }
+  | { kind: 'error'; message: string }
+
+/**
+ * 流式请求 AI 课表提取（Slice H1.6）：POST + fetch 读取响应体（非 EventSource）。
+ * 逐帧解析 SSE（`data: <json>\n\n`，chunk 边界不敏感），把过程事件交给 onEvent；
+ * 收到 suggestion 帧时以 TimetableDraftResult 兑现；error 帧 / 非 2xx 响应以可读错误拒绝。
+ * 与 aiParseInboxStream 同构，唯一差异：id 经 JSON body 传递、兑现值为课程草稿。
+ */
+export async function aiTimetableDraftStream(
+  id: string,
+  onEvent: (event: TimetableStreamEvent) => void,
+): Promise<TimetableDraftResult> {
+  let response: Response
+  try {
+    response = await fetch('/api/ai/timetable/draft-stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    })
+  } catch {
+    throw new Error('数据服务不可用（确认 npm run dev 已启动数据服务）')
+  }
+  if (!response.ok) {
+    // 前置校验失败（400/404/409/503）：响应体为 JSON，沿用 api.ts 的错误解析
+    const text = await response.text()
+    let data: unknown = null
+    if (text !== '') {
+      try {
+        data = JSON.parse(text)
+      } catch {
+        data = null
+      }
+    }
+    if (response.status >= 500 && data === null) {
+      throw new Error('数据服务不可用（确认 npm run dev 已启动数据服务）')
+    }
+    const message =
+      data !== null &&
+      typeof data === 'object' &&
+      'error' in data &&
+      typeof (data as { error: unknown }).error === 'string'
+        ? (data as { error: string }).error
+        : `请求失败（HTTP ${response.status}）`
+    throw new Error(message)
+  }
+
+  const body = response.body
+  if (body === null) throw new Error('数据服务未返回流式响应')
+  const reader = body.getReader()
+  const decoder = new TextDecoder()
+
+  const state: { result: TimetableDraftResult | null; failure: string | null; buffer: string } = {
+    result: null,
+    failure: null,
+    buffer: '',
+  }
+
+  const handleFrame = (frame: string): void => {
+    const line = frame.split('\n').find((part) => part.startsWith('data:'))
+    if (line === undefined) return
+    const payload = line.slice(5).trim()
+    if (payload === '') return
+    let event: TimetableStreamEvent
+    try {
+      event = JSON.parse(payload) as TimetableStreamEvent
+    } catch {
+      return
+    }
+    if (event.kind === 'suggestion') {
+      state.result = { courses: event.courses, model: event.model, ms: event.ms }
+    } else if (event.kind === 'error') {
+      state.failure = event.message
+    }
+    onEvent(event)
+  }
+
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    state.buffer += decoder.decode(value, { stream: true })
+    let index = state.buffer.indexOf('\n\n')
+    while (index !== -1) {
+      const frame = state.buffer.slice(0, index)
+      state.buffer = state.buffer.slice(index + 2)
+      handleFrame(frame)
+      index = state.buffer.indexOf('\n\n')
+    }
+  }
+  state.buffer += decoder.decode()
+  if (state.buffer.trim() !== '') handleFrame(state.buffer)
+
+  if (state.failure !== null) throw new Error(state.failure)
+  if (state.result === null) throw new Error('AI 流式响应异常结束')
+  return state.result
+}
+
+/**
+ * 批量导入课程（一次写入；成功后整体水合使课表即时刷新）。
+ * 返回服务端新建的课程列表（撤销 = 逐条经 removeCourse 移入回收站）。
+ */
+export async function importCourses(courses: CourseCreateInput[]): Promise<Course[]> {
+  const { created } = await api.post<{ created: Course[] }>('/api/courses/import', { courses })
+  await hydrateFromServer()
+  return created
 }
 
 /* ---------------------------------------------------------------------------
@@ -455,6 +633,8 @@ export interface AiAction {
   linkToNewProject?: boolean
   /** task：疑似重复的既有任务 id */
   duplicateOf?: string
+  /** task：适用条件（Slice N0；如「仅出国（境）者」）；有条件的动作默认不勾选，由用户主动纳入 */
+  condition?: string | null
   reason: string
 }
 
@@ -533,6 +713,8 @@ export interface AiSuggestion {
 export interface AiParseResult {
   /** 一揽子处置动作（Slice R1：一个条目可拆出 0~6 个动作） */
   actions: AiAction[]
+  /** 公告要点（Slice N0）：假日日期等硬信息，≤8 条、每条 ≤140 字；不落盘，供「存为要点笔记」 */
+  facts: string[]
   model: string | null
   ms: number
 }
@@ -542,12 +724,14 @@ export type AiStreamEvent =
   | { kind: 'status'; status?: string }
   | { kind: 'delta'; field: string; delta: string }
   | { kind: 'retry'; reason: string }
-  | { kind: 'suggestion'; actions: AiAction[]; model: string | null; ms: number }
+  | { kind: 'suggestion'; actions: AiAction[]; facts: string[]; model: string | null; ms: number }
   | { kind: 'error'; message: string }
 
 /** 请求 AI 解析收件箱条目（同步，保留为回退路径）；不写数据（失败抛出由调用方提示） */
 export async function aiParseInbox(id: string): Promise<AiParseResult> {
-  return api.post<AiParseResult>(`/api/ai/inbox/${id}/parse`)
+  const result = await api.post<AiParseResult>(`/api/ai/inbox/${id}/parse`)
+  // 服务端老版本可能不带 facts（Slice N0）：缺省补齐，保证消费端稳定
+  return { ...result, facts: result.facts ?? [] }
 }
 
 /**
@@ -612,7 +796,13 @@ export async function aiParseInboxStream(
       return
     }
     if (event.kind === 'suggestion') {
-      state.result = { actions: event.actions, model: event.model, ms: event.ms }
+      // facts 缺省补齐（老服务端 / 无要点时）；消费端视为必填
+      state.result = {
+        actions: event.actions,
+        facts: event.facts ?? [],
+        model: event.model,
+        ms: event.ms,
+      }
     } else if (event.kind === 'error') {
       state.failure = event.message
     }
@@ -911,6 +1101,7 @@ export type EditableRecord =
   | Area
   | Goal
   | Habit
+  | Course
 
 /**
  * 构造「编辑撤销」补丁（Slice Y · F36）：对 patch 中出现的每个键，取记录中的原值；

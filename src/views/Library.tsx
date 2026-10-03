@@ -324,25 +324,28 @@ export function Library() {
     })()
   }
 
+  // 在文件管理器中定位资源文件（仅本机）：成功与失败均 toast
   const handleReveal = (): void => {
     const path = selectedResource?.path
     if (path === undefined) return
     void (async () => {
       try {
         await revealPath(path)
+        toast('已在文件管理器中定位')
       } catch (err) {
-        toast(`打开失败：${errorText(err)}`, { tone: 'error' })
+        toast(`定位失败：${errorText(err)}`, { tone: 'error' })
       }
     })()
   }
 
-  // 以默认程序打开资源文件（Slice J2 · 与收件箱附件动作同姿态；仅本机）
+  // 以默认程序打开资源文件（Slice J2 · 与收件箱附件动作同姿态；仅本机）：成功与失败均 toast
   const handleOpenResource = (): void => {
     const path = selectedResource?.path
     if (path === undefined) return
     void (async () => {
       try {
         await openPath(path)
+        toast('已用默认程序打开')
       } catch (err) {
         toast(`打开失败：${errorText(err)}`, { tone: 'error' })
       }
