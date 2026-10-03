@@ -30,6 +30,7 @@ import { Checkbox } from '@/components/Checkbox'
 import { EmptyState } from '@/components/EmptyState'
 import { AiActionsCard } from '@/components/AiActionsCard'
 import { ClusterProposalCard } from '@/components/ClusterProposalCard'
+import { TimetableDraftCard } from '@/components/TimetableDraftCard'
 import { useToast } from '@/context/ToastContext'
 import { getConfig, getInbox, getSnapshot } from '@/lib/data'
 import {
@@ -38,10 +39,14 @@ import {
   applyInbox,
   captureInbox,
   clarifyInbox,
+  createNote,
+  importCourses,
   openInboxFile,
+  removeCourse,
   removeInbox,
   revealInboxFile,
   revertInbox,
+  trashEntity,
   unapplyCluster,
   unapplyInbox,
   uploadInboxFile,
@@ -49,19 +54,30 @@ import {
   type AiParseResult,
   type ClarifyTarget,
   type ClusterProposal,
+  type CourseCreateInput,
 } from '@/lib/mutations'
 import {
+  clearCachedSuggestion,
+  clearFactsNote,
   clearInboxAiActive,
   getCachedSuggestion,
   getInboxAiSnapshot,
   reconcileInboxAiCache,
   runSingleAi,
+  setFactsNote,
   startBatchAi,
   subscribeInboxAi,
   takeInboxAiCompletion,
   takeInboxAiFailures,
   type AiStage,
 } from '@/lib/inboxAi'
+import {
+  clearTimetableDraft,
+  getTimetableAiSnapshot,
+  looksLikeTimetable,
+  runTimetableDraft,
+  subscribeTimetableAi,
+} from '@/lib/timetableAi'
 import { deepLinkOfId } from '@/lib/relations'
 import { api, errorText } from '@/lib/api'
 import { createUiStore, str, useUiStore } from '@/lib/uiState'
@@ -231,6 +247,10 @@ export function Inbox() {
   // AI 解析状态：模块级 store（跨路由切换存活）——只读快照 + 派发展开 / 滚动 / 播报
   const ai = useSyncExternalStore(subscribeInboxAi, getInboxAiSnapshot)
   const { running, current, total, activeId, phase, stage, text, reasoning, result, error } = ai
+  // 课表导入状态：模块级 store（跨路由切换存活）——与 AI 解析面板并列、互不干扰
+  const tt = useSyncExternalStore(subscribeTimetableAi, getTimetableAiSnapshot)
+  // 导入课程在途（本地态；成功后清空面板，失败保留选择卡）
+  const [importingCourses, setImportingCourses] = useState(false)
   // 文件投递（Slice D）：待上传队列 + 拖拽态 + 上传/解析状态播报
   const fileInputRef = useRef<HTMLInputElement>(null)
   const dragDepth = useRef(0)
@@ -286,6 +306,15 @@ export function Inbox() {
     )
     if (!stillUnprocessed) clearInboxAiActive()
   }, [revision, activeId])
+
+  // 课表面板条目离开未澄清列表（澄清 / 删除 / 水合）→ 清空，避免残留脏状态
+  useEffect(() => {
+    if (tt.itemId === null) return
+    const stillUnprocessed = getInbox().some(
+      (item) => item.id === tt.itemId && item.status === 'unprocessed',
+    )
+    if (!stillUnprocessed) clearTimetableDraft()
+  }, [revision, tt.itemId])
 
   // 建议缓存对账：条目一旦离开未澄清列表即删除其缓存（应用 / 撤销 / 水合）
   useEffect(() => {
@@ -460,17 +489,25 @@ export function Inbox() {
     })()
   }
 
-  // 附件本机动作（Slice J2）：以默认程序打开 / 在文件管理器中定位；失败 toast，绝不触发浏览器下载
+  // 附件本机动作（Slice J2）：以默认程序打开 / 在文件管理器中定位；成功与失败均 toast，绝不触发浏览器下载
   const openFile = (item: InboxItem): void => {
-    void openInboxFile(item.id).catch((err) => {
-      toast(`打开失败：${errorText(err)}`, { tone: 'error' })
-    })
+    void openInboxFile(item.id)
+      .then(() => {
+        toast('已用默认程序打开')
+      })
+      .catch((err) => {
+        toast(`打开失败：${errorText(err)}`, { tone: 'error' })
+      })
   }
 
   const revealFile = (item: InboxItem): void => {
-    void revealInboxFile(item.id).catch((err) => {
-      toast(`定位失败：${errorText(err)}`, { tone: 'error' })
-    })
+    void revealInboxFile(item.id)
+      .then(() => {
+        toast('已在文件管理器中定位')
+      })
+      .catch((err) => {
+        toast(`定位失败：${errorText(err)}`, { tone: 'error' })
+      })
   }
 
   // 展开 / 收起：收起时清空面板（保留缓存）。批量运行中不打断活跃批次的解析，仅切换显示
@@ -478,6 +515,21 @@ export function Inbox() {
     const next = expandedId === id ? null : id
     if (!(running && activeId === id)) clearInboxAiActive()
     setExpandedId(next)
+  }
+
+  // 忽略 AI 建议（Slice N0.6 · 交互反馈修复）：先清该条建议缓存——否则面板派生按缓存回退原地重渲染，
+  // 卡片与行尾「AI 建议就绪」标记都不变 = 无反馈；再清活跃面板，最后 toast。覆盖就绪卡与
+  // 「无需创建」空态卡（同一 onClear 通路），以及解析失败面板的忽略（同样可被缓存回退抵消）。
+  const dismissAiSuggestion = (item: InboxItem): void => {
+    clearCachedSuggestion(item.id)
+    clearInboxAiActive()
+    toast('已忽略 AI 建议')
+  }
+
+  // 忽略课表草稿（Slice N0.6 · 反馈修复）：清面板 + toast，与 AI 建议忽略保持一致的可见反馈。
+  const dismissTimetableDraft = (): void => {
+    clearTimetableDraft()
+    toast('已忽略课表解析')
   }
 
   // 运行 AI 解析：缓存命中则直接展开就绪卡（不重解析）；无缓存才发起流式解析。
@@ -543,6 +595,21 @@ export function Inbox() {
         })()
       })
       .catch(() => {})
+  }
+
+  // 到达条目自动路由（Slice H1.7）：疑似课表的文件条目 → 自动展开 + 课表草稿（SSE 流式，跳过通用解析）；
+  // 其余条目 → 既有通用 AI 解析（runParseSilent，先探活、失败静默）。文本条目不经此处
+  // （captureText 仍走 runParseSilent）。与批量条自动展开 / 滚入互不干扰（各自条件独立）。
+  const routeArrivedItem = async (item: InboxItem): Promise<void> => {
+    if (looksLikeTimetable(item)) {
+      const stillUnprocessed = getInbox().some(
+        (entry) => entry.id === item.id && entry.status === 'unprocessed',
+      )
+      if (stillUnprocessed) setExpandedId(item.id)
+      await runTimetableDraft(item)
+      return
+    }
+    runParseSilent(item)
   }
 
   // 删除条目（F34）：二次确认后经 removeInbox（服务端一并清理附件）；已澄清由服务端 409 保护，UI 不提供。
@@ -624,12 +691,8 @@ export function Inbox() {
       toast(`已投递 ${uploaded.length} 个文件 · AI 先读一遍`)
       for (let i = 0; i < uploaded.length; i += 1) {
         setBusyLabel(`AI 读取中 ${i + 1}/${uploaded.length}…`)
-        try {
-          const result = await runParse(uploaded[i])
-          if (result !== null) maybeAutoApply(uploaded[i], result)
-        } catch (err) {
-          toast(`AI 解析失败：${errorText(err)}`, { tone: 'error' })
-        }
+        // Slice H1.7：课表类文件自动路由到课表草稿，其余走通用解析（保持顺序处理节奏）
+        await routeArrivedItem(uploaded[i])
       }
       setBusyLabel('')
     })()
@@ -656,6 +719,70 @@ export function Inbox() {
         toast(`应用失败：${errorText(err)}`, { tone: 'error' })
       }
     })()
+  }
+
+  // 课表导入（Slice H1）：勾选确认后一次写入全部课程；成功清空面板 + toast「已导入 N 门课程 · 撤销」。
+  // 撤销逐条 removeCourse（移入回收站），任一失败 toast error（照 applyActions 的写法）。
+  const importSelectedCourses = (selected: CourseCreateInput[]): void => {
+    void (async () => {
+      setImportingCourses(true)
+      try {
+        const created = await importCourses(selected)
+        clearTimetableDraft()
+        toast(`已导入 ${created.length} 门课程`, {
+          action: {
+            label: '撤销',
+            onClick: () => {
+              void (async () => {
+                for (const course of created) {
+                  try {
+                    await removeCourse(course.id)
+                  } catch (err) {
+                    toast(`撤销失败：${errorText(err)}`, { tone: 'error' })
+                  }
+                }
+              })()
+            },
+          },
+        })
+      } catch (err) {
+        toast(`导入失败：${errorText(err)}`, { tone: 'error' })
+      } finally {
+        setImportingCourses(false)
+      }
+    })()
+  }
+
+  // 把公告要点存为一条笔记（Slice N0）：一次 createNote 落盘；成功后关闭该条 AI 面板
+  // （与 applyActions 一致：clearInboxAiActive），toast 撤销 = trashEntity('notes')（同 NoteComposeModal）。
+  // Slice N0.5（反馈修复）：接收 itemId 并登记 factsNoteCache（→ 卡片显示「已存为要点笔记 · 查看」）；
+  //   撤销成功后 clearFactsNote(itemId)，恢复可再存；promise 不抛出（卡片 finally 自行收尾）。
+  const saveFactsAsNote = async (facts: string[], itemId?: string): Promise<void> => {
+    if (facts.length === 0) return
+    try {
+      const note = await createNote({
+        title: `通知要点 · ${formatMonthDay(new Date())}`,
+        body: facts.map((fact) => `- ${fact}`).join('\n'),
+      })
+      if (itemId !== undefined) setFactsNote(itemId, note.id)
+      clearInboxAiActive()
+      toast('已存为笔记', {
+        action: {
+          label: '撤销',
+          onClick: () => {
+            void trashEntity('notes', note.id)
+              .catch((err) => {
+                toast(`撤销失败：${errorText(err)}`, { tone: 'error' })
+              })
+              .then(() => {
+                if (itemId !== undefined) clearFactsNote(itemId)
+              })
+          },
+        },
+      })
+    } catch (err) {
+      toast(`保存失败：${errorText(err)}`, { tone: 'error' })
+    }
   }
 
   // 聚类归纳（Slice R2）：手动触发总是重跑；自动触发每会话一次（见上方 effect）。
@@ -978,6 +1105,7 @@ export function Inbox() {
                       const isExpanded = expandedId === item.id
                       const cached = getCachedSuggestion(item.id)
                       const isParsingThis = activeId === item.id && phase === 'parsing'
+                      const ttThis = tt.itemId === item.id
                       const panelActive = activeId === item.id && phase !== 'idle'
                       const panelPhase = panelActive
                         ? phase
@@ -1095,6 +1223,18 @@ export function Inbox() {
                                   <Sparkles size={12} strokeWidth={1.5} aria-hidden />
                                   AI 解析
                                 </button>
+                                <button
+                                  type="button"
+                                  className="k-pill is-ghost"
+                                  onClick={() => {
+                                    void runTimetableDraft(item)
+                                  }}
+                                  disabled={tt.busy && ttThis}
+                                  aria-busy={tt.busy && ttThis}
+                                  title="从该条目（表格 / 截图 / 文本）提取课程，确认后导入课表"
+                                >
+                                  {tt.busy && ttThis ? '课表解析中…' : '导入为课表'}
+                                </button>
                                 {CLARIFY_TARGETS.map((target) => (
                                   <TagPill
                                     key={target.key}
@@ -1176,27 +1316,79 @@ export function Inbox() {
                                         >
                                           重试
                                         </button>
-                                        <button
-                                          type="button"
-                                          className="k-pill is-ghost"
-                                          onClick={clearInboxAiActive}
-                                        >
-                                          忽略
-                                        </button>
+                                         <button
+                                           type="button"
+                                           className="k-pill is-ghost"
+                                           onClick={() => dismissAiSuggestion(item)}
+                                         >
+                                           忽略
+                                         </button>
                                       </div>
                                     </>
                                   )}
                                   {panelPhase === 'ready' && panelResult !== null && (
                                     <AiActionsCard
                                       actions={panelResult.actions}
+                                      facts={panelResult.facts}
+                                      onSaveFacts={saveFactsAsNote}
                                       itemId={item.id}
                                       onApply={(next) => applyActions(item, next)}
-                                      onRetry={() => forceParse(item)}
-                                      retryDisabled={running}
-                                      onClear={clearInboxAiActive}
-                                    />
+                                       onRetry={() => forceParse(item)}
+                                       retryDisabled={running}
+                                       onClear={() => dismissAiSuggestion(item)}
+                                     />
                                   )}
                                 </div>
+                              )}
+                              {/* 课表导入（Slice H1）：与上方 AI 解析面板并列的独立区块，二者可共存 */}
+                              {ttThis && (
+                                <>
+                                  {tt.busy && (
+                                    <>
+                                      <p className="ic-tt__status u-label" role="status" aria-live="polite">
+                                        {tt.stage || '正在提取课程…'}
+                                      </p>
+                                      {tt.preview !== '' && (
+                                        <p className="ic-tt__preview" aria-hidden="true">
+                                          {tt.preview}
+                                        </p>
+                                      )}
+                                    </>
+                                  )}
+                                  {!tt.busy && tt.error !== '' && (
+                                    <div className="ic-tt__error">
+                                      <p className="ic-tt__error-text" role="alert">
+                                        {tt.error}
+                                      </p>
+                                      <div className="ic-tt__error-actions">
+                                        <button
+                                          type="button"
+                                          className="k-pill is-ghost"
+                                          onClick={() => {
+                                            void runTimetableDraft(item)
+                                          }}
+                                        >
+                                          重试
+                                        </button>
+                                        <button
+                                          type="button"
+                                          className="k-pill is-ghost"
+                                          onClick={clearTimetableDraft}
+                                        >
+                                          关闭
+                                        </button>
+                                      </div>
+                                    </div>
+                                  )}
+                                  {!tt.busy && tt.error === '' && tt.courses !== null && (
+                                    <TimetableDraftCard
+                                       courses={tt.courses}
+                                       onImport={importSelectedCourses}
+                                       onClear={dismissTimetableDraft}
+                                       importing={importingCourses}
+                                     />
+                                  )}
+                                </>
                               )}
                             </div>
                           )}

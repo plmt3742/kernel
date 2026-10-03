@@ -230,11 +230,13 @@ export function actionToForm(action: AiAction): AiSuggestionFormValues {
 }
 
 /**
- * 表单值套回 AI 动作：非表单字段（kind / reason / linkToNewProject / duplicateOf）原样保留；
+ * 表单值套回 AI 动作：非表单字段（kind / reason / linkToNewProject / duplicateOf / condition）原样保留；
+ * condition（Slice N0）不是表单字段，须随原动作原样带入 apply 负载（...action 已透传）；
  * 空的可选字段从动作中删除（避免送出空串）；用户显式选了现有项目 → 取消 linkToNewProject（互斥）。
  */
 export function formToAction(action: AiAction, values: AiSuggestionFormValues): AiAction {
   const next: AiAction = {
+    // ...action 携带 condition 等非表单字段原样透传
     ...action,
     title: values.title.trim(),
     contexts: splitList(values.contexts),

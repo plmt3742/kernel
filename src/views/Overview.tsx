@@ -322,32 +322,53 @@ export function Overview() {
               />
             </button>
 
-            <div className="r3c-block">
-              <div className="r3c-head">
-                <span className="r3c-head__t">{streak.habitTitle !== '' ? streak.habitTitle : '习惯打卡'}</span>
-                <span className="r3c-head__v k-mono">{streak.current} 天</span>
+            {streak.habitId === null ? (
+              /* 零习惯空态（修复）：系统尚无任何习惯——不渲染打卡按钮 / 点阵 / 缺口列表，
+                 改安静引导到设置页创建；避免长缺口文案在窄容器把内容挤成竖排单字。 */
+              <div className="r3c-block">
+                <div className="r3c-head">
+                  <span className="r3c-head__t">习惯打卡</span>
+                  <span className="r3c-head__v k-mono">—</span>
+                </div>
+                <p className="k-streak__empty">
+                  还没有习惯 ·{' '}
+                  <button
+                    type="button"
+                    className="k-streak__link"
+                    onClick={() => navigate('/settings?section=habits', { viewTransition: true })}
+                  >
+                    去设置创建
+                  </button>
+                </p>
               </div>
-              <div className="k-streak" role="img" aria-label="近 14 天打卡点阵">
-                {streak.window.map((cell) => (
-                  <div
-                    key={cell.key}
-                    className={clsx('k-streak__cell', !cell.hit && 'is-miss')}
-                  />
-                ))}
+            ) : (
+              <div className="r3c-block">
+                <div className="r3c-head">
+                  <span className="r3c-head__t">{streak.habitTitle}</span>
+                  <span className="r3c-head__v k-mono">{streak.current} 天</span>
+                </div>
+                <div className="k-streak" role="img" aria-label="近 14 天打卡点阵">
+                  {streak.window.map((cell) => (
+                    <div
+                      key={cell.key}
+                      className={clsx('k-streak__cell', !cell.hit && 'is-miss')}
+                    />
+                  ))}
+                </div>
+                <div className="k-streak__actions">
+                  <button
+                    type="button"
+                    className={streak.todayHit ? 'k-btn k-btn--sm is-solid' : 'k-btn k-btn--sm'}
+                    aria-pressed={streak.todayHit}
+                    disabled={habitBusy}
+                    onClick={toggleHabitToday}
+                  >
+                    {streak.todayHit ? '今日已打卡' : '今日打卡'}
+                  </button>
+                  <span className="k-meter__foot">{streakFoot}</span>
+                </div>
               </div>
-              <div className="k-streak__actions">
-                <button
-                  type="button"
-                  className={streak.todayHit ? 'k-btn k-btn--sm is-solid' : 'k-btn k-btn--sm'}
-                  aria-pressed={streak.todayHit}
-                  disabled={habitBusy || streak.habitId === null}
-                  onClick={toggleHabitToday}
-                >
-                  {streak.todayHit ? '今日已打卡' : '今日打卡'}
-                </button>
-                <span className="k-meter__foot">{streakFoot}</span>
-              </div>
-            </div>
+            )}
 
             <div className="r3c-block">
               <div className="r3c-head">
