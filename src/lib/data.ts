@@ -7,6 +7,7 @@ import type {
   AppConfig,
   Area,
   CalendarEvent,
+  Course,
   Goal,
   Habit,
   HabitLogEntry,
@@ -18,6 +19,7 @@ import type {
   Review,
   TagItem,
   Task,
+  TermInfo,
 } from '@/types'
 import { daysFromToday, isPast, isSameDay, toDate } from '@/lib/date'
 
@@ -66,6 +68,8 @@ const seedSnapshot: KernelSnapshot = {
   resources: readKind<Resource>('resources'),
   reviews: readKind<Review>('reviews'),
   inbox: readKind<InboxItem>('inbox'),
+  courses: readKind<Course>('courses'),
+  term: readOne<TermInfo | null>('/data/meta/term.json', null),
   config: readOne<AppConfig>('/data/meta/config.json', DEFAULT_CONFIG),
   tags: readOne<{ tags: TagItem[] }>('/data/meta/tags.json', { tags: [] }).tags,
 }
@@ -86,6 +90,7 @@ export type EntityKind =
   | 'notes'
   | 'resources'
   | 'reviews'
+  | 'courses'
 
 let state: KernelSnapshot = seedSnapshot
 let source: DataSource = 'seed'
@@ -121,7 +126,12 @@ export function setDataSource(next: DataSource): void {
 
 /** 用数据服务快照整体替换（App 挂载水合 / 窗口聚焦刷新） */
 export function replaceSnapshot(next: KernelSnapshot): void {
-  state = next
+  // 防御：旧版数据服务可能尚未返回 courses / term（服务端并行落地中）——缺省补齐，避免消费端崩溃
+  state = {
+    ...next,
+    courses: next.courses ?? [],
+    term: next.term ?? null,
+  }
   if (source !== 'server') source = 'server'
   emit()
 }
@@ -178,6 +188,12 @@ export function getReviews(): Review[] {
 export function getInbox(): InboxItem[] {
   return state.inbox
 }
+export function getCourses(): Course[] {
+  return state.courses
+}
+export function getTerm(): TermInfo | null {
+  return state.term
+}
 export function getConfig(): AppConfig {
   return state.config
 }
@@ -207,6 +223,7 @@ export const getHabitById = (id: string): Habit | undefined => byId(state.habits
 export const getNoteById = (id: string): Note | undefined => byId(state.notes, id)
 export const getResourceById = (id: string): Resource | undefined => byId(state.resources, id)
 export const getInboxById = (id: string): InboxItem | undefined => byId(state.inbox, id)
+export const getCourseById = (id: string): Course | undefined => byId(state.courses, id)
 
 /* ---------------------------------------------------------------------------
  * 派生查询

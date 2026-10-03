@@ -1,6 +1,7 @@
 // KERNEL · 日程 CALENDAR：议程流（下一项高亮 + 今天/明天/本周/下周/更远 分组 + 迷你月历）
 // Slice W（见 ADR-0018）：日程由只读转为可写——新建（先确认后写入）+ 点击详情（编辑 /
 // 删除 / 状态快捷切换）+ 迷你月历日格可点（选中并滚动议程到该日）。
+// Slice H2：课表搬到侧栏一级页面 /timetable，本页回退为纯议程。
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { RefObject } from 'react'
 import { useSearchParams } from 'react-router-dom'
@@ -143,6 +144,8 @@ interface MiniCell {
  * 日程页界面状态保留（Slice Z · F29，见 ADR-0022）：
  * 迷你月历选中日 + 当前显示月游标提升到模块级 store 并持久化——切路由或刷新后
  * 回到上次浏览的月份与选中日（时间以毫秒存，解析只接受有限数）。
+ * Slice H2：课表搬到独立页面后移除视图模式字段；旧 localStorage 的 `mode`
+ * 键会被自然忽略（parse 只读 selectedDayMs / monthCursorMs）。
  * ------------------------------------------------------------------------- */
 interface CalendarUiState {
   selectedDayMs: number | null
@@ -364,10 +367,12 @@ export function Calendar() {
           <button type="button" className="k-btn" onClick={handleCreate}>
             新建日程
           </button>
-          <button type="button" className="k-btn" onClick={goToday}>
+          {/* Slice N0.6 · 交互反馈修复：无未来事件时锚点 ref 为 null，滚动点击会静默 no-op；
+              故空议程下置禁用态（可见反馈），有事件时正常滚动。 */}
+          <button type="button" className="k-btn" onClick={goToday} disabled={upcoming.length === 0}>
             今天
           </button>
-          <button type="button" className="k-btn" onClick={goNow}>
+          <button type="button" className="k-btn" onClick={goNow} disabled={upcoming.length === 0}>
             回到现在
           </button>
         </div>

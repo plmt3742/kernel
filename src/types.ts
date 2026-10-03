@@ -70,7 +70,8 @@ export type ReviewType = 'weekly' | 'monthly'
  * 回收站（Slice E2）：可回收的实体类型与条目
  * ------------------------------------------------------------------------- */
 
-/** 可回收实体类型（Slice W：日程 events；Slice X：区域 areas / 目标 goals / 习惯 habits） */
+/** 可回收实体类型（Slice W：日程 events；Slice X：区域 areas / 目标 goals / 习惯 habits；
+ *  Slice H0：课程 courses） */
 export type TrashKind =
   | 'tasks'
   | 'projects'
@@ -80,6 +81,7 @@ export type TrashKind =
   | 'areas'
   | 'goals'
   | 'habits'
+  | 'courses'
 
 /** 回收站中的记录（原记录 + 移入时间戳） */
 export type TrashRecord = (
@@ -91,6 +93,7 @@ export type TrashRecord = (
   | Area
   | Goal
   | Habit
+  | Course
 ) & {
   trashedAt?: string
 }
@@ -241,6 +244,48 @@ export interface CalendarEvent {
   repeatRule?: string
 }
 
+/* ---------------------------------------------------------------------------
+ * 课表（v0.5 · Slice H0）：课程实体 + 学期元信息
+ * 课程是「每周重复的多时段」——一个 Course 含若干 CourseSession（星期 + 节次 + 周次）。
+ * 学期元信息 term 决定「第几周」的换算（startDate = 第 1 周周一）。
+ * ------------------------------------------------------------------------- */
+
+/** 星期（1 = 周一 … 7 = 周日） */
+export type Weekday = 1 | 2 | 3 | 4 | 5 | 6 | 7
+
+/** 课程时段：星期 + 起止节次 + 可选周次（缺省 = 每周） */
+export interface CourseSession {
+  dayOfWeek: Weekday
+  startPeriod: number
+  endPeriod: number
+  /** 上课周次（升序唯一）；缺省 / 空数组 = 每周 */
+  weeks?: number[]
+  /** 该时段的地点（缺省回退课程默认地点） */
+  location?: string
+}
+
+/** 课程 · c- */
+export interface Course {
+  id: string
+  title: string
+  teacher?: string
+  /** 课程默认地点（时段未单独指定时使用） */
+  location?: string
+  sessions: CourseSession[]
+  notes?: string
+  createdAt: string
+  updatedAt: string
+}
+
+/** 学期元信息（`snapshot.term`；null = 未设置） */
+export interface TermInfo {
+  /** 第 1 周周一（YYYY-MM-DD） */
+  startDate?: string
+  /** 总周数（1–30） */
+  totalWeeks?: number
+  updatedAt?: string
+}
+
 /** 笔记 · n- */
 export interface Note {
   id: string
@@ -356,6 +401,7 @@ export type KernelEntity =
   | Goal
   | Habit
   | CalendarEvent
+  | Course
   | Note
   | Resource
   | Review
@@ -372,6 +418,10 @@ export interface KernelSnapshot {
   notes: Note[]
   resources: Resource[]
   reviews: Review[]
+  /** 课程（Slice H0） */
+  courses: Course[]
+  /** 学期元信息（Slice H0；null = 未设置） */
+  term: TermInfo | null
   config: AppConfig
   tags: TagItem[]
 }
