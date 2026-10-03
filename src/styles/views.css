@@ -1903,6 +1903,85 @@ button.k-pill.is-danger:hover {
   font-size: var(--text-caption);
 }
 
+/* 动作记录（Slice S）：回顾页时间线——过滤 chips + 按天分组的安静列表；
+   列表限高内部滚动；行内 HH:mm（等宽）+ 中文标签 + 可选「查看」深链（限定第三列对齐）。 */
+.k-act__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-bottom: var(--space-3);
+}
+.k-act__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  max-height: min(60vh, 560px);
+  overflow-y: auto;
+  padding-right: var(--space-2);
+}
+.k-act__day {
+  display: flex;
+  flex-direction: column;
+}
+.k-act__daylabel {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: var(--space-1) 0;
+  color: var(--muted);
+  background: var(--surface);
+}
+.k-act__row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  font-size: var(--text-caption);
+  border-top: var(--hairline) solid var(--rule-soft);
+}
+.k-act__daylabel + .k-act__row {
+  border-top: none;
+}
+.k-act__time {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.k-act__label {
+  min-width: 0;
+  color: var(--ink-2);
+  overflow-wrap: anywhere;
+}
+.k-act__link {
+  min-width: 2.8em;
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-pill);
+  color: var(--accent-text);
+  font-size: var(--text-caption);
+  line-height: 1.4;
+  text-align: center;
+  white-space: nowrap;
+  transition: background var(--dur-fast) var(--ease-standard);
+}
+button.k-act__link:hover {
+  background: var(--fill-tag);
+  text-decoration: underline;
+}
+.k-act__link--ghost {
+  display: inline-block;
+  visibility: hidden;
+}
+.k-act__empty {
+  color: var(--muted);
+  font-size: var(--text-caption);
+  padding: var(--space-3) 0;
+}
+.k-act__retry {
+  color: var(--accent-text);
+  text-decoration: underline;
+}
+
 /* 回顾流程 stepper */
 .k-steps {
   display: flex;
@@ -2966,6 +3045,207 @@ button.k-pill.is-danger:hover {
   max-width: var(--measure);
 }
 
+/* 条件动作的适用性标注（Slice N0）：安静小字，非强调色；与 .ic-action__meta 同一视觉语言 */
+.ic-action__condition {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-caption);
+  line-height: 1.5;
+  max-width: var(--measure);
+  overflow-wrap: anywhere;
+}
+
+/* ---------------------------------------------------------------------------
+ * 公告要点块（Slice N0）：假日日期等硬信息，安静成块置于动作列表上方；
+ * 无强调色、无硬边线，仅表面阶 + 柔影；390px 窄屏长要点自然折行不溢出。
+ * ------------------------------------------------------------------------- */
+
+.ic-facts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: var(--surface-elevated);
+  border-radius: var(--radius-inner);
+}
+.ic-facts__head {
+  color: var(--muted);
+  font-size: var(--text-caption);
+  line-height: 1.5;
+  font-weight: 500;
+}
+.ic-facts__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.ic-facts__item {
+  color: var(--ink-2);
+  font-size: var(--text-body-sm);
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.ic-facts__btn {
+  align-self: flex-start;
+}
+/* Slice N0.5：已存态（深链查看）安静 hover；保存中（disabled）沉为 muted */
+.ic-facts__btn.is-saved {
+  color: var(--ink-2);
+}
+.ic-facts__btn.is-saved:hover {
+  color: var(--ink);
+}
+.ic-facts__btn:disabled {
+  cursor: default;
+  color: var(--muted);
+}
+
+/* ---------------------------------------------------------------------------
+ * 课表导入选择卡（Slice H1）：AI 从收件箱条目提取的课程草稿，勾选后导入。
+ * 与 .ic-ai / .ic-action 同一视觉语言：表面阶 + 柔影 + 安静小字，无强调填充；
+ * 390px 窄屏时段 / 地点长文本自然折行不溢出。
+ * ------------------------------------------------------------------------- */
+.ic-tt {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--fill-subtle);
+  border-radius: var(--radius-inner);
+  animation: k-ai-fade var(--dur-fast) var(--ease-enter);
+}
+.ic-tt__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.ic-tt__title {
+  color: var(--ink);
+  font-size: var(--text-body-sm);
+  line-height: 1.4;
+}
+/* Slice H1.7：零识别优雅态说明（安静 muted 小字，可折行不横溢） */
+.ic-tt__empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-body-sm);
+  line-height: 1.5;
+  max-width: var(--measure);
+  overflow-wrap: anywhere;
+}
+.ic-tt__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.ic-tt__row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  background: var(--surface-elevated);
+  border-radius: var(--radius-inner);
+}
+.ic-tt__row.is-excluded {
+  opacity: 0.5;
+}
+.ic-tt__rowhead {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.ic-tt__checkbox {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-self: center;
+}
+.ic-tt__course-title {
+  color: var(--ink);
+  font-size: var(--text-body-sm);
+  line-height: 1.4;
+}
+.ic-tt__meta {
+  color: var(--muted);
+  font-size: var(--text-caption);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.ic-tt__sessions {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 calc(1.2em + var(--space-2));
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ic-tt__session {
+  color: var(--muted);
+  font-size: var(--text-caption);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.ic-tt__foot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-top: var(--space-1);
+}
+/* 提取中 / 失败：安静状态行（与 .ic-ai 同一语气，非强调色） */
+.ic-tt__status {
+  margin: var(--space-3) 0 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+/* Slice H1.6：流式输出实时预览（muted；最多两行，超出省略；长 token 折行不横溢） */
+.ic-tt__preview {
+  margin: var(--space-2) 0 0;
+  max-width: var(--measure);
+  max-height: calc(1.5em * 2);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  color: var(--muted);
+  font-size: var(--text-caption);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.ic-tt__error {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--fill-subtle);
+  border-radius: var(--radius-inner);
+}
+.ic-tt__error-text {
+  margin: 0;
+  color: var(--danger-text);
+  font-size: var(--text-caption);
+  line-height: 1.5;
+  max-width: var(--measure);
+  overflow-wrap: anywhere;
+}
+.ic-tt__error-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
 /* ---------------------------------------------------------------------------
  * 总览状态条（Slice G）：整宽、等分、左右对齐版心；替代左对齐 / 右边参差的胶囊行
  * ------------------------------------------------------------------------- */
@@ -3351,4 +3631,276 @@ button.k-pill.is-danger:hover {
   text-decoration: underline;
 }
 
+/* ---------------------------------------------------------------------------
+ * 课表（v0.5 · Slice H0；Slice H2 起为独立页面 /timetable）：周网格 + 课程 / 学期弹窗
+ * 设计语言：网格为安静表面阶 + 细描边；唯一强调色仅作「今天」列信号
+ * （表头下缘 2px 信号 + 极淡列底），课程块用表面阶 + 细边，绝无强调色填充。
+ * ------------------------------------------------------------------------- */
 
+/* —— 课表容器 —— */
+.k-timetable {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  min-width: 0;
+}
+.k-timetable__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+.k-timetable__headline {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-width: 0;
+  flex-wrap: wrap;
+}
+.k-timetable__week {
+  font-size: var(--text-h3);
+  font-weight: 600;
+  letter-spacing: var(--text-h3-tracking);
+}
+.k-timetable__nav {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.k-timetable__nav .k-iconbtn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.k-timetable__notice {
+  color: var(--muted);
+  font-size: var(--text-body-sm);
+}
+.k-timetable__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+/* 今天行：安静单行，窄屏自然换行 */
+.k-timetable__today {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: var(--text-body-sm);
+  line-height: var(--text-body-sm-leading);
+  overflow-wrap: anywhere;
+}
+
+/* —— 周网格 —— */
+/* 网格自带纵向滚动区：工作日表头可真正吸顶（sticky top），节次列吸左（sticky left），
+   同时页面本身零横向溢出（窄屏由内部横向滚动承接）。 */
+.k-timetable__scroll {
+  min-width: 0;
+  max-height: min(72vh, 760px);
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  border: var(--hairline) solid var(--outline);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+.k-timetable__grid {
+  --sched-row-h: 56px;
+  display: grid;
+  grid-template-columns: 4.5rem repeat(7, minmax(0, 1fr));
+  grid-template-rows: auto 1fr;
+}
+.k-timetable__corner {
+  position: sticky;
+  top: 0;
+  left: 0;
+  z-index: 4;
+  background: var(--surface);
+  border-bottom: var(--hairline) solid var(--outline);
+  border-right: var(--hairline) solid var(--outline);
+}
+.k-timetable__head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: var(--space-2) var(--space-1);
+  text-align: center;
+  color: var(--muted);
+  font-size: var(--text-caption);
+  border-bottom: var(--hairline) solid var(--outline);
+  border-left: var(--hairline) solid var(--rule-soft);
+  background: var(--surface);
+}
+.k-timetable__head.is-today {
+  color: var(--accent-text);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+.k-timetable__periodcol {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  background: var(--surface);
+  border-right: var(--hairline) solid var(--outline);
+}
+.k-timetable__period {
+  height: var(--sched-row-h);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: var(--space-1);
+  color: var(--muted);
+  font-size: var(--text-micro);
+  font-variant-numeric: tabular-nums;
+  box-shadow: inset 0 -1px 0 var(--rule-soft);
+}
+.k-timetable__col {
+  position: relative;
+  min-width: 0;
+  border-left: var(--hairline) solid var(--rule-soft);
+}
+.k-timetable__col.is-today {
+  background: var(--accent-veil);
+}
+.k-timetable__cell {
+  display: block;
+  width: 100%;
+  height: var(--sched-row-h);
+  box-shadow: inset 0 -1px 0 var(--rule-soft);
+  cursor: default;
+  transition: background var(--dur-fast) var(--ease-standard);
+}
+.k-timetable__cell:hover {
+  background: var(--hover-veil);
+}
+.k-timetable__block {
+  position: absolute;
+  left: 3px;
+  right: 3px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-2);
+  overflow: hidden;
+  text-align: left;
+  background: var(--surface-elevated);
+  border: var(--hairline) solid var(--outline);
+  border-radius: var(--radius-inner);
+  box-shadow: var(--shadow-soft);
+  transition: background var(--dur-fast) var(--ease-standard),
+    border-color var(--dur-fast) var(--ease-standard);
+}
+.k-timetable__block:hover {
+  background: var(--surface-hover);
+  border-color: var(--outline-strong);
+}
+.k-timetable__block:focus-visible {
+  outline: 2px solid var(--focus-ring);
+}
+.k-timetable__block-title {
+  color: var(--ink);
+  font-size: var(--text-caption);
+  font-weight: 600;
+  line-height: 1.25;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.k-timetable__block-loc {
+  color: var(--muted);
+  font-size: var(--text-micro);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 窄屏：网格在自身滚动区内横向滚动（页面零横溢），表头 / 节次列保持可见 */
+@container route (max-width: 760px) {
+  .k-timetable__grid {
+    min-width: 720px;
+  }
+}
+
+/* —— 课程详情：时段清单 —— */
+.k-timetable-detail__sessions {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.k-timetable-detail__session {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-inner);
+  background: var(--fill-subtle);
+  font-size: var(--text-body-sm);
+}
+.k-timetable-detail__when {
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.k-timetable-detail__weeks {
+  color: var(--muted);
+}
+.k-timetable-detail__loc {
+  margin-left: auto;
+  color: var(--ink-2);
+}
+
+/* —— 课程 / 学期表单（弹窗内） —— */
+.k-timetable-form__sessions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.k-timetable-form__head,
+.k-timetable-form__row {
+  display: grid;
+  grid-template-columns: 5.5rem 4.5rem 4.5rem minmax(0, 1fr) 2rem;
+  gap: var(--space-2);
+  align-items: center;
+}
+.k-timetable-form__head {
+  color: var(--muted);
+  font-size: var(--text-micro);
+}
+.k-timetable-form__row .k-input,
+.k-timetable-form__row .k-select {
+  min-width: 0;
+}
+.k-timetable-form__del {
+  justify-self: center;
+}
+.k-timetable-form__error {
+  margin: 0;
+  color: var(--danger-text);
+  font-size: var(--text-caption);
+}
+.k-timetable-form__help {
+  margin: 0;
+  font-size: var(--text-caption);
+}
+/* 窄弹窗：表头隐去，周次换到第二行 */
+@container modal (max-width: 520px) {
+  .k-timetable-form__head {
+    display: none;
+  }
+  .k-timetable-form__row {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) 2rem;
+  }
+  .k-timetable-form__row .k-input {
+    grid-column: 1 / 4;
+  }
+  .k-timetable-form__del {
+    grid-column: 4;
+    grid-row: 1 / span 2;
+    align-self: center;
+  }
+}

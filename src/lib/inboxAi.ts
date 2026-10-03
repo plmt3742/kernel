@@ -123,6 +123,29 @@ export function setActionEditCache(id: string, entry: ActionEditCacheEntry): voi
   actionEditCache.set(id, entry)
 }
 
+/* ---------------------------------------------------------------------------
+ * 「存为要点笔记」结果缓存（Slice N0.5 · 反馈修复）
+ * 背景（owner 反馈）：点击「存为要点笔记」后保存成功但界面无任何动静——按钮无已存态、
+ *   面板按建议缓存原样重渲染。此处把 (itemId → noteId) 提升到模块级，卡片按 itemId 读取，
+ *   已存则渲染「已存为要点笔记 · 查看」深链；随条目存续，不随面板清空而清。
+ * 对账：条目离开未澄清列表（应用 / 撤销 / 水合）即清除。
+ * ------------------------------------------------------------------------- */
+const factsNoteCache = new Map<string, string>()
+
+export function getFactsNote(itemId: string): string | undefined {
+  return factsNoteCache.get(itemId)
+}
+
+export function setFactsNote(itemId: string, noteId: string): void {
+  factsNoteCache.set(itemId, noteId)
+}
+
+export function clearFactsNote(itemId: string): void {
+  // 缓存变更需通知订阅方（Inbox / AiActionsCard 经 useSyncExternalStore 消费快照）：
+  // 撤销「存为要点笔记」后当帧即可重渲染、按钮恢复可再存（对齐 clearCachedSuggestion）。
+  if (factsNoteCache.delete(itemId)) bumpCacheVersion()
+}
+
 function bumpCacheVersion(): void {
   setState({ cacheVersion: snapshot.cacheVersion + 1 })
 }
@@ -139,7 +162,23 @@ export function reconcileInboxAiCache(validIds: ReadonlySet<string>): void {
   for (const id of [...actionEditCache.keys()]) {
     if (!validIds.has(id)) actionEditCache.delete(id)
   }
+  for (const id of [...factsNoteCache.keys()]) {
+    if (!validIds.has(id)) factsNoteCache.delete(id)
+  }
   if (changed) bumpCacheVersion()
+}
+
+/**
+ * 清除单条建议缓存（Slice N0.6 · 交互反馈修复）。
+ * 背景（owner 反馈）：「忽略」原先只调 clearInboxAiActive()，但面板派生会按 getCachedSuggestion()
+ *   缓存回退重新渲染（行尾「AI 建议就绪」标记同源）→ 卡片原地不变 = 无反馈。
+ * 语义：一并删除该条的建议缓存与编辑缓存（与 clearInboxAiActive 对齐）；**不动 factsNoteCache**
+ *   （已存要点笔记随条目存续，忽略建议不应抹掉已保存的笔记深链）。
+ */
+export function clearCachedSuggestion(itemId: string): void {
+  const hadSuggestion = suggestionCache.delete(itemId)
+  actionEditCache.delete(itemId)
+  if (hadSuggestion) bumpCacheVersion()
 }
 
 /** 消费一次完成播报（返回待播报条数并清零） */

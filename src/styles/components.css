@@ -563,9 +563,36 @@ button.k-pill.is-selected:hover {
   align-items: center;
   gap: var(--space-3);
 }
+/* 布局硬化（修复）：按钮不收缩、不换行；缺口文案侧可自由换行。
+   此前按钮默认可收缩，窄容器（如 390px）下「今日打卡」被长缺口文本挤成竖排单字。 */
+.k-streak__actions > .k-btn {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
 .k-streak__actions .k-meter__foot {
   flex: 1 1 auto;
   min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* 零习惯空态（修复）：系统无任何习惯时的安静引导；不渲染按钮 / 点阵 / 缺口。 */
+.k-streak__empty {
+  margin: 0;
+  font-size: var(--text-caption);
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.k-streak__link {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: var(--accent-text);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.k-streak__link:hover {
+  text-decoration: underline;
 }
 
 .k-energy {
