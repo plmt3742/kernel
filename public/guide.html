@@ -825,7 +825,7 @@ body.demo-locked { overflow: hidden; }
         <li><a href="#sec-30"><span class="n">01</span><span>30 秒理解</span></a></li>
         <li><a href="#sec-start"><span class="n">02</span><span>五分钟上手</span></a></li>
         <li><a href="#sec-life"><span class="n">03</span><span>一条内容的一生</span></a></li>
-        <li><a href="#sec-pages"><span class="n">04</span><span>八个页面速览</span></a></li>
+        <li><a href="#sec-pages"><span class="n">04</span><span>九个页面速览</span></a></li>
         <li><a href="#sec-ai"><span class="n">05</span><span>AI 怎么帮你</span></a></li>
         <li><a href="#sec-links"><span class="n">06</span><span>系统是连起来的</span></a></li>
         <li><a href="#sec-mind"><span class="n">07</span><span>用好它的心法</span></a></li>
@@ -854,7 +854,7 @@ body.demo-locked { overflow: hidden; }
           <span class="loop__sep">→</span>
           <span class="loop__step"><span class="n">05</span>回顾</span>
         </div>
-        <p>侧栏的八个页面，就是这条循环的展开——收件箱负责捕捉，任务与项目负责澄清和组织，总览与日程负责执行，回顾负责收口。</p>
+        <p>侧栏的九个页面，就是这条循环的展开——收件箱负责捕捉，任务与项目负责澄清和组织，总览与日程负责执行，回顾负责收口。</p>
         <p>所有数据都在本地的 <code class="inl">data/</code> 目录里，一条记录一个 JSON 文件，可读、可 diff、可备份。网页只是驾驶舱，不是数据的所有者；AI 也只是协作者，永远不越过你直接改数据。</p>
       </section>
 
@@ -966,11 +966,11 @@ body.demo-locked { overflow: hidden; }
         </div>
       </section>
 
-      <!-- ============ 04 八个页面速览 ============ -->
+      <!-- ============ 04 九个页面速览 ============ -->
       <section id="sec-pages" aria-labelledby="h-pages">
         <div class="sec__head">
           <span class="sec__kicker">04 — 地图</span>
-          <h2 id="h-pages">八个页面速览</h2>
+          <h2 id="h-pages">九个页面速览</h2>
           <p>每个页面各司其职，对应循环里的一段。先记住一句话，细节用久了自然熟。</p>
         </div>
 
@@ -994,6 +994,9 @@ body.demo-locked { overflow: hidden; }
               <li>快速捕捉，一句话回车即可</li>
               <li><strong>文件投递</strong>：拖拽或点回形针选择文件，先入收件箱，AI 先读一遍</li>
               <li>文本与文件<strong>捕捉后都会自动解析一次</strong>（AI 离线时静默跳过，绝不自动应用；也可随时手动「AI 解析」）</li>
+              <li><strong>截图也能解析</strong>：图片（png / jpg / webp 等）直接丢进来，AI 看图提取要点与任务，不用先转文字</li>
+              <li><strong>公告 / 通知三性</strong>：放假、调课、截止日期这类硬事实提成安静「要点」，可一键「存为要点笔记」；需要你做的义务才成为任务，带前提的（如「仅留校学生」）<strong>默认不勾选</strong>——勾上才表示这事跟你有关</li>
+              <li><strong>导入为课表</strong>：收到课表（.xlsx / 截图 / 粘贴文本）时，展开条目点「导入为课表」，AI 识别出课程草稿，<strong>勾选后一次导入</strong>（可撤销）；旧版二进制 .xls（Excel 97-2003）也能直接读懂；仅损坏 / 加密文件会提示另存为 .xlsx / 截图 / 粘贴文本</li>
               <li>水位 ≤8 健康、&gt;8 超阈，该澄清了；按 今天 / 昨天 / 更早 分组</li>
               <li>五项澄清操作；AI 解析过程流式可见，结果收起再展开不丢</li>
               <li>完整出口：未澄清 / 已丢弃可「删除」（确认后连附件一起清）；已丢弃「恢复」；已澄清「查看产物」深链 + 「撤回」（删产物并回到未澄清）</li>
@@ -1025,6 +1028,21 @@ body.demo-locked { overflow: hidden; }
               <li>点日程看详情：编辑 / 删除（可撤销）· 状态快捷切换（已确认 / 待定 / 已取消）</li>
               <li>迷你月历可点：选中某天并滚动议程到该日；标注今日与有安排的日期</li>
               <li>「今天」「回到现在」两个定位按钮</li>
+            </ul>
+          </article>
+
+          <article class="card">
+            <div class="card__top"><h3>课表</h3><span class="card__tag">TIMETABLE</span></div>
+            <p class="card__desc">每周重复的固定安排，与任务分开管理。</p>
+            <ul>
+              <li>侧栏「课表」是独立一级页面：7 列（周一到周日）× 节次行的周网格</li>
+              <li>先点「设置学期」填第 1 周周一与总周数，课表就能按「第 N 周」查看，「‹ 本周 ›」前后翻周</li>
+              <li>「新建课程」录入课程名 / 教师 / 默认地点 / 备注，可加多个上课时段（星期 · 节次起止 · 周次）</li>
+              <li><strong>从收件箱导入课表</strong>：把课表 <code class="inl">.xlsx</code> / <code class="inl">.xls</code> / 截图 / 粘贴文本丢进收件箱——<strong>文件名含「课表 / 课程表 / 时间表」的文件会自动直接开始解析</strong>，其余展开条目点「导入为课表」（解析中会实时显示阶段与输出预览）→ AI 识别出课程草稿（默认全选）→ 勾选后「导入 N 门课程」，toast 可撤销（逐条移入回收站）；同一门课相邻节次自动合并为连续课块</li>
+              <li>旧版二进制 <code class="inl">.xls</code>（Excel 97-2003）可直接解析；损坏 / 加密文件会提示<strong>另存为 .xlsx / 截图 / 粘贴文本</strong>；多工作表暂只取前几表、跨页截图暂只取单图</li>
+              <li>周次写法：留空 = 每周；<code class="inl">1-16</code> / <code class="inl">1-16单</code> / <code class="inl">1-8,10-16</code>；列表里会压缩显示为「1–15 周（单）」</li>
+              <li>点课程块看详情（编辑 / 删除，都可撤销）；点空白格按该天该节预填新建</li>
+              <li class="signal">顶部「今天」行汇总今日课程；未设学期则不按周过滤、显示全部课程</li>
             </ul>
           </article>
 
@@ -1062,6 +1080,7 @@ body.demo-locked { overflow: hidden; }
               <li>指标瓦片：捕获 / 新增 / 完成 / 逾期</li>
               <li>点「AI 解析」生成七段报告（默认<strong>阅读视图</strong>分节呈现，「编辑」可切换编辑）：结论速览 → 数据解读 → 趋势对比 → 问题诊断 → 值得保留 → 下期行动 → 风险预警</li>
               <li>报告历史按时间倒序自动归档，点开即可阅读、可删除</li>
+<li>「动作记录」时间线：按天记录每一次动作（完成 / 新增 / 打卡 / 其他可过滤），每条可跳转对应实体</li>
               <li class="signal">停滞项目独立一栏，可迁移或归档（真实落盘，可撤销）；报告弹窗内的停滞建议行也带一键处理按钮（归档 / 迁移 / 重启）</li>
             </ul>
           </article>
@@ -1091,6 +1110,8 @@ body.demo-locked { overflow: hidden; }
 
         <h3>收件箱 AI 解析</h3>
         <p>对一条未澄清内容，AI 给出结构化建议：目标 / 标题 / 上下文 / 能量 / 重要性 / 预估 / 截止 / 理由，并给出<strong>挂接建议</strong>（挂到哪个项目、归入哪个区域、加什么标签）。解析过程是<strong>流式可见</strong>的——你能看到它在连接、思考、生成，而不是一个转圈的空等。点「重新解析」会保留你已经改过的字段（标题 / 能量 / 重要性…），不会被新一次解析覆盖。</p>
+        <p><strong>公告 / 通知的三性：</strong>放假、调课、截止日期这类<strong>硬事实</strong>会被提成安静的一排<strong>「要点」</strong>（只是一时的解析产物，不写入库；可一键「存为要点笔记」留档）；需要你完成的<strong>义务</strong>才成为任务；纯提醒 / 安全须知默认不产动作。通知常常没指明对象——带适用前提的任务（如「仅出国（境）者」「仅留校学生」）在建议卡里<strong>默认不勾选</strong>，行上会标注「适用：…」；<strong>你勾上，才表示这件事跟你有关</strong>。</p>
+        <p><strong>截图也能直接解析：</strong>微信通知 / 聊天记录常是图片，图片（png / jpg / jpeg / webp / gif / bmp）与文字走同一条解析管线，AI 看图提取要点与任务，不用你先转成文字；通知类截图按文本的多动作规则处理，明显是文章 / 资料时才归为资料。</p>
         <p>选中的多条可以一次性「批量 AI 解析」，逐条顺序进行、进度写在中途；某一条失败不影响其余。结果绝不自动应用，收起再展开也不会丢；批量解析期间切到别的页面再回来，进度与「AI 建议就绪」标记仍在。文件条目会先被 AI 读一遍：文本文件与 Word / PowerPoint / Excel 文档（<code class="inl">.docx/.pptx/.xlsx</code>）读前八千字摘录，PDF 等其余只凭文件名与元数据判断。</p>
         <p><strong>文件投递 = 资料 + 简介，不拆分：</strong>丢入一个文件时，AI 只产出<strong>一条资料动作</strong>，并附一段 1–3 句、不超过 120 字的<strong>「简介」</strong>小结（基于文件内容摘录；读不了内容就据文件名保守概括并注明）。它<strong>不会</strong>被拆成一堆任务。应用后，这段简介会作为该资料的介绍显示在资料详情页标题下。文字内容则仍可解析成一揽子动作。</p>
          <p><strong>一揽子处置：</strong>AI 不只给一个建议，而是把一条内容拆成一揽子动作——例如「筹备校园辩论赛」会分成<strong>一个新项目 + 若干下一步任务 + 一条笔记</strong>。处置卡里逐条列出，每项都能勾选（纳入 / 排除）或「编辑」；点<strong>「全部应用（N 项）」</strong>一次落位：先建项目、相关任务自动挂接、标签一并登记。成功后 toast 带<strong>「撤销」</strong>，点击即删掉这批产物、把条目收回未澄清，连新登记的标签也会清理干净。</p>

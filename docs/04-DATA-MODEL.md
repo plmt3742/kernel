@@ -25,6 +25,7 @@
 | `g-` | goal | `g-0001` |
 | `h-` | habit | `h-0001` |
 | `e-` | event | `e-0001` |
+| `c-` | course | `c-0001` |
 | `n-` | note | `n-0001` |
 | `r-` | resource | `r-0001` |
 | `rev-` | review | `rev-0001` |
@@ -70,6 +71,8 @@
 > **生命周期闭合（v0.5 · Slice V，见 ADR-0008 §6）**：文本捕捉成功后**自动运行一次 AI 解析**（与文件投递后自动解析节奏一致；AI 离线静默跳过、绝不自动应用，手动「AI 解析」保留）。UI 提供完整出口——未澄清 / 已丢弃条目「删除」（`POST /api/inbox/:id/remove`，服务端一并清理附件；已澄清仍 409 保护）；已丢弃条目「恢复」与已澄清条目「撤回」均复用 `POST /api/inbox/:id/revert`（discarded 无产物仅重置 `status:'unprocessed'`；clarified 先删除 `linkedId` 产物再回退）；已澄清条目「查看产物」按 `linkedId` 前缀深链跳转（`t-`→`/tasks?task=`、`p-`→`/projects?project=`、`n-`→`/library?note=`、`r-`→`/library?resource=`）。字段应用矩阵见 §4.13。
 
 > **一揽子处置（v0.5 · Slice R1，见 ADR-0015）**：`POST /api/inbox/:id/apply { actions }` 一次写入把条目拆解出的全部动作落位——先建新项目（`kind:'project'`，至多 1 个），再逐条建 `task` / `note` / `resource`（`task` / `note` 的 `linkToNewProject:true` 自动挂到新项目）；标签以 `origin:'ai'` 登记。条目置 `clarified`，`linkedId` = 首个产物、`linkedIds` = 全部产物、`appliedTagIds` = 本次新登记标签。撤销 `POST /api/inbox/:id/unapply` 删除全部 `linkedIds` 产物并 `pruneTags(appliedTagIds)` → 条目回 `unprocessed`（`revert` 同语义，兼容旧单 `linkedId`）。动作矩阵见 §4.14。
+
+> **公告解析（v0.5 · Slice N0，见 ADR-0023）**：收件箱解析输出在动作数组之外增顶层 **`facts: string[]`**（硬事实要点：放假时间、调课、截止日期等；≤8 条、每条 ≤140 字、须含日期或关键数字；`cleanFacts` trim / 去空 / 截断 / 去重 / 封顶；**为解析临时产物、不落盘**，UI 以「要点」块呈现并可一键「存为要点笔记」）。需完成的义务仍是 `kind:'task'` 动作，可带可选 **`condition`**（适用前提，≤30 字，如「仅出国（境）者」「仅留校学生」；对所有人生效则省略）——`aiActionSchema.condition` + `postValidateActions`（null / 非 task / 空串清理）保证其只随 `task` 动作存活；前端带条件的动作**默认不勾选**（勾选 = 相关 / 要做），应用经 `formToAction` 透传。图片（`isImageFile()`：扩展名或 `image/*`）走同一解析管线，`buildFileSection` 返回「见附图」+ opencode file part（读失败优雅降级），并**跳过**文件「恰 1 条 resource」硬归一化（非图片行为不变）。**解析产物（`actions` / `facts`）均为临时结果、不落盘**。`inbox.apply` 审计增 `detail.signals.conditions`（已应用动作非空条件去重、首见顺序）为后续画像留痕。
 
 ### 4.2 task（`t-`）
 
@@ -240,6 +243,31 @@
 
 > **「迁移」瓦片移除（v0.5 · Slice Y，见 ADR-0021）**：`migrated` 生成流程**刻意不产出**（`computeMetricsForWindow` 只返回 captured / created / completed / overdue），报告面板的「迁移」瓦片长期恒显示 `—`，已从 `Review.tsx` `METRIC_LABELS` **移除**。`ReviewMetrics.migrated` 字段**保留**以兼容旧归档（`rev-0001` / `rev-0002` 含该值）；总览 W40 行在缺省时渲染 `—`（修复字面 `undefined`）。若日后落地「编辑追踪」需要，可重新引入该瓦片。
 
+### 4.10b course（`c-`）
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| id | string | |
+| title | string | 课程名 |
+| teacher? | string | 教师 |
+| location? | string | 默认地点（时段未单独指定时回退） |
+| sessions | CourseSession[] | 上课时段 **1..16**（子表见下） |
+| notes? | string | 备注 |
+| createdAt | ISO | |
+| updatedAt | ISO | 编辑会 bump（与 event / area / goal / habit 不同） |
+
+时段子表 `CourseSession`：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| dayOfWeek | 1..7 | 1 = 周一 … 7 = 周日 |
+| startPeriod | 1..20 | 开始节次 |
+| endPeriod | 1..20 | 结束节次（须 ≥ `startPeriod`） |
+| weeks? | number[] | 周次（1..60，升序唯一）；缺省 / 空 = 每周 |
+| location? | string | 该时段地点（缺省回退课程默认地点） |
+
+> **课表（v0.5 · Slice H0，见 ADR-0024）**：课程是「每周重复的多时段」——一个 `course` 含若干 `CourseSession`（星期 + 起止节次 + 可选周次），与一次性任务分开、也不混入议程流。创建 `POST /api/courses`（`title` 必填、`sessions` 1..16；`teacher`/`location`/`notes` 可选，trim 后空则省略）；编辑 `POST /api/courses/:id/update`（白名单 `title/teacher/location/sessions/notes`；可选字段置空则清除）；删除 `POST /api/courses/:id/remove` + 回收站 `restore` / `purge`。服务端 `normalizeCourseSessions` 统一规格化：周次**排序去重**（空则删 `weeks` 键 = 每周）、`location` trim（空则删键）、`endPeriod < startPeriod` → 400（结束节次不能早于开始节次）、空 `sessions` → 400（课程至少需要一个上课时段）。审计 `course.create/update/remove/restore/purge`。周次解析 / 格式化与按周过滤见前端纯函数 `src/lib/schedule.ts`（`parseWeeksInput` / `formatWeeks` / `weekOfTerm` / `sessionInWeek` / `sessionsOfDay`）。**导入来源**：批量导入经 `POST /api/courses/import` 写入，审计 `course.create` 的 `detail.via:'timetable-import'`（见 ADR-0025 / §9）。
+
 ### 4.11 元数据
 
 **`data/meta/config.json`**
@@ -255,6 +283,16 @@
 | aiAutomation | `'confirm'` \| `'auto'`（可选；Slice R2 起可写，缺省视作 `confirm`） |
 
 > **AI 自动化档位（v0.5 · Slice R2，见 ADR-0016）**：`aiAutomation` 经 `POST /api/config { aiAutomation }` 更新（白名单 + Zod + 原子写 + 审计 `config.update`）。`'confirm'`（默认）= 先确认后写入；`'auto'` = 自动解析完成后自动应用本次**创建类低风险动作**（`task`/`note`/`resource`/`project`），可一键撤销；**永不**删除 / 完成 / 归档 / 修改既有实体（能力边界见 ADR-0016 §2.3）。旧配置缺省时前端视作 `'confirm'`。
+
+**`data/meta/term.json`**
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| startDate? | `YYYY-MM-DD` | 第 1 周的周一 |
+| totalWeeks? | 1..30 | 总周数 |
+| updatedAt? | ISO | 最近更新 |
+
+> **学期元数据（v0.5 · Slice H0，见 ADR-0024）**：单例文件，经 `POST /api/term` 更新（白名单 `startDate` / `totalWeeks`；格式非法 / 越界 → 400 中文可读；审计 `term.update` · `detail.fields`；写入经单写者 + 原子写）。**文件缺失 = 学期未设置**：前端课表不显示「第 N 周」、不按周过滤（显示全部课程）。`startDate` 为第 1 周周一，`weekOfTerm` 据此把日期换算为「第 N 周」。
 
 **`data/meta/tags.json`**
 
@@ -310,6 +348,7 @@ AI 建议卡「编辑」与手工澄清 `POST /api/inbox/:id/clarify` 的 `detai
 - 关联 id（`projectId` / `areaId` / `duplicateOf`）与标签仍走 `postValidateActions` 快照过滤（臆造即丢弃）；每个动作 tags ≤3。
 - **文件条目（Slice R2.5）**：条目带【附件】时，`postValidateActions({ hasFile:true })` **硬归一化为恰好 1 个 `resource` 动作**（丢弃全部 task / note / project；模型未产出 resource 时以文件名 + 保守小结兜底），`note` 归一化 ≤120 字。`POST /api/inbox/:id/apply` 亦对文件条目纵深过滤（只保留 1 个 resource）。文本条目保留多动作能力，提示词新增反过拆规则（通常 1–4 个、信息类优先 note / resource + 小结、仅对明确可执行的事产出 task）。
 - 旧式单建议形状（`target` / `newProjectHint` 等）由 `legacyToActions` 归一化为动作数组（`newProjectHint` → 项目动作 + 实体 `linkToNewProject`），同步 / 流式两条路径共用。
+- **通知「三性」与条件（Slice N0，见 ADR-0023）**：解析输出除 `actions` 外增顶层 `facts`（硬事实要点，**不落盘**）；`task` 动作可带可选 `condition`（≤30 字适用前提）——`postValidateActions` 对 null / 非 task / trim 空串清理，前端带条件者**默认不勾选**（勾选 = 相关），应用经 `formToAction` 透传。图片条目（`isImageFile()`：扩展名或 `image/*`）**跳过**「文件 = 恰 1 个 resource」硬归一化，按文本多动作规则处理（非图片不变）。`inbox.apply` 审计增 `detail.signals.conditions`（已应用动作非空条件去重、首见顺序）。
 
 ## 5. 生命周期与状态流
 
@@ -358,7 +397,7 @@ active ──暂停──> onHold ──恢复──> active
 unread ──> reading ──> read ──> reference ──> archived
 ```
 
-### 5.4b 回收站（task / project / note / resource）
+### 5.4b 回收站（可写 / 可回收实体）
 
 ```text
 正册 data/<kind>/<id>.json ──删除──> data/trash/<kind>/<id>.json（+ trashedAt）
@@ -366,7 +405,7 @@ unread ──> reading ──> read ──> reference ──> archived
                                         └──彻底删除──> 不可恢复
 ```
 
-八种可写 / 可回收实体（task / project / note / resource / event / area / goal / habit）的删除均为**软删除**：先写回收站副本再删正册文件（原子、串行）。恢复写回正册并删副本；彻底删除仅删副本。`nextId` 同时扫描正册与回收站，避免回收后 id 复用导致恢复冲突。回收站不出现在 `/api/snapshot` 中，单独经 `GET /api/trash` 读取（见 ADR-0009；事件并入见 ADR-0018；区域 / 目标 / 习惯并入见 ADR-0019，其删除前另有引用护栏，见 §4.4–4.6）。
+九种可写 / 可回收实体（task / project / note / resource / event / area / goal / habit / course）的删除均为**软删除**：先写回收站副本再删正册文件（原子、串行）。恢复写回正册并删副本；彻底删除仅删副本。`nextId` 同时扫描正册与回收站，避免回收后 id 复用导致恢复冲突。回收站不出现在 `/api/snapshot` 中，单独经 `GET /api/trash` 读取（见 ADR-0009；事件并入见 ADR-0018；区域 / 目标 / 习惯并入见 ADR-0019，其删除前另有引用护栏，见 §4.4–4.6；课程并入见 ADR-0024）。
 
 ### 5.5 event
 
@@ -448,7 +487,7 @@ confirmed ──取消──> cancelled
 - **已实现（v0.4）**：写入经 Node 单写者数据服务（`server/`）：Zod 校验 + 原子写入，审计日志 `data/activity.jsonl`；前端经 `/api` 访问（ADR-0004）。
 - **完成语义**：任务完成 = `status:'done'` + `doneAt` 落盘；重新打开从审计日志还原此前的 `status`。
 - **澄清联动**：收件箱条目澄清后 `status:'clarified'` 且 `linkedId` 指向新实体；新任务带 `sourceInboxId` 反指；撤销澄清（`revert`）会删除该次澄清创建的实体。
-- **编辑 / 回收站（v0.5 · Slice E2）**：四种可写实体（task / project / note / resource）经 `POST /api/<kind>/<id>/update` 部分更新（字段白名单，保留 id / createdAt，递增 updatedAt）；删除走回收站（`data/trash/`，见 §5.4b），可恢复或彻底删除；`POST /api/reveal` 在本机文件管理器中定位本地文件（见 ADR-0009）。
+- **编辑 / 回收站（v0.5 · Slice E2）**：四种可写实体（Slice E2 起为 task / project / note / resource 四类，后续切片逐步扩展至九类，见 §5.4b）经 `POST /api/<kind>/<id>/update` 部分更新（字段白名单，保留 id / createdAt，递增 updatedAt）；删除走回收站（`data/trash/`，见 §5.4b），可恢复或彻底删除；`POST /api/reveal` 在本机文件管理器中定位本地文件（见 ADR-0009）。
 - **通用笔记创建（v0.5 · Slice G）**：`POST /api/notes` 新建笔记（`title` 非空、`type` 白名单缺省 `memo`、`body` 为 markdown 文本；`nextId('notes')` + Zod + 原子写 + 审计 `note.create`）。总览「AI 对话归档」即经此端点落盘（标题 `AI 对话归档 · YYYY-MM-DD HH:mm`、`type:'memo'`、body 为 `**我**`/`**KERNEL**` 交替的 transcript）；只读对话 `POST /api/ai/chat` 不落盘（见 ADR-0010）。
 - **状态贯通（v0.5 · Slice H）**：编辑白名单扩充，使「已显示」的状态 / 字段可设置——`notes` 增 `areaId / projectId / distillLevel`、`resources` 增 `areaId`、`projects` 增 `goalId / nextActionId`（均经 `POST /api/<kind>/<id>/update`，审计 `<singular>.update`）。资料状态 / 笔记蒸馏层级在详情弹窗内以安静分段控件直接设置（判断标准见 §4.8 / §4.9）。任务快速新建 AI 补全 `POST /api/ai/task/draft { title }` 只产出建议（`contexts / energy / importance / estimateMin / dueAt / projectId / areaId / tags`，按快照过滤臆造 id / 标签），**绝不自动落盘**，应用经既有 update 端点（见 ADR-0011）。
 - **先确认后写入（v0.5 · Slice O）**：`POST /api/tasks` 创建时接受可选字段 `contexts / energy / importance / estimateMin / dueAt / projectId / areaId / tags`（`title` 必填不变；缺省默认同旧：`contexts ['@computer'] / energy 'low' / importance 2 / tags []`）；`projectId / areaId` 需形状合法且存在（否则 400）；审计 `task.create` 的 `detail.fields` 列出本次携带字段。任务快速新建改为**草稿确认弹窗**（确认前零写入；AI 仅预填，绝不改写标题 / 用户已改字段；AI 失败不阻断创建）；收件箱 AI 建议卡增「编辑」，应用提交编辑值经既有 `clarify`（`details` + `ai:true`）。见 ADR-0011 §6。
@@ -457,5 +496,7 @@ confirmed ──取消──> cancelled
 - **标签生命周期（v0.5 · Slice T，见 ADR-0014 / §4.12）**：标签名写入前规格化（裸名 → `topic:` 等）；任意携带 `tags` 的写入后 `ensureTags()` **自动登记**未注册名（`origin` / `createdAt` / `firstUsedIn`，审计 `tag.create`）；AI 可在无合适已有标签时提议新标签（`postValidate` 规格化保留，应用时以 `origin:'ai'` 登记）；新增管理端点 `POST /api/tags/:id/update`（重命名级联，`tag.rename`）、`…/merge`（合并级联 + 去重，`tag.merge`）、`…/remove`（使用中 409 阻止，`tag.remove`）、`POST /api/tags/backfill`（扫描登记存量，`tag.backfill`）；设置页新增「标签管理」区；资料库标签条按使用计数降序、不再截断前 12。
 - **区域 / 目标 / 习惯可管理 + 打卡（v0.5 · Slice X，见 ADR-0019 / §4.4–4.6）**：三类只读结构转为可管理——创建 `POST /api/areas` · `/api/goals` · `/api/habits`、编辑 `POST /api/<kind>/:id/update`（白名单）、删除 `POST /api/<kind>/:id/remove`（入回收站，区域 / 目标带**引用护栏**：被引用 → 409 含可读计数）；习惯打卡 `POST /api/habits/:id/checkin` · `/uncheckin`（缺省今天、幂等、写 `{date,value:1}`）；审计 `area.*` / `goal.*` / `habit.*`。设置页新增「区域 / 目标 / 习惯」三管理区；总览「习惯打卡」条取首个习惯并支持「今日打卡」切换；关联 area/goal 芯片深链到设置分区（F8）。`keyResults` 与 `habit.log` 的精细编辑延后。
 - **笔记 AI 蒸馏（v0.5 · Slice M，见 ADR-0020 / §4.8）**：`POST /api/ai/note/distill { id, targetLevel? }` 只产出**下一层草稿文本**（返回 `{ text, targetLevel, model, ms }`，**不落盘、无审计**；缺省目标 = 当前层级 + 1，clamp 1–3）。应用经既有 `POST /api/notes/:id/update` 一次写 `{ body, distillLevel }`——`body` **追加** `## 蒸馏 → Lx` 小节（不替换、原文不丢），撤销往返精确还原；**点选层级本身只标注、不改内容**。新建笔记入口 `POST /api/notes`（Slice M 前端暴露，创建可撤销 = 移入回收站）。
+- **课表（v0.5 · Slice H0，见 ADR-0024 / §4.10b）**：新增可写 / 可回收实体 `course`（`c-`）——创建 `POST /api/courses`（`title` 必填、`sessions` 1..16；审计 `course.create`）、编辑 `POST /api/courses/:id/update`（白名单 `title/teacher/location/sessions/notes`；审计 `course.update`）、删除 `POST /api/courses/:id/remove`（入回收站，审计 `course.remove`）；`normalizeCourseSessions` 统一规格化时段（周次排序去重 / 空删键 / `end ≥ start` / 空 sessions → 400）。学期元数据 `data/meta/term.json`（见 §4.11）经 `POST /api/term` 更新（白名单 `startDate` / `totalWeeks`，审计 `term.update`；缺失 = 未设置）。前端日历页「议程 / 课表」模式（`kernel.ui.calendar.v1`）+ `ClassGrid` + 手动录入弹窗；无新依赖。AI 导入 / 调休例外 / 节次 → 时间映射延后。
+- **课表导入（v0.5 · Slice H1，见 ADR-0025 / §4.10b）**：来源 → 课程草稿 → 勾选确认。`POST /api/ai/timetable/draft { id }` 对收件箱**未澄清**条目跑课表解析，返回 `{ courses: CourseCreateInput[], model, ms }`（**不落盘、无审计**；400 不可直读附件指引 / 404 / 409 非未澄清 / 502 / 503）。`POST /api/courses/import { courses }`（1–30 门）先全量校验 + `normalizeCourseSessions` 规格化、零落盘，全部通过后逐条 `commit`（审计 `course.create` · `detail.via:'timetable-import'`；201 `{ created }`），任一非法整批 400 不留半成品。读取：`.xlsx` 走 `extractXlsxGrid` 网格抽取、`.csv` 文本白名单、旧版 `.xls` 走 `extractLegacyXlsText` 三分支（OLE2 二进制 → 不做 BIFF 解析、给不可读指引；HTML / XML 表格 → 摘录；纯文本 → 原文摘录）、截图复用 N0 file part；`cleanTimetableCourses` 确定性清洗。前端收件箱「导入为课表」入口 + `TimetableDraftCard`（勾选默认全选，导入可撤销 = 逐条回收站）；直读旧版 `.xls`（BIFF）/ 多表 / 跨页 / 学期自动对齐延后。
 - schema 预留实体（`timeLog` / `person` / `journalEntry`）在 v1.0 前评估是否实现。
 - 字段演进必须同步更新本篇，并通过 ADR 记录重大结构变更。

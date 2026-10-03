@@ -9,9 +9,33 @@ KERNEL 的任务台账与迭代记录。记录当前迭代目标、未来待办�
 ## 下一会话待办（Handoff · 2026-10-03 修订）
 
 > **新会话处理入口**：先读 `AGENTS.md` → 本清单 → 按序处理。每项均附上下文与落点。
+> **工作约定（2026-10-03）**：调研完成后按推荐默认直接开工，不以拍板阻塞等待；提问仅用于大返工风险且不空等；任务完成通知缺失时以会话读取兜底、绝不挂在等待态。
+> **交互反馈纪律（2026-10-03）**：任何按钮点击必须有可见反馈（状态变化 / 面板变化 / toast / 禁用态 / 导航），禁止静默无响应；警惕「清状态被缓存 / 派生渲染回退抵消」的实现模式。
 > 状态：v0.4.0 已交付（数据服务 + 前端写入改造 + 审阅 P0 六项 + 路由滚动记忆）；页面排版选型已落地 10/10；**v0.5 首个切片（收件箱「AI 解析」）已交付**；**互联 Slice A（深链 + 关联区块）、AI 澄清升级 Slice B（上下文注入 + 挂接建议 + SSE 过程可视）与 AI 周回顾 Slice C（草稿 → 编辑 → 确认落盘 / 撤销）已交付**（验收：A 20/20、B E2E 13/13、C 冒烟 PASS + E2E 13/13，证据 `.qa/v14/`）；**使用指南 HTML（`public/guide.html`，自包含单文件，三态 25/25，证据 `.qa/v15/`）已交付**；**收件箱升级 Slice D（文件投递 + 居中编辑器 + AI 先读）已交付**（冒烟 PASS + E2E 12/12，证据 `.qa/v16/`）；**收件箱修复包 Slice E1（编辑器回位 + 「批量 → 任务」反馈加固 + AI 结果缓存 + 批量 AI 解析）已交付**（E2E 24/24，证据 `.qa/v17/`）；**详情操作 + 回收站 Slice E2（通用编辑 / 软删除回收站 / 资源文件位置 + reveal）已交付**（冒烟 34/34 + E2E 19/19 + 全站 smoke PASS，证据 `.qa/v18/`）；**动效与布局稳定 Slice E2.6（批量解析过程可视 + 流式节流 + 定高 + 间距 + 换行 + 零重叠）与趋势图数据点裁切修复 Slice E2.7 已交付**（E2E 22/22 + 像素级 8/8，证据 `.qa/v20/`、`.qa/v21/`）；**回顾页重构 Slice F（周 / 月回顾卡并列一栏 + 动画弹窗报告 + 月回顾 AI 支持 + 停滞项目独立栏）已交付**（服务端冒烟 13/13 + E2E 30/30 + 移动 6/6，证据 `.qa/v22/`）；**总览升级 Slice G（AI 对话盒 + 状态条重做 + 就地详情弹窗）已交付**（E2E **42/42** + 构建通过，零残留，证据 `.qa/v23/`）；**状态贯通 Slice H（资料状态 / 笔记蒸馏判断标准 + 快捷设置 + 白名单扩充 + 任务快速新建 AI 补全）已交付**（服务端冒烟 21/21 + E2E 28/28 + 构建通过，零残留，证据 `.qa/v24/`）；**使用指南同步 Slice I（`public/guide.html` 对齐 Slice D–H，三态 65/65，证据 `.qa/v25/`）已完成**；**收件箱修复包 2 Slice J（批量 AI 解析状态跨路由存活 + OOXML `.docx/.pptx/.xlsx` 文本抽取）已完成**（服务端冒烟 14/14 + E2E 16/16 + 零写入，证据 `.qa/v26/`）；**收件箱附件「打开文件 / 位置」Slice J2（去掉浏览器下载，改默认程序打开 / 文件管理器定位；新增 `/api/open` + `/api/inbox/:id/(open|reveal)` 带 `dryRun` 测试通道）已完成**（服务端冒烟 33/33 + E2E 21/21 + 零写入，证据 `.qa/v27/`）；数据服务运行于 `127.0.0.1:4097`；**全部切片（D–J2）已交付、验证（J2 待批次提交）**；**「先确认后写入」Slice O（任务快速新建草稿确认弹窗 + 收件箱建议卡可编辑 + 全站同类审计）已完成**（服务端冒烟 35/35 + E2E 31/31 + 构建通过，零残留，证据 `.qa/v28/`）；**全站详情「居中弹窗」统一 + 操作统一 + 日历遮罩柔化 Slice K 已完成**（五类详情从 Drawer 迁居中 Modal、任务 / 项目详情组件化保证操作一致、底栏统一、日历吸顶条渐隐柔化、删除 Drawer 死代码；E2E **109/109** + 构建通过，零残留，证据 `.qa/v29/`）；**回顾报告升级 + 自动归档 Slice L 已完成**（七段结构正文 + 环比 / 阈值 / 带 id 清单 + 数字落地护栏；生成即自动归档 + 报告历史 + update 同条；服务端冒烟 40/40 + 护栏单测 6/6 + E2E 32/32 + 构建通过，零残留，证据 `.qa/v30/`）；**标签生命周期 Slice T 已完成**（录入即生成 + 自动登记 origin/createdAt/firstUsedIn + AI 可提议新标签 + 管理（重命名 / 合并 / 删除 / backfill）+ 筛选条按使用排序不截断；服务端冒烟 54/54 + 护栏单测 14/14 + E2E 41/41 + 构建通过，零残留，证据 `.qa/v31/`）；**收件箱生命周期闭合 + 澄清字段矩阵 Slice V 已完成**（文本即解析 / 删除入口 / 丢弃恢复 / 澄清撤回与产物深链 / `newProjectHint` 一键建项 / target×字段矩阵杜绝静默丢弃；服务端冒烟 43/43 + E2E 29/29 + 构建通过，零残留，证据 `.qa/v33/`）。**Slice U（回顾报告可读性）见下方专节**。
 
-> **最新（Slice Z · 2026-10-03）**：状态保留（F25–F29）——答所有者「切换页面后再回来就清空了，根本没有保留和记忆」。新增通用助手 `src/lib/uiState.ts`（模块级 store + 可选 `localStorage`，安全解析 / 裁剪 / 静默失败）；**F25 AI 对话**：`draft`/`busy`/`error` 提升到模块 store + 请求函数 / 令牌模块化（思考中跨页保留）+ 对话持久化（上限 60 轮、刷新还原、清空同步清副本）；**F26 任务**：筛选 / 分组 / 更多展开 / 快速新建草稿持久化；**F27 收件箱**：选中 / 展开 / 捕捉草稿持久化 + 数据版本对账（`pendingFiles` 刻意不持久化）；**F28 资料**：标签页 / 笔记类型 / 资料类型 / 资料状态 / 选中标签持久化；**F29**：日程游标 / 项目快速新建 / 回顾草稿运行态（回顾刻意不落 localStorage）。机制选择（module store vs localStorage vs URL）与不持久化清单见 ADR-0022。验收：`npm run build` 退出 0；浏览器 E2E **51/51**；零残留（157 文件字节哈希前后完全相同）；控制台 0 error；证据 `.qa/v42/`。
+> **运维（2026-10-03）**：数据清零——新增 `scripts/reset.mjs`（预演 / `--yes` 自动备份后清空；保留 `config.json`）；owner 数据已清零（备份 `.qa/backups/data-20261003-133539`）；零状态空态巡检 9 路由 × 2 视口全绿；证据 `.qa/v48/`。
+
+> **最新（N0.8 · 2026-10-03）**：总览「习惯打卡」条修复——零习惯空态（「还没有习惯 · 去设置创建」深链）+ 按钮竖排/叠挤根因修复（`flex-shrink:0 + nowrap`）；QA 29/29（含真实创建→打卡→清理全流程）；证据 `.qa/v55/`。
+
+> **上一个（N0.7 · 2026-10-03）**：本机动作反馈修复——「打开文件 / 位置」成功 toast ×4（收件箱 + 资料页）+ explorer `/select,"路径"` 原生规范形式 + spawn 失败入数据服务日志 + 资料页错误文案对齐（「定位失败」）；QA 16/16；零写入；证据 `.qa/v54/`。
+
+> **上一个（Slice H2 · 2026-10-03）**：课表独立页面——从日程「议程 / 课表」切换搬出为侧栏一级页 `/timetable`（导航 index 05，位于日程之后；日程回退纯议程）；侧栏 / 命令面板同源；移动端底栏 6 项 + 更多；旧界面态（含 `mode` 键）容忍；QA 34/34；零写入；证据 `.qa/v53/`。
+
+> **上一个（收件箱体验修复批 · H1.7 → H1.8 · 2026-10-03）**：课表自动识别路由（文件名含「课表/课程表/时间表」的文件到达即直走课表解析，不出通用建议卡）+ 要点笔记三态反馈（保存中 / 已存·查看 / 撤销回退）+ 「忽略」真消失（清缓存 + toast，全站按钮反馈审计）+ 课表连续节次合并显示（`mergeDayRuns`；含排序依赖缺陷修复）；QA：H1.7 17/17 · N0.5 修复后复验通过 · N0.6 22/22 · H1.8 26/26 + 定向 4/4；零残留；证据 `.qa/v49–v52`。
+
+> **上一个（Slice S · 2026-10-03）**：回顾「动作记录」——审计自描述（`commit`/trash/restore 并入 `title`、`updateEntity` 并入 `status`）+ 时间线（日分组 / 四档过滤「全部 · 完成 · 新增 · 打卡 · 其他」/ 深链 / 空态，`kernel.ui.review.v1` 持久化）；冒烟 32/32 + E2E 27/27；零残留；证据 `.qa/v47/`。
+
+> **上一个（Slice H1.6 · 2026-10-03）**：课表解析过程可视——`POST /api/ai/timetable/draft-stream`（SSE：status / delta / retry / suggestion / error）+ 阶段与输出预览（≤240 字、≤2 行）；冒烟 29/29 + E2E 18/18；零残留；证据 `.qa/v46/`。
+
+> **上一个（Slice H1.5 · 2026-10-03）**：旧版 `.xls` 直读（零依赖 OLE2/CFBF + BIFF8 最小解析）——所有者真实课表 `draft` 出 **12 门课全对**（教师 / 地点 / 星期节次 / 周次），失败仍回退指引；`.qa/probe-xls/` 19/19 + `.qa/probe-h1/` 回归 19/19 + 冒烟 32/32；零残留；无新增依赖；证据 `.qa/v45/`、`.qa/probe-xls/`。
+
+> **上一个（Slice H1 · 2026-10-03）**：课表导入——收件箱「导入为课表」：`.xlsx`（网格抽取）/ 截图（file part）/ 粘贴文本 / HTML 版 `.xls` → AI 课程草稿（勾选、默认全选）→ 确认导入 `courses`（`via:'timetable-import'`，可撤销）；旧版二进制 `.xls` 给出清晰指引（另存为 .xlsx / 截图 / 粘贴）。验收：服务端冒烟 32/32 + 浏览器 E2E 20/20（真实 AI 从 HTML 课表提取 4 门课全对）；零残留（159 数据文件字节哈希一致；owner i-0013/r-0013/tags.json 字节不变）；控制台 0 error；证据 `.qa/v45/`。
+
+> **上一个（Slice H0 · 2026-10-03）**：课表——新实体 `course`（`c-`：课程 + 多时段「星期/节次/周次/地点」）+ 学期元数据 `data/meta/term.json`（第 1 周周一 + 总周数）+ 日历「议程 / 课表」模式（周网格 + 今天行 + 按周过滤含单双周）+ 手动录入 CRUD（回收站 / 撤销）；QA 修复 `commit()` 缺父目录（新实体首写 500）与 `.k-sched` 类名撞车（390 横溢 → `k-timetable*` 改名）。验收：服务端冒烟 53/53 + 浏览器 E2E 31/31；零残留（157 数据文件字节哈希一致、term.json 精确复原）；控制台 0 error；证据 `.qa/v44/`。
+
+> **上一个（Slice N0 · 2026-10-03）**：收件箱「公告解析」——通知三性（facts 要点 / condition 条件任务 / 纯提醒不产动作）+ 条件动作默认不勾选 + 要点块/存为要点笔记 + 截图投递接入同一解析管线（opencode file part；默认模型读图已实测）+ 审计 signals.conditions 打底。验收：服务端冒烟 30/30 + 浏览器 E2E 30/30；零残留（157 数据文件字节哈希一致）；控制台 0 error；证据 .qa/v43/。
+
+> **上一个（Slice Z · 2026-10-03）**：状态保留（F25–F29）——答所有者「切换页面后再回来就清空了，根本没有保留和记忆」。新增通用助手 `src/lib/uiState.ts`（模块级 store + 可选 `localStorage`，安全解析 / 裁剪 / 静默失败）；**F25 AI 对话**：`draft`/`busy`/`error` 提升到模块 store + 请求函数 / 令牌模块化（思考中跨页保留）+ 对话持久化（上限 60 轮、刷新还原、清空同步清副本）；**F26 任务**：筛选 / 分组 / 更多展开 / 快速新建草稿持久化；**F27 收件箱**：选中 / 展开 / 捕捉草稿持久化 + 数据版本对账（`pendingFiles` 刻意不持久化）；**F28 资料**：标签页 / 笔记类型 / 资料类型 / 资料状态 / 选中标签持久化；**F29**：日程游标 / 项目快速新建 / 回顾草稿运行态（回顾刻意不落 localStorage）。机制选择（module store vs localStorage vs URL）与不持久化清单见 ADR-0022。验收：`npm run build` 退出 0；浏览器 E2E **51/51**；零残留（157 文件字节哈希前后完全相同）；控制台 0 error；证据 `.qa/v42/`。
 
 > **上一个（Slice Y · 2026-10-03）**：一致性清扫——只读审计剩余项（F4/F5/F7/F11/F12/F13/F14/F17/F18/F21/F24/F32/F33/F36 + 标签补全）。**情境统一**：AI 提示词情境从标签注册表派生（`contextNamesOf`），任务上下文筛选 = 已用 ∪ 注册表；**量纲单一源**：重要性统一 **0–3**（存量 `t-0057`/`t-0058` 含 0，故选 0–3 而非 1–3）、能量 `ENERGY_OPTIONS`；**资料可直接新建**（`POST /api/resources` + 草稿弹窗 + 撤销/深链）；**报告 / 总览**：移除死「迁移」瓦片、W40 null 安全、监视柱 / W40 深链、报告内停滞建议行可点；**摩擦修复**：详情「推迟至」行、重新解析保留用户编辑（模块级 `actionEditCache`）、多文件上传受限并发、编辑保存撤销（`undoPatchOf`）、标签输入补全。验收：服务端冒烟 **30/30** + 浏览器 E2E **35/35**，零残留、所有者 157 个数据文件字节不变，证据 `.qa/v41/`。
 
@@ -35,11 +59,144 @@ KERNEL 的任务台账与迭代记录。记录当前迭代目标、未来待办�
 - [x] **总览落地「工作台」（选型 10/10 完结，2026-10-02）**：三轮 C 获采纳并落地（左工作区 + 右粘性监视柱 + 项目推进，详见下方「总览排版落地」节）。过程记录：第二轮三版（监控台 / 驾驶舱 / 信号层）均未采纳 → **第三轮交付**（今日线 TODAY LINE / 状态带 STATUS STRIP / 工作台 WORKBENCH；组织原则与前两轮全面错开，**监测图表去主导化**；二轮稿归档 `_archive/overview-*-v2.html`）；「连续刷题」打卡带 AI 感反馈已随 C 稿一并落地。其余 9 项已于 2026-10-02 全部落地并回归验证。
 - [ ] **v0.5.0 opencode AI 接入**：原始核心诉求（丢文件 / 通知 → AI 解析 → 联动日程建议）。直连方案已调研完毕（`opencode serve` + `@opencode-ai/sdk` + SSE + `format: json_schema`），落点见 `docs/02-ARCHITECTURE.md` §4 与 Backlog「v0.5 opencode AI 集成」。
 - [ ] **P1 体验项 · 剩余**：日历翻周 + `Task.deferUntil` 启用 / 回顾步骤持久化 + 资料搜索 / a11y 三处（路由移焦到 h1、命令按钮 aria 句柄、`focus.ts` `offsetParent` 误判）。
+- [ ] **修并发读竞态**：`readKind`/`readDirRecords` 与删文件写入（unapply/revert）并发时 `GET /api/snapshot` 偶发 ENOENT 500（复现 `.qa/v43/repro-500.mjs`，44 次 1 次）；建议 readFile 加 try/catch（ENOENT 跳过）或写侧短锁。
 
 ### C. 小尾巴（可选，低优先）
 
 - [ ] 种子数据以 2026-10-02 为"现在"；时间久了用 `npm run seed -- --force` 重置演示数据。
 - [ ] `design-drafts/`（三份设计稿 + 选型页）保留作方向参考；`.qa/` 证据归档保留（体积小）。
+
+---
+
+## 总览「习惯打卡」条修复 · N0.8（已完成 · 2026-10-03）
+
+答所有者截图反馈（零习惯时该条布局崩坏：「今日打卡」被长文本挤成竖排、与点阵/缺口叠挤）。① **零习惯空态**：无任何习惯时渲染「还没有习惯 · 去设置创建」（可点深链 `/settings?section=habits`），不渲染按钮 / 点阵 / 缺口，连击数显示安静「—」；② **布局硬化**：操作行按钮 `flex-shrink:0 + white-space:nowrap`、缺口文案侧 `overflow-wrap:anywhere`。`npm run build` 退出 0；QA **29/29**；零残留（24 文件哈希一致）；证据 `.qa/v55/`。
+
+- [x] `src/views/Overview.tsx`：习惯条按 `streak.habitId === null` 二分渲染（空态 / 有习惯原有结构）。
+- [x] `src/styles/components.css`：`.k-streak__actions > .k-btn` 硬化 + 新增 `.k-streak__empty` / `.k-streak__link`（token-only）。
+- [x] 验证：`.qa/v55/verify-n08.py` **29/29**（空态文案与深链 / 真实创建→打卡（`0 天 → 1 天` + 点阵命中 + toast 撤销）/ 390 零横溢按钮非竖排 / 清理回基线 / console 0）。
+- [x] 记录：`CHANGELOG.md`、`AGENTS.md`。
+
+---
+
+## 本机动作反馈修复 · N0.7（已完成 · 2026-10-03）
+
+答所有者「点击『位置』后无反应」：端点正常（200 + spawn 已发出）但应用内**零成功反馈**。四处本机动作补成功 toast（收件箱「打开文件 / 位置」、资料页「打开文件 / 在文件管理器中显示」）；explorer 改 `/select,"路径"` 原生规范形式（`windowsVerbatimArguments`）；`spawnDetached` 挂 `error` 日志（启动失败可诊断）；资料页 reveal 错误文案对齐「定位失败」。`node --check` + `npm run build` 退出 0；QA **16/16**；零写入；证据 `.qa/v54/`。
+
+- [x] 服务端（`server/index.mjs`）：`spawnDetached(command, args, extra = {})` + `.on('error')` 日志；`revealPath` / `inboxFileAction` reveal 分支 → `/select,"<path>"` + `windowsVerbatimArguments`。
+- [x] 前端（`src/views/{Inbox,Library}.tsx`）：成功 toast ×4；资料页 reveal 错误文案「打开失败」→「定位失败」。
+- [x] 验证：`.qa/v54/verify-n07.py` **16/16**（真端点 reveal 200（一次预期弹窗）+ dryRun 面；拦截弹窗的四条成功 toast；错误路径 tone=error；快照/哈希零写入）。
+- [x] 记录：`CHANGELOG.md`、`AGENTS.md`。
+
+---
+
+## 课表独立页面 · Slice H2（已完成 · 2026-10-03）
+
+答所有者「课表可以单独在侧边栏开一个页面，移动一下」：课表从日程页「议程 / 课表」切换中**搬出**，成为侧栏一级页面 **`/timetable`**（中文「课表」· TIMETABLE，导航 index 05、位于「日程」之后）；日程页回退为**纯议程**（与加课表前行为一致）。导航注册表 `src/lib/nav.ts` 驱动侧栏与命令面板同源生效；移动端底栏 6 个一级项 + 「更多」。QA **34/34**；零写入；控制台 0 error；证据 `.qa/v53/`。
+
+- [x] 迁移（`src/views/Timetable.tsx` 新）：`ClassGrid` + `CourseDetailModal` + `CourseDraftModal` + `TermModal` + 创建撤销逻辑从 Calendar 原样迁移；页头由 TopBar 统一（`课表 · TIMETABLE`），不与周次条重复。
+- [x] 回退（`src/views/Calendar.tsx` / `styles/views.css`）：移除 mode / segmented / 课表分支与弹窗；`calendarUiStore` 去 `mode` 字段（旧 localStorage 多余键自然忽略）；删死样式 `.k-cal__mode`。
+- [x] 导航（`src/lib/nav.ts` / `src/App.tsx`）：`/timetable` 路由与 index 05；项目 / 资料 / 回顾 / 设置 / 回收站顺延 06–10；`secondary` 标记保持原样。
+- [x] 验证：`.qa/v53/verify-h2.py` **34/34**（侧栏顺序 / 课表页渲染（工业互联网基础 1 块）/ 日程无切换回归 / 命令面板 / 390 底栏 6+更多零横溢 / 旧界面态含 `mode` 键容忍 / 零写入 + console 0）。
+- [x] 记录：`docs/02`（路由清单）；`docs/05`（视图清单与计数）；`public/guide.html`（「九个页面」+ 课表卡片独立化）；`CHANGELOG.md`、`AGENTS.md`。
+
+---
+
+## 收件箱体验修复批 · H1.7 / N0.5 / N0.6 / H1.8（已完成 · 2026-10-03）
+
+答所有者四条实机反馈逐条闭环（课表自动路由 / 要点反馈 / 按钮反馈纪律 / 三节连堂显示）。`npm run build`（tsc strict + vite）退出 0；QA：**H1.7 17/17 · N0.5 22/23→修复后复验通过 · N0.6 22/22 · H1.8 26/26 + 合并定向 4/4**；零数据残留（owner 文件字节不变；activity 增量除外）；控制台 0 error；证据 `.qa/v49`–`.qa/v52`。
+
+- [x] H1.7 · 课表自动识别路由（`src/lib/timetableAi.ts` / `src/views/Inbox.tsx`）：`looksLikeTimetable`（仅文件条目；`/课表|课程表|时间表|timetable/i` 匹配 name/content）+ `routeArrivedItem`（命中 → 自动展开 + 课表流、跳过通用解析；未命中 → 原通用解析；文本条目与无关键词截图保持手动入口防误伤）；课表卡零课程空态。
+- [x] N0.5 · 要点笔记三态反馈（`src/lib/inboxAi.ts` / `AiActionsCard.tsx` / `Inbox.tsx`）：`factsNoteCache`（itemId→noteId）+ 按钮「保存中… → 已存为要点笔记 · 查看（深链 /library?note=）→ 撤销后恢复」；`clearFactsNote` 带 `cacheVersion` 通知（修 QA 发现的撤销不恢复）。
+- [x] N0.6 · 交互反馈修复（`inboxAi.ts` / `Inbox.tsx` / `Review.tsx` / `Calendar.tsx`）：`clearCachedSuggestion` + `dismissAiSuggestion`（忽略 = 清缓存 + 面板/行尾标记消失 + toast；就绪/空态/错误态/课表忽略四路同修）+ 全站按钮审计（另修：回顾空卡点击条件挂载、日历空议程「今天/回到现在」禁用）。
+- [x] H1.8 · 连续课块合并（`src/lib/schedule.ts` / `ClassGrid.tsx`）：`mergeDayRuns`（**按课程维护最后一段**；相邻/重叠 + 地点兼容合并；空地点兼容）+ 网格/今天行接入；`sessionsOfDay` 死代码删除；修复 QA 发现的排序依赖边界（同起始节次课程插入不再打断）。
+- [x] 验证：`.qa/v49/verify-h17.py` 17/17（自动路由正反例）；`.qa/v50/verify-facts.py` 22/23（1 缺陷 → 修复）；`.qa/v51/verify-feedback.py` 22/22（忽略消失/课表忽略 toast/日历禁用）；`.qa/v52/verify-h18.py` 26/26（合并 1 块 vs 2 块、owner 只读抽查 span 9-11/5-8、撤销 282ms 恢复）+ `verify-merge-order.mjs` 4/4。
+- [x] 备注（QA 事故透明记录）：v50 测试初版按标题前缀误清除 owner 回收站 `n-0001`，已按 SHA-256 字节级精确恢复（`.qa/v50/recover-n0001.py`）；后续清理一律按本次新建 id。
+- [x] 记录：`docs/02`；`public/guide.html`；`CHANGELOG.md`、`AGENTS.md`；TASK_BOOK 新增「交互反馈纪律」工作约定（2026-10-03）。
+
+---
+
+## 数据清零 + 零状态巡检（运维 · 2026-10-03）
+
+应所有者「把所有数据清理一下我要从 0 开始用这个系统」。新增维护脚本 `scripts/reset.mjs`（`node scripts/reset.mjs` 预演；`--yes` 执行——先整目录备份到 `.qa/backups/data-<ts>/`，再清空实体 / 回收站 / 附件 / 审计，重置 `tags.json` 为空、删除 `term.json`，保留 `config.json`）；已执行清零（158 实体 / 2 回收站 / 4 附件 / 1730 审计行 → 0；备份 `.qa/backups/data-20261003-133539`）；服务重启后零状态验证（全 0 / term null / tags 空 / activity 空）；空态巡检（`.qa/v48/verify-empty.py`）9 路由 × 1440/390 全绿：非白屏、真实空态文案命中（含 `/review` 动作记录空态、`/calendar` 课表模式空态）、零横溢、控制台 0 error、巡检零写入。
+
+- [x] `scripts/reset.mjs`（预演 / `--yes` / 自动备份 / 保留 config）。
+- [x] 清零执行 + 服务重启 + 零状态 API 验证。
+- [x] `.qa/v48/` 空态巡检（9 路由 × 2 视口 + 5 张截图）。
+- [x] 记录：`docs/05`（scripts 清单）；`CHANGELOG.md`、`AGENTS.md`。
+
+---
+
+## 回顾 · 动作记录 · Slice S（已完成 · 2026-10-03）
+
+答所有者「回顾页面需要详细记录我每一次动作（完成了什么、添加了什么），或单独只查看我做过什么事」。服务端为审计**自描述**增补（`commit` / `moveToTrash` / `restoreFromTrash` 并入 `title`、`updateEntity` 并入 `status`；**追加键**不破坏既有形状）；前端回顾页新增**「动作记录」时间线**（`src/lib/activity.ts` 四桶中文映射 + `ActivityTimeline`：日分组 / 过滤 chips「全部 · 完成 · 新增 · 打卡 · 其他」持久化 / 深链 / 空态；只读消费 `GET /api/activity`）。服务端冒烟 **32/32** + 浏览器 E2E **27/27**；零残留（162 文件字节哈希一致；owner 四文件字节不变）；控制台 0 error；证据 `.qa/v47/`。
+
+- [x] Deliverable A · 审计自描述（`server/{store,index}.mjs`）：`commit()` detail 并入记录 `title`；`updateEntity` 状态变更时并入 `status` 新值；`moveToTrash` / `restoreFromTrash` 并入 `title`；`purgeTrash` 保持仅 id。
+- [x] Deliverable B · 时间线（`src/lib/activity.ts` / `src/components/ActivityTimeline.tsx` / `src/views/Review.tsx` / views.css）：`describeActivity`（完成 / 新增 / 打卡 / 其他）+ `filterByBucket` + `groupByDay`（今天 / 昨天 / M月D日）；Panel + chips（`kernel.ui.review.v1` 持久化）+ `HH:mm` + 「查看」深链（`deepLinkOfId`）+ 内部滚动 + 空态；`.k-act*` token-only。
+- [x] 验证：`.qa/v47/server-smoke.mjs` **32/32**（审计 detail 原文：title / status / checkin / trash / restore）；`.qa/v47/verify-s.py` **27/27**（三类动作可见 + 「今天」组头；四档过滤分桶正确；深链 `?task=`；390 零横溢；控制台 0 error；零残留）。
+- [x] 记录：新增 ADR-0026；`docs/02`；`docs/README.md`；`public/guide.html`；`CHANGELOG.md`、`AGENTS.md`。
+
+---
+
+## 课表解析过程可视 · Slice H1.6（已完成 · 2026-10-03）
+
+答所有者「我看不到 AI 思考过程」：课表解析由同步闷跑改为 **SSE 流式过程可视**——「导入为课表」实时显示阶段（「AI 正在阅读课表…」→「正在提取课程…」→「输出校验重试中…」）与输出预览（尾部 ≤240 字、≤2 行截断）。同步端点保留。服务端冒烟 **29/29** + 浏览器 E2E **18/18**；零残留；证据 `.qa/v46/`。
+
+- [x] Deliverable A · 服务端（`server/{ai,index}.mjs`）：`draftTimetableStream`（订阅→sessionID 过滤泵→safeEmit→finally 收尾，逐字镜像 `parseInboxItemStream`；不可读护栏与失败均走 `error` 事件不抛出）+ `promptTimetableWithRetry` 增 emit（重试事件）；路由 `POST /api/ai/timetable/draft-stream`（前置 JSON 守卫后切 SSE）。
+- [x] Deliverable B · 前端（`src/lib/{mutations,timetableAi}.ts` / `src/views/Inbox.tsx` / views.css）：`aiTimetableDraftStream`（镜像 `aiParseInboxStream` 的 SSE 帧解析）+ 快照扩 `{itemId, busy, stage, preview, courses, error}`（token 守卫）+ 阶段 / 预览渲染 + `.ic-tt__preview`。
+- [x] 验证：`.qa/v46/server-smoke.mjs` **29/29**（帧序列 `status→delta×2100→suggestion`；4 门课；错误帧含指引；守卫 400/404/409）；`.qa/v46/verify-h16.py` **18/18**（阶段文案可见；错误路径指引 + 关闭；390 零横溢；控制台 0 error；零残留）。
+- [x] 记录：ADR-0025 修订（H1.6）；`docs/02`；`public/guide.html`；`CHANGELOG.md`、`AGENTS.md`。
+
+---
+
+## 旧版 .xls 直读 · Slice H1.5（已完成 · 2026-10-03）
+
+答所有者「我投入课表 Excel 后只是被识别为资料」的直读诉求（H1 先给指引，H1.5 补直读）：新增**零依赖 OLE2/CFBF + BIFF8 最小解析**，所有者真实课表 `.xls`（只读）直读出完整网格并 `draft` 出 **12 门课全对**（教师 / 地点 / 星期节次 / 周次）。服务端冒烟 **32/32**、`.qa/probe-xls/` **19/19**、`.qa/probe-h1/` 回归 19/19；零残留；无新增依赖。
+
+- [x] 解析器（`server/ai.mjs`）：`extractOleStream`（CFBF：DIFAT / FAT / 目录链 + miniFAT 迷你流）+ BIFF8（BOF / BOUNDSHEET / SST 含 CONTINUE 续段 / LABELSST / LABEL / RSTRING / NUMBER / RK / MULRK / MERGEDCELLS）+ `decodeRk` + 列对齐网格 + **合并传播**；健全性护栏（无 CJK / 空网格 → null；异常一律回退）。
+- [x] 集成：`buildFileSection` `.xls` 分支 OLE2 → `extractLegacyXlsGrid` 直读（失败回退原「另存为 .xlsx / 截图 / 粘贴」指引）；HTML / 文本分支不变。
+- [x] 验证：`.qa/probe-xls/probe.mjs` 19/19（真实文件网格 dump 断言「大学物理C / 陈曼娜讲师 / 301 / 星期表头 / 无 U+FFFD / 合并重复」+ RK 单测 + OLE 边界）；冒烟 32/32；owner 真实 `.xls` 只读全链（草稿 12 门全对，零写入、零审计）；`node --check` 通过。
+- [x] 记录：ADR-0025 修订（H1.5）；`docs/02`；`public/guide.html`；`CHANGELOG.md`、`AGENTS.md`。
+
+---
+
+## 课表导入 · Slice H1（已完成 · 2026-10-03）
+
+以 owner 反馈为规格：「我投入课表 Excel 后只是被识别为资料」——实测其 `.xls` 为真正的 OLE2 二进制（零依赖栈不可直读），且「课表 → 课程」此前没有导入管线。本切片补齐**课表来源 → 课程草稿 → 勾选确认 → 导入**（confirm-first；草稿绝不落盘），覆盖 `.xlsx`（网格抽取）/ 截图 / 粘贴文本 / HTML 版 `.xls`；旧版二进制 `.xls` 给明确指引。`npm run build`（tsc strict + vite）退出 0；服务端冒烟 **32/32** + 浏览器 E2E **20/20**；零残留（159 数据文件字节哈希一致；owner i-0013 / r-0013 / tags.json 字节不变）；控制台 0 error；证据 `.qa/v45/`。
+
+- [x] Deliverable A · 草稿端点（`server/{schemas,ai,index}.mjs`）：`POST /api/ai/timetable/draft { id }`（guard 同收件箱解析：400/404/409/503/502；不可直读附件 → 400 指引「另存为 .xlsx、截图或粘贴文本」；**不落盘、无审计**）；`buildTimetableSystem` 提示词（星期列=1..7 / 节次行 / 合并单元格跨段 / weeks 文本→升序数组含单双周 / 宁缺毋滥 ≤30 / 忽略学号姓名表头）+ `tryParseTimetable` + 单次重试；`cleanTimetableCourses`（确定性清洗：end<start 交换、非法时段丢弃、weeks 去重升序、空课程丢弃、trim+截断）。
+- [x] Deliverable B · 导入端点（`server/index.mjs`）：`POST /api/courses/import { courses }`（1–30 门；全部先校验+`normalizeCourseSessions`、零落盘，再逐条 `commit`；审计 `course.create` · `detail.via:'timetable-import'`；201 `{created}`）。
+- [x] Deliverable C · 来源读取（`server/ai.mjs`）：`extractXlsxGrid`（sharedStrings + inlineStr + 数字 + 列字母对齐补空列 + 跳空行；`extractOfficeText` xlsx 分支改用它，docx/pptx 不变）；`extractLegacyXlsText` 三分支（OLE2→不可读指引；HTML/XML 表格→`htmlTableToText`；≥10 汉字→原文）；`.csv` 已在文本白名单；截图复用 N0 file part。
+- [x] Deliverable D · 前端（`src/views/Inbox.tsx` / `src/lib/timetableAi.ts` / `src/components/TimetableDraftCard.tsx`）：展开条目「导入为课表」pill（在跑显示「课表解析中…」）；模块级提取状态（token 守卫；无 localStorage）；选择卡（「识别到 N 门课程 · 勾选后导入」+ 逐行勾选默认全选 + 时段明细「周三 第3-4节 · 1–15 周（单） · 某教室」+「导入 N 门课程」/「忽略」）；导入 → toast「已导入 N 门课程 · 撤销」（撤销 = 逐条移入回收站）；错误态（`.xls` 指引）安静展示 + 重试/关闭；390px 零横溢。
+- [x] 验证：`.qa/v45/server-smoke.mjs` **32/32**（守卫 409/404/400；二进制 .xls → 400 含指引；HTML 课表 → 真实 AI 提取 **4 门课**（教师/地点/星期节次/周次含单周全对）→ import 201 + 审计 `via` + 回收站往返；xlsx 端到端形状；零残留 + 159 文件哈希一致 + owner 三文件字节不变）；`.qa/v45/verify-h1.py` **20/20**（上传 → 「识别到 4 门课程」→ 取消 1 门 → 「导入 3 门课程」→ toast → 课表网格出现 3 块；错误路径指引文案 + 关闭；390 零横溢；控制台 0 error；零残留）；探针 `.qa/probe-h1/` 契约 19/19（含 xlsx 网格夹具与 .xls 三分支）。
+- [x] 记录：新增 ADR-0025（`docs/decisions/0025-timetable-import.md`）；`docs/02`；`docs/04`（§4.10b 注记 / §9 写入路径）；`docs/README.md`；`public/guide.html`；`CHANGELOG.md`、`AGENTS.md`。
+
+---
+
+## 课表 · Slice H0（已完成 · 2026-10-03）
+
+答所有者「我还需要你做一个课表功能，我有时候会在这里查询课表，类似于课表这种属于固定日程，还是要和任务区分开来的」。新增**课程实体**（`c-`，与任务 / 事件分离）+ **学期元数据**（`data/meta/term.json`）+ **日历「课表」模式**（周网格 / 按周查询 / 单双周过滤 / 今天行），先做手动录入（AI 解析导入、调休例外、节次时间映射为后续切片）。`npm run build`（tsc strict + vite）退出 0；服务端冒烟 **53/53** + 浏览器 E2E **31/31**；零残留（157 数据文件字节哈希一致；courses 0 / term.json 精确复原；trash 空）；控制台 0 error；证据 `.qa/v44/`。
+
+- [x] Deliverable A · 实体与元数据（`server/{schemas,store,index}.mjs`）：`courseSchema`（`id/title/teacher?/location?/sessions[1..16]/notes?/createdAt/updatedAt`；时段 = `dayOfWeek 1..7 / startPeriod 1..20 / endPeriod ≥ start / weeks?（1..60 升序去重，缺省=每周）/ location?`）+ `normalizeCourseSessions`（排序去重 / 空键省略 / `end<start` 与空时段 → 400 中文可读）+ `courseCreateSchema` / `termUpdateSchema`；`SCHEMAS.courses` / `ID_PATTERNS`（`c-`）/ `nextId` / `TRASH_KINDS` / `EDITABLE_KINDS`（→ 通用 update/trash）/ `SINGULAR` / `EDITABLE_FIELDS`；`data/meta/term.json`（`readTerm`/`updateTerm`，审计 `term.update`）；`readSnapshot` 增 `courses` + `term`；路由 `POST /api/courses`（201）/ `POST /api/courses/:id/remove` / `POST /api/term`；审计 `course.*`。
+- [x] Deliverable B · 课表视图（`src/views/Calendar.tsx` / `src/components/ClassGrid.tsx`）：日历页「议程 / 课表」安静 segmented（`kernel.ui.calendar.v1.mode` 持久化）；课表模式全宽 7 列 × 节次行周网格（块跨行、今日列信号高亮、点块开详情、点空格预填新建）；头部 `第 N 周` + `‹ 本周 ›` + 「设置学期」；今天行（真实当前周汇总）；无学期 → `未设置学期（不按周过滤）`。
+- [x] Deliverable C · 手动录入（`CourseForm` / `CourseDraftModal` / `CourseDetailModal` / `TermModal` / `src/lib/schedule.ts`）：时段编辑器（星期 / 节次 / 周次文本 `1-16 / 1-16单 / 1-8,10-16`，空 = 每周，「每周/全周」宽容；行内校验）；创建 → toast 撤销；详情编辑（撤销回写旧 patch）/ 删除（回收站撤销）；`schedule.ts` 纯函数（解析 / 格式化「1–15 周（单）」/ 周换算 / 时段过滤）；回收站新增「课程」分组。
+- [x] 修复（QA 发现，已修）: ① `store.mjs` `commit()` / `restoreFromTrash()` 缺父目录创建 → 新实体首写 ENOENT 500（各加 `mkdir recursive`）；② `.k-sched` 类名与既有 ScheduleList 撞车 → 390px 页横溢（H0 家族改名 `k-timetable*`，E2E 选择器同步）。
+- [x] 验证：`.qa/v44/server-smoke.mjs` **53/53**（term 写入 / 快照 / 审计 / 非法 400；课程创建 201 + weeks 排序去重 + 空键省略 + trim；校验 400；更新 bump；回收站往返；零残留 + 157 文件哈希一致 + term.json 还原）；`.qa/v44/verify-h0.py` **31/31**（学期设置 → 第 3 周；建课 A（`1-16单`）/B → 第 4 周 A 隐 B 显 → 本周回归；今天行；详情 `1–15 周（单）` / `第3-4节` + 编辑 + 删除撤销；mode 持久化；390 零横溢 + 网格内滚；零残留 + 控制台 0 error）；探针 `.qa/probe-h0/` 契约 19/19。
+- [x] 记录：新增 ADR-0024（`docs/decisions/0024-timetable-course-entity.md`）；`docs/02`；`docs/04`（§2 / §4.10b / §4.11 / §5.4b）；`docs/05`；`docs/README.md`；`public/guide.html`；`CHANGELOG.md`、`AGENTS.md`。
+
+---
+
+## 公告解析 · Slice N0（已完成 · 2026-10-03）
+
+答所有者「我会将零散微信通知直接丢进去……提取有用信息（放假时间、待办）；这类通知无指明对象，需要判断后让我选择；聊天记录也可能是图片截图；课表属于固定日程要与任务区分（课表是后续切片，不在本文范围）」。本切片把收件箱解析从「只产动作」扩为**通知三性**，并把图片截图接入同一解析管线；画像为后续切片。`npm run build`（tsc strict + vite）退出 0；服务端冒烟 **30/30** + 浏览器 E2E **30/30**；零数据残留（`data/` 下 **157 个文件字节哈希前后完全相同**；inbox 12 / tasks 62 / notes 16 / files 2 / trash 0 回基线）；控制台零 error；证据 `.qa/v43/`。
+
+- [x] Deliverable A · 三性 schema + 提示词（`server/{schemas,ai}.mjs`）：解析响应新增顶层 `facts: string[]`（硬事实 ≤8 条 / ≤140 字 / 含日期或数字；`cleanFacts` trim / 去空 / 截断 / 去重 / 封顶；**不落盘**）；`task` 动作新增可选 `condition`（≤30 字；`aiActionSchema.condition` + `postValidateActions` null / 非 task / 空串清理）；纯提醒 / 安全须知默认不产动作；`tryParseActions` 返回 `{ actions, facts }`，同步与流式 suggestion 均携带 `facts`；旧式单建议归一化 → `facts: []`。
+- [x] Deliverable B · 条件选择 UX（`src/components/AiActionsCard.tsx` / `src/lib/{aiForm,mutations}.ts`）：带 `condition` 的动作**默认不勾选**（勾选 = 相关 / 要做），无条件维持默认勾选；卡片「适用：…」标注；`formToAction` 透传 `condition`。
+- [x] Deliverable C · 截图接入（`server/ai.mjs`）：`isImageFile()`（扩展名 / `image/*`）+ `buildFileSection` 图片分支「见附图」+ opencode file part（`data:<mime>;base64,…`，读失败优雅降级）；图片**跳过**「文件 = 恰 1 条 resource」硬归一化（非图片不变）；默认模型 `deepseek/deepseek-flash` 实测可读图（探针 `.qa/probe-vision/`），无需 OCR / 换模型。
+- [x] Deliverable D · 信号打底（`server/index.mjs`）：`inbox.apply` 审计增 `detail.signals.conditions`（已应用动作非空 `condition` 去重、首见顺序）；画像本体（`profile.json` / 排序提升）不在本切片。
+- [x] 验证：`.qa/v43/server-smoke.mjs` **30/30**（真实 AI 文本公告解析（9.3s）→ 3 facts + 1 条件任务（`condition`「仅出国（境）者」、`contexts ["@phone"]`）；截图上传（image/png → file part）解析 200；审计 `signals.conditions` == `["仅出国（境）者"]`；零残留 + 157 文件字节不变）；`.qa/v43/verify-n0.py` **30/30**（「要点 · 2」；条件动作默认不勾选 +「适用：仅出国（境）者」；应用负载携带 condition；存为要点笔记 + 撤销 notes 16→17→16；390 零横溢；控制台 0 error；零残留）。契约 `.qa/probe-n0/contract-check.mjs` 10/10。
+- [x] 记录：新增 ADR-0023（`docs/decisions/0023-notice-triage-and-image-intake.md`）；`docs/02`；`docs/04`（§4.1 / §4.14）；`docs/README.md`；`public/guide.html`；`CHANGELOG.md`、`TASK_BOOK.md`、`AGENTS.md`。
+- [x] 已知非本切片缺陷（入 backlog）：`readKind`/`readDirRecords` 并发读竞态偶发 ENOENT 500（`.qa/v43/repro-500.mjs`）。
 
 ---
 
