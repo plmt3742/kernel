@@ -2,7 +2,7 @@
 
 - 状态：已采纳
 - 日期：2026-10-04
-- 相关：ADR-0030（AI Key 本地配置 + 双击启动器）、ADR-0031（分发包 + 启动页）
+- 相关：ADR-0030（AI Key 本地配置 + 双击启动器）、ADR-0031（Windows 安装包分发）
 
 ---
 
@@ -66,8 +66,8 @@ Slice N5（ADR-0030）与 N7.1 交付了 `启动器.hta`：单文件、零依赖
 - 新增：`启动器.vbs`（入口）、`启动器.ps1`（WPF 窗口）、`kernel.ico`（多尺寸图标）、`scripts/make-icon.ps1`（图标生成器）。
 - 删除：`启动器.hta`（旧 HTA 启动器）。
 - 修改：桌面快捷方式 `KERNEL 启动器.lnk`（目标 `wscript.exe` + `启动器.vbs`，图标 `kernel.ico`）。
-- 打包同步：`scripts/package.mjs` 白名单改为收录 `启动器.ps1` + `启动器.vbs` + `kernel.ico`，不再收录 HTA。
-- 文档：`README.md`、`使用说明.md`（入口指向 `启动器.vbs`）、`docs/05-FILE-TREE.md`、`docs/02-ARCHITECTURE.md`、`docs/README.md`（ADR 索引）。
+- 打包同步：打包器白名单改为收录 `启动器.ps1` + `启动器.vbs` + `kernel.ico`，不再收录 HTA。
+- 文档：`README.md`、`docs/05-FILE-TREE.md`、`docs/02-ARCHITECTURE.md`、`docs/README.md`（ADR 索引）。
 - 不变：`启动.cmd`；无新增依赖；无数据模型变化；无新增服务端点。
 
 ## 6. 验证与证据

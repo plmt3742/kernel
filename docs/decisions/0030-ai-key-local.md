@@ -89,7 +89,7 @@ README「快速开始」加入口。
 
 ## 4. 边界
 
-- **已在运行不生效**：opencode 若早已在跑，设置页新填的 key 不会热注入，**下次重启启动器后生效**（`使用说明.md` 已注明）。
+- **已在运行不生效**：opencode 若早已在跑，设置页新填的 key 不会热注入，**下次重启启动器后生效**（应用内已注明）。
 - 密钥（`data/meta/secrets.json`）与附件（`data/files/`）已 gitignore，不会入库；但 **GitHub 上传前仍需清理 owner 个人数据**（`data/` 目前仍入库）。
 - 仅 DeepSeek 一个 provider：`secrets.mjs` 只认 `deepseekApiKey`；多 provider 为后续切片。
 

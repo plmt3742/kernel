@@ -14,7 +14,7 @@ kernel/
 ├─ CHANGELOG.md                 # 变更日志
 ├─ TASK_BOOK.md                 # 任务台账与迭代记录
 ├─ package.json                 # 依赖与脚本
-├─ vite.config.ts               # Vite 配置（host: true 等）
+├─ vite.config.ts               # Vite 配置（dev / preview 默认仅本机，--host 开局域网）
 ├─ tsconfig.json                # TypeScript strict 配置
 ├─ index.html                   # 应用入口 HTML
 ├─ 启动器.vbs                   # 桌面启动器入口（隐藏拉起 PowerShell，零黑窗）
@@ -81,7 +81,6 @@ kernel/
 ├─ scripts/                     # 脚本
 │  ├─ dev.mjs                   # 开发启动器（数据服务 + Vite 一体启动；--preview 走 preview）
 │  ├─ spawn-bg.mjs              # 后台安全启动器（detached spawn + 日志重定向；防工具调用挂起）
-│  ├─ package.mjs               # 分发包打包器（白名单拷贝 + 内置运行时 + 空白数据骨架 + 三重隐私闸门 → zip）
 │  ├─ build-installer.mjs       # Windows 安装包构建器（白名单组装载荷 + 内置 Inno Setup 编译器 → Setup.exe）
 │  ├─ make-icon.ps1             # 生成本机启动器图标 kernel.ico（System.Drawing，可重跑）
 │  ├─ assets/
@@ -93,7 +92,7 @@ kernel/
 
 > 具体文件名（如组件文件名、token 文件拆分方式）由脚手架实现决定；本树表达的是**结构与职责**，结构变化时更新本文件。
 >
-> **发布产物在仓库之外**：`scripts/package.mjs` 默认输出到 `<workspace>\release\KERNEL-分发包-v0.5.0\`（及同名 `.zip`），不属仓库、不纳入版本控制；Windows 安装包 `scripts/build-installer.mjs` 的输出 `KERNEL-Setup-0.5.0.exe` 同样位于仓库之外（`<workspace>\release\installer\`）。详见 ADR-0031。
+> **发布产物在仓库之外**：Windows 安装包 `scripts/build-installer.mjs` 的输出 `KERNEL-Setup-<version>.exe` 位于仓库之外（`<workspace>\release\installer\`），不属仓库、不纳入版本控制。详见 ADR-0031。
 
 ## 2. 目录职责
 
@@ -105,7 +104,7 @@ kernel/
 | `data/` | 数据源，一记录一文件 JSON + 附件二进制 `data/files/` + 回收站 `data/trash/`；v0.4 起写入一律经 `server/` 数据服务（单写者） | 数据服务（唯一写者） |
 | `server/` | 数据服务：Zod 校验 + 原子写 + 审计日志；仅监听 127.0.0.1:4097 | 数据层实现方 |
 | `src/` | React + TypeScript 前端应用（只读数据经水合，写入经 API） | 前端实现方 |
-| `scripts/` | 开发启动器（`dev.mjs`）、后台安全启动器（`spawn-bg.mjs`）、分发包打包器（`package.mjs`：白名单拷贝 + 内置运行时 + 三重隐私闸门）与启动页（`assets/welcome.html`）、Windows 安装包构建器（`build-installer.mjs`：白名单组装载荷 + 内置 Inno Setup 编译器）、启动器图标生成（`make-icon.ps1`）、种子数据生成（`seed.mjs`）、数据清零（`reset.mjs`） | 工程 |
+| `scripts/` | 开发启动器（`dev.mjs`）、后台安全启动器（`spawn-bg.mjs`）、启动页（`assets/welcome.html`）、Windows 安装包构建器（`build-installer.mjs`：白名单组装载荷 + 内置 Inno Setup 编译器）、启动器图标生成（`make-icon.ps1`）、种子数据生成（`seed.mjs`）、数据清零（`reset.mjs`） | 工程 |
 | `installer/` | Windows 安装包脚本（`KERNEL.iss`：安装向导 / 空白数据骨架 `uninsneveruninstall` / 卸载保留数据）与启动页（`welcome.html`） | 工程 |
 | `public/` | 静态资源：自托管字体、图标、自包含使用指南 `guide.html`（`/guide.html`，亦可 file:// 双击打开） | 前端实现方 |
 | 根目录启动器 | 桌面启动器 `启动器.vbs`（入口）+ `启动器.ps1`（原生 WPF 窗口）+ `kernel.ico` 图标；控制台入口 `启动.cmd`（显示运行日志，不变） | 工程 |
