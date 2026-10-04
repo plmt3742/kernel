@@ -158,17 +158,26 @@ function fail(res, status, message) {
 function readBody(req) {
   return new Promise((resolve, reject) => {
     let size = 0
+    let settled = false
     const chunks = []
-    req.on('data', (chunk) => {
+    function onData(chunk) {
       size += chunk.length
       if (size > BODY_LIMIT) {
-        reject(new Error('请求体过大'))
-        req.destroy()
+        // 超限归 413（安全加固：此前落到全局处理器成 500）。
+        // 丢弃剩余请求体（resume 排空）而非 destroy —— destroy 会先断掉 socket，令 413 响应无法送达。
+        if (settled) return
+        settled = true
+        reject(Object.assign(new Error('请求体过大'), { status: 413 }))
+        req.removeListener('data', onData)
+        req.resume()
         return
       }
       chunks.push(chunk)
-    })
+    }
+    req.on('data', onData)
     req.on('end', () => {
+      if (settled) return
+      settled = true
       const raw = Buffer.concat(chunks).toString('utf8')
       if (raw.trim() === '') return resolve({})
       try {
@@ -177,7 +186,11 @@ function readBody(req) {
         reject(new Error('请求体不是合法 JSON'))
       }
     })
-    req.on('error', reject)
+    req.on('error', (err) => {
+      if (settled) return
+      settled = true
+      reject(err)
+    })
   })
 }
 
@@ -275,6 +288,17 @@ function capFilename(name, max) {
 }
 
 /**
+ * 上传 MIME 白名单（安全加固）：仅放行 image/* · application/pdf · text/plain，
+ * 其余一律归一为 application/octet-stream（防止上传 text/html 等在本源渲染，配合附件下载 + nosniff）。
+ */
+function normalizeUploadMime(type) {
+  const t = String(type ?? '').trim().toLowerCase()
+  if (t.startsWith('image/')) return t
+  if (t === 'application/pdf' || t === 'text/plain') return t
+  return 'application/octet-stream'
+}
+
+/**
  * 流式写上传体到 dest；超过 maxBytes 立即暂停读取、拒绝 413 并销毁写流。
  * 返回写入字节数。上层负责删除残留文件。
  */
@@ -318,7 +342,9 @@ function saveUpload(req, dest, maxBytes) {
 /** 文件投递：RAW body → data/files/<id>-<safeName> → 收件箱条目（source:'file'） */
 async function uploadInbox(req, url) {
   const rawName = (url.searchParams.get('name') ?? '').trim()
-  const type = (url.searchParams.get('type') ?? '').trim() || undefined
+  // MIME 白名单归一（安全加固）：显式传入才写 file.mime，未传仍走读取端默认 octet-stream
+  const rawType = (url.searchParams.get('type') ?? '').trim()
+  const type = rawType === '' ? undefined : normalizeUploadMime(rawType)
   const caption = (url.searchParams.get('caption') ?? '').trim()
   const safeName = sanitizeFilename(rawName)
   const id = await nextId('inbox')
@@ -371,7 +397,11 @@ async function removeInbox(id) {
   return { removed: { kind: 'inbox', id } }
 }
 
-/** 读取附件：流式 inline 返回（文件名为 RFC 5987 编码，兼容非 ASCII） */
+/**
+ * 读取附件：流式返回（文件名为 RFC 5987 编码，兼容非 ASCII）。
+ * 安全加固：强制 `Content-Disposition: attachment` + `X-Content-Type-Options: nosniff`，
+ * 使上传的 text/html 等无法在本源内联执行（存储型 XSS）。
+ */
 async function serveFile(res, id) {
   const item = await readEntity('inbox', id)
   if (item === null || item.file === undefined || item.file === null) {
@@ -387,7 +417,8 @@ async function serveFile(res, id) {
   res.writeHead(200, {
     'Content-Type': item.file.mime ?? 'application/octet-stream',
     'Content-Length': stat.size,
-    'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(item.file.name)}`,
+    'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(item.file.name)}`,
+    'X-Content-Type-Options': 'nosniff',
   })
   createReadStream(filePath).pipe(res)
 }
@@ -1914,6 +1945,17 @@ async function updateEntity(kind, id, body) {
     if (key === 'parentTaskId' && value !== null) {
       await assertValidParentTask(id, value)
     }
+    // 安全 / 一致性加固：任务关联 id 须真实存在（与 createTask 同口径，防脏引用落盘）
+    if (kind === 'tasks' && key === 'projectId' && value !== null) {
+      if (!validId('projects', value) || (await readEntity('projects', value)) === null) {
+        throw Object.assign(new Error('项目不存在'), { status: 400 })
+      }
+    }
+    if (kind === 'tasks' && key === 'areaId' && value !== null) {
+      if (!validId('areas', value) || (await readEntity('areas', value)) === null) {
+        throw Object.assign(new Error('区域不存在'), { status: 400 })
+      }
+    }
     if (value === null) {
       if (Object.prototype.hasOwnProperty.call(next, key)) {
         delete next[key]
@@ -1968,6 +2010,18 @@ function spawnDetached(command, args, extra = {}) {
   child.unref()
 }
 
+/** cmd.exe 元字符（安全加固）：路径含之则拒绝，防 `cmd /c start` 二次解析导致命令注入 */
+const CMD_UNSAFE_RE = /[&|^<>"%\r\n]/
+
+/**
+ * 以系统默认程序打开（安全加固）：`cmd /c start "" "<path>"`。
+ * 空标题 + 单引号包裹的路径作为整体参数，经 windowsVerbatimArguments 原样传给 cmd，
+ * 避免路径中的空格 / shell 字符被二次解析。调用方须自行拒绝含 CMD_UNSAFE_RE 字符的路径。
+ */
+function spawnOpenDefault(targetPath) {
+  spawnDetached('cmd.exe', ['/c', 'start', '""', `"${targetPath}"`], { windowsVerbatimArguments: true })
+}
+
 /** 校验本地路径存在（不存在即 404）；返回是否目录 */
 async function statLocalPath(raw) {
   if (raw === '') throw Object.assign(new Error('路径不能为空'), { status: 400 })
@@ -2006,8 +2060,12 @@ async function revealPath(body) {
 async function openPath(body) {
   const raw = typeof body.path === 'string' ? body.path.trim() : ''
   const { resolved } = await statLocalPath(raw)
+  // 安全加固：拒绝含 cmd 元字符的路径，防止 `cmd /c start` 二次解析注入
+  if (CMD_UNSAFE_RE.test(resolved)) {
+    throw Object.assign(new Error('路径包含不允许的字符'), { status: 400 })
+  }
   if (body.dryRun === true) return { ok: true, path: resolved, dryRun: true }
-  spawnDetached('cmd.exe', ['/c', 'start', '', resolved])
+  spawnOpenDefault(resolved)
   return { ok: true, path: resolved }
 }
 
@@ -2037,7 +2095,8 @@ async function inboxFileAction(id, action, body) {
   const filePath = await resolveInboxFile(id)
   if (body.dryRun === true) return { ok: true, path: filePath, dryRun: true }
   if (action === 'open') {
-    spawnDetached('cmd.exe', ['/c', 'start', '', filePath])
+    // 安全加固：规范引号打开（附件名可能含 & 等，避免 cmd 二次解析）
+    spawnOpenDefault(filePath)
     return { ok: true, path: filePath }
   }
   // 原生规范形式：`/select,"<path>"` 作为单参数整体传入（同 revealPath）
@@ -2090,6 +2149,21 @@ const server = http.createServer(async (req, res) => {
   const method = req.method ?? 'GET'
 
   try {
+    // 安全加固 · 跨站请求防护：带 Origin 的请求其主机必须是本机（localhost / 127.0.0.1），
+    // 否则 403——阻断恶意网页经 no-cors POST 命中未鉴权的 /api。无 Origin（curl / 测试 / 本地工具）放行。
+    const origin = req.headers.origin
+    if (typeof origin === 'string' && origin !== '') {
+      let originHost = ''
+      try {
+        originHost = new URL(origin).hostname
+      } catch {
+        originHost = ''
+      }
+      if (originHost !== 'localhost' && originHost !== '127.0.0.1') {
+        fail(res, 403, '跨站请求被拒绝')
+        return
+      }
+    }
     if (method === 'GET' && pathname === '/api/health') {
       send(res, 200, { ok: true, service: 'kernel-data', version: SERVICE_VERSION, time: nowIso() })
       return
@@ -2881,8 +2955,9 @@ const server = http.createServer(async (req, res) => {
       return
     }
     const status = typeof err?.status === 'number' ? err.status : 500
+    // 详情一律入数据服务日志；对客户端收敛 5xx 文案，避免泄露绝对路径等内部信息
     console.error(`[data] 处理 ${method} ${pathname} 失败：`, err?.message ?? err)
-    fail(res, status, err?.message ?? '服务内部错误')
+    fail(res, status, status >= 500 ? '服务器内部错误' : (err?.message ?? '请求处理失败'))
   }
 })
 
