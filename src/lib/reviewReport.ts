@@ -1,24 +1,31 @@
-// KERNEL · 回顾报告分节解析（Slice U · 阅读视图）
-// 把 summary 拆成七段（结论速览 → … → 风险预警），供回顾页「阅读视图」安静分栏渲染。
-// 兼容「结论速览：…」与「一、结论速览」两种标题写法；纯文本，无 dangerouslySetInnerHTML。
-// 与 server/ai.mjs 的同名解析规则刻意保持一致（服务端用它做「下期行动」去重），勿单边改动。
+// KERNEL · 回顾报告分节解析（Slice U · 阅读视图 / Slice N6「回顾人话化」）
+// 把 summary 拆成七段（这周怎么样 / 这个月怎么样 → … → 需要留意的），供回顾页「阅读视图」安静分栏渲染。
+// 规范 label 为友好标题（周/月各自形态），同时收录全部旧标题别名与两种标题写法，
+// 保证旧归档仍可解析渲染；纯文本，无 dangerouslySetInnerHTML。
+// 与 server/ai.mjs 的同名解析规则刻意保持一致（服务端用它做「接下来」指针去重），勿单边改动。
 
 export interface ReportSection {
-  /** 规范标题（别名已归一，如「本期数据解读」→「数据解读」） */
+  /** 规范标题（别名已归一，如「结论速览」→「这周怎么样」） */
   label: string
   /** 段正文（保留多行，行间以 \n 连接） */
   body: string
 }
 
-/** 七段规范标题 + 可识别别名（与 server/ai.mjs REVIEW_SECTION_ALIASES 对应） */
+/**
+ * 七段规范标题 + 可识别别名（与 server/ai.mjs REVIEW_SECTION_ALIASES 对应）。
+ * Slice N6：规范 label 改为友好标题，并同时收录旧标题（结论速览 / 本期数据解读 /
+ * 趋势与对比 / 问题诊断 / 值得保留 / 下期行动 / 风险预警）与周/月两种形态。
+ */
 const SECTION_ALIASES: ReadonlyArray<{ label: string; aliases: readonly string[] }> = [
-  { label: '结论速览', aliases: ['结论速览'] },
-  { label: '数据解读', aliases: ['本期数据解读', '数据解读'] },
-  { label: '趋势与对比', aliases: ['趋势与对比', '趋势对比'] },
-  { label: '问题诊断', aliases: ['问题诊断'] },
-  { label: '值得保留', aliases: ['值得保留'] },
-  { label: '下期行动', aliases: ['下期行动'] },
-  { label: '风险预警', aliases: ['风险预警'] },
+  { label: '这周怎么样', aliases: ['这周怎么样', '结论速览'] },
+  { label: '这个月怎么样', aliases: ['这个月怎么样'] },
+  { label: '干了些什么', aliases: ['干了些什么', '本期数据解读', '数据解读'] },
+  { label: '和上周比', aliases: ['和上周比', '趋势与对比', '趋势对比'] },
+  { label: '和上个月比', aliases: ['和上个月比'] },
+  { label: '哪里卡住了', aliases: ['哪里卡住了', '问题诊断'] },
+  { label: '值得保持的', aliases: ['值得保持的', '值得保留'] },
+  { label: '接下来', aliases: ['接下来', '下期行动'] },
+  { label: '需要留意的', aliases: ['需要留意的', '风险预警'] },
 ]
 
 /** 别名按长度降序，保证「本期数据解读」优先于「数据解读」匹配 */

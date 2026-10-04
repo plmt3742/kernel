@@ -1,6 +1,6 @@
 // KERNEL · 回顾 REVIEW（Slice F 布局 + Slice L 升级）：
 // 周 / 月回顾卡并列一栏（置于能量分析之上）+ 动画弹窗报告 +
-// 七段结构报告（结论速览 → … → 风险预警）+ 每次生成自动归档（报告历史按时间查阅）+
+// 七段结构报告（这周怎么样 / 这个月怎么样 → … → 需要留意的）+ 每次生成自动归档（报告历史按时间查阅）+
 // 编辑「保存回顾」更新同一归档记录（不重复建）+ 停滞项目独立一栏。
 // 语义：AI 只出草稿；生成即自动归档（审计 review.create · auto），编辑确认后更新同一条
 // （审计 review.update）；报告可删除（review.remove）。见 ADR-0013。
@@ -590,7 +590,7 @@ export function Review() {
               <>
                 <div className="k-review__field">
                   <label className="k-review__label" htmlFor={`review-summary-${kind}`}>
-                    报告正文 · REPORT（七段：结论速览 → … → 风险预警，可编辑）
+                    报告正文 · REPORT（七段：这周怎么样 / 这个月怎么样 → … → 需要留意的，可编辑）
                   </label>
                   <textarea
                     id={`review-summary-${kind}`}
@@ -598,7 +598,7 @@ export function Review() {
                     rows={14}
                     value={editSummary}
                     onChange={(event) => setEditSummary(event.target.value)}
-                    placeholder="结论速览：…"
+                    placeholder="这周怎么样：…"
                     disabled={!editable}
                   />
                 </div>
