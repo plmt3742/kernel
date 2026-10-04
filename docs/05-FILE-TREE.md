@@ -17,6 +17,9 @@ kernel/
 ├─ vite.config.ts               # Vite 配置（host: true 等）
 ├─ tsconfig.json                # TypeScript strict 配置
 ├─ index.html                   # 应用入口 HTML
+├─ 启动器.vbs                   # 桌面启动器入口（隐藏拉起 PowerShell，零黑窗）
+├─ 启动器.ps1                   # 原生 WPF 启动器窗口（PowerShell 5.1 + .NET WPF）
+├─ kernel.ico                   # 启动器 / 快捷方式图标（多尺寸，由 scripts/make-icon.ps1 生成）
 │
 ├─ docs/                        # 文档
 │  ├─ 00-DESIGN-BRIEF.md        # 项目宪法（事实源，只读）
@@ -29,15 +32,7 @@ kernel/
 │  ├─ 06-ROADMAP.md             # 路线图
 │  ├─ 07-DEPLOYMENT.md          # 运行与部署
 │  ├─ 08-MATH-SYSTEM.md         # 数理自适应系统（流体公式 / 容器地图 / 复算方法）
-│  └─ decisions/                # 架构决策记录（ADR）
-│     ├─ 0001-naming-kernel.md
-│     ├─ 0002-no-role-silos.md
-│     ├─ 0003-design-direction-v2.md
-│     ├─ 0004-data-service-v0.4.md
-│     ├─ 0005-opencode-ai-v0.5.md
-│     ├─ 0006-ai-parse-upgrade.md
-│     ├─ 0007-ai-weekly-review.md
-│     └─ 0008-inbox-file-intake.md
+│  └─ decisions/                # 架构决策记录（ADR，0001–0037；完整清单见 docs/README.md）
 │
 ├─ data/                        # 数据源（一记录一文件；v0.4 起写入经数据服务）
 │  ├─ activity.jsonl            # 审计日志（每次变更追加；服务创建）
@@ -83,6 +78,7 @@ kernel/
 │  ├─ dev.mjs                   # 开发启动器（数据服务 + Vite 一体启动；--preview 走 preview）
 │  ├─ spawn-bg.mjs              # 后台安全启动器（detached spawn + 日志重定向；防工具调用挂起）
 │  ├─ package.mjs               # 分发包打包器（白名单拷贝 + 内置运行时 + 空白数据骨架 + 三重隐私闸门 → zip）
+│  ├─ make-icon.ps1             # 生成本机启动器图标 kernel.ico（System.Drawing，可重跑）
 │  ├─ assets/
 │  │  └─ welcome.html           # 启动页（自包含单文件；file:// 打开后探活本机，就绪自动跳转）
 │  ├─ seed.mjs                  # 种子数据生成
@@ -104,8 +100,9 @@ kernel/
 | `data/` | 数据源，一记录一文件 JSON + 附件二进制 `data/files/` + 回收站 `data/trash/`；v0.4 起写入一律经 `server/` 数据服务（单写者） | 数据服务（唯一写者） |
 | `server/` | 数据服务：Zod 校验 + 原子写 + 审计日志；仅监听 127.0.0.1:4097 | 数据层实现方 |
 | `src/` | React + TypeScript 前端应用（只读数据经水合，写入经 API） | 前端实现方 |
-| `scripts/` | 开发启动器（`dev.mjs`）、后台安全启动器（`spawn-bg.mjs`）、分发包打包器（`package.mjs`：白名单拷贝 + 内置运行时 + 三重隐私闸门）与启动页（`assets/welcome.html`）、种子数据生成（`seed.mjs`）、数据清零（`reset.mjs`） | 工程 |
+| `scripts/` | 开发启动器（`dev.mjs`）、后台安全启动器（`spawn-bg.mjs`）、分发包打包器（`package.mjs`：白名单拷贝 + 内置运行时 + 三重隐私闸门）与启动页（`assets/welcome.html`）、启动器图标生成（`make-icon.ps1`）、种子数据生成（`seed.mjs`）、数据清零（`reset.mjs`） | 工程 |
 | `public/` | 静态资源：自托管字体、图标、自包含使用指南 `guide.html`（`/guide.html`，亦可 file:// 双击打开） | 前端实现方 |
+| 根目录启动器 | 桌面启动器 `启动器.vbs`（入口）+ `启动器.ps1`（原生 WPF 窗口）+ `kernel.ico` 图标；控制台入口 `启动.cmd`（显示运行日志，不变） | 工程 |
 | 根目录 `*.md` | 门面与台账（README / AGENTS / CHANGELOG / TASK_BOOK） | 文档工程师 |
 
 ## 3. 数据目录与实体的对应

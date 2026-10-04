@@ -125,3 +125,50 @@ npm run preview -- --host
 ---
 
 本项目仅本地运行，不发布到公网。opencode 服务与数据服务均永不暴露到局域网，详见 `docs/02-ARCHITECTURE.md` 的安全纪律一节。
+
+
+## 环境配置
+
+**运行环境**
+
+- Node.js 18+
+- npm
+- Windows 桌面环境（本项目直接跑 Windows 侧，不使用 WSL）
+
+**安装**
+
+```bash
+npm install
+```
+
+**启动**
+
+```bash
+npm run dev
+# 浏览器打开 http://localhost:5173
+```
+
+**端口**
+
+| 端口 | 用途 |
+|---|---|
+| 5173 | 前端（Vite 开发服务器） |
+| 4097 | 数据服务（仅 `127.0.0.1`，唯一写入路径） |
+| 4096 | opencode serve（仅 `127.0.0.1`，AI 能力） |
+
+**依赖清单**
+
+`dependencies`：`@fontsource-variable/inter`、`@fontsource/jetbrains-mono`、`@opencode-ai/sdk`、`clsx`、`cmdk`、`date-fns`、`lucide-react`、`motion`、`react`、`react-dom`、`react-markdown`、`react-router-dom`、`write-file-atomic`、`zod`
+
+`devDependencies`：`@types/react`、`@types/react-dom`、`@vitejs/plugin-react`、`typescript`、`vite`
+
+**环境变量**
+
+| 变量 | 用途 | 默认 |
+|---|---|---|
+| `DEEPSEEK_API_KEY` | DeepSeek API Key，opencode 调用 AI 时使用 | 空（未设置） |
+| `OPENCODE_SERVER_PASSWORD` | 本地数据服务与 opencode serve 之间的访问口令 | 空 |
+| `KERNEL_OPENCODE_URL` | opencode serve 地址 | `http://127.0.0.1:4096` |
+| `KERNEL_OPENCODE_BIN` | 指定 opencode 可执行文件路径（不依赖系统 PATH） | 空（回退 PATH 查找） |
+
+DeepSeek API Key 也可在应用「设置 → AI 集成」中填写，保存在本机 `data/meta/secrets.json`（已加入 `.gitignore`，不会提交到版本库），无需写入环境变量。环境变量模板见根目录 `.env.example`。

@@ -128,6 +128,8 @@ v0.5 增补（Slice G.1，见 ADR-0010 修订）：**总览 AI 对话升级**。
 
 v0.5 增补（QA v73 批次，见 ADR-0035 / ADR-0036）：**总览 AI 查阅与代改 + 解析默认时间/地点 + 长图分片 + 体验修复**。总览 AI 对话新增**实体查阅**（模型输出 `entityQueries` → `resolveEntities` 回喂完整记录，响应增 `focused`）与**修改提案**（响应增 `edits`：kind/id/fields 白名单校验，前端「修改卡」逐字段 旧值 → 新值，点「应用」才经既有 `POST /api/<kind>/:id/update` 写入、可撤销——**确认前零写入**）；收件箱 / 事件解析新增**默认钟点补全**（早/上午/中午/下午/傍晚/晚上 + 用餐语境，系统认可不算编造）与**地点提取**；新增**长图分片**链路（客户端 `imagePreview.ts` 把 >400KB 大图切 ≤6 张 JPEG → `POST /api/inbox/:id/ai-preview?index=1..6` RAW 落派生分片 → 解析多发 file part、图片解析超时放宽 180s）；体验修复：工作台今日未结束日程就地显示 + 点击弹详情、日历「含已结束」开关、收件箱「文字 + 附件」行；证据 `.qa/v73/` + 探针 `.qa/probe-longimg/`。
 
+v0.5 增补（桌面启动器 v2，见 ADR-0037）：**原生 WPF 启动器**。旧 `启动器.hta`（mshta / IE 套壳：白色系统标题栏 + 方角窗口 + mshta 图标）替换为原生窗口链：`启动器.vbs`（纯 ASCII 入口，`wscript` 隐藏拉起，零黑窗）→ `启动器.ps1`（PowerShell 5.1 + .NET Framework WPF，Win10 / 11 内置、零安装；无边框圆角卡片 + 自绘标题栏 + 品牌 K + `kernel.ico`）。行为与旧启动器一致（探活 `127.0.0.1:5173` 每 800ms、启动 / 停止 dev 栈、就绪自动开浏览器、创建桌面快捷方式、日志按钮打开 `启动.cmd`），并新增单实例互斥锁与测试钩子（`KERNEL_LAUNCHER_SELFTEST` 写 `%TEMP%\kernel-launcher-selftest.txt`、`KERNEL_LAUNCHER_SMOKE_MS` 自动关窗、`KERNEL_LAUNCHER_PROBE_URL` 覆盖探活地址）。`kernel.ico` 由 `scripts/make-icon.ps1`（System.Drawing）从 `public/favicon.svg` 的 K 笔画几何生成；桌面快捷方式 `KERNEL 启动器.lnk` 改为目标 `wscript.exe` + `启动器.vbs`、图标 `kernel.ico`。打包同步：`scripts/package.mjs` 白名单收录 `启动器.ps1` / `启动器.vbs` / `kernel.ico`（不再收录 HTA）。控制台入口 `启动.cmd` 不变，仍是显示运行日志的替代路径。
+
 派生值纪律在数据服务阶段依然适用：进度、计数、聚合必须运行时计算，不落盘。
 
 ## 4. opencode 集成计划（v0.5）
