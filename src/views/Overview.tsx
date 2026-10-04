@@ -8,6 +8,7 @@ import { ScheduleList } from '@/components/ScheduleList'
 import { EmptyState } from '@/components/EmptyState'
 import { TaskDetailModal } from '@/components/TaskDetailModal'
 import { ProjectDetailModal } from '@/components/ProjectDetailModal'
+import { EventDetailModal } from '@/components/EventDetailModal'
 import { OverviewChat } from '@/components/OverviewChat'
 import { TrendLine } from '@/components/charts/TrendLine'
 import {
@@ -31,7 +32,7 @@ import { isTaskDone, checkinHabit, uncheckinHabit } from '@/lib/mutations'
 import { errorText } from '@/lib/api'
 import { useToast } from '@/context/ToastContext'
 import { useDataRevision, useNow, useUndoableToggle } from '@/lib/hooks'
-import { formatTime, humanizeDay, isPast, toDate } from '@/lib/date'
+import { eventEndOf, formatTime, humanizeDay, isPast, toDate } from '@/lib/date'
 
 /* 水位容量 / 阈值与 WIP 上限：与 StatusBar 口径一致（capacity 12 · threshold 8） */
 const INBOX_CAPACITY = 12
@@ -89,6 +90,7 @@ export function Overview() {
   // 就地详情弹窗（Slice G）：URL 保持在 "/"，不跳转（owner 反馈：跳转后无高亮、不知在哪）
   const [taskModalId, setTaskModalId] = useState<string | null>(null)
   const [projectModalId, setProjectModalId] = useState<string | null>(null)
+  const [eventModalId, setEventModalId] = useState<string | null>(null)
 
   const inboxCount = getInboxCount()
   const activeProjectList = getActiveProjects()
@@ -97,7 +99,10 @@ export function Overview() {
 
   const nextEvent = getNextEvent(now)
   const todayEvents = getTodayEvents(now)
-  const endedEvents = todayEvents.filter((event) => isPast(event.endAt ?? event.startAt, now))
+  // 本切片：用 eventEndOf 判定（全天日程到当日 23:59 才算结束，避免当天零点即被当成「已结束」）；
+  // 未结束的今日日程在「现在」分界线下展示（此前工作台只显示已结束日程）
+  const endedEvents = todayEvents.filter((event) => isPast(eventEndOf(event), now))
+  const upcomingToday = todayEvents.filter((event) => !isPast(eventEndOf(event), now))
   // 行动列：即将到期的下一步行动（按截止升序，逾期已排除）
   const flow = getUpcomingNextActions(5, now)
   const streak = getCodingStreakDetail(now)
@@ -183,7 +188,11 @@ export function Overview() {
         <button
           type="button"
           className="k-status__seg"
-          onClick={() => navigate('/calendar', { viewTransition: true })}
+          onClick={() =>
+            nextEvent !== undefined
+              ? setEventModalId(nextEvent.id)
+              : navigate('/calendar', { viewTransition: true })
+          }
         >
           <span className="k-status__dot" aria-hidden />
           <span className="k-status__k">下一项</span>
@@ -230,24 +239,30 @@ export function Overview() {
             </span>
           }
         >
-          {endedEvents.length > 0 || flow.length > 0 ? (
+          {endedEvents.length > 0 || upcomingToday.length > 0 || flow.length > 0 ? (
             <div className="r3c-flow">
               {endedEvents.length > 0 && (
                 <ScheduleList
                   events={endedEvents}
                   now={now}
                   ended
-                  onSelect={() => navigate('/calendar', { viewTransition: true })}
+                  onSelect={(id) => setEventModalId(id)}
                 />
               )}
 
               <div className="r3c-now">
                 <span className="r3c-now__line" aria-hidden />
-                <span className="r3c-now__label u-label">
-                  现在 · {formatTime(now)} · 以下按截止时间排序
-                </span>
+                <span className="r3c-now__label u-label">现在 · {formatTime(now)}</span>
                 <span className="r3c-now__line" aria-hidden />
               </div>
+
+              {upcomingToday.length > 0 && (
+                <ScheduleList
+                  events={upcomingToday}
+                  now={now}
+                  onSelect={(id) => setEventModalId(id)}
+                />
+              )}
 
               {flow.map((task) => {
                 const project = task.projectId !== undefined ? getProjectById(task.projectId) : undefined
@@ -273,7 +288,7 @@ export function Overview() {
               })}
             </div>
           ) : (
-            <EmptyState title="工作台暂无内容" hint="今日无已结束日程，也没有可执行的下一步行动。" />
+            <EmptyState title="工作台暂无内容" hint="今日暂无日程安排，也没有可执行的下一步行动。" />
           )}
         </Panel>
 
@@ -460,6 +475,7 @@ export function Overview() {
           任务与项目均补齐「编辑 / 删除」常规操作，全站动作一致。URL 保持 "/"。 */}
       <TaskDetailModal taskId={taskModalId} onClose={() => setTaskModalId(null)} />
       <ProjectDetailModal projectId={projectModalId} onClose={() => setProjectModalId(null)} />
+      <EventDetailModal eventId={eventModalId} onClose={() => setEventModalId(null)} />
     </div>
   )
 }

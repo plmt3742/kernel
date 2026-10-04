@@ -42,3 +42,18 @@ v0.5 已把 opencode 接入收件箱解析与周 / 月回顾（ADR-0005/0006/000
 - 归档笔记的蒸馏 / 标签 / 关联（仅 `type:'memo'` 纯文本）。
 - 日程行点击行为、状态条点击的页面级预置筛选（本切片不涉及）。
 - 任何无确认自动落盘（对话本身不落盘；仅用户点击「清空对话」才归档）。
+
+---
+
+## 修订 · G.1（对话升级，2026-10-03）
+
+答所有者「这个的 md 格式没有正常显示，然后添加一下它能联网搜索以及自由回答功能，如果我觉得回答的不错，然后对他说把你现在说的这个点整理进笔记，然后他就能将某个回答整理进笔记里面单独一个笔记」+「这个聊天框我希望圆角小一些，界面宽一些大一些，上下长度也长一些」。在原 §2.1 只读对话之上做四项升级：
+
+1. **Markdown 渲染**：助手回复改 `react-markdown`（`<div className="k-chat__text k-chat__md">`，沿用 Library.tsx 同款 import，**无 `dangerouslySetInnerHTML`**），用户轮保持纯文本；`.k-chat__md` 全套 token-only 样式（p / ul / li / strong / code / blockquote / hr / h1–h4）。
+2. **尺寸调整**（token-only）：`.k-chat__thread` max-height 320→**560px**（≤640px 容器 420px）、圆角 → `var(--radius-inner)`（12）；消息 max-width 88%→**94%**；正文 13→**15px**；composer 圆角 → 12（`.ic-composer.k-chat__composer` 覆盖）；输入 min-height 30→**44px**（max 180）。
+3. **联网搜索 + 自由回答**：`buildChatSystem` 重写为三类——**读库事实**（依据摘要、不编造用户数据）/ **一般知识自由回答** / **需要外部事实时只输出 JSON** `{"searchQueries":[...]}`（≤2 条、≤60 字、含年份；一次对话最多请求一次检索）。`chatWithKernel` 两阶段：模型请求 → 复用 N9 `buildSearchSection`（Sogou→360→Bing + 相关性令牌过滤 + 首条结果页摘录）→ **同会话回喂**正式作答；**检索失败** → 让模型保守作答并注明无法确认最新信息。响应新增 `searched: string[]`；前端助手轮下方显示安静行「已联网检索 · q1 · q2」；`tryParseSearchRequest` 导出供单测；提示行改「读库 · 联网 · 自由回答 · Enter 发送 · Shift+Enter 换行」。
+4. **整理进笔记**：① **对话式**——用户消息命中意图正则（整理/保存/存/归档 + 进/到/为/成/入 + 笔记，如「把这条整理进笔记」）且存在上一条助手回答时，调 `POST /api/ai/chat/note {instruction, answer}`（`chatNoteRequestSchema`：instruction ≤400 / answer ≤8000）→ `draftChatNote`（AI 出 `{title ≤40, body markdown}`；**失败 / 解析失败回退确定性**：首行标题 + 原文正文，绝不抛错）→ 服务端 `commit('notes', …, note.create, detail.via:'chat.note')` → 助手轮「已整理为笔记：**「title」**」+「打开笔记」链接（`/library?note=`）；② 每轮助手回复下另有「存为笔记」安静按钮（同端点），失败走既有错误条。
+
+**边界**：对话本身仍**不落盘无审计**（检索同 N9 纪律）；笔记落盘**可撤销**（回收站）；一次对话最多一次检索；「这个点」= 上一条回答（更早引用不支持）；§2.2「清空对话先归档为笔记」路径不变。
+
+**验证**：QA `.qa/v72/` 服务端 **25 PASS** + 浏览器 **25 PASS** = **50 PASS · 0 FAIL**（单测 6 组 / 真搜 + 真库 + note + 空指令 400 / markdown 元素与字面 `**` 为 0 / computed 12px·560px·44px / 对话式与按钮双路径 / UI 搜索 12月12日 / 390 零横溢 / console 0）；**零残留**（53 文件哈希基线 == 终态、`tags.json` 不变、notes 回到 n-0001..n-0003）；探针 `.qa/probe-g1/`。实测：搜索问答 24.5s（`searched` 2 条）→「笔试 12月12日 9:00–11:20 · 口试 11/21–22 · 报名」并自动对照本库任务 `t-0008`；读库问答 7.5s 无检索引真实数据；笔记 `n-0004`「2026 年英语四级考试时间与报名安排」301 字落盘 + 清理。

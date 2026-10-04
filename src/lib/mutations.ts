@@ -4,6 +4,7 @@
 import { api } from '@/lib/api'
 import { getTaskById, removeEntity, replaceSnapshot, setDataSource, upsertEntity } from '@/lib/data'
 import { toISODateTime } from '@/lib/date'
+import { sliceImageForAi } from '@/lib/imagePreview'
 import type {
   AppConfig,
   Area,
@@ -516,6 +517,22 @@ export async function uploadInboxFile(file: File, caption?: string): Promise<Inb
   }
   const inbox = (data as { inbox: InboxItem }).inbox
   upsertEntity('inbox', inbox)
+  // 长图 / 大图：客户端切片后经 ai-preview 端点上传为多个图片 part（在返回前完成，
+  // 使随后的解析能读到分片）；分片失败不阻断投递——解析端自动回退原图单 part。
+  if (file.type.startsWith('image/')) {
+    try {
+      const tiles = await sliceImageForAi(file)
+      for (let i = 0; i < tiles.length; i += 1) {
+        await fetch(`/api/inbox/${inbox.id}/ai-preview?index=${i + 1}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'image/jpeg' },
+          body: tiles[i],
+        })
+      }
+    } catch {
+      // 预览分片失败不阻断投递：解析端自动回退原图
+    }
+  }
   return inbox
 }
 
@@ -610,7 +627,7 @@ export async function revertInbox(id: string): Promise<RevertResult> {
  * AI 动作（对应服务端 aiActionSchema）：kind 决定字段子集；
  * project = 本批次要新建的项目；task / note 可用 linkToNewProject 挂接它。
  */
-export type AiActionKind = 'task' | 'note' | 'resource' | 'project'
+export type AiActionKind = 'task' | 'note' | 'resource' | 'project' | 'event'
 
 export interface AiAction {
   kind: AiActionKind
@@ -621,15 +638,25 @@ export interface AiAction {
   importance?: number
   estimateMin?: number
   dueAt?: string
+  /** event 专属（Slice N10）：定点安排；startAt 必填（ISO8601 带时区） */
+  startAt?: string
+  /** event 专属：可选结束时间（须 ≥ startAt） */
+  endAt?: string
+  /** event 专属：只有日期、无具体时间 */
+  allDay?: boolean
+  /** event 专属：地点 */
+  location?: string
   /** 归属（task / note / resource / project） */
   projectId?: string
   areaId?: string
   tags: string[]
   /** resource 专属（Slice R2.5）：1–3 句简约小结，作为资料详情页「简介」 */
   note?: string
+  /** resource 专属（Slice N2）：资料链接（url）；null = 清除 */
+  url?: string | null
   /** project 专属：完成定义 */
   outcome?: string
-  /** task / note：挂到本批次新建的项目（与 projectId 互斥） */
+  /** task / note / event：挂到本批次新建的项目（与 projectId 互斥） */
   linkToNewProject?: boolean
   /** task：疑似重复的既有任务 id */
   duplicateOf?: string
@@ -647,9 +674,18 @@ export interface InboxApplyResult {
 /**
  * 一揽子应用：一次写入创建新项目（若有）+ 全部实体，并把条目置 clarified。
  * 成功后整体水合（应用会改变标签注册表）；水合失败时退回本地增量落位。
+ * Slice N4：可选 summary（≤40 字来源摘要）随本次 apply 一并提交，服务端写入 item.summary，
+ * 供之后任务详情的「来源条目」以人话展示（空 / 缺省则不提交该字段）。
  */
-export async function applyInbox(id: string, actions: AiAction[]): Promise<InboxApplyResult> {
-  const result = await api.post<InboxApplyResult>(`/api/inbox/${id}/apply`, { actions })
+export async function applyInbox(
+  id: string,
+  actions: AiAction[],
+  summary?: string,
+): Promise<InboxApplyResult> {
+  const body: { actions: AiAction[]; summary?: string } = { actions }
+  const trimmed = summary?.trim() ?? ''
+  if (trimmed !== '') body.summary = trimmed
+  const result = await api.post<InboxApplyResult>(`/api/inbox/${id}/apply`, body)
   if (!(await hydrateFromServer())) {
     upsertEntity('inbox', result.inbox)
     for (const entry of result.created) upsertEntity(entry.kind, entry.record)
@@ -715,6 +751,13 @@ export interface AiParseResult {
   actions: AiAction[]
   /** 公告要点（Slice N0）：假日日期等硬信息，≤8 条、每条 ≤140 字；不落盘，供「存为要点笔记」 */
   facts: string[]
+  /**
+   * 来源摘要（Slice N4）：≤40 字的人话小结，由服务端清洗；apply 时写入条目（item.summary），
+   * 供任务详情「来源条目」等关联展示复用。缺失 / 旧数据视为无摘要（归一化为空串）。
+   */
+  summary: string
+  /** Slice N9：本次解析实际执行过的联网检索问题（无检索则缺省） */
+  searched?: string[]
   model: string | null
   ms: number
 }
@@ -724,14 +767,22 @@ export type AiStreamEvent =
   | { kind: 'status'; status?: string }
   | { kind: 'delta'; field: string; delta: string }
   | { kind: 'retry'; reason: string }
-  | { kind: 'suggestion'; actions: AiAction[]; facts: string[]; model: string | null; ms: number }
+  | {
+      kind: 'suggestion'
+      actions: AiAction[]
+      facts: string[]
+      /** 来源摘要（Slice N4）：≤40 字；旧服务端 / 旧缓存可能缺省 */
+      summary?: string
+      model: string | null
+      ms: number
+    }
   | { kind: 'error'; message: string }
 
 /** 请求 AI 解析收件箱条目（同步，保留为回退路径）；不写数据（失败抛出由调用方提示） */
 export async function aiParseInbox(id: string): Promise<AiParseResult> {
   const result = await api.post<AiParseResult>(`/api/ai/inbox/${id}/parse`)
-  // 服务端老版本可能不带 facts（Slice N0）：缺省补齐，保证消费端稳定
-  return { ...result, facts: result.facts ?? [] }
+  // 服务端老版本可能不带 facts（Slice N0）/ summary（Slice N4）：缺省补齐，保证消费端稳定
+  return { ...result, facts: result.facts ?? [], summary: result.summary ?? '' }
 }
 
 /**
@@ -800,6 +851,8 @@ export async function aiParseInboxStream(
       state.result = {
         actions: event.actions,
         facts: event.facts ?? [],
+        // summary 缺省补齐（老服务端 / 无摘要时）；消费端视为必填
+        summary: event.summary ?? '',
         model: event.model,
         ms: event.ms,
       }
@@ -985,6 +1038,136 @@ export async function unapplyCluster(projectId: string): Promise<ClusterUnapplyR
 }
 
 /* ---------------------------------------------------------------------------
+ * AI 整理（organize）：一次性「归档既有任务 + 聚类立项」编排
+ * AI 只出建议——assignments 归入既有项目 / clusters 建新项目，绝不自动落盘；
+ * 应用经 organize-apply 一次写入（成功后整体水合，失败本地尽力回填）。
+ * ------------------------------------------------------------------------- */
+
+/** 归入既有项目的建议（taskIds 均为无归属任务） */
+export interface OrganizeAssignmentProposal {
+  projectId: string
+  projectTitle: string
+  taskIds: string[]
+  reason: string
+}
+
+/** 新建项目聚类建议（成员 id 由服务端展开，抗幻觉由构造保证） */
+export interface OrganizeClusterProposal {
+  title: string
+  outcome?: string
+  reason: string
+  taskIds: string[]
+  /** 相关未澄清条目：仅作命名参考（本提案不写入它们） */
+  inboxIds: string[]
+  areaId?: string
+  tags: string[]
+}
+
+export interface OrganizeDraftResult {
+  assignments: OrganizeAssignmentProposal[]
+  clusters: OrganizeClusterProposal[]
+  model: string | null
+  ms: number
+  candidates: number
+  /** N8.1：未纳入任何建议的候选数（单项事务或联系不足） */
+  unplanned: number
+}
+
+/** 请求 AI 整理草稿（无 body；只读、不写数据；失败抛出由调用方安静处理） */
+export async function aiOrganizeDraft(): Promise<OrganizeDraftResult> {
+  return api.post<OrganizeDraftResult>('/api/ai/organize/draft')
+}
+
+export interface OrganizeApplyAssignmentInput {
+  projectId: string
+  taskIds: string[]
+}
+
+export interface OrganizeApplyClusterInput {
+  title: string
+  outcome?: string
+  areaId?: string
+  tags?: string[]
+  taskIds: string[]
+}
+
+export interface OrganizeApplyInput {
+  assignments: OrganizeApplyAssignmentInput[]
+  clusters: OrganizeApplyClusterInput[]
+}
+
+export interface OrganizeApplyResult {
+  assignments: OrganizeApplyAssignmentInput[]
+  projects: { id: string; title: string; taskIds: string[] }[]
+  createdTagIds: string[]
+  errors: string[]
+  assignedTotal: number
+}
+
+/**
+ * 应用整理选择：一次写入（归入既有项目 + 建新项目并归入）；成功后整体水合。
+ * 水合失败时尽力本地回填——把已归入任务就地改 projectId；新项目实体字段不全（仅有
+ * id/title/taskIds），**不臆造半成品 Project 记录**，留待下次聚焦水合补全。
+ */
+export async function organizeApply(input: OrganizeApplyInput): Promise<OrganizeApplyResult> {
+  const result = await api.post<OrganizeApplyResult>('/api/projects/organize-apply', input)
+  if (!(await hydrateFromServer())) {
+    const groups: OrganizeApplyAssignmentInput[] = [
+      ...result.assignments,
+      ...result.projects.map((p) => ({ projectId: p.id, taskIds: p.taskIds })),
+    ]
+    for (const group of groups) {
+      for (const id of group.taskIds) {
+        const task = getTaskById(id)
+        if (task !== undefined && task.projectId !== group.projectId) {
+          upsertEntity('tasks', { ...task, projectId: group.projectId })
+        }
+      }
+    }
+  }
+  return result
+}
+
+export interface OrganizeUnapplyInput {
+  projects: string[]
+  assignments: OrganizeApplyAssignmentInput[]
+}
+
+export interface OrganizeUnapplyResult {
+  trashed: { kind: string; id: string }[]
+  restoredTaskIds: string[]
+  clearedTaskIds: string[]
+}
+
+/** 撤销整理：新建项目入回收站 + 已归入任务清 projectId（成功后整体水合，失败尽力本地回填） */
+export async function organizeUnapply(input: OrganizeUnapplyInput): Promise<OrganizeUnapplyResult> {
+  const result = await api.post<OrganizeUnapplyResult>('/api/projects/organize-unapply', input)
+  if (!(await hydrateFromServer())) {
+    for (const item of result.trashed) {
+      if (item.kind === 'projects') removeEntity('projects', item.id)
+    }
+    // restored / cleared 两组终态均为「无归属」，一并清除 projectId（尽力回填，下次水合校正）
+    const detached = new Set([...result.restoredTaskIds, ...result.clearedTaskIds])
+    for (const id of detached) {
+      const task = getTaskById(id)
+      if (task !== undefined && task.projectId !== undefined) {
+        const next = { ...task }
+        delete next.projectId
+        upsertEntity('tasks', next)
+      }
+    }
+  }
+  return result
+}
+
+/* --- 兼容别名（并行协作期旧命名；与冻结契约同名导出并存，避免重复定义 --- */
+/* 说明：服务端 / 早期 UI 使用无 Proposal 后缀的类型名与 applyOrganize / unapplyOrganize 函数名。 */
+export type OrganizeAssignment = OrganizeAssignmentProposal
+export type OrganizeCluster = OrganizeClusterProposal
+export const applyOrganize = organizeApply
+export const unapplyOrganize = organizeUnapply
+
+/* ---------------------------------------------------------------------------
  * AI 自动化档位 + AI 动态（v0.5 · Slice R2，见 ADR-0016）
  * ------------------------------------------------------------------------- */
 
@@ -1007,6 +1190,18 @@ export interface ActivityEntry {
 export async function fetchActivity(limit = 200): Promise<ActivityEntry[]> {
   const res = await api.get<{ items: ActivityEntry[] }>(`/api/activity?limit=${limit}`)
   return res.items
+}
+
+/* ---------------------------------------------------------------------------
+ * AI Key（v0.5 · Slice N5）：DeepSeek API Key 本机配置
+ * 仅经唯一写者落盘到 data/meta/secrets.json（不进仓库、仅本机）；apiKey 空串 = 清除。
+ * 响应 { ok, hasKey } ——hasKey 供设置页状态 pill 即时刷新。
+ * ------------------------------------------------------------------------- */
+
+/** 保存 / 清除 DeepSeek API Key（空串表示清除）；返回最新 hasKey */
+export async function setAiKey(apiKey: string): Promise<boolean> {
+  const res = await api.post<{ ok: true; hasKey: boolean }>('/api/ai/key', { apiKey })
+  return res.hasKey
 }
 
 /* ---------------------------------------------------------------------------
@@ -1177,8 +1372,29 @@ export interface AiChatMessage {
   content: string
 }
 
+/** 实体修改提案（本切片）：AI 生成 · 用户确认后应用；确认前零写入 */
+export interface ChatEditProposal {
+  /** 目标实体类别（与回收站同族：tasks / events / …） */
+  kind: TrashKind
+  id: string
+  /** 目标实体标题（服务端快照） */
+  title: string
+  /** 拟修改字段（服务端已按可编辑字段白名单过滤） */
+  fields: Record<string, unknown>
+  /** 变更前值（缺省字段以 null 表示「清除」；用于展示与撤销） */
+  before: Record<string, unknown>
+  /** 模型给出的一句话修改说明（可缺省） */
+  label?: string
+}
+
 export interface AiChatResult {
   reply: string
+  /** Slice G.1：本轮为作答实际执行的联网检索问题（空 / 缺省 = 未检索） */
+  searched?: string[]
+  /** 本切片：本轮为作答查阅过的实体标题（空 / 缺省 = 未查阅） */
+  focused?: string[]
+  /** 本切片：实体修改提案（服务端校验后；仅命中修改意图时存在） */
+  edits?: ChatEditProposal[]
   model: string | null
   ms: number
 }
@@ -1189,6 +1405,23 @@ export interface AiChatResult {
  */
 export async function chatWithAi(messages: AiChatMessage[]): Promise<AiChatResult> {
   return api.post<AiChatResult>('/api/ai/chat', { messages })
+}
+
+/** 对话 → 笔记（Slice G.1）：把某条对话回答整理成独立笔记并落盘 */
+export interface ChatNoteInput {
+  instruction: string
+  answer: string
+}
+
+export interface ChatNoteResult {
+  note: { id: string; title: string }
+  model?: string | null
+  ms?: number
+}
+
+/** 对话 → 笔记（`POST /api/ai/chat/note`；AI 整理草稿，服务端落盘，可经回收站撤销） */
+export async function chatNoteFromChat(input: ChatNoteInput): Promise<ChatNoteResult> {
+  return api.post<ChatNoteResult>('/api/ai/chat/note', input)
 }
 
 export interface CreateNoteInput {
