@@ -25,23 +25,43 @@ export function useDataRevision(): number {
 export interface AiHealth {
   status: 'checking' | 'online' | 'offline'
   model: string | null
+  /**
+   * DeepSeek API Key 是否已配置（Slice N5）：独立于 opencode 在线状态展示。
+   * 兼容旧服务端 / 离线的容错读取——响应缺 hasKey 或请求失败时按「未配置」保守兜底。
+   */
+  hasKey: boolean
+  /** 强制立即复查（保存 / 清除 API Key 后调用以刷新状态 pill） */
+  refresh: () => void
+}
+
+/** 内部状态：不含 refresh（避免把函数写进 state） */
+interface AiHealthCore {
+  status: AiHealth['status']
+  model: string | null
+  hasKey: boolean
 }
 
 export function useAiHealth(): AiHealth {
-  const [health, setHealth] = useState<AiHealth>({ status: 'checking', model: null })
+  const [health, setHealth] = useState<AiHealthCore>({ status: 'checking', model: null, hasKey: false })
+  // tick 变化即触发 effect 重跑 = 立即复查 + 重置轮询计时
+  const [tick, setTick] = useState(0)
+  const refresh = useCallback((): void => setTick((n) => n + 1), [])
   useEffect(() => {
     let cancelled = false
     const check = (): void => {
       void api
-        .get<{ available: boolean; model: string | null; url: string }>('/api/ai/health')
+        .get<{ available: boolean; model: string | null; url: string; hasKey?: boolean }>('/api/ai/health')
         .then((res) => {
           if (cancelled) return
-          setHealth(
-            res.available ? { status: 'online', model: res.model } : { status: 'offline', model: null },
-          )
+          setHealth({
+            status: res.available ? 'online' : 'offline',
+            model: res.available ? res.model : null,
+            // 容错：离线 / 旧服务端不带 hasKey 时保守视为未配置，绝不臆造「已配置」
+            hasKey: res.hasKey === true,
+          })
         })
         .catch(() => {
-          if (!cancelled) setHealth({ status: 'offline', model: null })
+          if (!cancelled) setHealth({ status: 'offline', model: null, hasKey: false })
         })
     }
     check()
@@ -50,8 +70,8 @@ export function useAiHealth(): AiHealth {
       cancelled = true
       window.clearInterval(timer)
     }
-  }, [])
-  return health
+  }, [tick])
+  return { ...health, refresh }
 }
 
 /** 数据源状态（seed 首帧 / server 已连接 / offline 服务离线） */

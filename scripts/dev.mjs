@@ -6,6 +6,8 @@ import { spawn } from 'node:child_process'
 import net from 'node:net'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
+// 本机凭据（Slice N5）：从设置页保存的 key 注入 opencode 子进程环境；绝不打印 key。
+import { getDeepseekKey } from '../server/secrets.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const isPreview = process.argv.includes('--preview')
@@ -67,10 +69,31 @@ async function ensureOpencode() {
     console.log('[dev] opencode serve 已在运行（4096）')
     return
   }
-  console.log('[dev] 启动 opencode serve（4096）')
-  const child = spawn('opencode', ['serve', '--port', String(port)], {
+  // Slice N5：设置页保存的 DeepSeek Key → 注入子进程环境（本机 opencode 用 {env:DEEPSEEK_API_KEY} 引用）。
+  // 空则维持现状（继承 process.env）；日志只报「已注入」，绝不输出 key 明文。
+  const key = getDeepseekKey()
+  const env = key !== '' ? { ...process.env, DEEPSEEK_API_KEY: key } : process.env
+  if (key !== '') console.log('[dev] 已从设置注入 AI Key（DEEPSEEK_API_KEY）')
+
+  const args = ['serve', '--port', String(port)]
+  // Slice N7：分发包内置 opencode —— 启动器经 KERNEL_OPENCODE_BIN 指定可执行文件路径，
+  // 直接 spawn（不依赖 PATH，shell:false）；否则回退系统 PATH 查找（Windows 经 shell 解析）。
+  const builtinBin = process.env.KERNEL_OPENCODE_BIN
+  if (builtinBin) {
+    console.log('[dev] 启动内置 opencode serve（4096）')
+    const child = spawn(builtinBin, args, { stdio: 'inherit', cwd: root, env, shell: false })
+    child.on('error', (err) => {
+      console.warn(`[dev] 内置 opencode 启动失败，AI 功能不可用（${err?.code ?? err?.message ?? '未知错误'}）`)
+    })
+    children.push(child)
+    return
+  }
+
+  console.log('[dev] 启动系统 opencode serve（4096）')
+  const child = spawn('opencode', args, {
     stdio: 'inherit',
     cwd: root,
+    env,
     shell: process.platform === 'win32',
   })
   // CLI 缺失（ENOENT）时仅告警，不拖垮 dev 启动

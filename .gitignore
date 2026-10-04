@@ -39,3 +39,10 @@ node_modules/.tmp
 
 # 附件二进制（文件投递；见 docs/decisions/0008-inbox-file-intake.md）
 data/files/
+
+# 本机凭据（如 AI Key）——绝不入库
+data/meta/secrets.json
+
+# python 缓存（QA 脚本运行产物）
+__pycache__/
+*.pyc

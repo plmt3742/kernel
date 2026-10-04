@@ -11,7 +11,7 @@ import { useToast } from '@/context/ToastContext'
 import { getConfig, getSnapshot } from '@/lib/data'
 import { getDataRecordCount } from '@/lib/derive'
 import { useAiHealth, useDataRevision, useDataSource } from '@/lib/hooks'
-import { updateAiAutomation } from '@/lib/mutations'
+import { setAiKey, updateAiAutomation } from '@/lib/mutations'
 import { api, errorText } from '@/lib/api'
 import { formatTime } from '@/lib/date'
 import type { AiAutomation } from '@/types'
@@ -86,6 +86,51 @@ export function Settings() {
       }
     })()
   }
+  // DeepSeek API Key（Slice N5）：输入框始终为空，绝不回显已存 key；保存成功后清空并刷新 health
+  const [keyDraft, setKeyDraft] = useState('')
+  const [keyBusy, setKeyBusy] = useState(false)
+  // 本地即时覆盖（保存 / 清除响应返回 hasKey）：先给 pill 即时反馈，health 刷新回来后归位
+  const [keyOverride, setKeyOverride] = useState<boolean | null>(null)
+  const keyConfigured = keyOverride ?? ai.hasKey
+  // health 的 hasKey 一到（轮询 / 手动刷新）即清除本地覆盖，避免覆盖掩盖服务端真值
+  useEffect(() => {
+    setKeyOverride(null)
+  }, [ai.hasKey])
+
+  const saveKey = (): void => {
+    const value = keyDraft.trim()
+    if (value === '' || keyBusy) return
+    setKeyBusy(true)
+    void (async () => {
+      try {
+        setKeyOverride(await setAiKey(value))
+        setKeyDraft('')
+        ai.refresh()
+        toast('已保存 API Key')
+      } catch (err) {
+        toast(`保存失败：${errorText(err)}`, { tone: 'error' })
+      } finally {
+        setKeyBusy(false)
+      }
+    })()
+  }
+
+  const clearKey = (): void => {
+    if (keyBusy) return
+    setKeyBusy(true)
+    void (async () => {
+      try {
+        setKeyOverride(await setAiKey(''))
+        ai.refresh()
+        toast('已清除')
+      } catch (err) {
+        toast(`清除失败：${errorText(err)}`, { tone: 'error' })
+      } finally {
+        setKeyBusy(false)
+      }
+    })()
+  }
+
   const snapshot = getSnapshot()
   const total = getDataRecordCount(snapshot)
 
@@ -216,6 +261,55 @@ export function Settings() {
                   <code>opencode serve --port 4096</code>。
                 </p>
               )}
+
+              <div className="k-settings__divider" aria-hidden />
+
+              {/* DeepSeek API Key（Slice N5）：与 opencode 在线状态独立；仅本机保存，绝不回显 */}
+              <div className="k-between">
+                <span className="k-panel__cn">DeepSeek API Key</span>
+                <span
+                  className={['k-svc-pill', keyConfigured ? 'is-ok' : ''].filter(Boolean).join(' ')}
+                >
+                  {keyConfigured ? '已配置' : '未配置'}
+                </span>
+              </div>
+              <div className="k-field">
+                <input
+                  type="password"
+                  className="k-input"
+                  autoComplete="off"
+                  spellCheck={false}
+                  placeholder="sk-…（粘贴后点保存）"
+                  aria-label="DeepSeek API Key"
+                  value={keyDraft}
+                  disabled={keyBusy}
+                  onChange={(event) => setKeyDraft(event.target.value)}
+                />
+                <div className="k-view__actions">
+                  <button
+                    type="button"
+                    className="k-btn is-solid"
+                    onClick={saveKey}
+                    disabled={keyBusy || keyDraft.trim() === ''}
+                  >
+                    {keyBusy ? '处理中…' : '保存'}
+                  </button>
+                  {keyConfigured && (
+                    <button
+                      type="button"
+                      className="k-btn is-danger"
+                      onClick={clearKey}
+                      disabled={keyBusy}
+                    >
+                      清除
+                    </button>
+                  )}
+                </div>
+              </div>
+              <p className="k-view__intro k-muted">
+                仅保存在本机 <code>data/meta/secrets.json</code>，不会进入仓库；由启动器注入 opencode（
+                <b>重启 opencode 后生效</b>）；不填则沿用系统环境变量 / opencode 自身登录。
+              </p>
             </Panel>
           )}
 
