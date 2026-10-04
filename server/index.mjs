@@ -1519,9 +1519,11 @@ async function applyInboxActions(id, body) {
     }
     return out
   })
-  // Slice R2.5 纵深防御：文件条目只允许落地为一条资料（与解析侧 postValidateActions 同口径）
+  // Slice R2.5 纵深防御：非图片文件只允许落地为一条资料（与解析侧 postValidateActions 同口径）。
+  // QA v74：图片条目与解析侧对齐——内容动作（event / task / note 等）可一并应用；
+  // 图片自身由解析侧保证产出 resource（下方 resource 分支自动带附件 path）。
   const hasFile = item.file !== undefined && item.file !== null
-  if (hasFile) {
+  if (hasFile && !isImageFile(item)) {
     actions = actions.filter((action) => action.kind === 'resource').slice(0, 1)
     if (actions.length === 0) {
       throw Object.assign(new Error('文件条目只能应用为资料'), { status: 400 })

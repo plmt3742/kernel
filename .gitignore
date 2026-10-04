@@ -46,3 +46,6 @@ data/meta/secrets.json
 # python 缓存（QA 脚本运行产物）
 __pycache__/
 *.pyc
+
+# 审计日志（高频追加；历史仓库约定不入库，本机保留）
+data/activity.jsonl

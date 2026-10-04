@@ -102,3 +102,12 @@ Slice R1 把「一条内容 → 一揽子动作」铺开，对**文本**条目�
 - `server/index.mjs`：`clarifyInbox` / `applyInboxActions` 写 `resource.note`；apply 文件条目纵深过滤。
 - `src/`：`lib/mutations.ts`（`AiAction.note`）、`lib/aiForm.ts`（`note` 字段 + `ACTION_FIELD_MATRIX.resource`）、`components/AiSuggestionForm.tsx`（简介 textarea）、`components/AiActionsCard.tsx`（小结展示）、`views/Library.tsx`（简介区块 + 编辑标签）、`views/Inbox.tsx`（动作行 + 删除同排）、`styles/views.css`（`.ic-subrow__row` / `.ic-lifecycle` 靠右 / `.ic-action__note`）。
 - 验证：服务端冒烟 31/31 + 前端 E2E 23/23 + 构建通过，零残留，证据 `.qa/v36/`。
+
+### 5.5 修订（QA v74 · 2026-10-04）：图片条目 = 内容动作 + 图片资料（两处口径对齐）
+
+- **背景（owner 报告）**：owner 丢入图片 + 文字（赛程截图与相关文字），解析正确地产出了 2 个 event，但点「全部应用」被 `applyInboxActions` 的「文件条目只能应用为资料」400 拦截——解析侧对图片走多动作管线（Slice N0），apply 侧却按 §5.2 的「文件条目」一律只放行 resource，**两侧口径不一致**（bug）。owner 诉求原话：「我输入图片也是为了提供信息（有时候只是单纯想要存入这个资料，有时候是为了辅助我的文字内容）……在分析后也需要分析这个资料本身该如何被简介后存入资料库」。
+- **决策（仅限图片条目；非图片文件维持 §5.2 全部规则）**：
+  1. **解析侧始终补一条「图片本身」的 resource**：提示词规则 9 更新（始终产出 1 个 resource 收录图片本身——note 为简介；同时按文本规则解析图片中信息，多动作产出）；`postValidateActions({ hasFile, isImage:true })` 在模型未产出 resource 时按文件名兜底补齐（简介用兜底文案），其余内容动作照常保留（资源动作置首、总数 ≤6）。
+  2. **apply 侧对齐**：`applyInboxActions` 的「文件条目只能应用为资料」纵深防御收窄为**非图片文件**（`hasFile && !isImageFile(item)`）；图片条目允许内容动作与「图片自身」resource 一揽子落位（resource 分支照常带 `kind:'file'` + 附件 `path`）。
+- **不变**：非图片文件（pdf / docx / xlsx 等）= 资料 + 简介、绝不拆分；确认制、撤销（`unapply`）、审计动作名全部不变。
+- **验证**：`.qa/v74/`（探针 + 服务端断言；图片条目 resource+event 一揽子落位 → 撤销零残留；非图片文件仍被拦截）；详见 CHANGELOG / TASK_BOOK 本条目。

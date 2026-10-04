@@ -1597,7 +1597,7 @@ summary 为必出项：用一句话概括本条内容（≤40 字，单行）。
    需要做的事（报备、提交、申请、报名等必须完成的动作）→ 产出 kind:"task" 动作；若该义务只对部分人成立，condition 写清适用条件（不超过 30 字，如「仅出国（境）者」「仅留校学生」）；确实对所有人成立的义务可省略 condition。
    纯建议 / 提醒 / 安全须知（防蚊、饮食、防溺水宣传等）→ 默认不产出任何动作；仅当某条具体、可操作、值得保留时，才作为一条 facts 写入。
 8. facts 宁少而精：最多 8 条，只保留对个人有用的硬信息；与普通学生无关的泛泛内容不要写。actions 仍遵守第 1 条（通常 1–4 个，最多 6 个）。
-9. 图片条目：附件是图片时，按本条（文本规则）同样处理，多动作产出；若图片内容明显是文章 / 资料而非通知，按第 2 条产出 resource。
+9. 图片条目（QA v74）：附件是图片时，**始终额外产出 1 个 kind:"resource" 动作收录图片本身**——title 取内容主题或文件名；note 为 1–3 句、≤${AI_RESOURCE_NOTE_MAX_CHARS} 字的「简介」（概括图片内容与用途，作为资料详情页简介）；同时按本条（文本规则）解析图片中的信息，多动作产出（task / note / event / facts 等）。图片作为文字辅助时两者都要：内容动作 + 图片资料；仅为留存资料时 resource 单条即可。
 10. summary（顶层）为必出项：一句话概括本条（≤40 字、单行；多要点用「 · 」分隔，含关键时间 / 事项）；不得引入原文没有的信息、不得整句照抄。例：内容混合（面试 + 项目 + 学习 + 简历）→「10/7 晚面试 · 院长项目 · Python 学习 · 简历投递」。
 11. 联网检索：若内容涉及你无法确定的外部事实（未来考试 / 报名 / 活动 / 政策的具体日期与安排），先把要检索的问题写入顶层 searchQueries（≤2 条、中文关键词、含年份与机构名，如「2026年下半年 全国大学英语四级考试 时间」）；此时相关动作的 dueAt 等时间字段先省略（系统会先检索、再把结果发给你，随后你补全）。无需检索时省略该字段。绝不编造未来日期。
 12. 定点安排识别：会在某个时刻「发生」的事（面试 / 会议 / 考试 / 约谈 / 活动 / 演出 / 用餐 / 聚会等）→ 产出 kind:"event"，startAt 为 ISO8601 带时区（必填，如 2026-10-07T19:00:00+08:00）。
@@ -1885,6 +1885,18 @@ export function postValidateActions(actions, snapshot, options = {}) {
     return [out]
   }
 
+  // QA v74：图片条目始终保留一条「图片本身」的 resource（保证图片可作资料入库）；
+  // 模型未产出时按文件名兜底补齐（简介用兜底文案），其余内容动作照常保留（多动作管线）。
+  if (options.hasFile === true && options.isImage === true && !cleaned.some((a) => a.kind === 'resource')) {
+    const fallbackTitle = Array.from(String(options.fallbackTitle ?? '').trim()).slice(0, 40).join('')
+    const resource = { kind: 'resource', title: fallbackTitle !== '' ? fallbackTitle : '图片资料', contexts: [], tags: [], reason: '' }
+    const note = normalizeResourceNote('', options.fallbackNote)
+    if (note !== '') resource.note = note
+    // 资源动作置首；总数保持 ≤6（与 aiActionsSchema / inboxApplySchema 上限对齐）
+    cleaned.unshift(resource)
+    if (cleaned.length > 6) cleaned.length = 6
+  }
+
   const projectCandidates = cleaned.filter((a) => a.kind === 'project')
   let projectAction = projectCandidates[0]
   if (projectAction !== undefined && projectTitles.has(projectAction.title)) projectAction = undefined
@@ -2031,7 +2043,8 @@ async function promptWithRetry(sessionID, system, userText, emit, extraParts = [
 
 /**
  * 文件条目解析的后校验选项（Slice R2.5）：hasFile + 文件名兜底标题 + 内容可读性兜底小结。
- * 图片条目（Slice N0）附 isImage=true，使 postValidateActions 跳过「资料 + 简介」硬归一化。
+ * 图片条目（Slice N0 / QA v74）附 isImage=true：跳过「资料 + 简介」硬归一化（多动作管线），
+ * 但 postValidateActions 仍保证补齐一条「图片本身」的 resource。
  * @param {{ file?: { name: string } } | null | undefined} item
  * @param {boolean} hasFile
  * @param {string} fileSection buildFileSection 的产物（含不可读提示则判为不可读）
