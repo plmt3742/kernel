@@ -1,15 +1,24 @@
 // KERNEL · 项目 PROJECTS（P1）：状态分组纵向列表 + 行内进度 + 详情抽屉
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Plus } from 'lucide-react'
+import { Plus, Sparkles } from 'lucide-react'
 import { ProjectDetailModal } from '@/components/ProjectDetailModal'
 import { ProjectDraftModal } from '@/components/ProjectDraftModal'
+import { OrganizeProposalCard } from '@/components/OrganizeProposalCard'
 import { MeterBar } from '@/components/MeterBar'
 import { TagPill } from '@/components/TagPill'
 import { EmptyState } from '@/components/EmptyState'
 import { useToast } from '@/context/ToastContext'
 import { getAreaById, getProjectProgress, getSnapshot, getTaskById } from '@/lib/data'
-import { trashEntity } from '@/lib/mutations'
+import { trashEntity, type OrganizeAssignment, type OrganizeCluster } from '@/lib/mutations'
+import {
+  applyOrganizeSelection,
+  dismissOrganize,
+  getOrganizeState,
+  runOrganizeNow,
+  undoOrganizeApply,
+  useOrganizeState,
+} from '@/lib/organize'
 import { errorText } from '@/lib/api'
 import { useDataRevision } from '@/lib/hooks'
 import { createUiStore, str, useUiStore } from '@/lib/uiState'
@@ -66,6 +75,8 @@ export function Projects() {
   // 草稿确认弹窗（Slice R1）：回车后打开，AI 补全完成定义 / 区域 / 标签，确认才写入
   const [draftTitle, setDraftTitle] = useState<string | null>(null)
   const projects = getSnapshot().projects
+  // 「AI 整理」模块级状态（跨路由存活）：提案 / 运行态 / 应用态；确认前绝不落盘
+  const organize = useOrganizeState()
 
   // 深链直达项目弹窗：/projects?project=p-0002
   useEffect(() => {
@@ -105,6 +116,38 @@ export function Projects() {
     })
   }
 
+  // AI 整理 · 手动运行（工具条按钮）：忽略时段 / 当日 / 锁；成功即使空也记录今日
+  const handleOrganizeRun = async (): Promise<void> => {
+    const ok = await runOrganizeNow()
+    const state = getOrganizeState()
+    if (!ok) {
+      toast(`整理失败：${state.error || '请稍后重试'}`, { tone: 'error' })
+    } else if (state.assignments.length === 0 && state.clusters.length === 0) {
+      toast('暂无可整理项')
+    }
+  }
+
+  // AI 整理 · 应用勾选（归并 + 新项目一次写入）；toast 撤销 → 精确复原
+  const handleOrganizeApply = (assignments: OrganizeAssignment[], clusters: OrganizeCluster[]): void => {
+    void (async () => {
+      try {
+        const result = await applyOrganizeSelection(assignments, clusters)
+        toast(`已整理 ${result.assignedTotal} 项 · 撤销`, {
+          action: {
+            label: '撤销',
+            onClick: () => {
+              void undoOrganizeApply(result).catch((err) => {
+                toast(`撤销失败：${errorText(err)}`, { tone: 'error' })
+              })
+            },
+          },
+        })
+      } catch (err) {
+        toast(`应用失败：${errorText(err)}`, { tone: 'error' })
+      }
+    })()
+  }
+
   // 跨分组连续编号（与设计稿一致：进行中 01–09、将来 10 …）
   const indexById = new Map<string, number>()
   let seq = 0
@@ -123,7 +166,7 @@ export function Projects() {
         项目是"需要多个步骤达成"的结果承诺。纵向一览按状态分组，每行内嵌完成定义、下一步行动与任务进度。
       </p>
 
-      {/* 快速新建（镜像任务页）：回车创建，写入 data/projects */}
+      {/* 快速新建（镜像任务页）：回车创建，写入 data/projects；同行右侧「AI 整理」 */}
       <div className="k-projects__toolbar">
         <div className="k-quickadd">
           <Plus size={16} strokeWidth={1.5} className="k-muted" aria-hidden />
@@ -139,7 +182,31 @@ export function Projects() {
           />
           <span className="u-label k-muted">ENTER</span>
         </div>
+        <button
+          type="button"
+          className="k-pill is-ghost k-projects__organize"
+          onClick={() => {
+            void handleOrganizeRun()
+          }}
+          disabled={organize.busy || organize.applying}
+        >
+          <Sparkles size={14} strokeWidth={1.5} aria-hidden />
+          {organize.busy || organize.applying ? '整理中…' : 'AI 整理'}
+        </button>
       </div>
+
+      {/* AI 整理建议卡：两段提案 + 逐行勾选；确认前零落盘 */}
+      <OrganizeProposalCard
+        assignments={organize.assignments}
+        clusters={organize.clusters}
+        busy={organize.busy}
+        applying={organize.applying}
+        onApply={handleOrganizeApply}
+        onRerun={() => {
+          void handleOrganizeRun()
+        }}
+        onDismiss={dismissOrganize}
+      />
 
       {projects.length === 0 ? (
         <div className="k-plist__empty">
@@ -247,5 +314,3 @@ function ProjectRow({ project, index, variant, onOpen }: ProjectRowProps) {
     </button>
   )
 }
-
-

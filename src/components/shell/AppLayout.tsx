@@ -10,6 +10,7 @@ import { CommandPalette } from '@/components/CommandPalette'
 import { usePalette } from '@/context/PaletteContext'
 import { navByPath } from '@/lib/nav'
 import { hydrateFromServer } from '@/lib/mutations'
+import { useOrganizeScheduler } from '@/lib/organize'
 import { useRouteScrollMemory } from '@/lib/scroll'
 import { DUR, EASE_ENTER } from '@/lib/motion'
 
@@ -30,6 +31,9 @@ export function AppLayout() {
 
   // 路由滚动记忆：各页面独立位置（回访恢复 / 首次回顶）
   useRouteScrollMemory()
+
+  // 每日 12:00 AI 整理自动出草稿（打开补跑 + 30s 轮询 + 聚焦/可见补检；只出建议，绝不自动应用）
+  useOrganizeScheduler()
 
   // 全局快捷键：Ctrl/Cmd+K 命令面板；c 捕捉（跳转收件箱并聚焦）
   useEffect(() => {

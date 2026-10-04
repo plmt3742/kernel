@@ -24,6 +24,14 @@ function isAiEntry(entry: ActivityEntry): boolean {
   if (action === 'task.update' && (entry.detail?.via === 'cluster' || entry.detail?.via === 'cluster-unapply')) {
     return true
   }
+  // AI 整理（Slice N8）：归并 / 新项目 / 撤销整理（含撤销时的标签清理）
+  if (
+    (action === 'project.create' || action === 'project.trash' || action === 'task.update') &&
+    (entry.detail?.via === 'organize' || entry.detail?.via === 'organize-unapply')
+  ) {
+    return true
+  }
+  if (action === 'tag.remove' && entry.detail?.via === 'organize-unapply') return true
   return false
 }
 
@@ -51,6 +59,17 @@ const ACTION_TEXT: Record<string, string> = {
 
 function describe(entry: ActivityEntry): string {
   const action = entry.action ?? ''
+  const via = entry.detail?.via
+  // 整理（organize）与其撤销使用更贴合语境的中文摘要；其余沿用通用映射
+  if (via === 'organize') {
+    if (action === 'project.create') return 'AI 整理建项'
+    if (action === 'task.update') return 'AI 整理归入项目'
+  }
+  if (via === 'organize-unapply') {
+    if (action === 'project.trash') return '撤销整理（项目入回收站）'
+    if (action === 'task.update') return '撤销整理（任务移出项目）'
+    if (action === 'tag.remove') return '撤销整理（清理标签）'
+  }
   return ACTION_TEXT[action] ?? action
 }
 
