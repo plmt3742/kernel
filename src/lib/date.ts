@@ -140,6 +140,17 @@ export function isPast(input: DateInput, now: DateInput = new Date()): boolean {
   return toDate(input).getTime() < toDate(now).getTime()
 }
 
+/**
+ * 日程的有效结束时刻：优先 endAt；全天且无 endAt = 当日 23:59:59.999（避免全天日程在当天零点即被当作「已结束」）；
+ * 其余情况回退 startAt（单点日程）。
+ */
+export function eventEndOf(event: { startAt: string; endAt?: string; allDay?: boolean }): Date {
+  if (event.endAt !== undefined) return toDate(event.endAt)
+  const start = toDate(event.startAt)
+  if (event.allDay === true) return endOfDayFns(start)
+  return start
+}
+
 /** 是否为未来（严格晚于 now） */
 export function isFuture(input: DateInput, now: DateInput = new Date()): boolean {
   return toDate(input).getTime() > toDate(now).getTime()

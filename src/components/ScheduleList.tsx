@@ -20,21 +20,16 @@ export function ScheduleList({ events, now, onSelect, ended }: ScheduleListProps
   return (
     <ul className="k-schedule">
       {events.map((event) => {
-        const timeLabel = event.allDay
-          ? '全天'
-          : ended === true
-            ? formatTime(event.startAt)
-            : `${formatTime(event.startAt)}–${formatTime(event.endAt ?? event.startAt)}`
+        // 时段标签：有结束时间 → 「起–止」；单点日程（无 endAt）→ 仅起始时刻（避免「18:00–18:00」）
+        const range =
+          event.endAt !== undefined
+            ? `${formatTime(event.startAt)}–${formatTime(event.endAt)}`
+            : formatTime(event.startAt)
+        const timeLabel = event.allDay ? '全天' : ended === true ? formatTime(event.startAt) : range
         // 已结束：正文补完整时段与状态；默认（沿用既有调用）：仅地点
         const meta =
           ended === true
-            ? [
-                event.allDay
-                  ? undefined
-                  : `${formatTime(event.startAt)}–${formatTime(event.endAt ?? event.startAt)}`,
-                event.location,
-                '已结束',
-              ]
+            ? [event.allDay ? undefined : range, event.location, '已结束']
                 .filter((part): part is string => part !== undefined)
                 .join(' · ')
             : event.location
