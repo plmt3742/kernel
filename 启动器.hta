@@ -1,0 +1,563 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<title>KERNEL</title>
+<hta:application
+  id="KERNEL"
+  applicationname="KERNEL"
+  border="thin"
+  caption="yes"
+  maximizebutton="no"
+  minimizebutton="yes"
+  scroll="no"
+  singleinstance="yes"
+  contextmenu="no"
+  selection="no"
+/>
+<style>
+/* ==========================================================================
+ * KERNEL desktop launcher (single-file HTA, zero dependency).
+ * Conservative CSS only: no CSS variables, no grid, no flex gap.
+ * Tokens hardcoded from src/styles/tokens.css (soft dark night theme).
+ * ======================================================================== */
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  background-color: #0f0f10;
+  background-image: radial-gradient(900px 460px at 50% -12%, rgba(255,90,82,0.05), transparent 62%);
+  background-repeat: no-repeat;
+  color: #f4f4f5;
+  font-family: "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+  overflow: hidden;
+}
+.wrap { padding: 16px; }
+.card {
+  width: 448px;
+  margin: 0 auto;
+  background: #1a1a1c;
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 16px;
+  box-shadow: 0 16px 40px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.05);
+  padding: 24px 22px 20px;
+}
+.brand { line-height: 36px; }
+.mark {
+  display: inline-block;
+  vertical-align: middle;
+  width: 36px;
+  height: 36px;
+  line-height: 34px;
+  text-align: center;
+  border-radius: 11px;
+  background: #212124;
+  border: 1px solid rgba(255,255,255,0.12);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 17px;
+  font-weight: bold;
+  color: #f4f4f5;
+}
+.brand__text { display: inline-block; vertical-align: middle; margin-left: 12px; }
+.brand__name { font-size: 17px; font-weight: 600; letter-spacing: 2px; }
+.brand__ver { font-size: 11px; color: #929298; letter-spacing: 1px; margin-left: 8px; font-family: Consolas, monospace; }
+.tagline { margin: 12px 0 0 0; font-size: 13px; color: #a1a1aa; }
+.status { margin-top: 22px; }
+.status__head { line-height: 22px; }
+.pulse { position: relative; display: inline-block; vertical-align: middle; width: 11px; height: 11px; }
+.pulse__core {
+  position: absolute; left: 0; top: 0; width: 11px; height: 11px;
+  border-radius: 50%; background: #ff5a52;
+}
+.pulse__ring {
+  position: absolute; left: 0; top: 0; width: 11px; height: 11px;
+  border-radius: 50%; background: #ff5a52; opacity: 0.5;
+  animation: pulse 1.9s ease-out infinite;
+}
+@keyframes pulse {
+  0% { transform: scale(1); opacity: 0.5; }
+  100% { transform: scale(2.6); opacity: 0; }
+}
+.status__text { display: inline-block; vertical-align: middle; margin-left: 12px; font-size: 14px; color: #f4f4f5; }
+.dots { display: inline-block; vertical-align: middle; margin-left: 2px; width: 20px; font-size: 14px; color: #a1a1aa; }
+.status__hint { display: none; margin: 8px 0 0 0; font-size: 11.5px; color: #929298; }
+.track { height: 3px; border-radius: 999px; background: rgba(255,255,255,0.05); overflow: hidden; margin-top: 14px; }
+.track__bar { display: block; height: 3px; width: 34%; border-radius: 999px; background: #ff5a52; opacity: 0.55; }
+.st-starting .track__bar { transform: translateX(-120%); animation: slide 1.6s ease-in-out infinite; }
+@keyframes slide {
+  0% { transform: translateX(-120%); }
+  100% { transform: translateX(380%); }
+}
+.st-ready .track__bar { width: 100%; transform: none; opacity: 1; background: #4caf7d; animation: none; }
+.st-timeout .track__bar { width: 100%; transform: none; opacity: 0.5; background: #d08a2b; animation: none; }
+.st-ready .pulse__core { background: #4caf7d; }
+.st-ready .pulse__ring { background: #4caf7d; animation: none; opacity: 0; }
+.st-timeout .pulse__core { background: #d08a2b; }
+.st-timeout .pulse__ring { background: #d08a2b; animation: none; opacity: 0; }
+.actions { margin-top: 22px; }
+.btn {
+  display: block;
+  width: 100%;
+  margin-top: 12px;
+  padding: 10px 18px;
+  font-family: "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
+  font-size: 13px;
+  line-height: 20px;
+  color: #a1a1aa;
+  cursor: pointer;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 999px;
+  background: rgba(255,255,255,0.08);
+}
+.btn:hover { background: #232327; color: #f4f4f5; }
+.btn:disabled { opacity: 0.55; cursor: default; }
+.st-ready .btn--primary { background: #ff5a52; border-color: #ff5a52; color: #0f0f10; font-weight: 600; }
+.foot {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255,255,255,0.06);
+  font-size: 11.5px;
+  color: #929298;
+}
+.foot__addr { font-family: Consolas, monospace; }
+.link { display: inline-block; margin-left: 10px; color: #a1a1aa; text-decoration: underline; cursor: pointer; }
+.link:hover { color: #f4f4f5; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <div class="brand">
+      <span class="mark">K</span>
+      <span class="brand__text"><span class="brand__name" id="brandName"></span><span class="brand__ver" id="brandVer"></span></span>
+    </div>
+    <p class="tagline" id="tagline"></p>
+    <div class="status">
+      <div class="status__head">
+        <span class="pulse"><span class="pulse__ring"></span><span class="pulse__core"></span></span>
+        <span class="status__text" id="statusText"></span>
+        <span class="dots" id="dots"></span>
+      </div>
+      <p class="status__hint" id="statusHint"></p>
+      <div class="track"><span class="track__bar"></span></div>
+    </div>
+    <div class="actions">
+      <button type="button" class="btn btn--primary" id="mainBtn"></button>
+      <button type="button" class="btn" id="stopBtn"></button>
+      <button type="button" class="btn" id="logBtn"></button>
+    </div>
+    <div class="foot">
+      <span class="foot__addr" id="footAddr"></span>
+      <span class="link" id="deskLink"></span>
+    </div>
+  </div>
+</div>
+<script language="JScript">
+(function () {
+  function byId(id) { return document.getElementById(id); }
+  function setText(id, s) {
+    var el = byId(id);
+    if (el) { el.innerText = s; }
+  }
+  function show(id, on) {
+    var el = byId(id);
+    if (el) { el.style.display = on ? 'block' : 'none'; }
+  }
+
+  var APP_FILE = '\u542f\u52a8\u5668.hta';
+
+  function computeRoot() {
+    var href = location.href ? String(location.href) : '';
+    try {
+      if (href.indexOf('%') >= 0) { href = decodeURIComponent(href); }
+    } catch (eDec) {}
+    var p = href;
+    if (p.indexOf('file:///') === 0) { p = p.substring(8); }
+    else if (p.indexOf('file://') === 0) { p = p.substring(7); }
+    p = p.replace(/\//g, '\\');
+    var q = p.indexOf('?'); if (q >= 0) { p = p.substring(0, q); }
+    var h = p.indexOf('#'); if (h >= 0) { p = p.substring(0, h); }
+    var l = p.lastIndexOf('\\');
+    if (l >= 0) { p = p.substring(0, l); }
+    return p;
+  }
+
+  var ROOT = computeRoot();
+
+  var fso = null;
+  var sh = null;
+  try { fso = new ActiveXObject('Scripting.FileSystemObject'); } catch (eFso) { fso = null; }
+  try { sh = new ActiveXObject('WScript.Shell'); } catch (eSh) { sh = null; }
+
+  function fileExists(path) {
+    try { return (fso !== null) && fso.FileExists(path); } catch (e) { return false; }
+  }
+  function expand(s) {
+    try { return sh.ExpandEnvironmentStrings(s); } catch (e) { return s; }
+  }
+  function envOf(name) {
+    try { return String(sh.Environment('PROCESS')(name)); } catch (e) { return ''; }
+  }
+
+  var NODE_BUNDLED = ROOT + '\\runtime\\node.exe';
+  var OPENCODE_BUNDLED = ROOT + '\\runtime\\opencode\\opencode.exe';
+  var HAS_BUNDLED_NODE = fileExists(NODE_BUNDLED);
+  var NODE = HAS_BUNDLED_NODE ? NODE_BUNDLED : 'node';
+  var HAS_BUNDLED_OPENCODE = fileExists(OPENCODE_BUNDLED);
+  var DEV_MJS = ROOT + '\\scripts\\dev.mjs';
+  var CMD_FILE = ROOT + '\\\u542f\u52a8.cmd';
+  var HTA_FULL = ROOT + '\\' + APP_FILE;
+
+  var TEMP = envOf('TEMP');
+  if (!TEMP) { TEMP = envOf('TMP'); }
+  var PID_FILE = TEMP ? (TEMP + '\\kernel-launcher.pid') : '';
+  var SELFTEST_FILE = TEMP ? (TEMP + '\\kernel-hta-selftest.txt') : '';
+
+  function readPidFile() {
+    if (!fso || !PID_FILE) { return 0; }
+    try {
+      if (!fso.FileExists(PID_FILE)) { return 0; }
+      var f = fso.OpenTextFile(PID_FILE, 1, false);
+      var s = f.ReadAll();
+      f.Close();
+      s = String(s).replace(/\s/g, '');
+      if (!s) { return 0; }
+      var n = parseInt(s, 10);
+      if (isNaN(n) || n <= 0) { return 0; }
+      return n;
+    } catch (e) { return 0; }
+  }
+  function writePidFile(pid) {
+    if (!fso || !PID_FILE) { return; }
+    try {
+      var f = fso.CreateTextFile(PID_FILE, true, false);
+      f.Write(String(pid));
+      f.Close();
+    } catch (e) {}
+  }
+  function removePidFile() {
+    if (!fso || !PID_FILE) { return; }
+    try { if (fso.FileExists(PID_FILE)) { fso.DeleteFile(PID_FILE, true); } } catch (e) {}
+  }
+  function psPath() {
+    var p1 = expand('%SystemRoot%\\System32\\WindowsPowerShell\\v1.0\\powershell.exe');
+    if (fileExists(p1)) { return p1; }
+    var p2 = expand('%SystemRoot%\\SysWOW64\\WindowsPowerShell\\v1.0\\powershell.exe');
+    if (fileExists(p2)) { return p2; }
+    return '';
+  }
+
+  /* Self-test hook for automated verification. Writes 3 lines (Unicode) then closes. */
+  if (envOf('KERNEL_HTA_SELFTEST')) {
+    try {
+      var ts = fso.CreateTextFile(SELFTEST_FILE, true, true);
+      ts.Write('ROOT=' + ROOT + '\r\n' +
+               'NODE=' + NODE + '\r\n' +
+               'BUNDLED_OPENCODE=' + (HAS_BUNDLED_OPENCODE ? 'true' : 'false') + '\r\n');
+      ts.Close();
+    } catch (eSelf) {}
+    window.close();
+    return;
+  }
+
+  var PROBE_URL = 'http://127.0.0.1:5173/';
+  var BROWSER_URL = 'http://localhost:5173';
+  var POLL_MS = 800;
+  var START_TIMEOUT_MS = 90000;
+  var STOP_TIMEOUT_MS = 8000;
+
+  var online = false;
+  var phase = 'idle';
+  var weStarted = false;
+  var servicePid = 0;
+  var pendingAutoOpen = false;
+  var startAt = 0;
+  var stopAt = 0;
+  var probeBusy = false;
+  var dotTimer = null;
+  var dotCount = 0;
+
+  function setPhaseClass() {
+    var cls = 'idle';
+    if (online) { cls = 'ready'; }
+    else if (phase === 'starting') { cls = 'starting'; }
+    else if (phase === 'timeout') { cls = 'timeout'; }
+    document.body.className = 'st-' + cls;
+  }
+
+  function startDots() {
+    if (dotTimer === null) {
+      dotTimer = window.setInterval(function () {
+        dotCount = (dotCount + 1) % 4;
+        var s = '';
+        var i;
+        for (i = 0; i < dotCount; i++) { s = s + '.'; }
+        setText('dots', s);
+      }, 450);
+    }
+  }
+  function stopDots() {
+    if (dotTimer !== null) { window.clearInterval(dotTimer); dotTimer = null; }
+    dotCount = 0;
+    setText('dots', '');
+  }
+
+  function render() {
+    setPhaseClass();
+    show('statusHint', false);
+    show('stopBtn', false);
+    show('logBtn', false);
+    var main = byId('mainBtn');
+    if (main) { main.disabled = false; }
+
+    if (phase === 'starting' && !online) {
+      setText('statusText', '\u6b63\u5728\u542f\u52a8\u2026\u9996\u6b21\u7ea6 10\u201330 \u79d2');
+      setText('mainBtn', '\u542f\u52a8\u4e2d\u2026');
+      if (main) { main.disabled = true; }
+      startDots();
+    } else if (phase === 'stopping' && online) {
+      setText('statusText', '\u6b63\u5728\u505c\u6b62\u2026');
+      setText('mainBtn', '\u542f\u52a8\u4e2d\u2026');
+      if (main) { main.disabled = true; }
+      startDots();
+    } else if (online) {
+      setText('statusText', '\u5df2\u5c31\u7eea');
+      setText('mainBtn', '\u6253\u5f00 KERNEL');
+      stopDots();
+      if (weStarted) {
+        show('stopBtn', true);
+        setText('stopBtn', '\u505c\u6b62\u670d\u52a1');
+      } else {
+        show('statusHint', true);
+        setText('statusHint', '\u670d\u52a1\u7531\u5176\u4ed6\u7a97\u53e3\u542f\u52a8\uff0c\u5173\u95ed\u90a3\u4e2a\u7a97\u53e3\u5373\u53ef\u505c\u6b62');
+      }
+    } else if (phase === 'timeout') {
+      setText('statusText', '\u542f\u52a8\u8d85\u65f6');
+      setText('mainBtn', '\u91cd\u8bd5');
+      show('logBtn', true);
+      setText('logBtn', '\u7528 \u542f\u52a8.cmd \u67e5\u770b\u65e5\u5fd7');
+      stopDots();
+    } else {
+      setText('statusText', '\u672a\u542f\u52a8');
+      setText('mainBtn', '\u542f\u52a8 KERNEL');
+      stopDots();
+    }
+  }
+
+  function createXhr() {
+    try { return new ActiveXObject('MSXML2.XMLHTTP'); } catch (e1) {}
+    try { return new ActiveXObject('Microsoft.XMLHTTP'); } catch (e2) {}
+    return null;
+  }
+
+  function probe(cb) {
+    if (probeBusy) { return; }
+    probeBusy = true;
+    var xhr = createXhr();
+    if (xhr === null) { probeBusy = false; if (cb) { cb(false); } return; }
+    var settled = false;
+    var to = window.setTimeout(function () {
+      if (settled) { return; }
+      settled = true;
+      try { xhr.abort(); } catch (eA) {}
+      probeBusy = false;
+      if (cb) { cb(false); }
+    }, 5000);
+    function done(ok) {
+      if (settled) { return; }
+      settled = true;
+      window.clearTimeout(to);
+      probeBusy = false;
+      if (cb) { cb(ok); }
+    }
+    try {
+      xhr.open('GET', PROBE_URL, true);
+      xhr.onreadystatechange = function () {
+        if (xhr.readyState === 4) {
+          var sc = 0;
+          try { sc = xhr.status; } catch (eS) { sc = 0; }
+          done(sc >= 200 && sc < 500);
+        }
+      };
+      xhr.send();
+    } catch (eSend) {
+      done(false);
+    }
+  }
+
+  function openBrowser() {
+    try { sh.Run('cmd /c start "" "' + BROWSER_URL + '"', 0, false); } catch (e) {}
+  }
+  function openLog() {
+    try { sh.Run('cmd /c start "" "' + CMD_FILE + '"', 1, false); } catch (e) {}
+  }
+
+  /* WshShell.Run does not return a PID (verified: returns 0). Resolve it via
+     PowerShell CIM query on the node.exe command line, and persist to PID_FILE. */
+  function resolvePidAsync() {
+    if (!sh || !PID_FILE) { return; }
+    var ps = psPath();
+    if (!ps) { return; }
+    var script = "$p = Get-CimInstance Win32_Process -Filter 'Name=''node.exe''' | Where-Object { $_.CommandLine -like '*dev.mjs*' } | Select-Object -First 1; if ($p) { $p.ProcessId | Set-Content -LiteralPath '" + PID_FILE + "' -Encoding ascii } else { Set-Content -LiteralPath '" + PID_FILE + "' -Value '' -Encoding ascii }";
+    try {
+      sh.Run('cmd /c ' + ps + ' -NoProfile -ExecutionPolicy Bypass -Command "' + script + '"', 0, false);
+    } catch (e) {}
+  }
+
+  function startService() {
+    if (!sh) {
+      show('statusHint', true);
+      setText('statusHint', '\u65e0\u6cd5\u8bbf\u95ee\u7cfb\u7edf\u7ec4\u4ef6\uff0c\u8bf7\u6539\u7528 \u542f\u52a8.cmd');
+      return;
+    }
+    var ret = 0;
+    try {
+      ret = sh.Run('"' + NODE + '" "' + DEV_MJS + '"', 0, false);
+    } catch (e) {
+      setText('statusText', '\u542f\u52a8\u5931\u8d25');
+      show('statusHint', true);
+      setText('statusHint', '\u65e0\u6cd5\u542f\u52a8\u670d\u52a1\uff0c\u8bf7\u7528 \u542f\u52a8.cmd \u67e5\u770b\u65e5\u5fd7');
+      show('logBtn', true);
+      setText('logBtn', '\u7528 \u542f\u52a8.cmd \u67e5\u770b\u65e5\u5fd7');
+      return;
+    }
+    if (typeof ret === 'number' && ret > 0) { servicePid = ret; writePidFile(ret); }
+    else { servicePid = 0; removePidFile(); }
+    weStarted = true;
+    pendingAutoOpen = true;
+    startAt = Date.now();
+    stopAt = 0;
+    phase = 'starting';
+    window.setTimeout(resolvePidAsync, 1500);
+    window.setTimeout(resolvePidAsync, 4000);
+    window.setTimeout(resolvePidAsync, 8000);
+    render();
+  }
+
+  function stopService() {
+    var pid = servicePid;
+    if (!pid) { pid = readPidFile(); }
+    if (!pid) {
+      weStarted = false;
+      phase = 'idle';
+      show('statusHint', true);
+      setText('statusHint', '\u672a\u627e\u5230\u670d\u52a1\u8fdb\u7a0b\u53f7\uff0c\u8bf7\u624b\u52a8\u5173\u95ed\u542f\u52a8\u7a97\u53e3');
+      render();
+      return;
+    }
+    servicePid = pid;
+    phase = 'stopping';
+    stopAt = Date.now();
+    render();
+    try { sh.Run('cmd /c taskkill /F /T /PID ' + pid, 0, true); } catch (e) {}
+    removePidFile();
+  }
+
+  function onMain() {
+    if (online) { openBrowser(); return; }
+    startService();
+  }
+
+  function createDesktopShortcut() {
+    if (!sh) {
+      show('statusHint', true);
+      setText('statusHint', '\u65e0\u6cd5\u521b\u5efa\u5feb\u6377\u65b9\u5f0f');
+      return;
+    }
+    try {
+      var desk = sh.SpecialFolders('Desktop');
+      if (!desk) { desk = expand('%USERPROFILE%\\Desktop'); }
+      if (!desk) { throw new Error('no desktop'); }
+      var mshta = expand('%SystemRoot%\\System32\\mshta.exe');
+      if (!fileExists(mshta)) { mshta = 'mshta.exe'; }
+      var lnk = sh.CreateShortcut(desk + '\\KERNEL \u542f\u52a8\u5668.lnk');
+      lnk.TargetPath = mshta;
+      lnk.Arguments = '"' + HTA_FULL + '"';
+      lnk.WorkingDirectory = ROOT;
+      lnk.Description = 'KERNEL \u542f\u52a8\u5668';
+      lnk.Save();
+      show('statusHint', true);
+      setText('statusHint', '\u5df2\u521b\u5efa\u5230\u684c\u9762');
+    } catch (e) {
+      show('statusHint', true);
+      setText('statusHint', '\u521b\u5efa\u5feb\u6377\u65b9\u5f0f\u5931\u8d25');
+    }
+  }
+
+  function tick() {
+    probe(function (ok) {
+      online = ok;
+      if (phase === 'starting') {
+        if (online) {
+          phase = 'ready';
+          if (pendingAutoOpen) { pendingAutoOpen = false; openBrowser(); }
+        } else if (startAt > 0 && (Date.now() - startAt) >= START_TIMEOUT_MS) {
+          phase = 'timeout';
+        }
+      } else if (phase === 'stopping') {
+        if (!online) {
+          weStarted = false;
+          servicePid = 0;
+          pendingAutoOpen = false;
+          removePidFile();
+          phase = 'idle';
+        } else if (stopAt > 0 && (Date.now() - stopAt) >= STOP_TIMEOUT_MS) {
+          weStarted = false;
+          servicePid = 0;
+          phase = 'idle';
+        }
+      } else if (online) {
+        if (phase !== 'ready') { phase = 'ready'; }
+      } else if (phase === 'ready') {
+        weStarted = false;
+        servicePid = 0;
+        pendingAutoOpen = false;
+        phase = 'idle';
+      }
+      if (weStarted && servicePid === 0) {
+        var rp = readPidFile();
+        if (rp > 0) { servicePid = rp; }
+      }
+      render();
+    });
+  }
+
+  function setupWindow() {
+    try { window.resizable = false; } catch (e1) {}
+    try {
+      var w = 480;
+      var h = 440;
+      window.resizeTo(w, h);
+      var aw = window.screen.availWidth;
+      var ah = window.screen.availHeight;
+      var x = Math.floor((aw - w) / 2);
+      var y = Math.floor((ah - h) / 2);
+      if (x < 0) { x = 0; }
+      if (y < 0) { y = 0; }
+      window.moveTo(x, y);
+    } catch (e2) {}
+  }
+
+  setText('brandName', 'KERNEL');
+  setText('brandVer', 'v0.5.0');
+  setText('tagline', '\u4e2a\u4eba\u4e8b\u52a1\u5185\u6838 \u00b7 \u672c\u5730\u4f18\u5148');
+  setText('footAddr', '127.0.0.1:5173');
+  setText('deskLink', '\u521b\u5efa\u684c\u9762\u5feb\u6377\u65b9\u5f0f');
+
+  byId('mainBtn').onclick = onMain;
+  byId('stopBtn').onclick = stopService;
+  byId('logBtn').onclick = openLog;
+  byId('deskLink').onclick = createDesktopShortcut;
+
+  window.onload = setupWindow;
+
+  render();
+  tick();
+  window.setInterval(tick, POLL_MS);
+})();
+</script>
+</body>
+</html>
