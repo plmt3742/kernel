@@ -1,0 +1,13 @@
+# 行尾：文本按 LF 归一；二进制不做任何转换（Windows 脚本 / 图标 / 字体 / 可执行文件）
+* text=auto
+*.cmd text eol=crlf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+*.vbs text eol=crlf
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.exe binary

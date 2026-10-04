@@ -37,15 +37,17 @@ pnpm-debug.log*
 *.tsbuildinfo
 node_modules/.tmp
 
-# 附件二进制（文件投递；见 docs/decisions/0008-inbox-file-intake.md）
-data/files/
-
-# 本机凭据（如 AI Key）——绝不入库
-data/meta/secrets.json
-
 # python 缓存（QA 脚本运行产物）
 __pycache__/
 *.pyc
 
-# 审计日志（高频追加；历史仓库约定不入库，本机保留）
-data/activity.jsonl
+# 用户数据与本地私有文件——绝不入库（公开仓库不含任何用户数据 / 私有工具）
+data/
+.qa/
+使用说明.md
+scripts/package.mjs
+scripts/assets/
+public/showcase.html
+docs/decisions/0031-friend-release-package.md
+design-drafts/previews/
+design-drafts/v2/previews/
