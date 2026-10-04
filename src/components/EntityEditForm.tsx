@@ -25,6 +25,8 @@ export interface EditFieldSpec {
   numeric?: boolean
   /** 多行文本框行数（textarea 专用；缺省 5）。Slice M：笔记正文用更高行数以获沉浸撰写 */
   rows?: number
+  /** 字段下方的安静提示（如判断标准） */
+  hint?: string
 }
 
 interface EntityEditFormProps {
@@ -196,6 +198,7 @@ export function EntityEditForm({
                     )}
                   </>
                 )}
+                {field.hint !== undefined && <p className="k-field__hint">{field.hint}</p>}
               </>
             )}
           </div>

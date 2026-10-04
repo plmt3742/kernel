@@ -1,4 +1,4 @@
-// KERNEL · 项目详情渲染（字段网格 / 标签 / 关联 / 任务清单）
+// KERNEL · 项目详情渲染（字段网格 / 状态快捷切换 / 标签 / 关联 / 任务清单）
 // 项目抽屉（Projects 页）与总览「就地弹窗」（Overview）共用，避免字段逻辑重复。
 import { useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
@@ -19,6 +19,8 @@ interface ProjectDetailProps {
   onOpenTask?: (id: string) => void
   /** 安静 quick-add：回车 → 打开草稿确认弹窗（Slice R3；**非**即时写入） */
   onQuickAddTask?: (title: string) => void
+  /** 状态快捷切换（N8.2，可选；缺省不渲染）——写入与撤销由弹窗层注入（含 toast） */
+  onSetStatus?: (status: Project['status']) => void
 }
 
 export function ProjectDetail({
@@ -26,6 +28,7 @@ export function ProjectDetail({
   onToggleTask,
   onOpenTask,
   onQuickAddTask,
+  onSetStatus,
 }: ProjectDetailProps) {
   const tasks = getTasksByProject(project.id)
   const progress = getProjectProgress(project.id)
@@ -57,6 +60,7 @@ export function ProjectDetail({
         <dt>截止</dt>
         <dd>{project.dueAt !== undefined ? humanizeDay(project.dueAt) : '—'}</dd>
       </dl>
+      {onSetStatus !== undefined && <StatusSegmented status={project.status} onSelect={onSetStatus} />}
       {project.tags.length > 0 && (
         <div className="k-detail-block">
           <span className="k-detail-block__label u-label">标签</span>
@@ -115,5 +119,31 @@ function AddTaskInline({ onAdd }: { onAdd: (title: string) => void }) {
         aria-label="添加任务到本项目"
       />
     </form>
+  )
+}
+
+/** 状态快捷切换顺序：进行中 → 暂停 → 将来 → 已完成（「已归档」走编辑表单，不在项目页显示） */
+const QUICK_STATUS: Project['status'][] = ['active', 'onHold', 'someday', 'done']
+
+/** 状态快捷切换：安静 segmented（复用 .k-lib__seg 轨道 + TagPill 选中反转，与日程同款） */
+function StatusSegmented({
+  status,
+  onSelect,
+}: {
+  status: Project['status']
+  onSelect: (status: Project['status']) => void
+}) {
+  return (
+    <div className="k-detail-block k-quickset">
+      <span className="k-detail-block__label u-label">状态 · 快捷切换</span>
+      <div className="k-lib__seg k-quickset__seg" role="group" aria-label="项目状态">
+        {QUICK_STATUS.map((value) => (
+          <TagPill key={value} selected={value === status} onClick={() => onSelect(value)}>
+            {PROJECT_STATUS_LABEL[value]}
+          </TagPill>
+        ))}
+      </div>
+      <p className="k-quickset__hint k-muted">点选即保存 · 可撤销；「已归档」在编辑表单中设置</p>
+    </div>
   )
 }

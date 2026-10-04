@@ -1,6 +1,6 @@
 // KERNEL · 项目详情弹窗（居中 · Slice K）
 // 项目页与总览就地弹窗共用：同一份身体（ProjectDetail / 编辑表单）+ 同一套操作
-// （编辑 · 删除），两处动作由构造保证一致。
+// （编辑 · 删除 · 状态快捷切换 N8.2），两处动作由构造保证一致。
 import { useEffect, useState } from 'react'
 import { Modal } from '@/components/Modal'
 import { ProjectDetail } from '@/components/ProjectDetail'
@@ -71,6 +71,7 @@ export function ProjectDetailModal({ projectId, onClose }: ProjectDetailModalPro
         value,
         label: PROJECT_STATUS_LABEL[value],
       })),
+      hint: '判断标准：进行中 = 正在推进；暂停 = 已开始但暂时搁置（计划恢复）；将来 = 未承诺、也许哪天做；已完成 = 完成定义达成；已归档 = 不再跟进（从项目页隐藏）',
     },
     {
       key: 'areaId',
@@ -150,6 +151,30 @@ export function ProjectDetailModal({ projectId, onClose }: ProjectDetailModalPro
     })()
   }
 
+  // 状态快捷切换（N8.2，quiet segmented）：静默写入 → toast + 撤销回原状态
+  const handleSetStatus = (status: Project['status']): void => {
+    if (project === undefined || project.status === status) return
+    const id = project.id
+    const prev = project.status
+    void (async () => {
+      try {
+        await updateEntity('projects', id, { status })
+        toast(`状态已设为「${PROJECT_STATUS_LABEL[status]}」`, {
+          action: {
+            label: '撤销',
+            onClick: () => {
+              void updateEntity('projects', id, { status: prev }).catch((err) => {
+                toast(`撤销失败：${errorText(err)}`, { tone: 'error' })
+              })
+            },
+          },
+        })
+      } catch (err) {
+        toast(`设置失败：${errorText(err)}`, { tone: 'error' })
+      }
+    })()
+  }
+
   return (
     <>
       <Modal
@@ -190,6 +215,7 @@ export function ProjectDetailModal({ projectId, onClose }: ProjectDetailModalPro
               onToggleTask={toggleTask}
               onOpenTask={(id) => setOverlay({ kind: 'task', id })}
               onQuickAddTask={(title) => setOverlay({ kind: 'draft', title })}
+              onSetStatus={handleSetStatus}
             />
           ))}
       </Modal>
