@@ -98,6 +98,23 @@ export function AiSuggestionForm({
         </div>
       )}
 
+      {show('url') && (
+        <div className="k-field k-ai-form__full">
+          <label className="k-field__label u-label" htmlFor={fieldId('url')}>
+            链接
+          </label>
+          <input
+            id={fieldId('url')}
+            className="k-input"
+            type="url"
+            value={values.url}
+            placeholder="https://…"
+            disabled={disabled}
+            onChange={(event) => onChange({ url: event.target.value })}
+          />
+        </div>
+      )}
+
       {show('contexts') && (
         <div className="k-field">
           <label className="k-field__label u-label" htmlFor={fieldId('contexts')}>
@@ -220,6 +237,55 @@ export function AiSuggestionForm({
             value={values.dueAt}
             disabled={disabled}
             onChange={(event) => onChange({ dueAt: event.target.value })}
+          />
+        </div>
+      )}
+
+      {show('startAt') && (
+        <div className="k-field">
+          <label className="k-field__label u-label" htmlFor={fieldId('startAt')}>
+            开始
+          </label>
+          <input
+            id={fieldId('startAt')}
+            className="k-input"
+            type="datetime-local"
+            value={values.startAt}
+            disabled={disabled}
+            onChange={(event) => onChange({ startAt: event.target.value })}
+          />
+        </div>
+      )}
+
+      {show('endAt') && (
+        <div className="k-field">
+          <label className="k-field__label u-label" htmlFor={fieldId('endAt')}>
+            结束
+          </label>
+          <input
+            id={fieldId('endAt')}
+            className="k-input"
+            type="datetime-local"
+            value={values.endAt}
+            disabled={disabled}
+            onChange={(event) => onChange({ endAt: event.target.value })}
+          />
+        </div>
+      )}
+
+      {show('location') && (
+        <div className="k-field">
+          <label className="k-field__label u-label" htmlFor={fieldId('location')}>
+            地点
+          </label>
+          <input
+            id={fieldId('location')}
+            className="k-input"
+            type="text"
+            value={values.location}
+            placeholder="如：行政楼 302"
+            disabled={disabled}
+            onChange={(event) => onChange({ location: event.target.value })}
           />
         </div>
       )}
