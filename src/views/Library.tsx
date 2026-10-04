@@ -921,14 +921,18 @@ export function Library() {
               <dt>链接</dt>
               <dd className="k-dl__wide">
                 {selectedResource.url !== undefined ? (
-                  <a
-                    href={selectedResource.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="k-markdown"
-                  >
-                    {selectedResource.url}
-                  </a>
+                  /^https?:\/\//i.test(selectedResource.url) ? (
+                    <a
+                      href={selectedResource.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="k-markdown"
+                    >
+                      {selectedResource.url}
+                    </a>
+                  ) : (
+                    selectedResource.url
+                  )
                 ) : (
                   '—'
                 )}
