@@ -2143,23 +2143,52 @@ const TRASH_ITEM_RE = new RegExp(`^/api/trash/(${TRASHABLE_GROUP})/([^/]+)/(rest
 /** 标签管理（Slice T）：/api/tags/<id>/(update|merge|remove) */
 const TAG_ACTION_RE = /^\/api\/tags\/([^/]+)\/(update|merge|remove)$/
 
+/**
+ * 本机 / 私网 hostname 判定（Origin 校验用）：localhost（含子域）/ ::1 / 回环 / RFC1918 / 链路本地。
+ * 用于放行经局域网访问的来源；公网域名（如 evil.example.com）不在此列，仍被 403。
+ */
+function isLocalOrPrivateHost(hostname) {
+  const host = String(hostname ?? '').trim().toLowerCase()
+  if (host === '') return false
+  if (host === 'localhost' || host.endsWith('.localhost')) return true
+  if (host === '::1') return true
+  const ipv4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host)
+  if (ipv4 === null) return false
+  const a = Number(ipv4[1])
+  const b = Number(ipv4[2])
+  if (a === 0 || a === 127 || a === 10) return true
+  if (a === 172 && b >= 16 && b <= 31) return true
+  if (a === 192 && b === 168) return true
+  if (a === 169 && b === 254) return true
+  return false
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url ?? '/', `http://${HOST}:${PORT}`)
   const pathname = url.pathname
   const method = req.method ?? 'GET'
 
   try {
-    // 安全加固 · 跨站请求防护：带 Origin 的请求其主机必须是本机（localhost / 127.0.0.1），
-    // 否则 403——阻断恶意网页经 no-cors POST 命中未鉴权的 /api。无 Origin（curl / 测试 / 本地工具）放行。
+    // 安全加固 · 跨站请求防护：带 Origin 的请求须（a）来自本机 / 私网地址，或（b）与请求同源
+    // （host:port 等于 Host 头），否则 403——阻断公网页面经 no-cors POST 命中未鉴权的 /api。
+    // 说明：Vite 代理字符串 target 默认 changeOrigin:true，会把 Host 重写为 127.0.0.1:4097，
+    // 故局域网 / 手机（Origin: http://<LAN-IP>:5173）无法靠 (b) 命中，由 (a) 的私网段放行。
+    // 无 Origin（curl / 测试 / 本地工具）放行。
     const origin = req.headers.origin
     if (typeof origin === 'string' && origin !== '') {
       let originHost = ''
+      let originHostPort = ''
       try {
-        originHost = new URL(origin).hostname
+        const parsedOrigin = new URL(origin)
+        originHost = parsedOrigin.hostname
+        originHostPort = parsedOrigin.host
       } catch {
         originHost = ''
       }
-      if (originHost !== 'localhost' && originHost !== '127.0.0.1') {
+      const requestHost = String(req.headers.host ?? '')
+      const sameOrigin =
+        originHostPort !== '' && requestHost !== '' && originHostPort.toLowerCase() === requestHost.toLowerCase()
+      if (!isLocalOrPrivateHost(originHost) && !sameOrigin) {
         fail(res, 403, '跨站请求被拒绝')
         return
       }
