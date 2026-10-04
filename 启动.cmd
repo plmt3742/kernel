@@ -13,7 +13,7 @@ exit /b %errorlevel%
 :nonode
 echo.
 echo [KERNEL] Node.js not found. / 未检测到 Node.js
-echo Friend package should contain runtime\node.exe; otherwise install Node.js 18+.
+echo The bundled app should contain runtime\node.exe; otherwise install Node.js 18+.
 echo 分发包应包含 runtime\node.exe；否则请安装 Node.js 18+（https://nodejs.org/）。
 echo.
 pause
