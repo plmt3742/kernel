@@ -4,6 +4,32 @@
 
 ## [Unreleased]
 
+### 工程质量修复 + 交付材料准备（已完成 · 2026-10-05）
+
+- **修复**：`server/store.mjs` —— `nextId` 增加「在途分配水位」（并发创建不再撞号，实测并发两次返回 `t-0016`/`t-0017`）；`readKind` / `readDirRecords` 跳过「readdir 与 readFile 之间被删」的文件（消除 `GET /api/snapshot` 偶发 ENOENT 500）；`readSnapshot` 对 `meta/config.json`、`meta/tags.json` 缺失或损坏时静默降级（与 `readTerm` 同口径）。
+- **调整**：`package.json` 版本号 `0.1.0 → 0.5.0`；数据服务 `SERVICE_VERSION` `0.4.0 → 0.5.0`（`/api/health` 同步）。
+- **新增**：`README.md` 增「团队信息」「环境配置」两节（含端口表、依赖清单、四项环境变量表）；根目录 `.env.example`（环境变量模板，全占位）；`docs/ai-worklog/`（32 条 AI 协作记录 + 索引 + `COMMITS-MAP.md` 提交对照）。
+- **调整**：`scripts/seed.mjs` 演示数据细节（示例命名统一为 `demo` 等）；`docs/06-ROADMAP.md` 状态更新（v0.4.0 已完成）；`docs/05-FILE-TREE.md` ADR 清单改为汇总指引。
+- **验证**：`node --check` 服务端三文件通过；seed 隔离运行（临时目录）生成 170 条记录、146 个 JSON 全部可解析；`npm run build` 退出 0。
+
+- **修改**：`server/{store,index}.mjs`、`package.json`、`scripts/seed.mjs`、`README.md`、`docs/{05,06}`、`CHANGELOG.md`、`TASK_BOOK.md`
+- **新增**：`.env.example`、`docs/ai-worklog/**`
+
+### 运维：spawn-bg 日志捕获修复 + 分发包重建 · QA v75（已完成 · 2026-10-04）
+收尾 N7.2 分发包同步时实测发现：`scripts/spawn-bg.mjs`（后台安全启动器）在 `shell:true` 下「fd 直通 stdout/stderr 经 cmd.exe 中转」的句柄会失效——子进程照常运行、**日志全空**（历史 `.qa/logs/data-service.log` 的 0 字节即此症状）。对照实验矩阵（`.qa/v75/spawnbg-diagnose{2,3,4}.mjs` + `relay-sim.mjs` 留档）：`shell:false`+fd 稳定 ✓；`shell:true`+fd 全空 ✗（windowsHide 两态均然）；shell 级重定向 ✗；**relay 自中继 ✓**。修复：`spawn-bg.mjs` 改**自中继模式**——以 `shell:false`+fd 启动自身 `--relay` 子进程（该链路实测稳定），relay 再以**管道**持有目标命令（管道经 cmd.exe 无此缺陷）并实时转发输出；CLI 契约不变，实测返回 49ms、stdout+stderr+延迟输出全捕获、windowsHide 保持零黑窗。**分发包已用修复后的启动器重建**（日志 `.qa/v75/logs/package-rebuild-2.log`）：结构 / 数据骨架 / 必备文件（16 项）/ 文本扫描（119 文件 · 0 命中）全 PASS；zip **16,296 条目 / 129.0 MB**，含 `启动器.ps1` / `启动器.vbs` / `kernel.ico`（ZipFile 读回复核），**不再含 HTA**。
+
+- **修改**：`scripts/spawn-bg.mjs`（自中继重写；原 fd 直通经 cmd.exe 失效）、`AGENTS.md`（纪律措辞同步修订注记）。
+- **验证**：见上；证据 `.qa/v75/`（`spawnbg-diagnose*.mjs` + `relay-sim.mjs` + `logs/{t5-noshell,b-relay,spawnbg-new,package-rebuild-2}.log`）。
+
+### 桌面启动器 · 原生 WPF 重做 · Slice N7.2（已完成 · 2026-10-04）
+答 owner「桌面快捷按钮也就是启动器太丑了，优化一下，现在只是网页套壳而已，很低廉」——旧 `启动器.hta`（mshta / IE 套壳：白色系统标题栏 + mshta 默认图标 + 方角窗口 + IE11 渲染天花板）整体替换为**原生窗口链**：`启动器.vbs`（纯 ASCII 入口，`wscript` 隐藏拉起，零黑窗）→ `启动器.ps1`（PowerShell 5.1 + .NET Framework WPF，Win10 / 11 内置、零安装）——无边框圆角卡片（16px）+ 自绘标题栏（拖拽 / 最小化 / 关闭）+ 品牌 K 笔画标记（复用 `public/favicon.svg` 几何）+ 状态脉冲 / 进度轨 / 强调色 CTA（仅信号用色）；`kernel.ico` 多尺寸（16–256，`scripts/make-icon.ps1` 由同一几何生成，可重跑）。**行为与旧版逐项对齐**（探活 `127.0.0.1:5173` 每 800ms、启动 / 停止 dev 栈、就绪自动开浏览器、创建桌面快捷方式、日志按钮 → `启动.cmd`、状态机与超时口径一致），新增**单实例互斥锁**与测试钩子（`KERNEL_LAUNCHER_SELFTEST` 写 `%TEMP%\kernel-launcher-selftest.txt`、`KERNEL_LAUNCHER_SMOKE_MS` 自动关窗、`KERNEL_LAUNCHER_PROBE_URL` 覆盖探活地址），停止态文案修正（「停止中…」）。桌面快捷方式 `KERNEL 启动器.lnk` 重建（目标 `wscript.exe` + `启动器.vbs`、图标 `kernel.ico`）；打包同步（`package.mjs` 白名单改收 ps1 / vbs / ico、`.ps1`/`.vbs` 纳入隐私扫描、scripts 过滤 `make-icon.ps1`）。QA `.qa/v75/`：替换前后截图 + 子代理 3 轮视觉迭代；独立复验——自检 PS_EXIT=0（四行内容正确）、vbs 链 1180ms 窗口可见 / 5591ms 自动关闭、**真实桌面快捷方式端到端**（DURING=1 / AFTER=0）、图标 7 尺寸预览、快捷方式读回 6 项全 True、WSCRIPT=0 · MSHTA=0 · 5173 在线 · 无残留。
+
+- **新增**：`启动器.ps1`、`启动器.vbs`、`kernel.ico`、`scripts/make-icon.ps1`、`docs/decisions/0037-native-launcher.md`、`.qa/v75/**`。
+- **修改**：`scripts/package.mjs`（白名单 / 必需清单 / `TEXT_EXT` / scripts 过滤）、`README.md`、`使用说明.md`、`docs/{02,05,README}`。
+- **删除**：`启动器.hta`。
+- **验证**：见上；证据 `.qa/v75/`（`after-launcher{,-2,-3}.png` + `verify-after.png` + `icon-preview.png` + `logs/**`，含主会话独立终验 `verify-final.log`）。
+- **记录**：ADR-0037；`docs/02`、`docs/05`、`docs/README`；`CHANGELOG.md`、`TASK_BOOK.md`、`AGENTS.md`（另补记 QA v74 变更行）。
+
 ### 图片条目多动作修复 · QA v74（已完成 · 2026-10-04）
 答 owner「我丢入了资料（图片），然后输入文字。ai解析后触发了bug……我输入图片也是为了提供信息（有时候只是单纯想要存入这个资料，有时候是为了辅助我的文字内容）……但是在分析后也需要分析这个资料本身该如何被简介后存入资料库」——**根因**：解析侧对图片条目走多动作管线（Slice N0），apply 侧却按「文件条目」一律只放行 resource（400「文件条目只能应用为资料」），**两侧口径不一致**。**修复**（仅图片条目；非图片文件 R2.5 不变）：① 提示词规则 9 更新——图片条目**始终产出 1 个 resource 收录图片本身**（note = 简介）+ 按文本规则解析图片信息的多动作；② `postValidateActions` 图片兜底不变式（模型未产出 resource 时按文件名补齐，资源置首、总数 ≤6）；③ `applyInboxActions` 纵深防御收窄为 `hasFile && !isImageFile(item)`。**owner 实机复核**：i-0027 重新解析（2 event + 1 resource + facts）→「全部应用」成功落位 `e-0004` / `e-0005` / `r-0006`（resource `kind:'file'` + `path` + 简介）+ 标签 `topic:ICPC`。QA `.qa/v74/`：`fix-image-actions.mjs` **11 PASS · 0 FAIL**（resource+event 一揽子 200 / path 指向附件 / 撤销回 unprocessed / 非图片仍 400 / 指纹回基线零残留）；`npm run build` 退出 0；ADR-0015 §5.5 修订。
 

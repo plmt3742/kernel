@@ -6,7 +6,8 @@ KERNEL 的任务台账与迭代记录。记录当前迭代目标、未来待办�
 
 ---
 
-## 下一会话待办（Handoff · 2026-10-03 修订）
+
+## 下一会话待办（遗留待办）
 
 > **新会话处理入口**：先读 `AGENTS.md` → 本清单 → 按序处理。每项均附上下文与落点。
 > **工作约定（2026-10-03）**：调研完成后按推荐默认直接开工，不以拍板阻塞等待；提问仅用于大返工风险且不空等；任务完成通知缺失时以会话读取兜底、绝不挂在等待态。
@@ -15,7 +16,9 @@ KERNEL 的任务台账与迭代记录。记录当前迭代目标、未来待办�
 
 > **运维（2026-10-03）**：数据清零——新增 `scripts/reset.mjs`（预演 / `--yes` 自动备份后清空；保留 `config.json`）；owner 数据已清零（备份 `.qa/backups/data-20261003-133539`）；零状态空态巡检 9 路由 × 2 视口全绿；证据 `.qa/v48/`。
 
-> **最新（QA v74 · 2026-10-04）**：图片条目多动作修复——答 owner「丢入了资料（图片）……ai解析后触发了bug……有时候是单纯想要存入这个资料，有时候是为了辅助我的文字内容……在分析后也需要分析这个资料本身该如何被简介后存入资料库」。**根因**：解析侧对图片走多动作管线（N0），apply 侧却按「文件条目」一律只放行 resource（400「文件条目只能应用为资料」），两侧口径不一致。**修复**（仅图片条目；非图片文件 R2.5 不变）：① 规则 9——图片始终产出 1 个 resource 收录图片本身（note = 简介）+ 多动作；② `postValidateActions` 兜底补齐图片 resource（文件名兜底 / 置首 / ≤6）；③ apply 纵深防御收窄为 `hasFile && !isImageFile(item)`。**owner 实机复核**：i-0027 重解析 →「全部应用」成功（e-0004 / e-0005 / r-0006 + 标签 topic:ICPC）。QA v74：`fix-image-actions` **11 PASS · 0 FAIL**（一揽子 200 / path / 撤销 / 非图片仍 400 / 零残留）；构建 0；ADR-0015 §5.5；证据 `.qa/v74/`。
+> **最新（Slice N7.2 · 2026-10-04）**：桌面启动器原生重做——答 owner「桌面快捷按钮也就是启动器太丑了，优化一下，现在只是网页套壳而已，很低廉」。旧 `启动器.hta`（mshta / IE 套壳：白色系统标题栏 + mshta 图标 + 方角窗口 + IE11 天花板）→ **`启动器.vbs`（纯 ASCII 入口，`wscript` 隐藏拉起，零黑窗）→ `启动器.ps1`（PowerShell 5.1 + WPF 原生窗口：无边框圆角卡片 + 自绘标题栏 + 品牌 K 笔画标记 + 状态脉冲 / 进度轨 / 强调色 CTA）**；`kernel.ico`（16–256）由 `scripts/make-icon.ps1` 从 `public/favicon.svg` 几何生成；桌面快捷方式重建（`wscript.exe` + 启动器.vbs + kernel.ico）；**行为 parity**（探活 800ms / 启停 dev 栈 / 就绪自动开浏览器 / 创建快捷方式 / 日志 → 启动.cmd / 状态机与超时口径一致）+ 单实例互斥锁 + selftest / smoke / probe 钩子 + 停止态文案修正；打包同步（package.mjs 改收 ps1/vbs/ico）；QA v75（前后截图 + 3 轮视觉迭代 / 自检独立复验 PS_EXIT=0 / vbs 链 1180ms 可见·5591ms 自关 / 真实快捷方式端到端 DURING=1·AFTER=0 / 图标 7 尺寸 / 快捷方式 6 项读回 / WSCRIPT=0·MSHTA=0·5173 在线）；新增 **ADR-0037**；收尾另修复 `scripts/spawn-bg.mjs` 日志捕获失效（`shell:true` 下 fd 经 cmd.exe 失效 → 自中继模式；对照实验与分发包重建证据同目录）；证据 `.qa/v75/`。
+
+> **上一个（QA v74 · 2026-10-04）**：图片条目多动作修复——答 owner「丢入了资料（图片）……ai解析后触发了bug……有时候是单纯想要存入这个资料，有时候是为了辅助我的文字内容……在分析后也需要分析这个资料本身该如何被简介后存入资料库」。**根因**：解析侧对图片走多动作管线（N0），apply 侧却按「文件条目」一律只放行 resource（400「文件条目只能应用为资料」），两侧口径不一致。**修复**（仅图片条目；非图片文件 R2.5 不变）：① 规则 9——图片始终产出 1 个 resource 收录图片本身（note = 简介）+ 多动作；② `postValidateActions` 兜底补齐图片 resource（文件名兜底 / 置首 / ≤6）；③ apply 纵深防御收窄为 `hasFile && !isImageFile(item)`。**owner 实机复核**：i-0027 重解析 →「全部应用」成功（e-0004 / e-0005 / r-0006 + 标签 topic:ICPC）。QA v74：`fix-image-actions` **11 PASS · 0 FAIL**（一揽子 200 / path / 撤销 / 非图片仍 400 / 零残留）；构建 0；ADR-0015 §5.5；证据 `.qa/v74/`。
 
 > **上一个（QA v73 批次 · 2026-10-04）**：答 owner 批次六项诉求（总览 AI 查阅/代改、工作台今日日程、日历含已结束、收件箱文字+附件、解析默认时间/地点/标签、长截图超时）——① 总览 AI 增**查阅**（`entityQueries` → `resolveEntities` 回喂完整记录，响应 `focused`）与**代改**（`editRequest` → `buildChatEdits` 白名单校验 → 「修改卡」旧值→新值，点「应用」才经 `POST /api/<kind>/:id/update` 写入、可撤销；**确认前零写入**）；② 工作台「现在」线下就地渲染今日未结束日程（修复，答「工作台没有显示今天的日程安排？」），点行直接弹 `EventDetailModal`；③ 日历「含已结束」开关（localStorage 记忆 / ≤50 / 排除已取消）；④ 收件箱行「文字 + 附 N 个文件 · 文件名 · 大小」并显；⑤ 解析默认钟点补全（晚上 19:30 / 晚饭 18:00 等，系统认可不算编造）+ 地点提取 + 活动标签（感知现有标签/项目）；⑥ 长图分片（>400KB 切 ≤6 张 → `ai-preview` → 多发 file part、图片解析超时 180s）。**i-0024 事故**：被误删重建的原句「今晚要去吃某餐厅的自助餐」已从解析会话精确找回并恢复（备份 `.qa/v73/i-0024-before-restore.json`；e-0002 留回收站由 owner 处置）。**QA v73**：探针 15 项 ALL PASS / 服务端 41 项 ALL PASS / 浏览器 0 FAIL / 构建通过；基线增量核验仅两处已知差异（owner 自建 i-0027 + i-0024 修复）；新增 ADR-0035 / ADR-0036；证据 `.qa/v73/`。
 
@@ -99,8 +102,8 @@ KERNEL 的任务台账与迭代记录。记录当前迭代目标、未来待办�
 - [x] **总览落地「工作台」（选型 10/10 完结，2026-10-02）**：三轮 C 获采纳并落地（左工作区 + 右粘性监视柱 + 项目推进，详见下方「总览排版落地」节）。过程记录：第二轮三版（监控台 / 驾驶舱 / 信号层）均未采纳 → **第三轮交付**（今日线 TODAY LINE / 状态带 STATUS STRIP / 工作台 WORKBENCH；组织原则与前两轮全面错开，**监测图表去主导化**；二轮稿归档 `_archive/overview-*-v2.html`）；「连续刷题」打卡带 AI 感反馈已随 C 稿一并落地。其余 9 项已于 2026-10-02 全部落地并回归验证。
 - [ ] **v0.5.0 opencode AI 接入**：原始核心诉求（丢文件 / 通知 → AI 解析 → 联动日程建议）。直连方案已调研完毕（`opencode serve` + `@opencode-ai/sdk` + SSE + `format: json_schema`），落点见 `docs/02-ARCHITECTURE.md` §4 与 Backlog「v0.5 opencode AI 集成」。
 - [ ] **P1 体验项 · 剩余**：日历翻周 + `Task.deferUntil` 启用 / 回顾步骤持久化 + 资料搜索 / a11y 三处（路由移焦到 h1、命令按钮 aria 句柄、`focus.ts` `offsetParent` 误判）。
-- [ ] **修并发读竞态**：`readKind`/`readDirRecords` 与删文件写入（unapply/revert）并发时 `GET /api/snapshot` 偶发 ENOENT 500（复现 `.qa/v43/repro-500.mjs`，44 次 1 次）；建议 readFile 加 try/catch（ENOENT 跳过）或写侧短锁。
-- [ ] **spawn-bg 日志为空**：`node scripts/spawn-bg.mjs <log> "npm run server"` 的日志文件出现 0 行（npm 子进程 stdout 未落盘），影响服务端诊断（N0.9 排查时无法查解析历史）；建议改 node 直启或 `npm --foreground-scripts`。
+- [x] **修并发读竞态**（2026-10-05 已修：`readKind`/`readDirRecords` 并发读容错）：`readKind`/`readDirRecords` 与删文件写入（unapply/revert）并发时 `GET /api/snapshot` 偶发 ENOENT 500（复现 `.qa/v43/repro-500.mjs`，44 次 1 次）；建议 readFile 加 try/catch（ENOENT 跳过）或写侧短锁。
+- [x] **spawn-bg 日志为空**（QA v75 已修：自中继模式）：`node scripts/spawn-bg.mjs <log> "npm run server"` 的日志文件出现 0 行（npm 子进程 stdout 未落盘），影响服务端诊断（N0.9 排查时无法查解析历史）；建议改 node 直启或 `npm --foreground-scripts`。
 
 ### C. 小尾巴（可选，低优先）
 
