@@ -19,12 +19,17 @@ import { zhCN } from 'date-fns/locale'
 /** 可接受的日期输入 */
 export type DateInput = string | number | Date
 
-/** 安全转换为 Date（无效输入返回当前时间） */
+/** 安全转换为 Date（任何无效输入一律回退当前时间，绝不返回 Invalid Date） */
 export function toDate(input: DateInput): Date {
-  if (input instanceof Date) return input
-  if (typeof input === 'number') return new Date(input)
+  if (input instanceof Date) return Number.isNaN(input.getTime()) ? new Date() : input
+  if (typeof input === 'number') {
+    const byNumber = new Date(input)
+    return Number.isNaN(byNumber.getTime()) ? new Date() : byNumber
+  }
   const parsed = parseISO(input)
-  return Number.isNaN(parsed.getTime()) ? new Date(input) : parsed
+  if (!Number.isNaN(parsed.getTime())) return parsed
+  const fallback = new Date(input)
+  return Number.isNaN(fallback.getTime()) ? new Date() : fallback
 }
 
 const WEEK_OPTS = { weekStartsOn: 1 as const } // 周一为一周起点（中文习惯）
