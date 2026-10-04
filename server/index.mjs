@@ -5,6 +5,7 @@ import http from 'node:http'
 import { spawn } from 'node:child_process'
 import { createReadStream, createWriteStream, existsSync, promises as fs } from 'node:fs'
 import path from 'node:path'
+import { z } from 'zod'
 import {
   backfillTags,
   commit,
@@ -32,6 +33,7 @@ import {
 } from './store.mjs'
 import {
   areaCreateSchema,
+  chatNoteRequestSchema,
   clarifyDetailsSchema,
   clusterApplySchema,
   clusterUnapplySchema,
@@ -45,6 +47,9 @@ import {
   inboxApplySchema,
   normalizeCourseSessions,
   noteDistillRequestSchema,
+  organizeApplySchema,
+  organizeDraftSchema,
+  organizeUnapplySchema,
   resourceCreateSchema,
   taskCreateFieldsSchema,
   tagMergeSchema,
@@ -58,22 +63,29 @@ import {
   chatWithKernel,
   computeMonthMetrics,
   computeWeekMetrics,
+  draftChatNote,
   draftClusters,
   draftNoteDistill,
+  draftOrganize,
   draftProject,
   draftTask,
   draftTimetable,
   draftTimetableStream,
   generateReviewDraft,
   getAiHealth,
+  isImageFile,
   isoWeekKey,
   monthKey,
+  OPEN_TASK_STATUS,
+  ORGANIZE_PROJECT_STATUS,
   parseInboxItem,
   parseInboxItemStream,
   PROJECT_DRAFT_MAX_TITLE_CHARS,
   staleProjects,
   TASK_DRAFT_MAX_TITLE_CHARS,
 } from './ai.mjs'
+// 本机凭据（v0.5 · Slice N5）：只读 / 写 data/meta/secrets.json（gitignore，绝不入库）
+import { getDeepseekKey, setDeepseekKey } from './secrets.mjs'
 
 const HOST = '127.0.0.1'
 const PORT = 4097
@@ -81,6 +93,8 @@ const BODY_LIMIT = 256 * 1024
 const SERVICE_VERSION = '0.4.0'
 /** 文件投递单文件上限（RAW body；超出即 413 并中断请求） */
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024
+/** 长截图 AI 分片上限（RAW body；每片为前端切好的 JPEG） */
+const MAX_PREVIEW_BYTES = 4 * 1024 * 1024
 /** 附件二进制目录（不进 git；见 ADR-0008） */
 const FILES_DIR = path.join(DATA_DIR, 'files')
 
@@ -128,6 +142,9 @@ const EDITABLE_FIELDS = {
   courses: ['title', 'teacher', 'location', 'sessions', 'notes'],
 }
 
+/** AI Key 保存入参（Slice N5）：非空 = 保存，trim 后为空 = 清除；上限 300 字符 */
+const aiKeyUpdateSchema = z.object({ apiKey: z.string().max(300) })
+
 function send(res, status, data) {
   const body = JSON.stringify(data)
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' })
@@ -164,10 +181,73 @@ function readBody(req) {
   })
 }
 
+/**
+ * 追加审计条目（Slice N5）：secrets 模块刻意无副作用，故由服务端在本机凭据写入后
+ * 追加一条 ai.key.update —— detail 只记 hasKey，**绝不落 key 明文**。
+ */
+async function recordAudit(entry) {
+  const line = `${JSON.stringify({ ts: nowIso(), ...entry })}\n`
+  await fs.appendFile(path.join(DATA_DIR, 'activity.jsonl'), line, 'utf8')
+}
+
 /** id 形状校验（防目录穿越；不匹配即 400） */
 function validId(kind, id) {
   const pattern = ID_PATTERNS[kind]
   return pattern !== undefined && pattern.test(id)
+}
+
+/* ---------------------------------------------------------------------------
+ * AI 对话 · 修改建议（只读）：把模型给出的 edit 请求校验为前端可确认的 edits 数组。
+ * 服务端**不写入、不审计**——仅在用户于前端确认后走既有 /update 路径落盘。
+ * ------------------------------------------------------------------------- */
+
+/** 修改建议单数 kind → 复数集合键 */
+const CHAT_EDIT_PLURAL = {
+  task: 'tasks',
+  event: 'events',
+  note: 'notes',
+  resource: 'resources',
+  project: 'projects',
+  area: 'areas',
+  goal: 'goals',
+  habit: 'habits',
+  course: 'courses',
+}
+
+/** 允许随建议下发的字段值类型：字符串 / 数字 / 布尔 / null / 字符串数组 */
+function isEditableFieldValue(value) {
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return true
+  if (value === null) return true
+  if (Array.isArray(value)) return value.every((v) => typeof v === 'string')
+  return false
+}
+
+/**
+ * 校验并转换 AI 修改建议：kind/id 真实存在 + fields 过 EDITABLE_FIELDS 白名单 + 值类型合法。
+ * 任一步不合法返回 []（调用方据此回退文案）。始终返回数组（0 或 1 项）。
+ */
+async function buildChatEdits(editRequest) {
+  const plural = CHAT_EDIT_PLURAL[editRequest?.kind]
+  if (plural === undefined) return []
+  const allowed = EDITABLE_FIELDS[plural]
+  if (!Array.isArray(allowed)) return []
+  const id = editRequest.id
+  if (typeof id !== 'string' || !validId(plural, id)) return []
+  const record = await readEntity(plural, id)
+  if (record === null) return []
+  const fields = {}
+  for (const [key, value] of Object.entries(editRequest.fields ?? {})) {
+    if (!allowed.includes(key)) continue
+    if (!isEditableFieldValue(value)) continue
+    fields[key] = value
+  }
+  if (Object.keys(fields).length === 0) return []
+  const before = {}
+  for (const key of Object.keys(fields)) {
+    before[key] = record[key] === undefined ? null : record[key]
+  }
+  const label = typeof editRequest.label === 'string' ? editRequest.label : ''
+  return [{ kind: plural, id, title: record.title ?? '', fields, before, label }]
 }
 
 /* ---------------------------------------------------------------------------
@@ -280,8 +360,12 @@ async function removeInbox(id) {
   if (item.status === 'clarified') {
     throw Object.assign(new Error('已澄清条目请先撤销澄清'), { status: 409 })
   }
-  if (item.file !== undefined && item.file !== null) {
-    await fs.unlink(path.join(FILES_DIR, `${id}-${item.file.name}`)).catch(() => {})
+  // 清理该条目在 data/files 下的全部文件（原附件 + AI 长截图分片 <id>-ai-<n>.jpg），忽略错误
+  const entries = await fs.readdir(FILES_DIR).catch(() => [])
+  for (const name of entries) {
+    if (name.startsWith(`${id}-`)) {
+      await fs.unlink(path.join(FILES_DIR, name)).catch(() => {})
+    }
   }
   await remove('inbox', id, { action: 'inbox.remove', entity: 'inboxItem', id })
   return { removed: { kind: 'inbox', id } }
@@ -819,16 +903,15 @@ async function removeHabit(id) {
 }
 
 /**
- * 聚类立项 · 应用（v0.5 · Slice R2，见 ADR-0016）：一次写入创建新项目，并把列出的
- * 「无归属任务」归入该项目（projectId）。服务端重新 Zod 校验（clusterApplySchema）+
- * 任务存在性 / 未归属校验，绝不信任客户端形状；标签以 origin 'ai' 登记；项目上记录
- * clusterTaskIds / clusterTagIds 供精确撤销。收件箱条目无 projectId 结构，仅作命名参考，
- * 本端点不触碰（澄清时由 AI 参考）。
+ * 聚类 / 整理共用 · 建项并归入内核（Slice R2；Slice N8 抽取复用）：读快照 → 校验区域 →
+ * 过滤「存在 + 未归属 + 未完成」的任务 → 登记标签 → 创建项目（记撤销凭据 clusterTaskIds /
+ * clusterTagIds）→ 逐条归入（task.update）。无可用任务返回 null（由调用方决定 400 文案）。
+ * @param {{ title: string, outcome?: any, areaId?: any, tags?: any, taskIds: string[] }} parsed
+ * @param {{ via: string, requireOpen?: boolean }} options 审计来源（cluster / organize）；
+ *   requireOpen=true 时要求任务仍为打开态（仅 organize 使用；cluster-apply 保持原有「未归属即可」行为）
+ * @returns {Promise<{ project: object, assigned: string[], createdTagIds: string[] } | null>}
  */
-async function clusterApply(body) {
-  const parsed = clusterApplySchema.parse(body)
-  const title = parsed.title.trim()
-  if (title === '') throw Object.assign(new Error('项目名不能为空'), { status: 400 })
+async function applyClusterCore(parsed, { via, requireOpen = false }) {
   const snapshot = await readSnapshot()
   const areaIds = new Set((snapshot.areas ?? []).map((a) => a.id))
   const rawArea = typeof parsed.areaId === 'string' ? parsed.areaId.trim() : ''
@@ -841,11 +924,11 @@ async function clusterApply(body) {
     const task = taskMap.get(id)
     if (task === undefined) continue // 已不存在 / 臆造：丢弃
     if (task.projectId !== undefined && task.projectId !== '') continue // 已有归属：跳过
+    // 仅 organize 要求任务仍「打开」；cluster-apply 保持原有「未归属即可」行为（不改既有契约）
+    if (requireOpen && !OPEN_TASK_STATUS.has(task.status)) continue
     targetIds.push(id)
   }
-  if (targetIds.length === 0) {
-    throw Object.assign(new Error('没有可归入的未归属任务'), { status: 400 })
-  }
+  if (targetIds.length === 0) return null
   const tags = normalizeTagList(parsed.tags ?? [])
   const now = nowIso()
   const projectId = await nextId('projects')
@@ -858,7 +941,7 @@ async function clusterApply(body) {
   const rawOutcome = typeof parsed.outcome === 'string' ? parsed.outcome.trim() : ''
   const project = {
     id: projectId,
-    title: title.slice(0, 60),
+    title: String(parsed.title ?? '').slice(0, 60),
     outcome: rawOutcome !== '' ? rawOutcome.slice(0, 200) : '完成定义待整理（由 AI 归纳创建）',
     status: 'active',
     areaId: rawArea !== '' ? rawArea : 'a-0001',
@@ -873,19 +956,20 @@ async function clusterApply(body) {
     action: 'project.create',
     entity: 'project',
     id: project.id,
-    detail: { title: project.title, via: 'cluster', memberCount: targetIds.length },
+    detail: { title: project.title, via, memberCount: targetIds.length },
   })
   const assigned = []
   for (const id of targetIds) {
     const task = await readEntity('tasks', id)
     if (task === null) continue
     if (task.projectId !== undefined && task.projectId !== '') continue
+    if (requireOpen && !OPEN_TASK_STATUS.has(task.status)) continue
     const next = { ...task, projectId: savedProject.id, updatedAt: nowIso() }
     await commit('tasks', next, {
       action: 'task.update',
       entity: 'task',
       id,
-      detail: { fields: ['projectId'], projectId: savedProject.id, via: 'cluster' },
+      detail: { fields: ['projectId'], projectId: savedProject.id, via },
     })
     assigned.push(id)
   }
@@ -893,13 +977,34 @@ async function clusterApply(body) {
 }
 
 /**
- * 聚类立项 · 撤销（v0.5 · Slice R2）：清除本次归入任务的 projectId（恢复为无归属）→
- * 清理本次新建且已无人使用的标签 → 把项目移入回收站。精确回到应用前基线；审计各步。
+ * 聚类立项 · 应用（v0.5 · Slice R2，见 ADR-0016）：一次写入创建新项目，并把列出的
+ * 「无归属任务」归入该项目（projectId）。服务端重新 Zod 校验（clusterApplySchema）+
+ * 任务存在性 / 未归属校验，绝不信任客户端形状；标签以 origin 'ai' 登记；项目上记录
+ * clusterTaskIds / clusterTagIds 供精确撤销。收件箱条目无 projectId 结构，仅作命名参考，
+ * 本端点不触碰（澄清时由 AI 参考）。
  */
-async function clusterUnapply(body) {
-  const { projectId } = clusterUnapplySchema.parse(body)
+async function clusterApply(body) {
+  const parsed = clusterApplySchema.parse(body)
+  const title = parsed.title.trim()
+  if (title === '') throw Object.assign(new Error('项目名不能为空'), { status: 400 })
+  const result = await applyClusterCore({ ...parsed, title }, { via: 'cluster' })
+  if (result === null) {
+    throw Object.assign(new Error('没有可归入的未归属任务'), { status: 400 })
+  }
+  return result
+}
+
+/**
+ * 聚类 / 整理共用 · 撤销内核（Slice R2；Slice N8 抽取复用）：按项目上的 clusterTaskIds 清除
+ * 本次归入任务的 projectId（恢复无归属）→ pruneTags(clusterTagIds) 清本次新建且已无人使用的
+ * 标签 → 项目移入回收站。项目不存在返回 null（由调用方决定 404）。审计 via 由调用方指定。
+ * @param {string} projectId
+ * @param {{ via: string }} options 审计来源（cluster-unapply / organize-unapply）
+ * @returns {Promise<{ trashed: { kind: string, id: string }, restoredTaskIds: string[] } | null>}
+ */
+async function unapplyProjectCore(projectId, { via }) {
   const project = await readEntity('projects', projectId)
-  if (project === null) throw Object.assign(new Error('项目不存在'), { status: 404 })
+  if (project === null) return null
   const taskIds = Array.isArray(project.clusterTaskIds) ? project.clusterTaskIds : []
   const restoredTaskIds = []
   for (const id of taskIds) {
@@ -912,19 +1017,173 @@ async function clusterUnapply(body) {
       action: 'task.update',
       entity: 'task',
       id,
-      detail: { fields: ['projectId'], cleared: true, via: 'cluster-unapply' },
+      detail: { fields: ['projectId'], cleared: true, via },
     })
     restoredTaskIds.push(id)
   }
   const tagIds = Array.isArray(project.clusterTagIds) ? project.clusterTagIds : []
-  if (tagIds.length > 0) await pruneTags(tagIds)
+  if (tagIds.length > 0) await pruneTags(tagIds, { via })
   await moveToTrash('projects', projectId, {
     action: 'project.trash',
     entity: 'project',
     id: projectId,
-    detail: { via: 'cluster-unapply', restoredTasks: restoredTaskIds.length },
+    detail: { via, restoredTasks: restoredTaskIds.length },
   })
   return { trashed: { kind: 'projects', id: projectId }, restoredTaskIds }
+}
+
+/**
+ * 聚类立项 · 撤销（v0.5 · Slice R2）：清除本次归入任务的 projectId（恢复为无归属）→
+ * 清理本次新建且已无人使用的标签 → 把项目移入回收站。精确回到应用前基线；审计各步。
+ */
+async function clusterUnapply(body) {
+  const { projectId } = clusterUnapplySchema.parse(body)
+  const result = await unapplyProjectCore(projectId, { via: 'cluster-unapply' })
+  if (result === null) throw Object.assign(new Error('项目不存在'), { status: 404 })
+  return result
+}
+
+/**
+ * AI 整理 · 应用（v0.5 · Slice N8）：先按 assignments 把任务归入高度相关的现有项目，再按
+ * clusters 顺序新建项目并归入剩余任务（单个簇失败不阻断整批）。服务端重新 Zod 校验 +
+ * 存在性 / 状态 / 未归属校验；标签 origin 'ai' 登记；所有簇内写入审计 via 'organize'。
+ * 逐项错误收集进 errors（尽力而为），无任何落地则 400。
+ * 响应：{ assignments:[{projectId,taskIds}], projects:[{id,title,taskIds}], createdTagIds, assignedTotal, errors }
+ */
+async function organizeApply(body) {
+  const parsed = organizeApplySchema.parse(body)
+  if (parsed.assignments.length === 0 && parsed.clusters.length === 0) {
+    throw Object.assign(new Error('没有可应用的整理项'), { status: 400 })
+  }
+  const snapshot = await readSnapshot()
+  const projectById = new Map((snapshot.projects ?? []).map((p) => [p.id, p]))
+  const areaIds = new Set((snapshot.areas ?? []).map((a) => a.id))
+  const result = { assignments: [], projects: [], createdTagIds: [], errors: [] }
+  let assignedTotal = 0
+
+  // 阶段 A：归并入现有项目（先执行，assignments 优先；单项失败仅记错误继续）
+  for (const a of parsed.assignments) {
+    try {
+      const project = projectById.get(a.projectId)
+      if (project === undefined) {
+        result.errors.push(`项目 ${a.projectId} 不存在，已跳过`)
+        continue
+      }
+      if (!ORGANIZE_PROJECT_STATUS.has(project.status)) {
+        result.errors.push(`项目「${project.title}」状态为 ${project.status}，不归入`)
+        continue
+      }
+      const applied = []
+      const seen = new Set()
+      for (const id of a.taskIds) {
+        if (seen.has(id)) continue
+        seen.add(id)
+        const task = await readEntity('tasks', id)
+        if (task === null) continue
+        if (task.projectId !== undefined && task.projectId !== '') continue
+        if (!OPEN_TASK_STATUS.has(task.status)) continue
+        const next = { ...task, projectId: a.projectId, updatedAt: nowIso() }
+        await commit('tasks', next, {
+          action: 'task.update',
+          entity: 'task',
+          id,
+          detail: { fields: ['projectId'], projectId: a.projectId, via: 'organize' },
+        })
+        applied.push(id)
+      }
+      if (applied.length > 0) {
+        result.assignments.push({ projectId: a.projectId, taskIds: applied })
+        assignedTotal += applied.length
+      }
+    } catch (err) {
+      result.errors.push(`归入项目 ${a.projectId} 失败：${err?.message ?? err}`)
+    }
+  }
+
+  // 阶段 B：顺序新建项目（Oracle fix #1：绝不并行；nextId 在每个簇提交前才分配）
+  for (const c of parsed.clusters) {
+    try {
+      const title = c.title.trim().slice(0, 60)
+      if (title === '') {
+        result.errors.push('项目名不能为空，已跳过')
+        continue
+      }
+      const rawArea = typeof c.areaId === 'string' ? c.areaId.trim() : ''
+      if (rawArea !== '' && !areaIds.has(rawArea)) {
+        result.errors.push(`区域 ${rawArea} 不存在，已跳过「${title}」`)
+        continue
+      }
+      const parsedCluster = {
+        title,
+        outcome: c.outcome,
+        areaId: rawArea !== '' ? rawArea : undefined,
+        tags: c.tags ?? [],
+        taskIds: c.taskIds,
+      }
+      const one = await applyClusterCore(parsedCluster, { via: 'organize', requireOpen: true })
+      if (one === null) {
+        result.errors.push(`「${title}」没有可应用的任务，已跳过`)
+        continue
+      }
+      result.projects.push({ id: one.project.id, title: one.project.title, taskIds: one.assigned })
+      result.createdTagIds.push(...one.createdTagIds)
+      assignedTotal += one.assigned.length
+    } catch (err) {
+      result.errors.push(`新建项目失败：${err?.message ?? err}`)
+    }
+  }
+
+  // Oracle fix #2：逐项失败已收集进 errors 并继续；全部未落地（无写入）才 400
+  if (assignedTotal === 0 && result.projects.length === 0) {
+    throw Object.assign(new Error('没有可应用的整理项'), { status: 400 })
+  }
+  return { ...result, assignedTotal }
+}
+
+/**
+ * AI 整理 · 撤销（v0.5 · Slice N8）：逐项尽力复原——新建项目走 unapplyProjectCore（缺失静默跳过）；
+ * 归并项仅在任务仍指向该项目时清除 projectId。不因单项缺失 / 已变动而 404 / 抛错。
+ * 响应：{ trashed:[{kind,id}], restoredTaskIds, clearedTaskIds }
+ */
+async function organizeUnapply(body) {
+  const parsed = organizeUnapplySchema.parse(body)
+  const trashed = []
+  const restoredTaskIds = []
+  const clearedTaskIds = []
+  for (const pid of parsed.projects) {
+    try {
+      const one = await unapplyProjectCore(pid, { via: 'organize-unapply' })
+      if (one === null) continue
+      trashed.push(one.trashed)
+      restoredTaskIds.push(...one.restoredTaskIds)
+    } catch (err) {
+      console.error(`[data] organize-unapply 项目 ${pid} 失败：`, err?.message ?? err)
+    }
+  }
+  for (const a of parsed.assignments) {
+    const seen = new Set()
+    for (const id of a.taskIds) {
+      if (seen.has(id)) continue
+      seen.add(id)
+      try {
+        const task = await readEntity('tasks', id)
+        if (task === null) continue
+        if (task.projectId !== a.projectId) continue
+        const next = { ...task, updatedAt: nowIso() }
+        delete next.projectId
+        await commit('tasks', next, {
+          action: 'task.update',
+          entity: 'task',
+          id,
+          detail: { fields: ['projectId'], cleared: true, via: 'organize-unapply' },
+        })
+        clearedTaskIds.push(id)
+      } catch (err) {
+        console.error(`[data] organize-unapply 任务 ${id} 失败：`, err?.message ?? err)
+      }
+    }
+  }
+  return { trashed, restoredTaskIds, clearedTaskIds }
 }
 
 /** 更新配置（v0.5 · Slice R2）：白名单仅 aiAutomation；审计 config.update */
@@ -1222,6 +1481,7 @@ function kindOfId(id) {
   if (id.startsWith('n-')) return 'notes'
   if (id.startsWith('r-')) return 'resources'
   if (id.startsWith('p-')) return 'projects'
+  if (id.startsWith('e-')) return 'events' // Slice N10：事件产物撤销定位
   return null
 }
 
@@ -1245,10 +1505,16 @@ async function applyInboxActions(id, body) {
     throw Object.assign(new Error('该条目已澄清或已丢弃'), { status: 409 })
   }
   const parsed = inboxApplySchema.parse(body)
+  // Slice N4：来源摘要（可选）。zod 已限 ≤100；再防御性 trim + 截断（中文按字符）。
+  // 缺省 / 空白 → ''，此时不写条目字段（向后兼容旧调用）。
+  const summary =
+    typeof parsed.summary === 'string'
+      ? Array.from(parsed.summary.trim()).slice(0, 100).join('')
+      : ''
   // 客户端的显式 null（"无关联"）统一移除，避免被当成臆造 id 拒绝
   let actions = parsed.actions.map((action) => {
     const out = { ...action }
-    for (const key of ['projectId', 'areaId', 'dueAt', 'outcome', 'duplicateOf', 'note']) {
+    for (const key of ['projectId', 'areaId', 'dueAt', 'outcome', 'duplicateOf', 'note', 'startAt', 'endAt', 'allDay', 'location']) {
       if (out[key] === null) delete out[key]
     }
     return out
@@ -1365,6 +1631,38 @@ async function applyInboxActions(id, body) {
         detail: { title: record.title, via: 'inbox.apply' },
       })
       created.push({ kind: 'notes', record: saved })
+    } else if (action.kind === 'event') {
+      // Slice N10：定点安排落盘为事件（对齐 POST /api/events：无 createdAt/updatedAt）
+      const startTs = Date.parse(String(action.startAt ?? ''))
+      if (!Number.isFinite(startTs)) continue // 纵深防御：无效 startAt 不落地
+      const record = {
+        id: await nextId('events'),
+        title: action.title,
+        startAt: action.startAt,
+        allDay: action.allDay === true,
+        status: 'confirmed',
+        tags,
+      }
+      if (
+        typeof action.endAt === 'string' &&
+        Number.isFinite(Date.parse(action.endAt)) &&
+        Date.parse(action.endAt) >= startTs
+      ) {
+        record.endAt = action.endAt
+      }
+      if (typeof action.location === 'string' && action.location.trim() !== '') {
+        record.location = action.location.trim()
+      }
+      const projectId = resolveProjectForAction(action, newProject)
+      if (projectId !== undefined) record.projectId = projectId
+      if (action.areaId !== undefined) record.areaId = action.areaId
+      saved = await commit('events', record, {
+        action: 'event.create',
+        entity: 'event',
+        id: record.id,
+        detail: { title: record.title, via: 'inbox.apply' },
+      })
+      created.push({ kind: 'events', record: saved })
     } else {
       const isFile = item.file !== undefined && item.file !== null
       const record = {
@@ -1380,6 +1678,10 @@ async function applyInboxActions(id, body) {
       // Slice R2.5：把小结写入 resource.note（资料详情页「简介」）
       if (typeof action.note === 'string' && action.note.trim() !== '') {
         record.note = action.note.trim()
+      }
+      // Slice N2：条目含网页链接时，把 resource.url 端到端持久化（Zod 已验形状）
+      if (typeof action.url === 'string' && action.url.trim() !== '') {
+        record.url = action.url.trim()
       }
       saved = await commit('resources', record, {
         action: 'resource.create',
@@ -1413,9 +1715,12 @@ async function applyInboxActions(id, body) {
     conditions.push(condition)
   }
 
+  const nextItem = { ...item, status: 'clarified', linkedId: linkedIds[0], linkedIds, appliedTagIds }
+  // Slice N4：summary 仅在本批次提供且非空时落档（缺省不写，兼容旧调用 / 旧记录）
+  if (summary !== '') nextItem.summary = summary
   const savedItem = await commit(
     'inbox',
-    { ...item, status: 'clarified', linkedId: linkedIds[0], linkedIds, appliedTagIds },
+    nextItem,
     {
       action: 'inbox.apply',
       entity: 'inboxItem',
@@ -1469,6 +1774,8 @@ async function detachInbox(id, action) {
   delete next.linkedId
   delete next.linkedIds
   delete next.appliedTagIds
+  // Slice N4：summary 是 apply 期元数据，撤回 / 恢复后一并清除，避免陈旧摘要残留
+  delete next.summary
   const saved = await commit('inbox', next, {
     action,
     entity: 'inboxItem',
@@ -1743,6 +2050,8 @@ async function inboxFileAction(id, action, body) {
 const TASK_ID_RE = /^\/api\/tasks\/([^/]+)\/(complete|reopen)$/
 const INBOX_ID_RE = /^\/api\/inbox\/([^/]+)\/(clarify|revert)$/
 const INBOX_REMOVE_RE = /^\/api\/inbox\/([^/]+)\/remove$/
+/** 长截图 AI 分片上传（RAW body）：/api/inbox/<id>/ai-preview?index=N（派生辅助资源，无审计） */
+const INBOX_AI_PREVIEW_RE = /^\/api\/inbox\/([^/]+)\/ai-preview$/
 /** 附件本机动作（Slice J2）：/api/inbox/<id>/(open|reveal) */
 const INBOX_FILE_ACTION_RE = /^\/api\/inbox\/([^/]+)\/(open|reveal)$/
 /** 一揽子应用 / 撤销（Slice R1）：/api/inbox/<id>/(apply|unapply) */
@@ -1804,7 +2113,20 @@ const server = http.createServer(async (req, res) => {
       return
     }
     if (method === 'GET' && pathname === '/api/ai/health') {
-      send(res, 200, await getAiHealth())
+      // Slice N5：追加 hasKey（= 本机 secrets 里有非空 deepseekApiKey；不影响现有字段）
+      const health = await getAiHealth()
+      send(res, 200, { ...health, hasKey: getDeepseekKey() !== '' })
+      return
+    }
+    // AI Key 保存 / 清除（Slice N5）：存本机 data/meta/secrets.json（gitignore，绝不入库）；
+    // 写后审计 ai.key.update（detail 仅 hasKey，绝不落 key 明文）。
+    if (method === 'POST' && pathname === '/api/ai/key') {
+      const { apiKey } = aiKeyUpdateSchema.parse(await readBody(req))
+      const saved = await setDeepseekKey(apiKey)
+      const hasKey = typeof saved.deepseekApiKey === 'string' && saved.deepseekApiKey !== ''
+      await recordAudit({ action: 'ai.key.update', entity: 'ai', id: '-', detail: { hasKey } })
+      console.log(`[data] ai.key.update hasKey=${hasKey}`)
+      send(res, 200, { ok: true, hasKey })
       return
     }
     const aiParseMatch = AI_INBOX_PARSE_RE.exec(pathname)
@@ -1954,8 +2276,62 @@ const server = http.createServer(async (req, res) => {
         console.error('[ai] chat 失败：', err?.message ?? err)
         return fail(res, 502, err?.message ?? 'AI 调用失败')
       }
+      // 修改建议（只读）：校验 kind / id / fields 白名单；无效则回退文案且不下发 edits
+      let reply = result.reply
+      let edits = []
+      if (result.editRequest !== null && result.editRequest !== undefined) {
+        edits = await buildChatEdits(result.editRequest)
+        if (edits.length === 0) {
+          reply = '我没能确认这条记录的修改（找不到记录或字段不合法），请换一种说法再试。'
+        }
+      }
       console.log(`[ai] chat ok ${result.ms}ms`)
-      send(res, 200, result)
+      send(res, 200, {
+        reply,
+        searched: result.searched,
+        focused: result.focused,
+        edits,
+        model: result.model,
+        ms: result.ms,
+      })
+      return
+    }
+    // 对话 → 笔记（Slice G.1）：把某条对话回答整理成独立笔记（AI 出草稿，服务端落盘；可撤销）
+    if (method === 'POST' && pathname === '/api/ai/chat/note') {
+      const body = await readBody(req)
+      const parsed = chatNoteRequestSchema.safeParse(body)
+      if (!parsed.success) return fail(res, 400, '整理要求或回答内容不合法')
+      const health = await getAiHealth()
+      if (health.available === false) return fail(res, 503, 'opencode 服务未就绪（127.0.0.1:4096）')
+      let draft
+      try {
+        draft = await draftChatNote(parsed.data.instruction, parsed.data.answer)
+      } catch (err) {
+        console.error('[ai] chat.note 失败：', err?.message ?? err)
+        return fail(res, 502, err?.message ?? 'AI 调用失败')
+      }
+      const now = nowIso()
+      const record = {
+        id: await nextId('notes'),
+        title: draft.title,
+        type: 'memo',
+        body: draft.body,
+        links: [],
+        tags: [],
+        distillLevel: 0,
+        createdAt: now,
+        updatedAt: now,
+      }
+      const note = await commit('notes', record, {
+        action: 'note.create',
+        entity: 'note',
+        id: record.id,
+        detail: { title: record.title, via: 'chat.note' },
+      })
+      console.log(
+        `[ai] chat.note ok ${draft.ms}ms（${draft.fallback ? '兜底' : draft.model ?? '未知模型'}）`,
+      )
+      send(res, 200, { note, model: draft.model, ms: draft.ms })
       return
     }
     // 任务快速新建 AI 补全（Slice H）：只填标题 → 建议（绝不自动落盘；应用走 /api/tasks/:id/update）
@@ -2049,6 +2425,23 @@ const server = http.createServer(async (req, res) => {
         return fail(res, 502, err?.message ?? 'AI 调用失败')
       }
       console.log(`[ai] cluster.draft ok ${result.ms}ms（${result.proposals.length} 提案）`)
+      send(res, 200, result)
+      return
+    }
+    // AI 整理草稿（Slice N8）：无归属任务 → 先归入高度相关的现有项目，再用剩余条目建议新项目（只出建议，绝不落盘）
+    if (method === 'POST' && pathname === '/api/ai/organize/draft') {
+      const health = await getAiHealth()
+      if (health.available === false) return fail(res, 503, 'opencode 服务未就绪（127.0.0.1:4096）')
+      let result
+      try {
+        result = await draftOrganize(await readSnapshot())
+      } catch (err) {
+        console.error('[ai] organize.draft 失败：', err?.message ?? err)
+        return fail(res, 502, err?.message ?? 'AI 调用失败')
+      }
+      console.log(
+        `[ai] organize.draft ok ${result.ms}ms（${result.assignments.length} 归并 / ${result.clusters.length} 新项目）`,
+      )
       send(res, 200, result)
       return
     }
@@ -2349,6 +2742,23 @@ const server = http.createServer(async (req, res) => {
       send(res, 200, result)
       return
     }
+    // AI 整理 · 应用 / 撤销（Slice N8）：先归入现有项目、再新建项目；撤销逐项精确 / 尽力复原
+    if (method === 'POST' && pathname === '/api/projects/organize-apply') {
+      const result = await organizeApply(await readBody(req))
+      console.log(
+        `[data] project.organize-apply（归并 ${result.assignments.length} 项 / 新建 ${result.projects.length} 项）`,
+      )
+      send(res, 201, result)
+      return
+    }
+    if (method === 'POST' && pathname === '/api/projects/organize-unapply') {
+      const result = await organizeUnapply(await readBody(req))
+      console.log(
+        `[data] project.organize-unapply（回收 ${result.trashed.length} 项 / 清理 ${result.clearedTaskIds.length} 项）`,
+      )
+      send(res, 200, result)
+      return
+    }
     if (method === 'POST' && pathname === '/api/projects') {
       send(res, 201, await createProject(await readBody(req)))
       return
@@ -2391,6 +2801,30 @@ const server = http.createServer(async (req, res) => {
       const result = await removeInbox(id)
       console.log(`[data] inbox.remove ${id}`)
       send(res, 200, result)
+      return
+    }
+    // 长截图 AI 分片上传（派生辅助资源）：落 data/files/<id>-ai-<index>.jpg，供解析时多发 file part。
+    // 无审计（非用户数据；删除随条目一并清理）。RAW body = image/jpeg。
+    const inboxPreviewMatch = INBOX_AI_PREVIEW_RE.exec(pathname)
+    if (method === 'POST' && inboxPreviewMatch !== null) {
+      const id = decodeURIComponent(inboxPreviewMatch[1])
+      if (!validId('inbox', id)) return fail(res, 400, '收件箱 id 格式不正确')
+      const index = Number(url.searchParams.get('index'))
+      if (!Number.isInteger(index) || index < 1 || index > 6) return fail(res, 400, '预览分片序号不合法')
+      const item = await readEntity('inbox', id)
+      if (item === null) return fail(res, 404, '条目不存在')
+      if (item.file === undefined || item.file === null || !isImageFile(item)) {
+        return fail(res, 400, '该条目不是图片')
+      }
+      await fs.mkdir(FILES_DIR, { recursive: true })
+      const dest = path.join(FILES_DIR, `${id}-ai-${index}.jpg`)
+      try {
+        await saveUpload(req, dest, MAX_PREVIEW_BYTES)
+      } catch (err) {
+        await fs.unlink(dest).catch(() => {})
+        throw err
+      }
+      send(res, 201, { ok: true })
       return
     }
     const inboxFileMatch = INBOX_FILE_ACTION_RE.exec(pathname)

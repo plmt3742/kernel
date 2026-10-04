@@ -13,6 +13,7 @@ import {
   clusterDraftSchema,
   clusterProposalSchema,
   noteDistillSchema,
+  organizeDraftSchema,
   projectDraftSchema,
   reviewDraftSchema,
   taskDraftSchema,
@@ -23,7 +24,8 @@ import { DATA_DIR, normalizeTagList, readActivity, readSnapshot } from './store.
 const OPENCODE_URL = process.env.KERNEL_OPENCODE_URL ?? 'http://127.0.0.1:4096'
 const SERVER_PASSWORD = process.env.OPENCODE_SERVER_PASSWORD ?? ''
 const HEALTH_TIMEOUT_MS = 3_000
-const PROMPT_TIMEOUT_MS = 120_000
+// 放宽至 180s：长截图会被前端切成多张分片图一并发给模型，解析耗时显著高于普通文本 / 单图
+const PROMPT_TIMEOUT_MS = 180_000
 const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
 
 /** SDK 返回解包：{ data, error } → data（与探针 pick() 一致） */
@@ -91,8 +93,8 @@ async function loadSnapshot() {
   }
 }
 
-/** 打开的（未完成）任务状态 */
-const OPEN_TASK_STATUS = new Set(['next', 'waiting', 'scheduled', 'someday'])
+/** 打开的（未完成）任务状态（导出：index.mjs 归并前亦据此跳过已完成 / 已丢弃任务） */
+export const OPEN_TASK_STATUS = new Set(['next', 'waiting', 'scheduled', 'someday'])
 
 /**
  * 构造系统现状摘要（紧凑中文；项目 / 区域 / 标签 / 近期未完成任务）
@@ -1074,6 +1076,492 @@ export function normalizeResourceNote(raw, fallback = '') {
   return Array.from(note).slice(0, AI_RESOURCE_NOTE_MAX_CHARS).join('')
 }
 
+/* ---------------------------------------------------------------------------
+ * 链接阅读（v0.5 · Slice N2）：系统首次「出站抓取」——收件箱文本条目含 http(s) 链接时，
+ * 解析前在服务端抓首个链接的网页正文（纯文本摘录）注入解析上下文，并让 resource 动作带 url。
+ * 安全纪律（越界即拒，绝不抛出）：
+ * - 仅 http / https；私网 / 环回 / 链路本地 hostname 直接拒绝且不发请求（SSRF 防护）；
+ * - 8s AbortController 超时；仅 text/html / application/xhtml+xml / text/plain；
+ * - 流式读取上限 2MB（超限截断后继续解析）；导出供探测复用。
+ * 注：个人本地工具，出站请求使用常规桌面浏览器 UA + Accept-Language，仅降低被反爬直接拒绝的概率，
+ *     不代表任何自动爬取意图；结果只注入本机 AI 解析上下文，不落盘、不外传。
+ * ------------------------------------------------------------------------- */
+
+/** 链接抓取超时（毫秒） */
+const LINK_FETCH_TIMEOUT_MS = 8000
+/** 链接抓取响应流上限（字节）；超限截断后继续解析 */
+const LINK_FETCH_MAX_BYTES = 2 * 1024 * 1024
+/** 链接正文摘录上限（字符；汉字 / 字符数） */
+const LINK_EXCERPT_MAX_CHARS = 8000
+/** 网页标题上限（字符） */
+const LINK_TITLE_MAX_CHARS = 200
+/** 常规桌面浏览器 UA（降低被反爬直接拒绝的概率；个人本地工具） */
+const LINK_USER_AGENT =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+/** 正文抽取时视为块级分隔的标签（开 / 闭标签都映射为换行） */
+const LINK_BLOCK_TAGS =
+  'address|article|aside|blockquote|dd|div|dl|dt|fieldset|figcaption|figure|footer|form|h[1-6]|header|hr|li|main|nav|ol|p|pre|section|table|tbody|td|tfoot|th|thead|tr|ul'
+
+/**
+ * 从字符串中提取首个 http(s) URL（保守正则；Slice N2）。
+ * 终止于空白、CJK 字符 / 常用中英文标点；再剥掉收尾 ASCII 标点；无法解析为 http(s) URL → null。
+ * 导出供单测 / 探测复用。绝不抛出。
+ * @param {unknown} text
+ * @returns {string | null}
+ */
+export function extractFirstUrl(text) {
+  const source = String(text ?? '')
+  // 遇到空白 / 中日韩字符 / 常用中英文标点即停止（不做 URL 内部还原，保守优先）
+  const match = /https?:\/\/[^\s\u3000-\u303f\u4e00-\u9fff\uff00-\uffef()\]】》」』"'`<>}]*/i.exec(source)
+  if (match === null) return null
+  const url = match[0].replace(/[.,;:!?]+$/u, '')
+  if (url.length <= 8) return null // 仅 "https://" 空壳
+  try {
+    const parsed = new URL(url)
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null
+    return url
+  } catch {
+    return null
+  }
+}
+
+/**
+ * 私网 / 环回 / 链路本地 hostname 判定（Slice N2 SSRF 防护）：
+ * localhost（含子域）/ ::1 / 0.0.0.0 / 127.* / 10.* / 172.16-31.* / 192.168.* / 169.254.* → true。
+ * @param {string} hostname URL.hostname（IPv6 可能带方括号）
+ * @returns {boolean}
+ */
+function isPrivateHostname(hostname) {
+  const host = String(hostname ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/^\[|\]$/g, '')
+  if (host === '') return true
+  if (host === 'localhost' || host.endsWith('.localhost')) return true
+  if (host === '::1') return true
+  const ipv4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host)
+  if (ipv4 !== null) {
+    const a = Number(ipv4[1])
+    const b = Number(ipv4[2])
+    if (a === 0) return true
+    if (a === 127) return true
+    if (a === 10) return true
+    if (a === 172 && b >= 16 && b <= 31) return true
+    if (a === 192 && b === 168) return true
+    if (a === 169 && b === 254) return true
+  }
+  return false
+}
+
+/**
+ * 流式读取响应体，上限 maxBytes（Slice N2）：reader 循环，达上限即截断并 cancel。
+ * @param {Response} response
+ * @param {number} maxBytes
+ * @returns {Promise<Buffer | null>} 读取失败返回 null
+ */
+async function readBodyLimited(response, maxBytes) {
+  if (response.body === null || response.body === undefined) {
+    const buf = Buffer.from(await response.arrayBuffer())
+    return buf.subarray(0, maxBytes)
+  }
+  const reader = response.body.getReader()
+  const chunks = []
+  let total = 0
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      if (value === undefined || value === null) continue
+      const chunk = Buffer.from(value)
+      if (total + chunk.length >= maxBytes) {
+        chunks.push(chunk.subarray(0, maxBytes - total))
+        try {
+          await reader.cancel()
+        } catch {
+          /* 忽略取消错误 */
+        }
+        break
+      }
+      chunks.push(chunk)
+      total += chunk.length
+    }
+  } catch {
+    try {
+      await reader.cancel()
+    } catch {
+      /* 忽略取消错误 */
+    }
+    return null
+  }
+  return Buffer.concat(chunks)
+}
+
+/**
+ * charset 探测（Slice N2）：content-type → <meta charset> → 默认 utf8；gb2312 / gb18030 归一到 gbk。
+ * @param {string} contentType 小写 content-type
+ * @param {Buffer} bytes 响应体（截断后）
+ * @returns {string} 规范化 charset 标签
+ */
+function detectCharset(contentType, bytes) {
+  let charset = /charset=["']?([\w-]+)/i.exec(String(contentType ?? ''))?.[1] ?? ''
+  if (charset === '') {
+    const head = bytes.subarray(0, Math.min(bytes.length, 4096)).toString('latin1')
+    const meta = /<meta[^>]+charset=["']?([\w-]+)/i.exec(head)
+    if (meta !== null) charset = meta[1]
+  }
+  charset = charset.toLowerCase()
+  if (charset === 'gb2312' || charset === 'gb18030') return 'gbk'
+  return charset === '' ? 'utf8' : charset
+}
+
+/** 按 charset 解码字节（未知标签回退 utf8；绝不抛出） */
+function decodeBytes(bytes, charset) {
+  const label = charset === 'gbk' ? 'gbk' : charset === 'utf8' || charset === 'utf-8' ? 'utf-8' : charset
+  try {
+    return new TextDecoder(label).decode(bytes)
+  } catch {
+    return bytes.toString('utf8')
+  }
+}
+
+/** 抽取 <title>（解实体 + 归一空白 + 截断 ≤200 字）；无 → 空串 */
+function extractHtmlTitle(html) {
+  const match = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(String(html ?? ''))
+  if (match === null) return ''
+  const title = decodeXmlEntities(match[1]).replace(/\s+/g, ' ').trim()
+  return Array.from(title).slice(0, LINK_TITLE_MAX_CHARS).join('')
+}
+
+/**
+ * HTML → 文章正文纯文本（Slice N2）：删 script/style/noscript/注释/svg；块级标签 → 换行；
+ * 剥其余标签；解实体；折叠空白与连续空行；输出截断 ≤8000 字。导出供单测 / 探测复用。
+ * @param {unknown} html
+ * @returns {string}
+ */
+export function htmlToArticleText(html) {
+  let s = String(html ?? '')
+  s = s.replace(/<!--[\s\S]*?-->/g, ' ')
+  s = s.replace(/<script\b[\s\S]*?<\/script>/gi, ' ')
+  s = s.replace(/<style\b[\s\S]*?<\/style>/gi, ' ')
+  s = s.replace(/<noscript\b[\s\S]*?<\/noscript>/gi, ' ')
+  s = s.replace(/<svg\b[\s\S]*?<\/svg>/gi, ' ')
+  // 块级标签 → 换行（开 / 闭标签都算边界）；<br> 单独处理
+  s = s.replace(new RegExp(`</?(?:${LINK_BLOCK_TAGS})\\b[^>]*>`, 'gi'), '\n')
+  s = s.replace(/<br\s*\/?>/gi, '\n')
+  // 其余标签剥除
+  s = s.replace(/<[^>]*>/g, ' ')
+  s = decodeXmlEntities(s).replace(/\r\n?/g, '\n')
+  const lines = s.split('\n').map((line) => line.replace(/[\t\u00a0 ]+/g, ' ').trim())
+  const folded = []
+  for (const line of lines) {
+    if (line === '' && (folded.length === 0 || folded[folded.length - 1] === '')) continue
+    folded.push(line)
+  }
+  const text = folded.join('\n').trim()
+  return Array.from(text).slice(0, LINK_EXCERPT_MAX_CHARS).join('')
+}
+
+/**
+ * 抓取首个链接的网页正文摘录（Slice N2）。绝不抛出：
+ * @param {string} url 目标链接（仅 http / https；私网 / 环回直接拒绝，不发请求）
+ * @returns {Promise<{ url: string, title: string, text: string } | null>}
+ */
+export async function fetchLinkExcerpt(url) {
+  let parsed
+  try {
+    parsed = new URL(String(url))
+  } catch {
+    return null
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null
+  if (isPrivateHostname(parsed.hostname)) return null
+
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), LINK_FETCH_TIMEOUT_MS)
+  try {
+    const response = await fetch(parsed.toString(), {
+      method: 'GET',
+      redirect: 'follow',
+      signal: controller.signal,
+      headers: {
+        'User-Agent': LINK_USER_AGENT,
+        'Accept-Language': 'zh-CN,zh;q=0.9',
+        Accept: 'text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.5',
+      },
+    })
+    if (!response.ok) return null
+    const contentType = String(response.headers.get('content-type') ?? '').toLowerCase()
+    if (
+      !contentType.includes('text/html') &&
+      !contentType.includes('application/xhtml+xml') &&
+      !contentType.includes('text/plain')
+    ) {
+      return null
+    }
+    const bytes = await readBodyLimited(response, LINK_FETCH_MAX_BYTES)
+    if (bytes === null || bytes.length === 0) return null
+    const charset = detectCharset(contentType, bytes)
+    let html = decodeBytes(bytes, charset)
+    // utf8 结果出现过多替换字符 → 回退 gbk
+    if (charset !== 'gbk' && isGarbledText(html)) {
+      try {
+        const gbk = new TextDecoder('gbk').decode(bytes)
+        if (!isGarbledText(gbk)) html = gbk
+      } catch {
+        /* 保留 utf8 结果 */
+      }
+    }
+    const title = extractHtmlTitle(html)
+    const text = htmlToArticleText(html)
+    if (text === '') return null
+    return { url: parsed.toString(), title, text }
+  } catch {
+    return null
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+/**
+ * 链接摘录注入段（Slice N2）：抓取成功 → 【链接摘录】；失败 → 【链接】保守提示；无链接 → 空串。
+ * @param {string} content 条目原文
+ * @returns {Promise<{ section: string, linkUrl: string | null }>}
+ */
+async function buildLinkSection(content) {
+  const url = extractFirstUrl(content)
+  if (url === null) return { section: '', linkUrl: null }
+  const link = await fetchLinkExcerpt(url)
+  if (link !== null) {
+    return {
+      section: `【链接摘录】（${url}）\n${link.title}\n${link.text}`,
+      linkUrl: url,
+    }
+  }
+  return { section: `【链接】${url}（自动抓取未成功——按链接保守处理）`, linkUrl: url }
+}
+
+/**
+ * 确定性兜底（Slice N2）：命中链接且首个 resource 动作无 url 时补上（URL 须 ≤2000）。
+ * @param {object[]} actions postValidateActions 产物（就地修改）
+ * @param {string | null} linkUrl
+ */
+function applyLinkUrlFallback(actions, linkUrl) {
+  if (linkUrl === null || linkUrl.length > 2000) return
+  const firstResource = actions.find((action) => action.kind === 'resource')
+  if (firstResource !== undefined && typeof firstResource.url !== 'string') {
+    firstResource.url = linkUrl
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * 联网检索（v0.5 · Slice N9）：模型在解析中「请求检索」时，先搜索再回喂一次（同会话）。
+ * 纪律：与 N2 出站抓取同族——仅访问固定的搜索引擎主机（Sogou 主 / 360 次 / Bing 备，N9.1）；
+ *       相关性过滤拒收限流泛化结果；首条结果页正文摘录复用 N2 的 fetchLinkExcerpt；
+ *       12s 超时；结果仅作解析上下文（不落盘、无审计）；任何失败 → 降级，绝不抛错。
+ * ------------------------------------------------------------------------- */
+
+/** 单次解析最多执行的检索问题数 */
+export const SEARCH_MAX_QUERIES = 2
+/** 搜索请求超时（毫秒） */
+const SEARCH_TIMEOUT_MS = 12_000
+/** 搜索引擎请求 UA（常规桌面浏览器） */
+const SEARCH_UA =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36'
+/** 每个问题保留的结果条数 */
+const SEARCH_MAX_RESULTS = 5
+/** 单条 snippet 字符上限 */
+const SEARCH_SNIPPET_MAX = 300
+/** N9.1：首条结果页正文摘录字符上限 */
+const SEARCH_PAGE_EXCERPT_MAX = 900
+/** 注入段落总字符上限 */
+const SEARCH_SECTION_MAX = 2600
+
+/** 提取片段清洗：去脚本 / 样式 / 标签 / 实体，折叠空白并截断 */
+function cleanFragment(html, max = SEARCH_SNIPPET_MAX) {
+  return String(html ?? '')
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#x?[0-9a-fA-F]+;/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, max)
+}
+
+/** Sogou SERP 提取（主引擎）：vrwrap 块 → title / url / snippet（≤max 条） */
+export function extractSogouResults(html, max = SEARCH_MAX_RESULTS) {
+  const out = []
+  const parts = String(html ?? '').split(/<div[^>]*class="vrwrap/)
+  for (const part of parts.slice(1)) {
+    if (out.length >= max) break
+    const link = part.match(/<h3[^>]*>[\s\S]*?<a[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/)
+    if (link === null) continue
+    const title = cleanFragment(link[2], 120)
+    if (title === '') continue
+    const body = part.split(/<div[^>]*class="vrwrap/)[0]
+    const p = body.match(/<p[^>]*>([\s\S]*?)<\/p>/)
+    const snippet = cleanFragment(p === null ? body : p[1])
+    let url = String(link[1] ?? '').trim()
+    if (url.startsWith('/')) url = `https://www.sogou.com${url}`
+    out.push({ url, title, snippet })
+  }
+  return out
+}
+
+/** Bing SERP 提取（备用引擎）：b_algo 块 → title / url / snippet（≤max 条） */
+export function extractBingResults(html, max = SEARCH_MAX_RESULTS) {
+  const out = []
+  const parts = String(html ?? '').split(/<li class="b_algo"/)
+  for (const part of parts.slice(1)) {
+    if (out.length >= max) break
+    const link = part.match(/<h2[^>]*>[\s\S]*?<a[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/)
+    if (link === null) continue
+    const title = cleanFragment(link[2], 120)
+    if (title === '') continue
+    const body = part.split(/<li class="b_algo"/)[0]
+    const p = body.match(/<p[^>]*>([\s\S]*?)<\/p>/)
+    out.push({ url: String(link[1] ?? ''), title, snippet: p === null ? '' : cleanFragment(p[1]) })
+  }
+  return out
+}
+
+/** 360 搜索 SERP 提取（次引擎，N9.1）：res-list 块 → title / url / snippet（≤max 条） */
+export function extract360Results(html, max = SEARCH_MAX_RESULTS) {
+  const out = []
+  const parts = String(html ?? '').split(/<li[^>]*class="res-list/)
+  for (const part of parts.slice(1)) {
+    if (out.length >= max) break
+    const link = part.match(/<h3[^>]*>[\s\S]*?<a[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/)
+    if (link === null) continue
+    const title = cleanFragment(link[2], 120)
+    if (title === '') continue
+    const p = part.match(/<p[^>]*>([\s\S]*?)<\/p>/)
+    out.push({ url: String(link[1] ?? ''), title, snippet: p === null ? '' : cleanFragment(p[1]) })
+  }
+  return out
+}
+
+/** 抓取搜索引擎 SERP HTML（固定主机；失败抛出由调用方降级） */
+async function fetchSearchHtml(url) {
+  const res = await fetch(url, {
+    headers: { 'User-Agent': SEARCH_UA, 'Accept-Language': 'zh-CN,zh;q=0.9' },
+    redirect: 'follow',
+    signal: AbortSignal.timeout(SEARCH_TIMEOUT_MS),
+  })
+  return await res.text()
+}
+
+/** 检索通用词（二元组）——命中这些词不构成“相关”（防限流泛化页混入） */
+const SEARCH_GENERIC_BIGRAMS = new Set([
+  '时间', '考试', '报名', '全国', '大学', '今年', '安排', '通知', '怎么', '什么', '多少', '如何', '查询', '信息', '官网', '最新',
+])
+
+/** 检索词区分度令牌：CJK 二元组（去通用词）+ 拉丁词（≥3 字符，忽略纯数字） */
+function searchTokens(query) {
+  const tokens = new Set()
+  for (const run of String(query).match(/[\u4e00-\u9fa5]+/g) ?? []) {
+    for (let i = 0; i + 2 <= run.length; i += 1) {
+      const bigram = run.slice(i, i + 2)
+      if (!SEARCH_GENERIC_BIGRAMS.has(bigram)) tokens.add(bigram)
+    }
+  }
+  for (const word of String(query).match(/[a-zA-Z0-9]{3,}/g) ?? []) {
+    if (!/^\d+$/.test(word)) tokens.add(word.toLowerCase())
+  }
+  return tokens
+}
+
+/** 相关性过滤：title/snippet 至少命中一个检索令牌；无令牌（异常查询）时原样放行 */
+function filterRelevantResults(results, tokens) {
+  if (tokens.size === 0) return results
+  return results.filter((r) => {
+    const text = `${r.title} ${r.snippet}`.toLowerCase()
+    for (const token of tokens) if (text.includes(token.toLowerCase())) return true
+    return false
+  })
+}
+
+/** 结果页摘录：优先从首个检索词命中处前 80 字起截取，否则取开头（≤ SEARCH_PAGE_EXCERPT_MAX） */
+function pageExcerpt(text, tokens) {
+  const src = String(text ?? '')
+  let idx = -1
+  for (const token of tokens) {
+    const found = src.toLowerCase().indexOf(token.toLowerCase())
+    if (found >= 0 && (idx === -1 || found < idx)) idx = found
+  }
+  const start = idx === -1 ? 0 : Math.max(0, idx - 80)
+  return src.slice(start, start + SEARCH_PAGE_EXCERPT_MAX)
+}
+
+/**
+ * 网页检索（N9.1：Sogou 主 / 360 次 / Bing 备）：逐引擎尝试并用相关性令牌过滤；
+ * 限流泛化结果（不含任何检索令牌）视为该引擎失败 → 换下一引擎；全部无果返回 []，绝不抛出。
+ * @param {string} query 检索问题（≤60 字）
+ */
+export async function searchWeb(query) {
+  const q = String(query ?? '').trim().slice(0, 60)
+  if (q === '') return []
+  const tokens = searchTokens(q)
+  const attempts = [
+    ['sogou', `https://www.sogou.com/web?query=${encodeURIComponent(q)}`, extractSogouResults],
+    ['so360', `https://www.so.com/s?q=${encodeURIComponent(q)}`, extract360Results],
+    ['bing', `https://cn.bing.com/search?q=${encodeURIComponent(q)}`, extractBingResults],
+  ]
+  for (const [engine, url, extract] of attempts) {
+    try {
+      const html = await fetchSearchHtml(url)
+      const relevant = filterRelevantResults(extract(html), tokens)
+      console.log(`[ai] search「${q}」${engine} → ${relevant.length} 条`)
+      if (relevant.length > 0) return relevant
+    } catch (err) {
+      console.warn(`[ai] search「${q}」${engine} 失败：${err?.message ?? err}`)
+    }
+  }
+  return []
+}
+
+/**
+ * 构造【联网检索】注入段落：对模型请求的问题（≤2）逐条搜索并汇编；
+ * 返回 { section, queries, ok }——ok 表示至少一条问题取到了结果（决定是否回喂第二轮）。
+ */
+export async function buildSearchSection(queries) {
+  const list = []
+  for (const raw of Array.isArray(queries) ? queries : []) {
+    const q = String(raw ?? '').trim()
+    if (q !== '' && !list.includes(q)) list.push(q)
+    if (list.length >= SEARCH_MAX_QUERIES) break
+  }
+  if (list.length === 0) return { section: '', queries: [], ok: false }
+  const lines = ['【联网检索】（系统刚刚为你检索的网页摘要，可能不完整；只可据此修正时间与事实，不得编造）']
+  let ok = false
+  for (const q of list) {
+    let results = []
+    try {
+      results = await searchWeb(q)
+    } catch {
+      results = []
+    }
+    if (results.length === 0) {
+      lines.push(`问题「${q}」：（未取得结果）`)
+      continue
+    }
+    ok = true
+    lines.push(`问题「${q}」：`)
+    for (const r of results) lines.push(`- ${r.title}｜${r.snippet}`)
+    // N9.1：补充首条结果页正文摘录（复用 N2 抓取；失败 / 安全拒抓一律静默跳过）
+    const page = await fetchLinkExcerpt(results[0].url)
+    if (page !== null) {
+      lines.push(`（首条结果页摘录）${pageExcerpt(page.text, searchTokens(q))}`)
+    }
+  }
+  let section = lines.join('\n')
+  if (section.length > SEARCH_SECTION_MAX) section = section.slice(0, SEARCH_SECTION_MAX)
+  return { section, queries: list, ok }
+}
+
 /** 构造系统提示词（注入当前本地时间 + 系统现状摘要 + 一揽子动作规则；Slice N0 增通知三性与截图） */
 function buildSystem(digest, hasFile = false, contextNames = [], opts = {}) {
   const d = new Date()
@@ -1084,21 +1572,24 @@ function buildSystem(digest, hasFile = false, contextNames = [], opts = {}) {
   const fileMode = hasFile && !isImage
   const head = fileMode
     ? `你是 KERNEL 个人事务系统的收件箱解析器。本条是一个【文件投递】条目：它应当被收录为一条「资料」，并配一段用于资料详情页的「简介」，绝不拆分成任务 / 笔记 / 项目。
-只输出一个 JSON 对象：{ "actions": [ ... ] }，不要 markdown 代码块、不要解释、不要多余文字。`
+只输出一个 JSON 对象：{ "summary": "…", "actions": [ ... ] }，不要 markdown 代码块、不要解释、不要多余文字。
+summary 为必出项：用一句话概括本条内容（≤40 字，单行）。`
     : `${isImage ? '本条是一个【截图投递】条目：附件为图片，请直接读取图片内容并解析。\n' : ''}你是 KERNEL 个人事务系统的收件箱解析器。把用户丢进来的内容拆解为「一揽子处置动作」，交给用户一次确认后全部落位。
-只输出一个 JSON 对象：{ "actions": [ ... ], "facts": [ "…" ] }，不要 markdown 代码块、不要解释、不要多余文字。`
+只输出一个 JSON 对象：{ "summary": "…", "actions": [ ... ], "facts": [ "…" ], "searchQueries": [ "…" ] }，不要 markdown 代码块、不要解释、不要多余文字。
+summary 为必出项：用一句话概括本条内容（≤40 字，单行）。`
   const rules = fileMode
     ? `规则（本条带【附件】——按「资料 + 简介」处理，绝不拆分）：
-1. 恰好输出 1 个动作，kind 必须为 "resource"；禁止输出 task / note / project。
+1. 恰好输出 1 个动作，kind 必须为 "resource"；禁止输出 task / note / project / event。
 2. title：资料名（≤40 字），通常取文件名或内容主题。
 3. note：1–3 句、≤${AI_RESOURCE_NOTE_MAX_CHARS} 字的简约小结，作为资料详情页「简介」（概括这是什么资料、讲了什么、有什么用）。必须基于【附件】内容摘录；若内容不可读，仅据文件名保守概括，并在小结中注明「仅据文件名」。
 4. tags：优先从下方【标签】选已有名；仅当确无合适已有标签时提议 "topic:名称"（≤12 字）；最多 3 个；无把握省略。areaId 仅在明确属于某区域时填。
-5. 不要输出 outcome / linkToNewProject / duplicateOf 或任务专属字段。`
+5. 不要输出 outcome / linkToNewProject / duplicateOf 或任务专属字段。
+6. summary（顶层）为必出项：用一句话概括本条资料是什么 / 讲了什么（≤40 字，单行）。`
     : `规则：
 1. 宁少而精：通常 1–4 个动作，最多 6 个。优先「资料 / 笔记 + 一句小结」；仅对明确可执行的事产出 task，绝不为凑数把同一件事拆成一堆细小任务。
-2. 纯信息 / 资料类内容（链接、文章、规则、通知正文）：优先产出 1 个 resource（带 note 小结）或 1 个 note（正文含要点），不要硬拆成任务。
+2. 纯信息 / 资料类内容（链接、文章、规则、通知正文）：优先产出 1 个 resource（带 note 小结）或 1 个 note（正文含要点），不要硬拆成任务。若上方提供了【链接摘录】，resource 的 note 必须基于摘录实际内容撰写（这是什么/讲了什么/有什么用），禁止再写「未能读取」式保守话术。
 3. 确实无事可做（纯寒暄 / 无价值信息）时返回 { "actions": [] }。
-4. 挂靠宁缺毋滥：projectId / areaId / duplicateOf 只能取摘要中列出的 id，且必须有明确依据；表面相似（例如都含「竞赛 / 比赛 / 规则」字样）不算依据；拿不准一律省略。tags 优先取摘要中已有的标签名；仅当确实没有合适已有标签、且新标签是稳定的主题词（学科 / 领域，如「线性代数」「合唱排练」）时才提出新标签，写成 "topic:名称"（≤12 字）；禁止把日期、人名、整句话或临时描述当标签。
+4. 挂靠宁缺毋滥：projectId / areaId / duplicateOf 只能取摘要中列出的 id，且必须有明确依据；表面相似（例如都含「竞赛 / 比赛 / 规则」字样）不算依据；拿不准一律省略。tags 优先取摘要中已有的标签名（先对照【标签】列表，近义 / 同类直接复用现名）；若内容是日常活动类型（吃饭 / 聚餐 / 面试 / 考试 / 运动 / 开会等）且确无合适已有标签，可提议对应的活动标签（如 "topic:吃饭"）；此外仅当新标签是稳定主题词（学科 / 领域，如「线性代数」「合唱排练」）时才提议（写成 "topic:名称"，≤12 字）；禁止把日期、人名、整句话或临时描述当标签。生成 tags / projectId 前先看【项目】【标签】：明显属于某现有项目（同课程 / 同赛事 / 同组织 / 同一件事）就填 projectId。
 5. 最多一个新项目：整包中 kind:"project" 至多出现 1 次，且仅当内容像一件需要多步推进的新事务（新比赛 / 新活动 / 新项目）时才产出；若属于现有项目，改填 projectId。
 6. 新项目与现有项目互斥：挂现有项目就填 projectId；新建项目就用 kind:"project" + 让相关 task/note 填 linkToNewProject:true，绝不同时填 projectId 和 linkToNewProject。
 7. 通知 / 公告识别：若内容像「通知 / 公告 / 群消息」（含日期、面向群体的安排、要求或须知），按三性处理后再产出：
@@ -1106,7 +1597,15 @@ function buildSystem(digest, hasFile = false, contextNames = [], opts = {}) {
    需要做的事（报备、提交、申请、报名等必须完成的动作）→ 产出 kind:"task" 动作；若该义务只对部分人成立，condition 写清适用条件（不超过 30 字，如「仅出国（境）者」「仅留校学生」）；确实对所有人成立的义务可省略 condition。
    纯建议 / 提醒 / 安全须知（防蚊、饮食、防溺水宣传等）→ 默认不产出任何动作；仅当某条具体、可操作、值得保留时，才作为一条 facts 写入。
 8. facts 宁少而精：最多 8 条，只保留对个人有用的硬信息；与普通学生无关的泛泛内容不要写。actions 仍遵守第 1 条（通常 1–4 个，最多 6 个）。
-9. 图片条目：附件是图片时，按本条（文本规则）同样处理，多动作产出；若图片内容明显是文章 / 资料而非通知，按第 2 条产出 resource。`
+9. 图片条目：附件是图片时，按本条（文本规则）同样处理，多动作产出；若图片内容明显是文章 / 资料而非通知，按第 2 条产出 resource。
+10. summary（顶层）为必出项：一句话概括本条（≤40 字、单行；多要点用「 · 」分隔，含关键时间 / 事项）；不得引入原文没有的信息、不得整句照抄。例：内容混合（面试 + 项目 + 学习 + 简历）→「10/7 晚面试 · 院长项目 · Python 学习 · 简历投递」。
+11. 联网检索：若内容涉及你无法确定的外部事实（未来考试 / 报名 / 活动 / 政策的具体日期与安排），先把要检索的问题写入顶层 searchQueries（≤2 条、中文关键词、含年份与机构名，如「2026年下半年 全国大学英语四级考试 时间」）；此时相关动作的 dueAt 等时间字段先省略（系统会先检索、再把结果发给你，随后你补全）。无需检索时省略该字段。绝不编造未来日期。
+12. 定点安排识别：会在某个时刻「发生」的事（面试 / 会议 / 考试 / 约谈 / 活动 / 演出 / 用餐 / 聚会等）→ 产出 kind:"event"，startAt 为 ISO8601 带时区（必填，如 2026-10-07T19:00:00+08:00）。
+    · 时间补全（系统认可的默认值，不算编造）：有日期（含今天 / 明天 / 后天 / 周X 等相对日）但只有模糊时段词时，按默认钟点补全——早上 08:00 · 上午 09:30 · 中午 12:00 · 下午 14:30 · 傍晚 17:30 · 晚上 / 今晚 19:30；用餐语境：早饭 07:30 · 午饭 12:00 · 晚饭 / 晚餐 18:00 · 夜宵 21:30。例：「今晚去某餐厅吃自助」→ 今天 18:00；「明晚开会」→ 明天 19:30；「周六下午打球」→ 本周六 14:30。
+    · 明确给出起止时间才填 endAt（须 ≥ startAt）；只有日期没有时段词 → allDay:true（startAt 仍填当天 00:00）；连日期都无法推出 → 不产出 event（宁可 task + facts）。
+    · 地点提取：内容含具体场所 / 店名 / 房间名（如「某餐厅」「某教室」）时填入该 event 的 location（≤50 字，只写场所名）；无法确定则省略。
+    · 「需要去做」的动作（准备 / 提交 / 监督 / 学习等）→ task；同一内容可以同时产出 event（发生的事）与 task（要做的准备），但不得重复拆条。`
+  const summaryHint = `- summary: 本条内容的一句话摘要（顶层字段，≤40 字，单行；多要点用「 · 」分隔；含关键时间 / 事项；不得引入原文没有的信息；不得整句照抄，也不得写「该内容主要讲述了…」式套话）\n`
   const factsHint = fileMode
     ? ''
     : `- facts: 顶层字符串数组，≤8 条；硬事实 / 值得保留的提醒，每条 ≤140 字、含具体日期或数字\n`
@@ -1116,15 +1615,20 @@ function buildSystem(digest, hasFile = false, contextNames = [], opts = {}) {
   return `${head}
 
 每个 action 对象字段：
-${factsHint}- kind: "task" | "note" | "resource" | "project"（必填）
+${summaryHint}${factsHint}- kind: "task" | "note" | "resource" | "project" | "event"（必填）
 - title: 提炼后的标题（不超过 40 字，必填）
 - note: 仅 resource 用。1–3 句、不超过 ${AI_RESOURCE_NOTE_MAX_CHARS} 字的简约小结，作为资料详情页的「简介」（概括这是什么资料、讲了什么、有什么用）；附件条目必须给出此字段
+- url: 仅 resource 用；条目包含网页链接时原样填入
 - reason: 一句话说明该动作的判断理由
 - contexts: 仅 task 用，字符串数组，只能从 [${contextRuleText(contextNames)}] 中选（无把握则省略）
 - energy: 仅 task 用，"low" | "medium" | "high"
 - importance: 仅 task 用，0 | 1 | 2 | 3（整数；0 = 最低 / 可略过的输入）
 - estimateMin: 仅 task 用，预计所需分钟数（整数，最少 1 分钟）
-- dueAt: 仅 task 用，ISO8601 带时区或 null。现在是 ${stamp}${conditionHint}
+- dueAt: 仅 task 用，ISO8601 带时区或 null；只有在原文或【联网检索结果】中有明确依据时才填。现在是 ${stamp}${conditionHint}
+- startAt: 仅 event 用，ISO8601 带时区（必填；只有日期没有时间时填当天 00:00，并把 allDay 设为 true）
+- endAt: 仅 event 用，可选；有明确结束时间才填（须 ≥ startAt）
+- allDay: 仅 event 用，true = 只有日期、无具体时间
+- location: 仅 event 用，可选（具体场所 / 店名 / 房间名，≤50 字；无法确定则省略）
 - projectId: 仅当有明确依据属于下方某个现有项目时填该项目 id；否则省略
 - areaId: 仅当明确属于下方某个区域时填该区域 id；否则省略
 - tags: 字符串数组。优先从下方【标签】中选已有标签名；仅当没有合适的已有标签、且该标签对日后检索明确有用时，才提出新标签名（写成 "topic:名称"，名称 ≤12 字）；每个动作最多 3 个，去重；无把握则空数组
@@ -1285,7 +1789,7 @@ export function postValidateActions(actions, snapshot, options = {}) {
   const cleaned = []
   for (const raw of (Array.isArray(actions) ? actions : []).slice(0, 6)) {
     const out = { ...raw }
-    for (const key of ['projectId', 'areaId', 'duplicateOf', 'outcome', 'dueAt', 'estimateMin', 'energy', 'importance', 'note', 'condition']) {
+    for (const key of ['projectId', 'areaId', 'duplicateOf', 'outcome', 'dueAt', 'estimateMin', 'energy', 'importance', 'note', 'condition', 'url', 'startAt', 'endAt', 'allDay', 'location']) {
       if (out[key] === null) delete out[key]
     }
     const title = Array.from(String(out.title ?? '').trim()).slice(0, 40).join('')
@@ -1310,6 +1814,18 @@ export function postValidateActions(actions, snapshot, options = {}) {
     } else {
       delete out.note
     }
+    // url 仅 resource 有意义（Slice N2）：trim 后须 http(s) 开头且 ≤2000 字；否则删除
+    if (out.kind === 'resource') {
+      if (typeof out.url === 'string') {
+        const url = out.url.trim()
+        if (url === '' || !/^https?:\/\//i.test(url)) delete out.url
+        else out.url = Array.from(url).slice(0, 2000).join('')
+      } else {
+        delete out.url
+      }
+    } else {
+      delete out.url
+    }
     // condition 仅 task 有意义（Slice N0）：非 task 清除；字符串 trim 后为空则清除
     // （≤30 字由 aiActionSchema 的 Zod 上限保证，此处不再截断）
     if (out.kind !== 'task') {
@@ -1318,6 +1834,33 @@ export function postValidateActions(actions, snapshot, options = {}) {
       const condition = out.condition.trim()
       if (condition === '') delete out.condition
       else out.condition = condition
+    }
+    // Slice N10：event 清洗——startAt 无效 / 缺失 → 丢弃该动作；endAt 须 ≥ startAt 否则删除；
+    // 非 event 动作一律剥离 event 专属字段
+    if (out.kind === 'event') {
+      const startTs = typeof out.startAt === 'string' ? Date.parse(out.startAt) : Number.NaN
+      if (!Number.isFinite(startTs)) continue
+      out.startAt = Array.from(String(out.startAt).trim()).slice(0, 40).join('')
+      if (typeof out.endAt === 'string') {
+        const endTs = Date.parse(out.endAt)
+        if (!Number.isFinite(endTs) || endTs < startTs) delete out.endAt
+        else out.endAt = Array.from(String(out.endAt).trim()).slice(0, 40).join('')
+      } else {
+        delete out.endAt
+      }
+      if (out.allDay !== true) delete out.allDay
+      if (typeof out.location === 'string') {
+        const location = out.location.trim()
+        if (location === '') delete out.location
+        else out.location = Array.from(location).slice(0, 60).join('')
+      } else {
+        delete out.location
+      }
+    } else {
+      delete out.startAt
+      delete out.endAt
+      delete out.allDay
+      delete out.location
     }
     cleaned.push(out)
   }
@@ -1354,7 +1897,7 @@ export function postValidateActions(actions, snapshot, options = {}) {
     delete action.outcome // project 专属字段不落在实体动作上
     if (action.kind === 'resource') delete action.projectId // resource 无 projectId 结构
     if (projectAction !== undefined && action.linkToNewProject === true) {
-      if (action.kind !== 'task' && action.kind !== 'note') delete action.linkToNewProject
+      if (action.kind !== 'task' && action.kind !== 'note' && action.kind !== 'event') delete action.linkToNewProject
       else delete action.projectId // 与 projectId 互斥
     } else {
       delete action.linkToNewProject
@@ -1385,6 +1928,26 @@ export function cleanFacts(raw) {
   return out
 }
 
+/**
+ * 来源摘要清洗（v0.5 · Slice N4）：折叠所有空白（含换行）为单空格 → 去首尾 →
+ * 去包裹引号 / 项目符号前缀 → 硬截断 40 字符（中文按字符）；拿不到合适内容时返回空串。
+ * 两条解析路径（同步 / 流式）在 promptWithRetry 汇聚处统一调用。
+ * 导出供单测。
+ * @param {unknown} raw
+ * @returns {string}
+ */
+export function cleanSummary(raw) {
+  let text = String(raw ?? '')
+    .replace(/\s+/g, ' ')
+    .trim()
+  // 去包裹引号（中英文）/ 书名号与首尾空白
+  text = text.replace(/^["'“”‘’《》]+/, '').replace(/["'“”‘’《》]+$/, '').trim()
+  // 去项目符号 / 编号前缀（· • - * – — 及 1. 1) 1、）
+  text = text.replace(/^[·•\-*–—]+\s*/, '').replace(/^\d+[.)、]\s*/, '').trim()
+  if (text === '') return ''
+  return Array.from(text).slice(0, 40).join('')
+}
+
 /** 解析 + 校验单次响应：接受 {actions:[...],facts:[...]} 或旧式单建议；返回 { ok, actions, facts } 或失败原因（导出供单测） */
 export function tryParseActions(res) {
   const cleaned = extractText(res)
@@ -1401,10 +1964,11 @@ export function tryParseActions(res) {
   try {
     if (obj !== null && typeof obj === 'object' && Array.isArray(obj.actions)) {
       const parsed = aiActionsSchema.parse(obj)
-      return { ok: true, actions: parsed.actions, facts: parsed.facts }
+      return { ok: true, actions: parsed.actions, facts: parsed.facts, summary: parsed.summary ?? '', searchQueries: parsed.searchQueries }
     }
     // 向后兼容：旧式单建议形状（无顶层 facts）
-    return { ok: true, actions: legacyToActions(aiSuggestionSchema.parse(obj)), facts: [] }
+    const parsed = aiSuggestionSchema.parse(obj)
+    return { ok: true, actions: legacyToActions(parsed), facts: [], summary: parsed.summary ?? '', searchQueries: [] }
   } catch (err) {
     return { ok: false, reason: `字段校验失败（${describeError(err)}）` }
   }
@@ -1461,7 +2025,8 @@ async function promptWithRetry(sessionID, system, userText, emit, extraParts = [
     parsed = tryParseActions(res)
     if (!parsed.ok) throw new Error(`AI 输出无法解析：${parsed.reason}`)
   }
-  return { res, actions: parsed.actions, facts: parsed.facts }
+  // Slice N4：两条解析路径在此汇聚，summary 统一清洗一次（缺失 → ''）
+  return { res, actions: parsed.actions, facts: parsed.facts, summary: cleanSummary(parsed.summary), searchQueries: parsed.searchQueries ?? [] }
 }
 
 /**
@@ -1516,6 +2081,37 @@ async function buildImagePart(item) {
 }
 
 /**
+ * 图片分片 → opencode file parts（长截图）：前端把超长截图切成 ≤6 张 JPEG，
+ * 服务端落盘为 data/files/<id>-ai-<n>.jpg；此处按序读取并发为多个 file part。
+ * 若没有任何分片，回退单图路径 buildImagePart（兼容旧数据 / 未切片图片）。
+ * 读取分片失败即停止（不跳过、不报错）。
+ * @param {{ id: string, file?: { name: string, mime?: string } }} item
+ * @returns {Promise<object[]>}
+ */
+async function buildImageParts(item) {
+  if (item?.file === undefined || item?.file === null) return []
+  const parts = []
+  for (let n = 1; n <= 6; n += 1) {
+    const name = `${item.id}-ai-${n}.jpg`
+    let buf
+    try {
+      buf = await fs.readFile(path.join(DATA_DIR, 'files', name))
+    } catch {
+      break
+    }
+    parts.push({
+      type: 'file',
+      mime: 'image/jpeg',
+      filename: name,
+      url: `data:image/jpeg;base64,${buf.toString('base64')}`,
+    })
+  }
+  if (parts.length > 0) return parts
+  const single = await buildImagePart(item)
+  return single === null ? [] : [single]
+}
+
+/**
  * 解析收件箱条目为 AI 建议（同步；Slice N0 增 facts 与图片截图投递）
  * @param {{ id: string, content: string, file?: { name: string, mime?: string } }} item
  * @returns {Promise<{ actions: object[], facts: string[], model: string | null, ms: number }>}
@@ -1526,20 +2122,52 @@ export async function parseInboxItem(item) {
   const fileSection = await buildFileSection(item)
   const hasFile = item?.file !== undefined && item?.file !== null
   const isImage = isImageFile(item)
-  const imagePart = isImage ? await buildImagePart(item) : null
+  const imageParts = isImage ? await buildImageParts(item) : []
   const system = buildSystem(buildDigest(snapshot), hasFile, contextNamesOf(snapshot), { isImage })
   const sessionID = await createSession()
-  const userText = fileSection === '' ? item.content : `${item.content}\n\n${fileSection}`
-  const extraParts = imagePart === null ? [] : [imagePart]
-  const { res, actions, facts } = await promptWithRetry(sessionID, system, userText, null, extraParts)
-  const clean = postValidateActions(actions, snapshot, fileParseOptions(item, hasFile, fileSection))
-  const cleanFactList = cleanFacts(facts)
-  const model = modelOf(res)
+  // Slice N2：文本条目（无附件）含 http(s) 链接时，解析前抓取首个链接正文摘录注入上下文
+  const link = hasFile ? { section: '', linkUrl: null } : await buildLinkSection(item.content)
+  const userText =
+    link.section !== ''
+      ? `${item.content}\n\n${link.section}`
+      : fileSection === ''
+        ? item.content
+        : `${item.content}\n\n${fileSection}`
+  const extraParts = imageParts
+  let parsed = await promptWithRetry(sessionID, system, userText, null, extraParts)
+  // Slice N9：模型请求联网检索时，先检索（Sogou 主 / Bing 备），再把结果回喂一次（同会话）
+  let searched = []
+  if (parsed.searchQueries.length > 0) {
+    const search = await buildSearchSection(parsed.searchQueries)
+    if (search.ok) {
+      try {
+        const res2 = await promptOnce(
+          sessionID,
+          system,
+          `${search.section}\n\n请基于以上检索结果修正并补全你的 JSON 输出（尤其 task 的 dueAt 与 facts 里的日期）。仍然只输出一个 JSON 对象，不要任何解释。`,
+          extraParts,
+        )
+        const parsed2 = tryParseActions(res2)
+        if (parsed2.ok) {
+          parsed = { res: res2, actions: parsed2.actions, facts: parsed2.facts, summary: parsed2.summary, searchQueries: [] }
+          searched = search.queries
+        }
+      } catch (err) {
+        console.warn(`[ai] inbox.parse ${item.id} 检索回喂失败，沿用首轮结果：${err?.message ?? err}`)
+      }
+    } else {
+      console.warn(`[ai] inbox.parse ${item.id} 检索未取得结果（${search.queries.join(' / ')}）`)
+    }
+  }
+  const clean = postValidateActions(parsed.actions, snapshot, fileParseOptions(item, hasFile, fileSection))
+  applyLinkUrlFallback(clean, link.linkUrl)
+  const cleanFactList = cleanFacts(parsed.facts)
+  const model = modelOf(parsed.res)
   const ms = Date.now() - t0
   console.log(
-    `[ai] inbox.parse ${item.id} 完成 ${ms}ms（${model ?? '未知模型'} · ${clean.length} 动作 · ${cleanFactList.length} 事实）`,
+    `[ai] inbox.parse ${item.id} 完成 ${ms}ms（${model ?? '未知模型'} · ${clean.length} 动作 · ${cleanFactList.length} 事实 · 摘要${parsed.summary === '' ? '无' : `「${parsed.summary}」`}${searched.length > 0 ? ` · 检索${searched.length}条` : ''}）`,
   )
-  return { actions: clean, facts: cleanFactList, model, ms }
+  return { actions: clean, facts: cleanFactList, summary: parsed.summary, model, ms, searched }
 }
 
 /**
@@ -1600,19 +2228,52 @@ export async function parseInboxItemStream(item, emit) {
     const fileSection = await buildFileSection(item)
     const hasFile = item?.file !== undefined && item?.file !== null
     const isImage = isImageFile(item)
-    const imagePart = isImage ? await buildImagePart(item) : null
+    const imageParts = isImage ? await buildImageParts(item) : []
     const system = buildSystem(buildDigest(snapshot), hasFile, contextNamesOf(snapshot), { isImage })
     sessionID = await createSession()
-    const userText = fileSection === '' ? item.content : `${item.content}\n\n${fileSection}`
-    const extraParts = imagePart === null ? [] : [imagePart]
-    const { res, actions, facts } = await promptWithRetry(sessionID, system, userText, safeEmit, extraParts)
-    const clean = postValidateActions(actions, snapshot, fileParseOptions(item, hasFile, fileSection))
-    const cleanFactList = cleanFacts(facts)
-    const model = modelOf(res)
+    // Slice N2：文本条目（无附件）含 http(s) 链接时，解析前抓取首个链接正文摘录注入上下文
+    const link = hasFile ? { section: '', linkUrl: null } : await buildLinkSection(item.content)
+    const userText =
+      link.section !== ''
+        ? `${item.content}\n\n${link.section}`
+        : fileSection === ''
+          ? item.content
+          : `${item.content}\n\n${fileSection}`
+    const extraParts = imageParts
+    let parsed = await promptWithRetry(sessionID, system, userText, safeEmit, extraParts)
+    // Slice N9：模型请求联网检索时，先 emit「检索中」，再检索（Sogou 主 / Bing 备）并回喂一次（同会话）
+    let searched = []
+    if (parsed.searchQueries.length > 0) {
+      safeEmit({ kind: 'status', status: 'searching' })
+      const search = await buildSearchSection(parsed.searchQueries)
+      if (search.ok) {
+        try {
+          const res2 = await promptOnce(
+            sessionID,
+            system,
+            `${search.section}\n\n请基于以上检索结果修正并补全你的 JSON 输出（尤其 task 的 dueAt 与 facts 里的日期）。仍然只输出一个 JSON 对象，不要任何解释。`,
+            extraParts,
+          )
+          const parsed2 = tryParseActions(res2)
+          if (parsed2.ok) {
+            parsed = { res: res2, actions: parsed2.actions, facts: parsed2.facts, summary: parsed2.summary, searchQueries: [] }
+            searched = search.queries
+          }
+        } catch (err) {
+          console.warn(`[ai] inbox.parse-stream ${item.id} 检索回喂失败：${err?.message ?? err}`)
+        }
+      } else {
+        console.warn(`[ai] inbox.parse-stream ${item.id} 检索未取得结果（${search.queries.join(' / ')}）`)
+      }
+    }
+    const clean = postValidateActions(parsed.actions, snapshot, fileParseOptions(item, hasFile, fileSection))
+    applyLinkUrlFallback(clean, link.linkUrl)
+    const cleanFactList = cleanFacts(parsed.facts)
+    const model = modelOf(parsed.res)
     const ms = Date.now() - t0
-    safeEmit({ kind: 'suggestion', actions: clean, facts: cleanFactList, model, ms })
+    safeEmit({ kind: 'suggestion', actions: clean, facts: cleanFactList, summary: parsed.summary, model, ms, searched })
     console.log(
-      `[ai] inbox.parse-stream ${item.id} 完成 ${ms}ms（${model ?? '未知模型'} · ${clean.length} 动作 · ${cleanFactList.length} 事实）`,
+      `[ai] inbox.parse-stream ${item.id} 完成 ${ms}ms（${model ?? '未知模型'} · ${clean.length} 动作 · ${cleanFactList.length} 事实 · 摘要${parsed.summary === '' ? '无' : `「${parsed.summary}」`}${searched.length > 0 ? ` · 检索${searched.length}条` : ''}）`,
     )
   } catch (err) {
     console.error(`[ai] inbox.parse-stream ${item.id} 失败：`, err?.message ?? err)
@@ -1717,12 +2378,17 @@ export function buildChatDigest(snapshot, now = new Date()) {
   ].join('\n\n')
 }
 
-/** 构造对话系统提示词（自然语言；要求只依据摘要事实，优先回答「最紧急」） */
+/** 构造对话系统提示词（Slice G.1：读库 + 联网检索 + 自由回答 + markdown） */
 function buildChatSystem(digest) {
-  return `你是 KERNEL（个人事务内核）的对话助手。用户会用中文问你关于他自己的事（例如「我今天有什么特别紧急需要去做的事情」「这周有什么安排」「项目进展如何」）。
+  return `你是 KERNEL（个人事务内核）的对话助手。用户会用中文问你：他自己的事（如「我今天有什么特别紧急需要去做的事情」）、外部信息（如「今年四级考试是什么时候」）、或一般问题。
 回答要求：
-- 只依据下方【系统现状摘要】中的事实回答；摘要里没有的信息，直接说「数据里没有」，绝不编造任务 / 日程 / 项目 / 时间。
-- 简洁、直接、可执行；用中文；不要输出 JSON，不要用 markdown 代码块。
+- 关于用户自己的事：依据下方【系统现状摘要】中的事实回答；摘要里没有的，直接说「数据里没有」，绝不编造用户的任务 / 日程 / 项目 / 时间。
+- 一般知识与建议：可以直接自由回答（不限于摘要），但不得把猜测写成用户的数据。
+- 需要外部事实才能回答准确时（最新政策 / 未来日期 / 公开资料等），**只输出一个 JSON**（不要任何其他文字）：{"searchQueries":["…","…"]}（≤2 条、中文关键词、含年份，如「2026年下半年 全国大学英语四级考试 时间」）。系统会先检索并把结果发给你，然后你再正式回答。**一次对话最多请求一次检索**。
+- 当用户想了解某条记录（任务 / 日程 / 资料 / 笔记 / 项目等）的详细内容，或想修改它，而摘要信息不足时，**只输出一个 JSON**（不要任何其他文字）：{"entityQueries":["关键词","…"]}（1–3 条、每条 ≤30 字）；系统会把匹配到的完整记录发给你，你再回答或提出修改。**一次对话最多请求一次实体调取**。
+- 当用户明确要求修改某条记录，且你已能确定唯一目标记录时，**只输出一个 JSON**（不要任何其他文字）：{"edit":{"kind":"task|event|note|resource|project|area|goal|habit|course","id":"…","fields":{"字段名":"新值"},"label":"一句话说明将做什么修改"}}。绝不在不确定时输出 edit（先向用户确认）；id 必须来自你已看到的记录，绝不编造；fields 只放需要修改的字段；修改需要用户确认后才会生效。
+- 若系统发来【实体记录】段落：只可据此回答 / 提出修改，不得编造；若用户要求修改，只输出上面的 edit JSON；否则正常用文字回答。
+- 正式回答用中文 markdown 组织（小标题 / 列表 / 加粗均可），简洁、直接、可执行；不要输出 markdown 代码块包裹整篇。
 - 当被问「最紧急」时，按「逾期 → 今日到期 → 即将开始的日程」排序给出判断与理由。
 - 当对话记录里含有「用户：」「KERNEL：」标记时，只回答最后一条「用户：」的内容。
 
@@ -1738,10 +2404,227 @@ async function promptChatOnce(sessionID, system, text) {
   return { res, reply }
 }
 
+/** 解析「检索请求」JSON（Slice G.1）：{"searchQueries":[...]} → 清洗后的查询数组；非该形状返回 null */
+export function tryParseSearchRequest(reply) {
+  const cleaned = String(reply ?? '')
+    .trim()
+    .replace(/^```(?:json)?/i, '')
+    .replace(/```$/, '')
+    .trim()
+  if (!cleaned.startsWith('{')) return null
+  let obj
+  try {
+    obj = JSON.parse(cleaned)
+  } catch {
+    return null
+  }
+  if (obj === null || typeof obj !== 'object' || !Array.isArray(obj.searchQueries)) return null
+  const queries = []
+  for (const raw of obj.searchQueries) {
+    const q = String(raw ?? '').trim()
+    if (q !== '' && !queries.includes(q)) queries.push(Array.from(q).slice(0, 60).join(''))
+    if (queries.length >= 2) break
+  }
+  return queries.length > 0 ? queries : null
+}
+
+/** 去掉包裹的 ```json 代码围栏（仅去首尾；非 JSON 原样返回） */
+function stripJsonFence(reply) {
+  return String(reply ?? '')
+    .trim()
+    .replace(/^```(?:json)?/i, '')
+    .replace(/```$/, '')
+    .trim()
+}
+
+/** 解析「实体调取请求」JSON：{"entityQueries":[...]} → 清洗后的关键词数组；非该形状返回 null */
+export function tryParseEntityRequest(reply) {
+  const cleaned = stripJsonFence(reply)
+  if (!cleaned.startsWith('{')) return null
+  let obj
+  try {
+    obj = JSON.parse(cleaned)
+  } catch {
+    return null
+  }
+  if (obj === null || typeof obj !== 'object' || !Array.isArray(obj.entityQueries)) return null
+  const queries = []
+  for (const raw of obj.entityQueries) {
+    const q = String(raw ?? '').trim()
+    if (q === '') continue
+    const clamped = Array.from(q).slice(0, 30).join('')
+    if (clamped !== '' && !queries.includes(clamped)) queries.push(clamped)
+    if (queries.length >= 3) break
+  }
+  return queries.length > 0 ? queries : null
+}
+
+/** 可编辑实体单数名白名单（与 EDITABLE_FIELDS 的复数键一一对应） */
+const EDIT_REQUEST_KINDS = new Set(['task', 'event', 'note', 'resource', 'project', 'area', 'goal', 'habit', 'course'])
+/** 实体 id 形状（与前端 / 服务端一致：前缀-四位数字） */
+const EDIT_REQUEST_ID_RE = /^[a-z]+-\d{4}$/
+
+/**
+ * 解析「修改建议」JSON：{"edit":{kind,id,fields,label}} → 清洗后的对象；非该形状返回 null。
+ * 只做浅层校验（kind / id 形状 / fields 键数）；深层字段合法性由 index.mjs 白名单过滤。
+ */
+export function tryParseEditRequest(reply) {
+  const cleaned = stripJsonFence(reply)
+  if (!cleaned.startsWith('{')) return null
+  let obj
+  try {
+    obj = JSON.parse(cleaned)
+  } catch {
+    return null
+  }
+  const edit = obj === null || typeof obj !== 'object' ? null : obj.edit
+  if (edit === null || typeof edit !== 'object' || Array.isArray(edit)) return null
+  if (typeof edit.kind !== 'string' || !EDIT_REQUEST_KINDS.has(edit.kind)) return null
+  if (typeof edit.id !== 'string' || !EDIT_REQUEST_ID_RE.test(edit.id)) return null
+  const fields = edit.fields
+  if (fields === null || typeof fields !== 'object' || Array.isArray(fields)) return null
+  const keys = Object.keys(fields)
+  if (keys.length < 1 || keys.length > 12) return null
+  const label = typeof edit.label === 'string' ? Array.from(edit.label).slice(0, 120).join('') : ''
+  return { kind: edit.kind, id: edit.id, fields, label }
+}
+
+/** 实体调取：可检索集合（与 EDITABLE / 课程实体一致） */
+const ENTITY_SEARCH_KINDS = ['tasks', 'events', 'notes', 'resources', 'projects', 'courses']
+/** 实体集合 → 中文标签 */
+const ENTITY_KIND_LABEL = {
+  tasks: '任务',
+  events: '日程',
+  notes: '笔记',
+  resources: '资料',
+  projects: '项目',
+  courses: '课程',
+}
+/** 【实体记录】段落硬上限（字符） */
+const ENTITY_SECTION_MAX = 2500
+
+/** 取记录标题（非字符串 → 空串） */
+function entityTitleOf(record) {
+  return typeof record?.title === 'string' ? record.title : ''
+}
+
+/** 标题匹配打分：完全一致 100 · 标题含查询 70 · 查询含标题 40（大小写不敏感；空值不计分） */
+function scoreEntityTitle(title, query) {
+  if (title === '' || query === '') return 0
+  const t = title.toLowerCase()
+  const q = query.toLowerCase()
+  if (t === q) return 100
+  if (t.includes(q)) return 70
+  if (q.includes(t)) return 40
+  return 0
+}
+
+/** 字段值 → 可读文本（字符串数组按逗号连接；对象 / 混合数组 JSON 化；失败返回空串） */
+function serializeEntityField(value) {
+  if (Array.isArray(value)) {
+    if (value.every((v) => typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean')) {
+      return value.map((v) => String(v)).join(',')
+    }
+    try {
+      return JSON.stringify(value)
+    } catch {
+      return ''
+    }
+  }
+  if (value !== null && typeof value === 'object') {
+    try {
+      return JSON.stringify(value)
+    } catch {
+      return ''
+    }
+  }
+  return String(value)
+}
+
+/** 按码点截断字符串至 max */
+function clampEntityText(text, max) {
+  return Array.from(String(text)).slice(0, max).join('')
+}
+
+/** 单条实体 → 一行记录（跳过 id/createdAt/updatedAt；笔记正文单独放宽至 600 字） */
+function formatEntityLine(kind, record) {
+  const label = ENTITY_KIND_LABEL[kind] ?? kind
+  const parts = []
+  for (const [key, value] of Object.entries(record)) {
+    if (key === 'id' || key === 'createdAt' || key === 'updatedAt') continue
+    if (key === 'body') continue
+    if (value === undefined || value === null) continue
+    const text = serializeEntityField(value)
+    if (text === '') continue
+    parts.push(`${key}=${clampEntityText(text, 200)}`)
+  }
+  if (kind === 'notes' && typeof record.body === 'string' && record.body !== '') {
+    parts.push(`body=${clampEntityText(record.body, 600)}`)
+  }
+  return `- ${label} ${record.id}「${entityTitleOf(record)}」：${parts.join(' · ')}`
+}
+
+/**
+ * 按关键词在收件箱外的实体集合里检索完整记录：每问取高分前 3、跨问按 id 去重、总上限 6。
+ * 返回 { section, titles }：section 为注入段（无匹配则为空串），titles 为命中标题（去重 ≤6）。
+ * @param {object} snapshot 数据快照
+ * @param {string[]} queries 关键词（1–3 条）
+ * @returns {{ section: string, titles: string[] }}
+ */
+export function resolveEntities(snapshot, queries) {
+  const list = Array.isArray(queries)
+    ? queries.map((q) => String(q ?? '').trim()).filter((q) => q !== '')
+    : []
+  const seen = new Set()
+  const matched = []
+  for (const q of list) {
+    const scored = []
+    for (const kind of ENTITY_SEARCH_KINDS) {
+      const arr = snapshot?.[kind]
+      if (!Array.isArray(arr)) continue
+      for (const record of arr) {
+        if (record === null || typeof record !== 'object') continue
+        const score = scoreEntityTitle(entityTitleOf(record), q)
+        if (score > 0) scored.push({ kind, record, score })
+      }
+    }
+    scored.sort((a, b) => b.score - a.score)
+    let added = 0
+    for (const item of scored) {
+      if (added >= 3 || matched.length >= 6) break
+      const id = item.record.id
+      if (id === undefined || id === null || seen.has(id)) continue
+      seen.add(id)
+      matched.push(item)
+      added += 1
+    }
+    if (matched.length >= 6) break
+  }
+  const titles = []
+  for (const item of matched) {
+    const title = entityTitleOf(item.record)
+    if (title !== '' && !titles.includes(title)) titles.push(title)
+  }
+  if (matched.length === 0) return { section: '', titles: [] }
+  const header = '【实体记录】（系统按你的请求提供，只可据此回答，不得编造）'
+  const lines = [header]
+  let total = header.length
+  for (const item of matched) {
+    const line = formatEntityLine(item.kind, item.record)
+    if (total + line.length + 1 > ENTITY_SECTION_MAX) break
+    lines.push(line)
+    total += line.length + 1
+  }
+  return { section: lines.join('\n'), titles: titles.slice(0, 6) }
+}
+
 /**
  * 与 KERNEL 对话：读当前数据快照构造摘要，注入有界对话历史，返回自然语言回答。
+ * Slice G.1：模型可请求联网检索（Sogou→360→Bing），服务端检索后回喂同一会话正式作答。
+ * 本轮扩展：模型可请求调取实体完整记录（entityQueries），命中后回喂；随后可产出 edit 修改建议。
+ * 最多两轮额外交互（实体调取 / 联网检索各一次），同一 opencode 会话。
  * @param {Array<{ role: 'user'|'assistant', content: string }>} messages 已由路由裁剪的有界历史（末条为用户）
- * @returns {Promise<{ reply: string, model: string | null, ms: number }>}
+ * @returns {Promise<{ reply: string, searched: string[], focused: string[], editRequest: { kind: string, id: string, fields: object, label: string } | null, model: string | null, ms: number }>}
  */
 export async function chatWithKernel(messages) {
   const t0 = Date.now()
@@ -1756,17 +2639,115 @@ export async function chatWithKernel(messages) {
     .map((m) => `${m.role === 'assistant' ? 'KERNEL' : '用户'}：${m.content}`)
     .join('\n\n')
   const userText = `${transcript}\n\n请只回答最后一条「用户：」的内容。`
-  let outcome
-  try {
-    outcome = await promptChatOnce(sessionID, system, userText)
-  } catch (err) {
-    console.warn(`[ai] chat 首次失败（${err?.message ?? err}），重试一次`)
-    outcome = await promptChatOnce(sessionID, system, userText)
+  const withRetry = async (text) => {
+    try {
+      return await promptChatOnce(sessionID, system, text)
+    } catch (err) {
+      console.warn(`[ai] chat 单次失败（${err?.message ?? err}），重试一次`)
+      return await promptChatOnce(sessionID, system, text)
+    }
   }
+  let outcome = await withRetry(userText)
+  let searched = []
+  let focused = []
+  let entityRoundDone = false
+  let searchRoundDone = false
+  let lastReply = outcome.reply
+  // 最多两轮额外交互：优先实体调取，其次联网检索；各最多一次
+  for (let round = 0; round < 2; round += 1) {
+    const entityQueries = entityRoundDone ? null : tryParseEntityRequest(lastReply)
+    if (entityQueries !== null) {
+      entityRoundDone = true
+      const resolved = resolveEntities(snapshot, entityQueries)
+      focused = resolved.titles
+      const section =
+        resolved.section !== ''
+          ? resolved.section
+          : '【实体记录】未找到与请求匹配的记录，请据现有摘要作答或向用户说明。'
+      outcome = await withRetry(
+        `${section}\n\n请基于以上记录回答用户的最后一条消息；若用户要求修改，只输出 {"edit":{...}} JSON；否则正常用文字回答。`,
+      )
+      lastReply = outcome.reply
+      continue
+    }
+    const searchQueries = searchRoundDone ? null : tryParseSearchRequest(lastReply)
+    if (searchQueries !== null) {
+      searchRoundDone = true
+      const search = await buildSearchSection(searchQueries)
+      if (search.ok) {
+        outcome = await withRetry(
+          `${search.section}\n\n请基于以上检索结果，正式回答用户最后一条「用户：」的问题；用中文 markdown 组织，简洁直接。`,
+        )
+        searched = search.queries
+      } else {
+        outcome = await withRetry(
+          '联网检索未成功。请基于常识保守回答，并明确注明无法确认最新信息；不要编造日期与事实。',
+        )
+      }
+      lastReply = outcome.reply
+      continue
+    }
+    break
+  }
+  const editRequest = tryParseEditRequest(lastReply)
+  const reply = editRequest !== null ? editRequest.label || '已生成修改建议，请确认后生效。' : lastReply
   const model = modelOf(outcome.res)
   const ms = Date.now() - t0
-  console.log(`[ai] chat 完成 ${ms}ms（${model ?? '未知模型'}）`)
-  return { reply: outcome.reply, model, ms }
+  console.log(
+    `[ai] chat 完成 ${ms}ms（${model ?? '未知模型'}${searched.length > 0 ? ` · 检索${searched.length}条` : ''}${focused.length > 0 ? ` · 调取${focused.length}条` : ''}${editRequest !== null ? ' · 修改建议' : ''}）`,
+  )
+  return { reply, searched, focused, editRequest, model, ms }
+}
+
+/** 构造「把回答整理成笔记」系统提示词（Slice G.1；聚焦用户要求、事实数字不变、不得编造） */
+function buildChatNoteSystem() {
+  return `你是 KERNEL 的笔记整理器。把用户提供的【回答】按「整理要求」整理为一条独立笔记，只输出一个 JSON 对象：{"title":"…","body":"…"}，不要 markdown 代码块、不要解释、不要多余文字。
+要求：
+- title：≤40 字，概括主题的名词短语（不要「笔记」后缀、不要套话）。
+- body：中文 markdown 正文（可用小标题 / 列表 / 加粗 / 引用），聚焦整理要求（如「这个点」指回答中的某一部分时，只保留该部分并整理清楚）。
+- 事实与数字不得改动、不得编造；保持精炼，不设固定字数。`
+}
+
+/**
+ * 由「对话回答 + 整理要求」生成笔记草稿（Slice G.1）：AI 整理失败 / 解析失败时
+ * 回退为确定性兜底（首行标题 + 原文正文），绝不抛错。
+ * @returns {Promise<{ title: string, body: string, model: string | null, ms: number, fallback: boolean }>}
+ */
+export async function draftChatNote(instruction, answer) {
+  const t0 = Date.now()
+  const fallback = () => {
+    const firstLine =
+      String(answer)
+        .split('\n')
+        .map((line) => line.replace(/^[#>*\-\s]+/, '').trim())
+        .find((line) => line !== '') ?? '对话要点'
+    return {
+      title: Array.from(firstLine).slice(0, 40).join(''),
+      body: String(answer).trim(),
+      model: null,
+      ms: Date.now() - t0,
+      fallback: true,
+    }
+  }
+  const sessionID = await createSession('kernel:chat-note')
+  const system = buildChatNoteSystem()
+  const userText = `整理要求：${instruction}\n\n【回答】\n${answer}`
+  try {
+    const res = await promptOnce(sessionID, system, userText)
+    const cleaned = extractText(res)
+      .trim()
+      .replace(/^```(?:json)?/i, '')
+      .replace(/```$/, '')
+      .trim()
+    const obj = JSON.parse(cleaned)
+    const title = Array.from(String(obj?.title ?? '').trim()).slice(0, 40).join('')
+    const body = String(obj?.body ?? '').trim()
+    if (title === '' || body === '') return fallback()
+    return { title, body, model: modelOf(res), ms: Date.now() - t0, fallback: false }
+  } catch (err) {
+    console.warn(`[ai] chat.note 整理失败，回退确定性：${err?.message ?? err}`)
+    return fallback()
+  }
 }
 
 /* ---------------------------------------------------------------------------
@@ -2360,6 +3341,332 @@ export async function draftClusters(snapshot) {
 }
 
 /* ---------------------------------------------------------------------------
+ * AI 整理（v0.5 · Slice N8）：无归属任务 → 先归入高度相关的现有项目，再把剩余条目建议为新项目
+ * 纪律：与聚类立项同源——确定性预分组限定成员、AI 按编号引用（无法编造 id）、只出建议不落盘；
+ *       应用经 POST /api/projects/organize-apply（服务端一次写入 + 审计），撤销精确 / 尽力复原。
+ * ------------------------------------------------------------------------- */
+
+/** 归并入现有项目的条数上限（N8.1 放宽：5 → 8，尽量收纳全部可规划项） */
+export const ORGANIZE_MAX_ASSIGNMENTS = 8
+/** 新项目提案上限（N8.1 放宽：3 → 5） */
+export const ORGANIZE_MAX_CLUSTERS = 5
+/** N8.1：AI 新项目簇最少成员数（2；单条多步事务另行放行，见 postValidateOrganize） */
+export const ORGANIZE_MIN_CLUSTER_ENTRIES = 2
+/** 单条归并建议可含的任务条目上限 */
+const ORGANIZE_MAX_ENTRIES_PER_ASSIGNMENT = 10
+/** 现有项目可被归入的状态（已完成 / 归档项目不作为归并目标；导出供 index.mjs 应用前校验） */
+export const ORGANIZE_PROJECT_STATUS = new Set(['active', 'onHold', 'someday'])
+
+/** 构造 AI 整理系统提示词（注入当前本地时间；N8.1：三分类 + 全覆盖 + 自主立项判断） */
+function buildOrganizeSystem() {
+  const d = new Date()
+  const pad = (n) => String(n).padStart(2, '0')
+  const stamp = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${WEEKDAYS[d.getDay()]} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+  return `你是 KERNEL 个人事务系统的「整理器」。你会看到编号候选条目（1..N，含任务与未澄清条目）、用户的【现有项目】与确定性【提示组】。
+
+先在心里对每个候选做出判断，归入三类之一：
+【A · 归并到现有项目】候选与某个现有项目存在具体归属关系（同一课程 / 同一活动或赛事 / 同一组织的一件事 / 同一委托方 / 同一人的同一事务，或它本身就是该项目完成定义里的一步）→ 输出归并建议，reason 写出这条可核对的联系。
+【B · 建议新项目】若干候选（≥2）确实属于同一件「需要多步推进的新事务」→ 编成新项目建议；单条候选若本身明确是多步事务（准备考核 / 组织活动 / 开发交付 / 长期训练），也可自行判断单独立项——此时 outcome 与 reason 必须写清。
+【C · 不规划】单步即可完成的事务（买 / 交 / 发 / 查 / 去一趟）→ 正确地不输出。
+
+目标：遍历全部候选，但凡能合理规划的都要给出归属（不漏），且每条建议都能写出可核对的 reason（不硬塞）。仅「领域相近、都是学习类、时间相近」不算具体联系。
+
+判断示例：
+- 正例 · 归并：「投递 Demo 实验室招新简历」→「demo 实验室考核准备」（它就是完成定义里「简历按时投递」的一步）
+- 正例 · 归并：「学生组织第二轮面试（做面试官）」「监督学生组织推文」→「学生组织部门相关事宜」（同一组织的连续事务）
+- 反例 · 不归并：「背四级单词」→「算法训练」（仅领域相近，无具体联系）
+- 正例 · 新项目：「数据结构作业 1 / 2 / 3」→「数据结构课程作业」；单条「筹备迎新晚会」可单独立项（多步事务）
+- 反例 · 不规划：「取快递」「回复确认邮件」（单步即可完成）
+
+只输出一个 JSON 对象：{"assignments":[{"project":"p-0001","entries":[3,7],"reason":"…"}],"clusters":[{"entries":[1,2,5],"title":"…","outcome":"…","reason":"…","areaId":"a-0001","tags":["topic:X"]}]}，不要 markdown 代码块、不要解释、不要多余文字。
+
+规则：
+1. entries 只能引用 1..N 的整数编号，不得编造、不得重复；同一条目不得同时出现于 assignments 与 clusters（assignments 优先），也不得在两个 clusters 中重复。
+2. assignments 最多 8 条；project 只能原样照抄【现有项目】列出的 id；每个项目最多一条建议；每条最多 10 个条目（仅任务类编号）。
+3. clusters 最多 5 条；≥2 条成员即可成簇（须含 ≥1 条任务）；单条任务成簇仅限「本身是多步事务」且必须给出 outcome 与 reason；title ≤20 字名词短语（不要「各类任务」「待整理」「TODOs」等套话）；outcome 说明「怎样算完成」；reason 说明共同线索或立项依据。
+4. areaId 仅引用【区域】已有 id（无把握省略）；tags 优先复用【标签】已有名，确无合适时可用「topic:名称」（≤12 字），每条最多 5 个。
+5. 项目名不得与【现有项目】标题重复；不得编造条目不存在的细节。
+6. 无需整理时输出 {"assignments":[],"clusters":[]}。
+现在是 ${stamp}。`
+}
+
+/** 构造 AI 整理摘要（编号候选 + 可归入的现有项目 + 确定性预分组提示 + 区域 / 标签 / 上下文） */
+function buildOrganizeDigest(snapshot, candidates, groups) {
+  const positionOfId = new Map(candidates.map((c, index) => [c.id, index + 1]))
+  const lines = candidates.map((c, index) => {
+    if (c.kind === 'task') {
+      const tagText = (c.tags ?? []).length > 0 ? ` ｜ 标签: ${(c.tags ?? []).join(', ')}` : ''
+      return `${index + 1}. [任务 ${c.id}] ${String(c.title ?? '')}${tagText}`
+    }
+    const preview = Array.from(String(c.title ?? '')).slice(0, 80).join('')
+    return `${index + 1}. [条目 ${c.id}] ${preview}`
+  })
+  const projects = (snapshot.projects ?? [])
+    .filter((p) => ORGANIZE_PROJECT_STATUS.has(p.status))
+    .map((p) => {
+      const outcome = String(p.outcome ?? '').trim()
+      // N8.1：占位完成定义（默认值 / 空）不作为语义信号
+      const outcomeText =
+        outcome === '' || outcome.startsWith('完成定义待整理')
+          ? '（未填写，参考标题与标签判断）'
+          : outcome
+      return `${p.id} · ${p.title} ｜ 完成定义: ${outcomeText} ｜ 标签: ${(p.tags ?? []).join(', ')} ｜ 状态: ${p.status}`
+    })
+  const hints = groups.map((members, index) => {
+    const nums = members.map((m) => positionOfId.get(m.id)).filter((n) => Number.isInteger(n))
+    return `提示 ${index + 1}（${nums.length} 项）：${nums.join(', ')}`
+  })
+  const areas = (snapshot.areas ?? []).map((a) => `${a.id} · ${a.title}`)
+  const tags = (snapshot.tags ?? []).map((t) => t.name)
+  const contexts = contextNamesOf(snapshot)
+  let out = `【候选条目】\n${lines.join('\n') || '（无）'}\n`
+  out += `【现有项目】（仅这些 id 可作为归并目标）\n${projects.join('\n') || '（无）'}\n`
+  if (hints.length > 0) out += `【提示组】\n${hints.join('\n')}\n`
+  out += `【区域】\n${areas.join('\n') || '（无）'}\n`
+  out += `【标签】\n${tags.join(', ') || '（无）'}\n`
+  out += `【上下文】\n${contexts.join(', ') || '（无）'}`
+  return out.trim()
+}
+
+/** 解析 + 校验单次整理响应；返回 { ok, draft } 或 { ok:false, reason } */
+function tryParseOrganizeDraft(res) {
+  const cleaned = extractText(res)
+    .trim()
+    .replace(/^```(?:json)?/i, '')
+    .replace(/```$/, '')
+    .trim()
+  let obj
+  try {
+    obj = JSON.parse(cleaned)
+  } catch (err) {
+    return { ok: false, reason: `JSON 解析失败（${err.message}）` }
+  }
+  try {
+    return { ok: true, draft: organizeDraftSchema.parse(obj) }
+  } catch (err) {
+    return { ok: false, reason: `字段校验失败（${describeError(err)}）` }
+  }
+}
+
+/** 单会话内「prompt → 解析 → 一次重试」；失败抛错 */
+async function promptOrganizeWithRetry(sessionID, system, digest) {
+  let res = await promptOnce(sessionID, system, digest)
+  let parsed = tryParseOrganizeDraft(res)
+  if (!parsed.ok) {
+    console.warn(`[ai] organize.draft 首次失败（${parsed.reason}），重试一次`)
+    res = await promptOnce(
+      sessionID,
+      system,
+      `上次输出无法解析（${parsed.reason}）。请只输出一个合法 JSON 对象（形如 {"assignments":[],"clusters":[]}），不要任何多余文字。`,
+    )
+    parsed = tryParseOrganizeDraft(res)
+    if (!parsed.ok) throw new Error(`AI 输出无法解析：${parsed.reason}`)
+  }
+  return { res, draft: parsed.draft }
+}
+
+/**
+ * 整理草稿后校验（导出供单测 / 冒烟）：编号 → 候选展开（模型无法编造 id）；
+ * assignments 目标须为现有且状态可归入的项目，仅保留任务、去重、同项目合并、每条截断 ≤10；
+ * clusters ≥2 成员且含任务（N8.1；单条多步任务可单独立项——须补 outcome + reason）、不得撞现有项目名；共享 claimed 保证条目不复用（assignments 优先）。
+ * 覆盖兜底（确定性 fallback clusters）由 draftOrganize 追加，本函数不做兜底。
+ * @returns {{ assignments: Array, clusters: Array }}
+ */
+export function postValidateOrganize(raw, candidates, snapshot) {
+  const projectById = new Map((snapshot.projects ?? []).map((p) => [p.id, p]))
+  const areaIds = new Set((snapshot.areas ?? []).map((a) => a.id))
+  const tagNames = new Set((snapshot.tags ?? []).map((t) => t.name))
+  const projectTitles = new Set((snapshot.projects ?? []).map((p) => String(p.title ?? '').trim()))
+  const claimed = new Set()
+
+  // 编号 → 候选（丢弃非整数 / 越界；按候选去重；onlyTask 时仅取任务类）
+  const expand = (entries, onlyTask) => {
+    const out = []
+    const seen = new Set()
+    for (const n of Array.isArray(entries) ? entries : []) {
+      if (!Number.isInteger(n) || n < 1 || n > candidates.length) continue
+      const c = candidates[n - 1]
+      if (onlyTask && c.kind !== 'task') continue
+      if (seen.has(c.id)) continue
+      seen.add(c.id)
+      out.push(c)
+    }
+    return out
+  }
+
+  // 阶段 A：归并入现有项目（assignments 优先认领条目）
+  const assignments = []
+  const assignByProject = new Map()
+  for (const rawA of Array.isArray(raw?.assignments) ? raw.assignments : []) {
+    const project = projectById.get(String(rawA?.project ?? ''))
+    if (project === undefined || !ORGANIZE_PROJECT_STATUS.has(project.status)) continue
+    let item = assignByProject.get(project.id)
+    if (item === undefined) {
+      if (assignments.length >= ORGANIZE_MAX_ASSIGNMENTS) continue
+      item = {
+        projectId: project.id,
+        projectTitle: String(project.title ?? ''),
+        taskIds: [],
+        reason: '',
+      }
+      assignByProject.set(project.id, item)
+      assignments.push(item)
+    }
+    if (item.reason === '') item.reason = String(rawA?.reason ?? '').trim().slice(0, 300)
+    // 只认领实际保留的条目；超出上限（≤10）的条目留待 clusters 使用
+    for (const m of expand(rawA?.entries, true)) {
+      if (item.taskIds.length >= ORGANIZE_MAX_ENTRIES_PER_ASSIGNMENT) break
+      if (claimed.has(m.id)) continue
+      claimed.add(m.id)
+      item.taskIds.push(m.id)
+    }
+  }
+
+  // 阶段 B：建议新项目（使用阶段 A 未认领的条目）
+  const clusters = []
+  const clusterTitles = new Set()
+  for (const rawC of Array.isArray(raw?.clusters) ? raw.clusters : []) {
+    if (clusters.length >= ORGANIZE_MAX_CLUSTERS) break
+    const members = expand(rawC?.entries, false).filter((m) => !claimed.has(m.id))
+    const taskIds = members.filter((m) => m.kind === 'task').map((m) => m.id)
+    const inboxIds = members.filter((m) => m.kind === 'inbox').map((m) => m.id)
+    // N8.1：≥2 成员成簇；单条任务允许单独立项，但必须给出完成定义与理由（多步事务门槛）
+    const enoughMembers = members.length >= ORGANIZE_MIN_CLUSTER_ENTRIES
+    const singleSeed =
+      members.length === 1 &&
+      members[0].kind === 'task' &&
+      typeof rawC?.outcome === 'string' &&
+      rawC.outcome.trim() !== '' &&
+      typeof rawC?.reason === 'string' &&
+      rawC.reason.trim().length >= 6
+    if ((!enoughMembers && !singleSeed) || taskIds.length === 0) continue
+    const title = Array.from(String(rawC?.title ?? '').trim())
+      .slice(0, CLUSTER_TITLE_MAX_CHARS)
+      .join('')
+    if (title === '' || projectTitles.has(title) || clusterTitles.has(title)) continue
+    const item = {
+      title,
+      reason: String(rawC?.reason ?? '').trim().slice(0, 300),
+      taskIds,
+      inboxIds,
+      tags: cleanTagSuggestions(rawC?.tags, tagNames),
+    }
+    if (typeof rawC?.outcome === 'string' && rawC.outcome.trim() !== '') {
+      item.outcome = rawC.outcome.trim().slice(0, 200)
+    }
+    if (typeof rawC?.areaId === 'string' && areaIds.has(rawC.areaId)) {
+      item.areaId = rawC.areaId
+    }
+    for (const m of members) claimed.add(m.id)
+    clusterTitles.add(title)
+    clusters.push(item)
+  }
+  return { assignments, clusters }
+}
+
+/** 确定性命名：组内最高频标签的可读后缀；无标签则取首条标题前 16 字 */
+function fallbackGroupName(members) {
+  const counts = new Map()
+  for (const m of members) for (const tag of m.tags ?? []) counts.set(tag, (counts.get(tag) ?? 0) + 1)
+  let best = ''
+  let bestCount = 0
+  for (const [tag, count] of counts) {
+    if (count > bestCount) {
+      best = tag
+      bestCount = count
+    }
+  }
+  let name = ''
+  if (best !== '') {
+    name = best.startsWith('@')
+      ? best.slice(1)
+      : best.includes(':')
+        ? best.slice(best.indexOf(':') + 1)
+        : best
+  }
+  if (name === '') name = Array.from(members[0].title).slice(0, 16).join('')
+  return name
+}
+
+/**
+ * 覆盖兜底：预分组中任务成员未被采纳的组，以确定性命名补足新项目提案（≤ ORGANIZE_MAX_CLUSTERS）。
+ * 这些候选没有 AI 命名，仍可被用户逐条忽略；任务全在 coveredTaskIds 内的组跳过。
+ */
+function fallbackOrganizeClusters(groups, coveredTaskIds, coveredInboxIds) {
+  const out = []
+  for (const members of groups) {
+    if (out.length >= ORGANIZE_MAX_CLUSTERS) break
+    const taskIds = members
+      .filter((m) => m.kind === 'task' && !coveredTaskIds.has(m.id))
+      .map((m) => m.id)
+    if (taskIds.length === 0) continue
+    const inboxIds = members
+      .filter((m) => m.kind === 'inbox' && !coveredInboxIds.has(m.id))
+      .map((m) => m.id)
+    if (taskIds.length + inboxIds.length < CLUSTER_MIN_MEMBERS) continue
+    out.push({
+      title: `归纳：${fallbackGroupName(members)}`.slice(0, CLUSTER_TITLE_MAX_CHARS),
+      reason: '按共同标签 / 关键词自动归纳（AI 命名不可用）',
+      taskIds,
+      inboxIds,
+      tags: [],
+    })
+  }
+  return out
+}
+
+/**
+ * AI 整理草稿：收集候选 → 确定性预分组 → AI 两阶段（归并已有项目 + 建议新项目）→ 后校验 + 兜底。
+ * 不写任何数据；无候选时直接返回空（不调用 AI）；AI 失败 / 解析失败降级为确定性兜底，绝不抛错。
+ * @returns {Promise<{ assignments: Array, clusters: Array, model: string | null, ms: number, candidates: number, unplanned: number }>}
+ */
+export async function draftOrganize(snapshot) {
+  const t0 = Date.now()
+  const candidates = collectClusterCandidates(snapshot)
+  if (candidates.length === 0) {
+    return { assignments: [], clusters: [], model: null, ms: Date.now() - t0, candidates: 0, unplanned: 0 }
+  }
+  const groups = pregroupCandidates(candidates)
+  const system = buildOrganizeSystem()
+  const digest = buildOrganizeDigest(snapshot, candidates, groups)
+  const sessionID = await createSession('kernel:organize-draft')
+  let raw = { assignments: [], clusters: [] }
+  let model = null
+  try {
+    const result = await promptOrganizeWithRetry(sessionID, system, digest)
+    raw = result.draft
+    model = modelOf(result.res)
+  } catch (err) {
+    console.warn(`[ai] organize.draft AI 整理失败，回退确定性兜底：${err?.message ?? err}`)
+    raw = { assignments: [], clusters: [] }
+    model = null
+  }
+  const validated = postValidateOrganize(raw, candidates, snapshot)
+  // 覆盖兜底：AI 未覆盖（或被校验丢弃）的预分组，用确定性命名补上；正常时不会触发。
+  const coveredTaskIds = new Set([
+    ...validated.assignments.flatMap((a) => a.taskIds),
+    ...validated.clusters.flatMap((c) => c.taskIds),
+  ])
+  const coveredInboxIds = new Set(validated.clusters.flatMap((c) => c.inboxIds))
+  const clusters = [...validated.clusters]
+  for (const item of fallbackOrganizeClusters(groups, coveredTaskIds, coveredInboxIds)) {
+    if (clusters.length >= ORGANIZE_MAX_CLUSTERS) break
+    clusters.push(item)
+  }
+  // N8.1：未纳入统计（最终提案之外仍未被覆盖的候选数，供 UI 如实展示「都考虑过了」）
+  const finalCovered = new Set([
+    ...validated.assignments.flatMap((a) => a.taskIds),
+    ...clusters.flatMap((c) => [...c.taskIds, ...c.inboxIds]),
+  ])
+  const unplanned = candidates.filter((c) => !finalCovered.has(c.id)).length
+  const ms = Date.now() - t0
+  console.log(
+    `[ai] organize.draft 完成 ${ms}ms（${model ?? '失败'} · ${validated.assignments.length} 归并 / ${clusters.length} 新项目 / ${unplanned} 未纳入 / ${candidates.length} 候选）`,
+  )
+  return { assignments: validated.assignments, clusters, model, ms, candidates: candidates.length, unplanned }
+}
+
+/* ---------------------------------------------------------------------------
  * 周回顾（v0.5 · Slice C）：周期 / 指标 / 停滞项目（服务端事实源）
  * 说明：computeWeekMetrics 与 staleProjects 同时供「AI 草稿」与「写入路径」复用；
  *       staleProjects 与前端 src/lib/data.ts getStaleProjects 口径严格一致。
@@ -2591,19 +3898,23 @@ export function auditNumbers(summary, digest) {
 }
 
 /* ---------------------------------------------------------------------------
- * 报告分节解析（Slice U）：把 summary 拆成七段，供服务端「下期行动」去重；
+ * 报告分节解析（Slice U）：把 summary 拆成七段，供服务端「接下来」指针去重；
  * 前端同规则解析见 src/lib/reviewReport.ts（两处刻意保持一致，勿单边改动）。
+ * Slice N6「回顾人话化」：规范 label 改为友好标题（周/月各自形态），
+ * 同时收录全部旧标题别名，保证旧归档（如 rev-0001）仍可解析渲染。
  * 兼容「结论速览：…」与「一、结论速览」两种标题写法。
  * ------------------------------------------------------------------------- */
 
 const REVIEW_SECTION_ALIASES = [
-  { label: '结论速览', aliases: ['结论速览'] },
-  { label: '数据解读', aliases: ['本期数据解读', '数据解读'] },
-  { label: '趋势与对比', aliases: ['趋势与对比', '趋势对比'] },
-  { label: '问题诊断', aliases: ['问题诊断'] },
-  { label: '值得保留', aliases: ['值得保留'] },
-  { label: '下期行动', aliases: ['下期行动'] },
-  { label: '风险预警', aliases: ['风险预警'] },
+  { label: '这周怎么样', aliases: ['这周怎么样', '结论速览'] },
+  { label: '这个月怎么样', aliases: ['这个月怎么样'] },
+  { label: '干了些什么', aliases: ['干了些什么', '本期数据解读', '数据解读'] },
+  { label: '和上周比', aliases: ['和上周比', '趋势与对比', '趋势对比'] },
+  { label: '和上个月比', aliases: ['和上个月比'] },
+  { label: '哪里卡住了', aliases: ['哪里卡住了', '问题诊断'] },
+  { label: '值得保持的', aliases: ['值得保持的', '值得保留'] },
+  { label: '接下来', aliases: ['接下来', '下期行动'] },
+  { label: '需要留意的', aliases: ['需要留意的', '风险预警'] },
 ]
 
 const REVIEW_ALIAS_INDEX = REVIEW_SECTION_ALIASES.flatMap((entry) =>
@@ -2658,9 +3969,9 @@ export function splitReportSections(summary) {
 }
 
 /**
- * 「下期行动」去重（Slice U）：把 summary 第 6 段整段替换为一行指针
- * 「下期行动：见决策区（N 条）。」，完整 if-then 只留在 decisions，杜绝逐字重复。
- * decisions 为空时不动（避免把唯一的行动记录也抹掉）。
+ * 「接下来」去重（Slice U/N6）：把 summary 第 6 段整段替换为一行指针
+ * 「接下来：见决策区（N 条）。」，完整 if-then 只留在 decisions，杜绝逐字重复。
+ * decisions 为空时不动（避免把唯一的行动记录也抹掉）。旧标题「下期行动」经别名归一后同样命中。
  */
 export function dedupeActionSection(summary, decisions) {
   const text = String(summary ?? '')
@@ -2675,14 +3986,14 @@ export function dedupeActionSection(summary, decisions) {
     const heading = matchReviewHeading(lines[i])
     if (heading === null) continue
     if (start === -1) {
-      if (heading.label === '下期行动') start = i
+      if (heading.label === '接下来') start = i
     } else {
       end = i
       break
     }
   }
   if (start === -1) return text
-  const pointer = `下期行动：见决策区（${count} 条）。`
+  const pointer = `接下来：见决策区（${count} 条）。`
   return [...lines.slice(0, start), pointer, ...lines.slice(end)].join('\n')
 }
 
@@ -2706,7 +4017,82 @@ function shortDate(d) {
 }
 
 /**
- * 构造紧凑中文回顾摘要（指标 + 环比 + 完成/逾期/停滞清单 + 习惯 + 活动 + 阈值）。
+ * 审计动作名 → 人话活动名（Slice N6「回顾人话化」）。
+ * 目的：喂给模型的摘要绝不出现 `xxx.yyy` 英文点号动作名，避免模型照抄成系统术语。
+ * 未知动作统一归入「其他整理操作」。
+ */
+const REVIEW_ACTIVITY_LABELS = {
+  'task.create': '新建任务',
+  'task.update': '调整任务',
+  'task.complete': '完成任务',
+  'task.reopen': '重开任务',
+  'task.remove': '删除任务',
+  'task.touch': '更新任务',
+  'note.create': '记录笔记',
+  'note.update': '修改笔记',
+  'note.remove': '删除笔记',
+  'resource.create': '收录资料',
+  'resource.update': '整理资料',
+  'resource.remove': '删除资料',
+  'project.create': '立项',
+  'project.update': '推进项目',
+  'project.touch': '更新项目',
+  'project.trash': '归档项目',
+  'project.remove': '删除项目',
+  'course.create': '录入课程',
+  'course.update': '调整课程',
+  'course.remove': '删除课程',
+  'tag.create': '新增标签',
+  'tag.rename': '重命名标签',
+  'tag.merge': '合并标签',
+  'tag.remove': '删除标签',
+  'tag.backfill': '登记标签',
+  'habit.create': '新建习惯',
+  'habit.checkin': '习惯打卡',
+  'habit.uncheckin': '取消打卡',
+  'habit.update': '调整习惯',
+  'habit.remove': '删除习惯',
+  'event.create': '安排日程',
+  'event.update': '调整日程',
+  'event.remove': '取消日程',
+  'area.create': '新建区域',
+  'area.update': '调整区域',
+  'area.remove': '删除区域',
+  'goal.create': '设定目标',
+  'goal.update': '调整目标',
+  'goal.remove': '删除目标',
+  'inbox.capture': '捕捉',
+  'inbox.upload': '投递文件',
+  'inbox.apply': '整理收件箱',
+  'inbox.clarify': '澄清条目',
+  'inbox.discard': '丢弃条目',
+  'inbox.remove': '删除条目',
+  'review.create': '生成回顾',
+  'review.update': '更新回顾',
+  'review.remove': '删除回顾',
+  'term.update': '设置学期',
+  'config.update': '更新设置',
+}
+
+/**
+ * 把审计 action 计数映射为人话活动名并聚合：
+ * 同名（映射后）合并、未知动作合并为「其他整理操作」，按次数降序、最多 limit 行。
+ * 纯函数，导出供自测复用。`counts` 为 Map<action, count>。
+ */
+export function humanizeActivityCounts(counts, limit = 8) {
+  const byLabel = new Map()
+  for (const [action, count] of counts) {
+    const name = REVIEW_ACTIVITY_LABELS[action] ?? '其他整理操作'
+    byLabel.set(name, (byLabel.get(name) ?? 0) + count)
+  }
+  return [...byLabel.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, limit)
+    .map(([name, count]) => `${name} ×${count}`)
+}
+
+/**
+ * 构造紧凑中文回顾摘要（指标 + 与上次对照 + 完成/逾期/停滞清单 + 习惯 + 活动 + 阈值）。
  * `scope` 为 '周' | '月'；`periodStart` 为窗口起点（周首 / 月首）；
  * `prevMetrics` 为上一同等周期指标（调用方偏移窗口计算）——为报告提供
  * 「环比 / 与上周 / 上月对照」基准；每条清单带 id，便于报告引用具体对象。
@@ -2722,7 +4108,7 @@ async function buildReviewDigest(
   windowInfo,
 ) {
   const label = `本${scope}`
-  const prevLabel = `上${scope}同期`
+  const recentLabel = monthly ? '这个月怎么样' : '这周怎么样'
   const daysLate = (due) => Math.max(0, calendarDayDiff(now, new Date(due)))
   const periodLabel = monthly ? monthKey(now) : isoWeekKey(now)
   const { prevStart, prevEnd, elapsedDays } = windowInfo
@@ -2760,70 +4146,82 @@ async function buildReviewDigest(
   })
   const counts = new Map()
   for (const entry of activity) counts.set(entry.action, (counts.get(entry.action) ?? 0) + 1)
-  const activityLines = [...counts.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .map(([action, count]) => `${action} ×${count}`)
+  const activityLines = humanizeActivityCounts(counts)
 
   const lines = [
     `【周期】本${scope} ${periodLabel} · 窗口 ${shortDate(periodStart)} → ${shortDate(now)}（已走完 ${elapsedDays} 天，本机时区）`,
-    `【${label}指标】捕获 ${metrics.captured} · 新增 ${metrics.created} · 完成 ${metrics.completed} · 逾期 ${metrics.overdue}`,
-    `【${prevLabel}指标（对照 · 窗口 ${shortDate(prevStart)} → ${shortDate(prevEnd)}）】捕获 ${prevMetrics.captured} · 新增 ${prevMetrics.created} · 完成 ${prevMetrics.completed} · 逾期 ${prevMetrics.overdue}`,
-    `【环比（本${scope}相对${prevLabel} · 等长窗口）】捕获 ${formatDelta(metrics.captured, prevMetrics.captured)} · 新增 ${formatDelta(metrics.created, prevMetrics.created)} · 完成 ${formatDelta(metrics.completed, prevMetrics.completed)} · 逾期 ${formatDelta(metrics.overdue, prevMetrics.overdue)}`,
+    `【${label}概况】捕捉 ${metrics.captured} · 新增 ${metrics.created} · 完成 ${metrics.completed} · 逾期 ${metrics.overdue}`,
+    `【与上次对照（同等已走时长）】完成 ${metrics.completed} 件（上次 ${prevMetrics.completed} 件）· 新增 ${metrics.created} 条（上次 ${prevMetrics.created} 条）· 逾期 ${metrics.overdue} 条（上次 ${prevMetrics.overdue} 条）· 捕捉 ${metrics.captured} 条（上次 ${prevMetrics.captured} 条）`,
     `【${label}完成（${completed.length}，标题优先 · 括号补 id）】\n${completed.join('\n') || '（无）'}`,
     `【当前逾期（${overdue.length}）】\n${overdue.join('\n') || '（无）'}`,
     `【停滞项目（≥14 天未更新，共 ${stale.length}）】\n${stale.join('\n') || '（无）'}`,
     `【可处置停滞项目 id】${staleList.map((p) => p.id).join(', ') || '（无）'}`,
     `【习惯（近 7 天 / 上 7 天 / 连续未达标周数）】\n${habits.join('\n') || '（无）'}`,
-    `【${label}活动计数】\n${activityLines.join('\n') || '（无）'}`,
-    `【阈值常量】逾期 = 任务截止时间已过且状态为 next/waiting/scheduled；停滞 = active 项目 ≥14 天未更新；习惯未达标 = 近 7 天命中数 < 目标数`,
+    `【${label}做过的事】\n${activityLines.join('\n') || '（无）'}`,
+    `【阈值常量（仅供你判断，不要照抄进正文）】逾期 = 任务截止时间已过且状态为 next/waiting/scheduled；停滞 = active 项目 ≥14 天未更新；习惯未达标 = 近 7 天命中数 < 目标数`,
   ]
   if (elapsedDays < 7) {
     lines.push(
-      `【窗口说明】本期窗口尚未走完（已 ${elapsedDays} 天，未满 7 天）；对照为${prevLabel}（${shortDate(prevStart)} → ${shortDate(prevEnd)}）。请在「结论速览」或「风险预警」里自然说明窗口不完整、结论仅供参考，禁止以「窗口仅 N 天」作为结论开场。`,
+      `【窗口说明】本期窗口尚未走完（已 ${elapsedDays} 天，未满 7 天）；对照窗口为上一${scope}的同期等长片段（${shortDate(prevStart)} → ${shortDate(prevEnd)}）。请在「${recentLabel}」或「需要留意的」里自然说明窗口不完整、结论仅供参考，禁止以「窗口仅 N 天」作为结论开场。`,
     )
   }
   return lines.join('\n\n')
 }
 
 /**
- * 构造回顾系统提示词（指令式 JSON；Slice L 升级为七段报告）。
- * summary 为多段纯文本，恰好七段，每段以「结论式标题」开头；decisions 为 1–3 条
- * if-then 行动；staleAdvice 语义不变。硬性规则保证：只用摘要数字 / 对象、
- * 每个判断带证据、绝对值带对比基准、禁套话、行动含时间与完成标准。
+ * 构造回顾系统提示词（指令式 JSON；Slice L 七段报告 / Slice N6「回顾人话化」）。
+ * 角色改为「懂得主人情况的真诚朋友」，七段为友好标题；summary 为多段纯文本，
+ * 恰好七段；decisions 为 1–3 条 if-then 行动；staleAdvice 语义不变。
+ * 硬性规则保证：只用摘要数字 / 对象、每个判断带证据、对比说人话（禁「基准 / 环比 / 同比」）、
+ * 禁套话与工程术语、禁 `xxx.yyy` 英文动作名、行动含时间与完成标准。
  */
 function buildReviewSystem(digest, scope) {
-  return `你是 KERNEL 的${scope}回顾助手。只输出一个 JSON 对象：不要 markdown、不要解释、不要多余文字。字段：
+  const monthly = scope === '月'
+  const recentLabel = monthly ? '这个月怎么样' : '这周怎么样'
+  const compareLabel = monthly ? '和上个月比' : '和上周比'
+  const prevWord = monthly ? '上个月' : '上周'
+  return `你是主人的复盘搭档——像一个了解情况的真诚朋友，写一份给主人本人看的本${scope}复盘便签。说人话、有温度；可以有情绪和主观判断，但每个判断都要踩在摘要事实上。
+只输出一个 JSON 对象：不要 markdown、不要解释、不要多余文字。字段：
 
-- summary：中文纯文本，恰好 7 段，段与段之间用一个换行分隔。每段以「结论式标题」开头，标题后接「：」。全篇不超过 800 字。七段依次为：
-  1. 结论速览：一句话结论 + 关键数字（数字必须带对比基准）
-  2. 本期数据解读：逐项数字 + 环比（与上${scope}同期等长窗口对照）
-  3. 趋势与对比：方向（上升 / 下降 / 持平）+ 连续周数（摘要中有则写，没有就写「数据不足」）
-  4. 问题诊断：一层因果（现象 → 原因）+ 数据证据（优先引用摘要中的对象标题，必要时括号补 id）
-  5. 值得保留：至少一条本${scope}在起作用的做法（带数据支撑）
-  6. 下期行动：只写一行指针，固定为「下期行动：见决策区（N 条）。」（N = decisions 条数，1–3）。完整 if-then 行动全部放进 decisions，正文此段不再重复。
-  7. 风险预警：越线阈值 + 触发对象（逾期任务 / 停滞项目，优先标题、必要时括号补 id）
+- summary：中文纯文本，恰好 7 段，段与段之间用一个换行分隔。每段以「标题：」开头（标题后接中文冒号）。全篇不超过 800 字。七段依次为：
+  1. ${recentLabel}：一句话说出本${scope}的整体感觉 + 关键数字自然融入
+  2. 干了些什么：把数字讲成具体的事
+  3. ${compareLabel}：用大白话说变化
+  4. 哪里卡住了：一层因果（现象 → 原因）
+  5. 值得保持的：具体表扬本${scope}在起作用的做法
+  6. 接下来：只写一行指针，固定为「接下来：见决策区（N 条）。」（N = decisions 条数，1–3）。完整 if-then 行动全部放进 decisions，正文此段不再重复。
+  7. 需要留意的：逾期 / 停滞的具体对象（优先标题、必要时括号补 id）
 - decisions：1–3 条中文 if-then 行动（每条一行、含时间与完成标准；正文第 6 段只留指针，完整行动在此）
 - staleAdvice：数组，可空：{ projectId, action: 'archive'|'migrate'|'reactivate', reason }，仅针对摘要中列出的停滞项目
 
 【本${scope}数据摘要】
 ${digest}
 
+每段怎么写（照做）：
+- ${recentLabel}：先给一句有温度的判断，再把关键数字自然嵌进去。例：「比${prevWord}多完成 2 件，开了个好头」。情绪词（充满干劲 / 踏实 / 稳 / 有点散 / 开了个好头）可以用，但必须紧挨着事实支撑。
+- 干了些什么：把数字讲成事，例：「把 12 门课全录进去了」「给 6 件事开了头」。
+- ${compareLabel}：说人话，例：「比${prevWord}多 3 件」「和${prevWord}差不多」「从 0 到 3」。
+- 哪里卡住了：一层因果、正常人的话，例：「开的事多、收回来的少，属于搭架子的阶段」。
+- 值得保持的：具体表扬（做了什么 + 起了什么作用），例：「每天把收件箱清空，周报不用再补」。
+- 接下来：固定一行指针，不展开。
+- 需要留意的：点出逾期 / 停滞的具体对象（标题优先）。
+
 硬性规则（违反即不合格）：
 1. 只能使用摘要中出现的数字、日期、标题、id；禁止编造任何数字或对象。
 2. 每个判断都要有具体数字或具体对象作为证据。
-3. 任何绝对值都要带对比基准（环比 / 上${scope}同期 / 目标）。
-4. 禁止套话：「显著 / 一定程度 / 多方面 / 持续发力 / 闭环 / 赋能 / 值得注意 / 综上所述 / 整体向好」等一律不许出现。
-5. 短句、主动语态；结论先行。
+3. 对比一律用大白话（「比${prevWord}多 / 少」「和${prevWord}差不多」「从 0 到 3」）；禁止出现「基准」「环比」「同比」这些词，也禁止「（上周同期 0 条，+8，基准 0）」这种括号堆数字。
+4. 禁止套话与工程术语：「显著 / 一定程度 / 多方面 / 持续发力 / 闭环 / 赋能 / 值得注意 / 综上所述 / 整体向好 / WIP / 水位 / 收口 / 审计 / 字段 / API / schema / 测试」等一律不许出现；也不允许出现「xxx.yyy」形式的英文点号动作名。
+5. 短句、主动语态；说人话，不要仪表盘腔。
 6. 证据不足就写「数据不足」，不要硬凑。
 7. 行动必须 if-then，且含 何时 + 完成标准（全部写在 decisions）。
 8. 允许（并鼓励）指出不确定性；不夸大。
 9. 叙述优先用对象标题（摘要清单已是「标题（id）」）；id 只在 decisions 的行动里为绑定对象时以括号补充，可选。
-10. 百分比只在基准 ≥5 时使用；基准 <5 时只写绝对变化并注明基准（如「+2（基准 0）」），禁止硬算百分比。
-11. 若摘要含【窗口说明】（窗口未满 7 天），在「结论速览」或「风险预警」里自然说明窗口不完整；禁止以「窗口仅 N 天」作为结论开场。
+10. 百分比只在基准数字 ≥5 时使用；基准是 0–4 时只写绝对变化（「从 0 到 3」可以），禁止硬算百分比。
+11. 若摘要含【窗口说明】（窗口未满 7 天），在「${recentLabel}」或「需要留意的」里自然说明窗口不完整；禁止以「窗口仅 N 天」开场。
 
-对照示例（字母仅示形，写作时必须替换成摘要里的真实数字）：
-弱（禁止）："本${scope}整体推进顺利，效率显著提升，需持续发力。"
-强（合格）："完成 X 项，比上${scope}同期 Y 项多 Z 项。"（仅当基准 Y≥5 时才补「+P%」）
+对照示例（字母仅示形；写作时必须替换成摘要里的真实数字）：
+弱（禁止）："本${scope}整体推进顺利，效率显著提升，需持续发力。" / "结论速览：本周捕获 8 条、新增 6 条，均高于上周同期的 0 条（基准 0）。"
+强（合格）："${recentLabel}：充实的开局——比${prevWord}多完成 2 件、新增 6 条待办，课表和系统都搭起来了；还没有收成，但架子立住了。"
 
 staleAdvice.projectId 只能取「可处置停滞项目 id」中列出的 id；没有把握就返回空数组。`
 }
@@ -2947,7 +4345,7 @@ export async function generateReviewDraft(period = 'weekly') {
     digest,
   )
   const clean = postValidateDraft(draft, staleIds)
-  // 「下期行动」去重（Slice U）：第 6 段改为指针，完整行动只在 decisions（杜绝逐字重复）
+  // 「接下来」去重（Slice U/N6）：第 6 段改为指针，完整行动只在 decisions（杜绝逐字重复）
   const summary = dedupeActionSection(clean.summary, clean.decisions)
   const model = modelOf(res)
   const ms = Date.now() - t0
@@ -3128,11 +4526,11 @@ export async function draftTimetable(item) {
       { status: 400 },
     )
   }
-  const imagePart = isImage ? await buildImagePart(item) : null
+  const imageParts = isImage ? await buildImageParts(item) : []
   const system = buildTimetableSystem({ isImage })
   const sessionID = await createSession('kernel:timetable-draft')
   const userText = fileSection === '' ? item.content : `${item.content}\n\n${fileSection}`
-  const extraParts = imagePart === null ? [] : [imagePart]
+  const extraParts = imageParts
   const { res, courses } = await promptTimetableWithRetry(sessionID, system, userText, extraParts)
   const clean = cleanTimetableCourses(courses)
   const model = modelOf(res)
@@ -3209,11 +4607,11 @@ export async function draftTimetableStream(item, emit) {
       })
       return
     }
-    const imagePart = isImage ? await buildImagePart(item) : null
+    const imageParts = isImage ? await buildImageParts(item) : []
     const system = buildTimetableSystem({ isImage })
     sessionID = await createSession('kernel:timetable-draft')
     const userText = fileSection === '' ? item.content : `${item.content}\n\n${fileSection}`
-    const extraParts = imagePart === null ? [] : [imagePart]
+    const extraParts = imageParts
     const { res, courses } = await promptTimetableWithRetry(sessionID, system, userText, extraParts, safeEmit)
     const clean = cleanTimetableCourses(courses)
     const model = modelOf(res)

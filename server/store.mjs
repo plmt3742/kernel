@@ -635,9 +635,11 @@ export function removeTag(id) {
  * 撤销一揽子应用时清理「本次新建的标签」（Slice R1）：仅删除传入 id 且当前 0 使用者的标签。
  * 已被其它记录使用 → 保留（不破坏数据）；级联审计 tag.remove（detail.via 标记来源）。
  * @param {string[]} ids 应用时新登记的标签 id
+ * @param {{ via?: string }} [options] 审计 detail.via（缺省 'inbox.unapply'，保持旧行为）
  * @returns {Promise<Array>} 实际移除的注册项
  */
-export function pruneTags(ids) {
+export function pruneTags(ids, { via } = {}) {
+  const viaTag = typeof via === 'string' && via !== '' ? via : 'inbox.unapply'
   return serialize(async () => {
     const wanted = new Set((Array.isArray(ids) ? ids : []).filter((id) => typeof id === 'string'))
     if (wanted.size === 0) return []
@@ -656,7 +658,7 @@ export function pruneTags(ids) {
         action: 'tag.remove',
         entity: 'tag',
         id,
-        detail: { name: tag.name, via: 'inbox.unapply' },
+        detail: { name: tag.name, via: viaTag },
       })
     }
     if (removed.length === 0) return []

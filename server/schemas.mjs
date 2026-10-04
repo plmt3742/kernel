@@ -57,6 +57,9 @@ export const inboxItemSchema = z
     status: inboxStatus,
     linkedId: z.string().optional(),
     note: z.string().optional(),
+    // 来源摘要（v0.5 · Slice N4）：apply 时落档的一句话摘要（≤40 字，清洗后）；
+    // 此处 cap 200 仅作防御（清洗在 ai.mjs cleanSummary / apply 侧）。
+    summary: z.string().max(200).optional(),
     // 文件投递（v0.5 · Slice D）：附件元数据；二进制存 data/files/<id>-<name>（不进 git）
     file: z
       .object({
@@ -319,7 +322,7 @@ export const reviewSchema = z
     date: iso,
     metrics: reviewMetricsSchema,
     decisions: z.array(z.string().min(1).max(200)),
-    // 报告 v2（Slice L）：7 段结构正文（结论速览 → … → 风险预警），≤800 汉字；上限保持 2000
+    // 报告 v2（Slice L/N6）：7 段结构正文（这周怎么样 / 这个月怎么样 → … → 需要留意的），≤800 汉字；上限保持 2000
     summary: z.string().min(1).max(2000),
     staleProjectIds: z.array(z.string()).optional(),
     // 自动归档（Slice L）：source='ai' 表示由 AI 生成后系统自动归档；旧记录缺省
@@ -472,16 +475,18 @@ export const aiSuggestionSchema = z.object({
   newProjectHint: z.union([z.string(), z.null()]).optional(),
   tags: z.array(z.string().min(1)).max(5).default([]),
   reason: z.string().max(300).default(''),
+  // 来源摘要（v0.5 · Slice N4）：旧式单建议形状同样兼容；缺失 / null 视为无摘要
+  summary: z.union([z.string(), z.null()]).optional(),
 })
 
 /* ---------------------------------------------------------------------------
  * AI 全链 · 多实体一揽子处置（v0.5 · Slice R1，见 ADR-0015）
- * 一个收件箱条目可被拆解为多个动作（task / note / resource / project）；
+ * 一个收件箱条目可被拆解为多个动作（task / note / resource / project / event）；
  * 模型输出 { actions: [...] }，旧式单建议形状仍被接受并由 ai.mjs 归一化为动作数组。
  * ------------------------------------------------------------------------- */
 
-/** 动作类型：project 表示「本批次要新建的项目」，task/note 可用 linkToNewProject 挂接它 */
-export const aiActionKind = z.enum(['task', 'note', 'resource', 'project'])
+/** 动作类型：project 表示「本批次要新建的项目」，task/note/event 可用 linkToNewProject 挂接它 */
+export const aiActionKind = z.enum(['task', 'note', 'resource', 'project', 'event'])
 
 /**
  * 单个 AI 动作（不完全对应持久化实体，仅作预览 / 批量应用入参）。
@@ -498,12 +503,20 @@ export const aiActionSchema = z.object({
   importance: z.number().int().min(0).max(3).optional(),
   estimateMin: z.number().int().min(1).max(600).optional(),
   dueAt: z.union([iso, z.null()]).optional(),
+  // event 专属（Slice N10）：定点安排。startAt 必填（postValidateActions 强校验，无效即丢弃该动作）；
+  // endAt 可选且须 ≥ startAt；allDay 表示只有日期无具体时间
+  startAt: z.union([z.string().max(40), z.null()]).optional(),
+  endAt: z.union([z.string().max(40), z.null()]).optional(),
+  allDay: z.boolean().optional(),
+  location: z.union([z.string().max(100), z.null()]).optional(),
   // 归属（note / resource / project；task 亦可用）
   projectId: z.union([z.string(), z.null()]).optional(),
   areaId: z.union([z.string(), z.null()]).optional(),
   tags: z.array(z.string().min(1)).max(5).default([]),
   // resource 专属（Slice R2.5）：1–3 句简约小结，作为资料详情页「简介」；postValidateActions 归一化
   note: z.union([z.string().max(200), z.null()]).optional(),
+  // resource 专属（Slice N2）：条目含网页链接时填入的原始 URL（仅 http(s)）；postValidateActions 清洗
+  url: z.union([z.string().max(2000), z.null()]).optional(),
   // project 专属：完成定义
   outcome: z.union([z.string().max(200), z.null()]).optional(),
   // task / note：挂到本批次新建的项目（此时 projectId 须为空）
@@ -520,15 +533,23 @@ export const aiActionSchema = z.object({
  * 模型整体输出形状（v0.5 · Slice N0）：
  * - actions：≤6 个动作；空数组表示无需创建；
  * - facts：顶层硬事实 / 值得保留的提醒字符串数组（≤8 条，每条 ≤140 字），不产实体。
+ * - searchQueries：顶层字符串数组（≤2 条），模型请求的联网检索问题；服务端执行后回喂一次（Slice N9）。
  */
 export const aiActionsSchema = z.object({
   actions: z.array(aiActionSchema).max(6).default([]),
   facts: z.array(z.string().min(1).max(140)).max(8).default([]),
+  // 来源摘要（v0.5 · Slice N4）：对本条内容的一句话摘要；缺失 / null 视为无摘要（兼容旧形状）。
+  // 长文 / 多要点由 ai.mjs cleanSummary 折叠空白并硬截断 40 字。
+  summary: z.union([z.string(), z.null()]).default(''),
+  // 联网检索（v0.5 · Slice N9）：模型请求的检索问题（≤2 条、每条 ≤60 字）；服务端执行后回喂，绝不落盘
+  searchQueries: z.array(z.string().min(1).max(60)).max(2).default([]),
 })
 
 /** 批量应用入参（客户端提交，服务端重新 Zod 校验，绝不信任客户端形状） */
 export const inboxApplySchema = z.object({
   actions: z.array(aiActionSchema).min(1).max(6),
+  // 来源摘要（v0.5 · Slice N4）：可选；≤100 字；提供且非空时写入条目 summary 字段
+  summary: z.string().max(100).optional(),
 })
 
 /**
@@ -593,6 +614,12 @@ export const reviewDraftSchema = z.object({
   summary: z.string().min(1).max(2000),
   decisions: z.array(z.string().min(1).max(200)).max(6).default([]),
   staleAdvice: z.array(staleAdviceSchema).default([]),
+})
+
+/** 对话 → 笔记（Slice G.1）：整理要求 + 被整理的对话回答（均有界） */
+export const chatNoteRequestSchema = z.object({
+  instruction: z.string().min(1).max(400),
+  answer: z.string().min(1).max(8000),
 })
 
 /**
@@ -694,3 +721,78 @@ export const clusterApplySchema = z.object({
 export const clusterUnapplySchema = z.object({
   projectId: z.string().regex(/^p-\d{4}$/),
 })
+
+/* ---------------------------------------------------------------------------
+ * AI 整理（organize）：在聚类立项之上扩展——把「无归属任务 / 未澄清条目」先归入
+ * 高度相关的**现有项目**（assignments），再把剩余候选归纳为**新项目提案**（clusters）。
+ * 草稿按「候选条目编号」引用（避免模型编造 id）；应用经 POST /api/projects/organize-apply，
+ * 撤销经 POST /api/projects/organize-unapply。AI 只出建议，绝不自动落盘。
+ * ------------------------------------------------------------------------- */
+
+/** AI 整理草稿整体输出：assignments 归入现有项目；clusters 新建项目；均按候选序号引用 */
+export const organizeDraftSchema = z.object({
+  assignments: z
+    .array(
+      z.object({
+        project: z.string().min(1).max(20),
+        entries: z.array(z.number().int()).min(1).max(50),
+        reason: z.string().max(300).default(''),
+      }),
+    )
+    .max(8)
+    .default([]),
+  clusters: z
+    .array(
+      z.object({
+        entries: z.array(z.number().int()).min(1).max(50),
+        title: z.string().min(1).max(60),
+        outcome: z.union([z.string().max(200), z.null()]).optional(),
+        reason: z.string().max(300).default(''),
+        areaId: z.union([z.string(), z.null()]).optional(),
+        tags: z.array(z.string().min(1)).max(5).default([]),
+      }),
+    )
+    .max(5)
+    .default([]),
+})
+
+/** AI 整理应用入参（客户端提交；服务端重新校验存在性 / 未归属 / 状态，绝不信任客户端形状） */
+export const organizeApplySchema = z.object({
+  assignments: z
+    .array(
+      z.object({
+        projectId: z.string().regex(/^p-\d{4}$/),
+        taskIds: z.array(z.string().regex(/^t-\d{4}$/)).min(1).max(50),
+      }),
+    )
+    .max(8)
+    .default([]),
+  clusters: z
+    .array(
+      z.object({
+        title: z.string().min(1).max(60),
+        outcome: z.union([z.string().max(200), z.null()]).optional(),
+        areaId: z.union([z.string(), z.null()]).optional(),
+        tags: z.array(z.string().min(1)).max(5).default([]),
+        taskIds: z.array(z.string().regex(/^t-\d{4}$/)).min(1).max(50),
+      }),
+    )
+    .max(5)
+    .default([]),
+})
+
+/** AI 整理撤销入参：新建项目 id（走 clusterTaskIds 还原）+ 归入关系（仅当仍指向该行为准） */
+export const organizeUnapplySchema = z.object({
+  projects: z.array(z.string().regex(/^p-\d{4}$/)).max(5).default([]),
+  assignments: z
+    .array(
+      z.object({
+        projectId: z.string().regex(/^p-\d{4}$/),
+        taskIds: z.array(z.string().regex(/^t-\d{4}$/)).max(50),
+      }),
+    )
+    .max(8)
+    .default([]),
+})
+
+
