@@ -57,9 +57,10 @@ import {
   type CourseCreateInput,
 } from '@/lib/mutations'
 import {
+  AI_PARSE_CONCURRENCY,
   clearCachedSuggestion,
   clearFactsNote,
-  clearInboxAiActive,
+  clearInboxAiJob,
   getCachedSuggestion,
   getInboxAiSnapshot,
   reconcileInboxAiCache,
@@ -78,7 +79,7 @@ import {
   runTimetableDraft,
   subscribeTimetableAi,
 } from '@/lib/timetableAi'
-import { deepLinkOfId } from '@/lib/relations'
+import { deepLinkOfId, titleOfId } from '@/lib/relations'
 import { api, errorText } from '@/lib/api'
 import { createUiStore, str, useUiStore } from '@/lib/uiState'
 import { useDataRevision, useNow } from '@/lib/hooks'
@@ -96,7 +97,7 @@ import type { InboxItem } from '@/types'
 const WATER_MAX = 12
 const WATER_THRESHOLD = 8
 
-/** 多文件上传的受限并发上限（Slice Y · F33）：文件上传可并行，AI 解析仍严格顺序 */
+/** 多文件上传的受限并发上限（Slice Y · F33）：文件上传可并行；解析并发见 AI_PARSE_CONCURRENCY */
 const UPLOAD_CONCURRENCY = 3
 
 /**
@@ -120,6 +121,57 @@ async function mapLimit<T, R>(
   })
   await Promise.all(workers)
   return results
+}
+
+/* ---------------------------------------------------------------------------
+ * 剪贴板粘贴截图（v0.5 · Slice N2）：window 级 paste —— 仅在收件箱存活。
+ * 图片 → preventDefault 并复用拖拽同通路的 addFiles 进入待上传队列；纯文本不拦截。
+ * ------------------------------------------------------------------------- */
+
+/** 图片 MIME → 扩展名（粘贴截图命名用；未知类型回退 png） */
+const IMAGE_EXT: Partial<Record<string, string>> = {
+  'image/png': 'png',
+  'image/jpeg': 'jpg',
+  'image/jpg': 'jpg',
+  'image/gif': 'gif',
+  'image/webp': 'webp',
+  'image/bmp': 'bmp',
+  'image/svg+xml': 'svg',
+  'image/avif': 'avif',
+  'image/tiff': 'tiff',
+}
+
+/** 由 MIME 推断扩展名（未知 image/* 取子类型；再兜底 png） */
+function imageExtension(mime: string): string {
+  const subtype = mime.startsWith('image/') ? mime.slice('image/'.length).split('+')[0] : ''
+  return IMAGE_EXT[mime] ?? (subtype !== '' ? subtype : 'png')
+}
+
+/** 粘贴截图的时间戳文件名：粘贴截图-YYYYMMDD-HHmmss.<ext> */
+function timestampedImageName(mime: string): string {
+  const d = new Date()
+  const pad = (n: number): string => String(n).padStart(2, '0')
+  const stamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`
+  return `粘贴截图-${stamp}.${imageExtension(mime)}`
+}
+
+/** 从剪贴板 DataTransfer 收集图片文件（items 优先；无 items 时回退 files） */
+function clipboardImageFiles(data: DataTransfer): File[] {
+  const out: File[] = []
+  for (let i = 0; i < data.items.length; i += 1) {
+    const item = data.items[i]
+    if (item.kind === 'file' && item.type.startsWith('image/')) {
+      const file = item.getAsFile()
+      if (file !== null) out.push(file)
+    }
+  }
+  if (out.length === 0 && data.files.length > 0) {
+    for (let i = 0; i < data.files.length; i += 1) {
+      const file = data.files[i]
+      if (file.type.startsWith('image/')) out.push(file)
+    }
+  }
+  return out
 }
 
 /** 参与聚类的未完成任务状态（与 server ai.mjs OPEN_TASK_STATUS 同口径） */
@@ -165,6 +217,7 @@ const AI_STAGE_TEXT: Record<AiStage, string> = {
   connecting: '已连接，等待模型…',
   thinking: '思考中…',
   generating: '生成中…',
+  searching: '正在联网检索…',
   retry: '输出未通过校验，重试中…',
   validating: '校验通过',
 }
@@ -210,6 +263,32 @@ const inboxUiStore = createUiStore<InboxUiState>(INBOX_UI_KEY, INBOX_UI_DEFAULT,
   parse: parseInboxUi,
 })
 
+/* ---------------------------------------------------------------------------
+ * 「已澄清」产物标题化（Slice N4）：冷编号（i-0001 / t-0001）→ 产物标题。
+ * ------------------------------------------------------------------------- */
+
+/** 条目联动产物 id 列表（Slice R1 服务端写入 linkedIds；类型未收录，读时防御性窄化，无 any） */
+function linkedIdsOf(item: InboxItem): string[] {
+  const value = (item as { linkedIds?: unknown }).linkedIds
+  return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === 'string') : []
+}
+
+/**
+ * 「已澄清」条目的产物标题：按 linkedIds / linkedId 在快照内解析实体标题；
+ * 多产物（linkedIds）取首个可解析者，其余不展示；解析不到回退原始 id（tooltip 保留原始 id）。
+ */
+function clarifiedProductTitle(item: InboxItem): string {
+  for (const id of linkedIdsOf(item)) {
+    const title = titleOfId(id)
+    if (title !== null) return title
+  }
+  if (item.linkedId !== undefined) {
+    const title = titleOfId(item.linkedId)
+    if (title !== null) return title
+  }
+  return item.linkedId ?? item.id
+}
+
 export function Inbox() {
   const revision = useDataRevision()
   const { toast } = useToast()
@@ -246,7 +325,8 @@ export function Inbox() {
   }
   // AI 解析状态：模块级 store（跨路由切换存活）——只读快照 + 派发展开 / 滚动 / 播报
   const ai = useSyncExternalStore(subscribeInboxAi, getInboxAiSnapshot)
-  const { running, current, total, activeId, phase, stage, text, reasoning, result, error } = ai
+  // Slice N3：每条目独立 job 表；批量进度 done/total；lastStartedId 供自动展开 / 滚入跟随
+  const { jobs, running, done, total, lastStartedId } = ai
   // 课表导入状态：模块级 store（跨路由切换存活）——与 AI 解析面板并列、互不干扰
   const tt = useSyncExternalStore(subscribeTimetableAi, getTimetableAiSnapshot)
   // 导入课程在途（本地态；成功后清空面板，失败保留选择卡）
@@ -298,15 +378,6 @@ export function Inbox() {
     })
   }, [revision])
 
-  // 活跃条目离开未澄清列表（应用建议 / 撤销 / 水合）→ 收起面板，避免残留脏状态
-  useEffect(() => {
-    if (activeId === null) return
-    const stillUnprocessed = getInbox().some(
-      (item) => item.id === activeId && item.status === 'unprocessed',
-    )
-    if (!stillUnprocessed) clearInboxAiActive()
-  }, [revision, activeId])
-
   // 课表面板条目离开未澄清列表（澄清 / 删除 / 水合）→ 清空，避免残留脏状态
   useEffect(() => {
     if (tt.itemId === null) return
@@ -326,22 +397,22 @@ export function Inbox() {
     reconcileInboxAiCache(unprocessedIds)
   }, [revision])
 
-  // 批量运行中自动展开当前条目（切页回来亦据真实 store 恢复现场）
+  // 批量运行中自动展开最近开始的条目（切页回来亦据真实 store 恢复现场）
   useEffect(() => {
-    if (running && activeId !== null) setExpandedId(activeId)
-  }, [running, activeId])
+    if (running && lastStartedId !== null) setExpandedId(lastStartedId)
+  }, [running, lastStartedId])
 
-  // 批量解析过程可视：当前解析条目若不在视口内，轻柔滚入（尊重 reduced-motion → 瞬时）
+  // 批量解析过程可视：最近开始的条目若不在视口内，轻柔滚入（尊重 reduced-motion → 瞬时）
   useEffect(() => {
-    if (!running || activeId === null) return
-    const node = document.querySelector(`.ic-item[data-inbox-id="${CSS.escape(activeId)}"]`)
+    if (!running || lastStartedId === null) return
+    const node = document.querySelector(`.ic-item[data-inbox-id="${CSS.escape(lastStartedId)}"]`)
     if (node instanceof HTMLElement) {
       node.scrollIntoView({
         behavior: reduce === true ? 'auto' : 'smooth',
         block: 'nearest',
       })
     }
-  }, [running, activeId, reduce])
+  }, [running, lastStartedId, reduce])
 
   // 完成 / 失败播报（各消费一次，绝不刷屏）：切页期间也会在回到收件箱时补播
   useEffect(() => {
@@ -438,6 +509,30 @@ export function Inbox() {
     setPendingFiles((prev) => [...prev, ...files])
   }
 
+  // 剪贴板粘贴截图（Slice N2）：window 级 paste 监听 —— 组件挂载期存活，卸载即移除（仅 Inbox 页生效）。
+  // 有图片：preventDefault 后复用 addFiles（与拖拽同通路），无文件名的图片按时间戳命名；
+  // 无图片（纯文本等）：不拦截默认行为，文本照常进入输入框。
+  useEffect(() => {
+    const onPaste = (event: ClipboardEvent): void => {
+      const data = event.clipboardData
+      if (data === null || data === undefined) return
+      const images = clipboardImageFiles(data)
+      if (images.length === 0) return
+      event.preventDefault()
+      addFiles(
+        images.map((file) =>
+          file.name.trim() === ''
+            ? new File([file], timestampedImageName(file.type), { type: file.type })
+            : file,
+        ),
+      )
+    }
+    window.addEventListener('paste', onPaste)
+    return () => window.removeEventListener('paste', onPaste)
+    // addFiles 只依赖稳定的 setPendingFiles；一次性注册，避免每次渲染重绑监听
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const removePending = (index: number): void => {
     setPendingFiles((prev) => prev.filter((_, i) => i !== index))
   }
@@ -510,10 +605,10 @@ export function Inbox() {
       })
   }
 
-  // 展开 / 收起：收起时清空面板（保留缓存）。批量运行中不打断活跃批次的解析，仅切换显示
+  // 收起 / 展开仅切换视图；解析状态与在途请求完全不受影响（展开时按 store 派生恢复现场）。
+  // 清理只应由显式动作触发（忽略 / 应用 / 条目离开未澄清）。
   const toggleExpand = (id: string): void => {
     const next = expandedId === id ? null : id
-    if (!(running && activeId === id)) clearInboxAiActive()
     setExpandedId(next)
   }
 
@@ -522,7 +617,7 @@ export function Inbox() {
   // 「无需创建」空态卡（同一 onClear 通路），以及解析失败面板的忽略（同样可被缓存回退抵消）。
   const dismissAiSuggestion = (item: InboxItem): void => {
     clearCachedSuggestion(item.id)
-    clearInboxAiActive()
+    clearInboxAiJob(item.id)
     toast('已忽略 AI 建议')
   }
 
@@ -545,8 +640,9 @@ export function Inbox() {
     if (actions.length === 0) return
     void (async () => {
       try {
-        const applied = await applyInbox(item.id, actions)
-        clearInboxAiActive()
+        // Slice N4：透传解析摘要，apply 时写入条目，供任务详情「来源条目」人话展示
+        const applied = await applyInbox(item.id, actions, result.summary)
+        clearInboxAiJob(item.id)
         toast(`AI 已自动整理 ${applied.created.length} 项`, {
           action: {
             label: '撤销',
@@ -567,7 +663,9 @@ export function Inbox() {
   const runParse = async (item: InboxItem): Promise<AiParseResult | null> => {
     setExpandedId(item.id)
     const cached = getCachedSuggestion(item.id)
-    if (cached !== undefined && !(activeId === item.id && phase === 'parsing')) return cached
+    // 该条正在解析中时不走缓存回退（其结果将由 job 回填）；否则命中缓存直接复用
+    const job = jobs.get(item.id)
+    if (cached !== undefined && job?.phase !== 'parsing') return cached
     return runSingleAi(item)
   }
 
@@ -619,7 +717,7 @@ export function Inbox() {
       try {
         await removeInbox(item.id)
         if (expandedId === item.id) setExpandedId(null)
-        clearInboxAiActive()
+        clearInboxAiJob(item.id)
         toast('已删除条目')
       } catch (err) {
         toast(`删除失败：${errorText(err)}`, { tone: 'error' })
@@ -673,7 +771,8 @@ export function Inbox() {
     setDraft('')
     void (async () => {
       // Slice Y · F33：上传受限并发（≤3，保持结果顺序）；失败逐条 toast、不阻断其余文件。
-      // 解析仍严格顺序（AI 更重且共享 opencode 会话，顺序可给出稳定的进度与自动应用次序）。
+      // 解析（Slice N3）：通用条目并行投递（调度器并发 ≤ AI_PARSE_CONCURRENCY，完成各自回填）；
+      // 课表类仍顺序（课表草稿 store 为单例，并发会互相覆盖）。
       const results = await mapLimit(files, UPLOAD_CONCURRENCY, async (file, i) => {
         setBusyLabel(`上传中 ${i + 1}/${files.length}…`)
         try {
@@ -689,22 +788,32 @@ export function Inbox() {
         return
       }
       toast(`已投递 ${uploaded.length} 个文件 · AI 先读一遍`)
-      for (let i = 0; i < uploaded.length; i += 1) {
-        setBusyLabel(`AI 读取中 ${i + 1}/${uploaded.length}…`)
-        // Slice H1.7：课表类文件自动路由到课表草稿，其余走通用解析（保持顺序处理节奏）
-        await routeArrivedItem(uploaded[i])
+      setBusyLabel(`AI 读取中…（共 ${uploaded.length} 个，并发 ≤${AI_PARSE_CONCURRENCY}）`)
+      try {
+        // Slice H1.7 + N3：课表类自动路由到课表草稿并保持顺序；其余并行投递通用解析。
+        // 逐条失败仍由各自路径静默 / toast，绝不因一个失败中断其余。
+        const timetableItems = uploaded.filter((item) => looksLikeTimetable(item))
+        const generalTask = Promise.all(
+          uploaded.filter((item) => !looksLikeTimetable(item)).map((item) => routeArrivedItem(item)),
+        )
+        for (const item of timetableItems) {
+          await routeArrivedItem(item)
+        }
+        await generalTask
+      } finally {
+        setBusyLabel('')
       }
-      setBusyLabel('')
     })()
   }
 
   // 一揽子应用（Slice R1）：一次写入创建全部动作；成功 toast「已应用 N 项 · 撤销」。
   // 撤销经 unapplyInbox（删除全部产物 + 恢复标签注册表基线），确保回到应用前状态。
-  const applyActions = (item: InboxItem, actions: AiAction[]): void => {
+  const applyActions = (item: InboxItem, actions: AiAction[], summary: string): void => {
     void (async () => {
       try {
-        const result = await applyInbox(item.id, actions)
-        clearInboxAiActive()
+        // Slice N4：透传当下面板的解析摘要（result.summary），apply 时写入条目
+        const result = await applyInbox(item.id, actions, summary)
+        clearInboxAiJob(item.id)
         toast(`已应用 ${result.created.length} 项`, {
           action: {
             label: '撤销',
@@ -754,7 +863,7 @@ export function Inbox() {
   }
 
   // 把公告要点存为一条笔记（Slice N0）：一次 createNote 落盘；成功后关闭该条 AI 面板
-  // （与 applyActions 一致：clearInboxAiActive），toast 撤销 = trashEntity('notes')（同 NoteComposeModal）。
+  // （与 applyActions 一致：clearInboxAiJob），toast 撤销 = trashEntity('notes')（同 NoteComposeModal）。
   // Slice N0.5（反馈修复）：接收 itemId 并登记 factsNoteCache（→ 卡片显示「已存为要点笔记 · 查看」）；
   //   撤销成功后 clearFactsNote(itemId)，恢复可再存；promise 不抛出（卡片 finally 自行收尾）。
   const saveFactsAsNote = async (facts: string[], itemId?: string): Promise<void> => {
@@ -764,8 +873,10 @@ export function Inbox() {
         title: `通知要点 · ${formatMonthDay(new Date())}`,
         body: facts.map((fact) => `- ${fact}`).join('\n'),
       })
-      if (itemId !== undefined) setFactsNote(itemId, note.id)
-      clearInboxAiActive()
+      if (itemId !== undefined) {
+        setFactsNote(itemId, note.id)
+        clearInboxAiJob(itemId)
+      }
       toast('已存为笔记', {
         action: {
           label: '撤销',
@@ -970,7 +1081,7 @@ export function Inbox() {
             >
               <Paperclip size={16} strokeWidth={1.5} aria-hidden />
             </button>
-            <span className="ic-composer__hint u-label k-muted">拖拽文件到此处</span>
+            <span className="ic-composer__hint u-label k-muted">拖拽文件到此处 · Ctrl+V 粘贴截图 ·</span>
             <span className="ic-composer__busy u-label" role="status" aria-live="polite">
               {busyLabel}
             </span>
@@ -1050,7 +1161,7 @@ export function Inbox() {
             <div className="ic-batchbar__actions">
               {running && (
                 <span className="ic-batchbar__progress u-label" role="status" aria-live="polite">
-                  AI 解析中 {current}/{total}…
+                  AI 解析中 · 已完成 {done}/{total}…
                 </span>
               )}
               <button
@@ -1104,19 +1215,18 @@ export function Inbox() {
                       const isSelected = selected.has(item.id)
                       const isExpanded = expandedId === item.id
                       const cached = getCachedSuggestion(item.id)
-                      const isParsingThis = activeId === item.id && phase === 'parsing'
+                      // Slice N3：面板由该条目自己的 job 派生（无 job 时回退到建议缓存 / idle）
+                      const job = jobs.get(item.id)
+                      const isParsingThis = job !== undefined && job.phase === 'parsing'
                       const ttThis = tt.itemId === item.id
-                      const panelActive = activeId === item.id && phase !== 'idle'
-                      const panelPhase = panelActive
-                        ? phase
-                        : cached !== undefined
-                          ? 'ready'
-                          : 'idle'
-                      const panelResult = panelActive ? result : (cached ?? null)
-                      const panelError = panelActive ? error : ''
-                      const panelStage = panelActive ? stage : 'connecting'
-                      const panelText = panelActive ? text : ''
-                      const panelReasoning = panelActive ? reasoning : ''
+                      const panelActive = job !== undefined
+                      const panelPhase =
+                        job !== undefined ? job.phase : cached !== undefined ? 'ready' : 'idle'
+                      const panelResult = job !== undefined ? job.result : (cached ?? null)
+                      const panelError = job !== undefined ? job.error : ''
+                      const panelStage = job !== undefined ? job.stage : 'connecting'
+                      const panelText = job !== undefined ? job.text : ''
+                      const panelReasoning = job !== undefined ? job.reasoning : ''
                       const showPanel = panelActive || cached !== undefined
                       const showMarker = cached !== undefined && !isParsingThis
                       return (
@@ -1148,13 +1258,16 @@ export function Inbox() {
                             </span>
                             <span className="ic-row__body">
                               <span className="ic-row__title">{item.content}</span>
+                              {/* 本切片：文字 + 附件同时呈现（不再只显示其中一种） */}
+                              {item.file !== undefined && (
+                                <span className="ic-row__attach">
+                                  {`附 1 个文件${
+                                    item.content !== item.file.name ? ` · ${item.file.name}` : ''
+                                  } · ${humanSize(item.file.size)}`}
+                                </span>
+                              )}
                               <span className="ic-row__meta">
                                 <span className="u-label">{INBOX_SOURCE_LABEL[item.source]}</span>
-                                {item.file !== undefined && (
-                                  <span className="k-mono ic-row__file">
-                                    {item.file.name} · {humanSize(item.file.size)}
-                                  </span>
-                                )}
                                 <span className="k-mono">{formatRelative(item.capturedAt, now)}</span>
                                 <span className="k-mono">{item.id}</span>
                               </span>
@@ -1332,7 +1445,7 @@ export function Inbox() {
                                       facts={panelResult.facts}
                                       onSaveFacts={saveFactsAsNote}
                                       itemId={item.id}
-                                      onApply={(next) => applyActions(item, next)}
+                                       onApply={(next) => applyActions(item, next, panelResult.summary)}
                                        onRetry={() => forceParse(item)}
                                        retryDisabled={running}
                                        onClear={() => dismissAiSuggestion(item)}
@@ -1419,12 +1532,18 @@ export function Inbox() {
               {/* 生命周期闭合（Slice V · F37）：查看产物深链 + 撤回（删除产物并回到未澄清，二次确认） */}
               {clarified.map((item) => {
                 const link = item.linkedId !== undefined ? deepLinkOfId(item.linkedId) : null
+                // Slice N4：产物标题化（冷编号 → 标题；多产物取首个可解析者）；tooltip 保留原始 id
+                const productTitle = clarifiedProductTitle(item)
+                const productId = item.linkedId ?? item.id
                 return (
                   <div className="k-inbox-item" key={item.id}>
                     <span className="k-inbox-item__content k-muted">{item.content}</span>
                     <span className="k-inbox-item__meta">
+                      {item.file !== undefined && <span className="k-mono">附 {item.file.name}</span>}
                       <span className="k-mono">{formatRelative(item.capturedAt, now)}</span>
-                      <span className="k-mono">{item.linkedId ?? item.id}</span>
+                      <span className="k-inbox-item__product" title={productId}>
+                        {productTitle}
+                      </span>
                     </span>
                     <span className="k-inbox-item__actions">
                       <button
@@ -1498,6 +1617,7 @@ export function Inbox() {
                 <div className="k-inbox-item" key={item.id}>
                   <span className="k-inbox-item__content k-muted">{item.content}</span>
                   <span className="k-inbox-item__meta">
+                    {item.file !== undefined && <span className="k-mono">附 {item.file.name}</span>}
                     <span className="k-mono">{formatRelative(item.capturedAt, now)}</span>
                     <span className="k-mono">{item.id}</span>
                   </span>
@@ -1566,7 +1686,7 @@ export function Inbox() {
                 </span>
                 {running && (
                   <span className="ic-dock__progress u-label" role="status" aria-live="polite">
-                    AI 解析中 {current}/{total}…
+                    AI 解析中 · 已完成 {done}/{total}…
                   </span>
                 )}
                 <button
