@@ -20,9 +20,10 @@ export default defineConfig({
       '@': srcPath,
     },
   },
-  // server.host / preview.host 开启以便局域网开箱即用（见 00-DESIGN-BRIEF §6.4）
+  // dev / preview 默认仅本机（不暴露未鉴权的 /api 代理到局域网）；
+  // 需要局域网 / 手机访问时显式 `npm run dev -- --host`。
   server: {
-    host: true,
+    host: false,
     proxy: apiProxy,
     // 数据服务写入 data/** 不再触发热重载（前端经 API hydrate 获取最新快照，避免写入后整页刷新打断撤销）
     watch: {
@@ -30,7 +31,7 @@ export default defineConfig({
     },
   },
   preview: {
-    host: true,
+    host: false,
     proxy: apiProxy,
   },
 })
