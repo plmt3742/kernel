@@ -46,7 +46,7 @@
 7. **身份与领域 = 交叉筛选标签，不是容器**（本项目"通用性"的核心）
 8. **蒸馏要懒惰**：资料只在重读时整理（progressive summarization）
 
-**通用实体（v1 承载 10 类）**：inboxItem / task / project / area / goal / habit / event / note / resource / review
+**通用实体（v1 承载 11 类）**：inboxItem / task / project / area / goal / habit / event / course / note / resource / review
 **schema 预留（不实现）**：timeLog / person / journalEntry
 
 **通用轴（6）**：上下文（第一筛选）· 时间与紧急 · 能量 · 重要性 · 状态 · 有界标签
@@ -199,13 +199,13 @@ CommandPalette / StatusBar / RailNav / TopBar / Panel（柔影卡片）/ StatTil
 - **Vite + React 19 + TypeScript（strict）+ 原生 CSS（CSS 变量 token 体系，不使用 UI 框架 / Tailwind）**
 - 依赖白名单：`react` `react-dom` `react-router-dom`（viewTransition）`motion` `cmdk` `date-fns` `clsx` `lucide-react` `react-markdown` `@fontsource-variable/inter` `@fontsource/jetbrains-mono`
 - 状态：React 内置（Context + hooks）；原型期用户操作写 localStorage（UI 标注"原型态"）
-- 路由：`/` 总览 · `/inbox` · `/tasks` · `/calendar` · `/projects` · `/library` · `/review` · `/settings`
+- 路由：`/` 总览 · `/inbox` · `/tasks` · `/calendar` · `/timetable`（课表）· `/projects` · `/library` · `/review` · `/settings` · `/trash`（回收站）
 
 ### 6.2 数据层（v1：一记录一文件）
 
 - 数据源：`kernel/data/**`（见 §7）；前端经 `src/lib/data.ts` 读取（`import.meta.glob('/data/**/*.json')` + 类型化 getter；dev 下数据改动热更新）
 - 规范：JSON UTF-8；ID 稳定（`t-0001` 式）；时间 ISO 8601 带偏移；字段见 §7
-- **未来（v0.3）**：Node 单写者数据服务（唯一写入路径）+ 原子写入（write-file-atomic）+ Zod 校验 + 审计日志（activity.jsonl）；浏览器写入经 API，禁止多进程直接写文件
+- **数据服务（v0.4 已交付）**：Node 单写者数据服务（唯一写入路径）+ 原子写入（write-file-atomic）+ Zod 校验 + 审计日志（activity.jsonl）；浏览器写入经 API，禁止多进程直接写文件
 - 禁止：前端直接写文件；在 JSON 中存储计算派生值（进度等一律运行时计算）
 
 ### 6.3 opencode 集成（已调研，路线图 v0.4/v0.5）
@@ -218,13 +218,13 @@ CommandPalette / StatusBar / RailNav / TopBar / Panel（柔影卡片）/ StatTil
 
 - `npm run dev -- --host`；生产：`npm run build && npm run preview -- --host`；手机同 WiFi 访问 `http://<局域网IP>:5173 / 4173`
 - 注意：Windows 防火墙需放行 Node（专用网络）；纯 HTTP 局域网 IP 非安全上下文（无 PWA/摄像头等，本项目不需要）；WSL 需端口转发（本项目直接跑 Windows 侧）
-- vite.config 中 `server.host: true` + `preview.host: true` 以便开箱即用，并在 docs/07 说明安全含义
+- vite.config 中 `server.host: false` + `preview.host: false`（dev / preview 默认只监听本机）；局域网 / 手机来访需显式 `--host`，含义与安全提醒见 `docs/07`
 
 ---
 
 ## 7. 数据模型（v1 字段，种子数据必须遵守）
 
-**ID 约定**：`i-` 收件箱 · `t-` 任务 · `p-` 项目 · `a-` 区域 · `g-` 目标 · `h-` 习惯 · `e-` 事件 · `n-` 笔记 · `r-` 资料 · `rev-` 回顾；四位数字递增（如 `t-0001`）。
+**ID 约定**：`i-` 收件箱 · `t-` 任务 · `p-` 项目 · `a-` 区域 · `g-` 目标 · `h-` 习惯 · `e-` 事件 · `c-` 课程 · `n-` 笔记 · `r-` 资料 · `rev-` 回顾；四位数字递增（如 `t-0001`）。
 
 ### 7.1 实体字段
 

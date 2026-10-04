@@ -73,7 +73,7 @@ http://<电脑局域网IP>:4173
 
 ### 4.3 配置说明
 
-`vite.config` 中设置 `server.host: true` 与 `preview.host: true`，以便开箱即用。
+`vite.config` 中 `server.host: false` 与 `preview.host: false`——dev / preview 默认只监听本机，局域网 / 手机访问需显式 `--host`。
 
 **安全含义**：这两个选项会让 Vite 监听所有网卡，同一局域网的任何设备都能访问该服务。因此：
 
