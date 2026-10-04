@@ -79,6 +79,18 @@ npm run preview -- --host
 
 完整步骤、Windows 防火墙放行与常见问题见 `docs/07-DEPLOYMENT.md`。
 
+## 安装（Windows 安装包）
+
+面向 Windows 桌面用户，提供开箱即用的安装包（`KERNEL-Setup-x.y.z.exe`）：
+
+1. 从 GitHub Releases 下载最新的 `KERNEL-Setup-x.y.z.exe`；
+2. 双击运行，按向导选择安装目录（例如 `D:\KERNEL`；**不建议装到 `C:\Program Files`**，避免系统目录的写入限制）；
+3. 安装完成后，从开始菜单或桌面快捷方式启动（安装包内置运行时，目标机无需另装 Node.js）。
+
+数据保存在**安装目录下的 `data\` 子目录**（`<安装目录>\data`），与程序放在一起，便于整目录备份、迁移或拷贝。卸载程序时该目录及其中的用户数据会**保留**，不会被删除。
+
+安装包由 `scripts/build-installer.mjs` 构建，使用仓库内置的 Inno Setup 编译器（无需在系统中单独安装 Inno Setup），脚本见 `installer/KERNEL.iss`。
+
 ## 版本状态
 
 | 版本 | 主题 | 状态 |

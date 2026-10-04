@@ -175,6 +175,8 @@ v0.5 增补（桌面启动器 v2，见 ADR-0037）：**原生 WPF 启动器**。
 - 纯 HTTP 局域网 IP 不是安全上下文（无 PWA、摄像头等能力），本项目不需要这些能力，因此可接受。
 - WSL 需端口转发；本项目直接跑 Windows 侧，规避该问题。
 
+**Windows 分发**：桌面用户可经安装包（`installer/KERNEL.iss`，由 `scripts/build-installer.mjs` 调用仓库内置 Inno Setup 编译器构建，无需系统安装）一键安装——向导可选安装目录（如 `D:\KERNEL`），开始菜单与可选桌面快捷方式启动；安装包内置运行时，目标机无需另装 Node.js。数据位于**安装目录下的 `data\`**（`<安装目录>\data`，与程序同目录），安装时植入空白骨架并标记 `uninsneveruninstall`，**卸载后用户数据保留**。
+
 详见 `07-DEPLOYMENT.md`。
 
 ## 6. 目录职责
@@ -185,7 +187,8 @@ v0.5 增补（桌面启动器 v2，见 ADR-0037）：**原生 WPF 启动器**。
 | `data/` | 数据源：一记录一文件 JSON 数据库 + `activity.jsonl` 审计 |
 | `server/` | 数据服务：唯一写入路径（校验 / 原子写 / 审计；仅 127.0.0.1:4097） |
 | `src/` | 前端：React + TypeScript 应用 |
-| `scripts/` | 脚本：开发启动器（`dev.mjs`）、种子数据生成（`seed.mjs`） |
+| `scripts/` | 脚本：开发启动器（`dev.mjs`）、分发包打包与 Windows 安装包构建（`package.mjs` / `build-installer.mjs`）、种子数据生成（`seed.mjs`） |
+| `installer/` | Windows 安装包脚本（`KERNEL.iss`）与启动页（`welcome.html`） |
 | `public/` | 静态资源：字体、图标等 |
 
 完整目录树见 `05-FILE-TREE.md`。目录结构变化必须同步更新该文件。

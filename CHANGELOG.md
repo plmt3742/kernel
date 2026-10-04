@@ -4,6 +4,13 @@
 
 ## [Unreleased]
 
+### Windows 安装包（Setup.exe）· 安装向导 + 数据随程序目录 + 卸载保留数据（已完成 · 2026-10-05）
+
+- **新增**：Windows 安装包——`installer/KERNEL.iss`（Inno Setup 6 脚本：安装向导、可选安装目录、开始菜单与可选桌面快捷方式、卸载程序；`PrivilegesRequired=lowest` 每用户安装、无需管理员）与 `installer/welcome.html`（启动页）；`scripts/build-installer.mjs`（按白名单组装干净载荷 + 调用仓库内置 Inno Setup 编译器 `node_modules/innosetup-compiler/bin/ISCC.exe` + 打印产物路径，**无需在系统中单独安装 Inno Setup**）。
+- **行为**：数据位于**安装目录下的 `data\`**（`<安装目录>\data`，与程序同目录；`server/store.mjs` 相对程序根解析，未改动）；安装时植入空白数据骨架并标记 `uninsneveruninstall` / `onlyifdoesntexist`——覆盖安装不冲掉既有数据、**卸载后用户数据保留**；`npm run installer` 的产物输出到仓库之外（`<workspace>\release\installer\KERNEL-Setup-0.5.0.exe`）。
+- **修改**：`package.json`（devDependency `innosetup-compiler` + script `installer`）、`启动.cmd`（未检测到 Node 时的提示文案中性化）。
+- **验证**：静默安装到 `D:\KERNEL-install-test`（`/VERYSILENT`，退出码 0，必需文件全部落地，`data\` 14 个子目录齐全）→ 以安装目录内置 `runtime\node.exe scripts\dev.mjs` 启动，`curl http://127.0.0.1:5173` **200** / `/api/snapshot` **200**、`POST /api/tasks` **201** 且写入安装目录 `data\tasks\` → 静默卸载（退出码 0），`data\` 及其中的用户数据（含安装期骨架与运行期新增记录）**全部保留**，程序文件清除干净。
+
 ### 工程质量修复 + 交付材料准备（已完成 · 2026-10-05）
 
 - **修复**：`server/store.mjs` —— `nextId` 增加「在途分配水位」（并发创建不再撞号，实测并发两次返回 `t-0016`/`t-0017`）；`readKind` / `readDirRecords` 跳过「readdir 与 readFile 之间被删」的文件（消除 `GET /api/snapshot` 偶发 ENOENT 500）；`readSnapshot` 对 `meta/config.json`、`meta/tags.json` 缺失或损坏时静默降级（与 `readTerm` 同口径）。
@@ -125,7 +132,7 @@
 - **工具**：`.qa/v60/{verify-empty.py（修订）,check-overflow-390.py,REPORT.md}`。
 
 ### 回顾人话化 · Slice N6（已完成 · 2026-10-03）
-答所有者「周回顾、月回顾目前版本的回答非常僵硬，全是系统层面的回答……我需要的是『这周完成的内容比上一周多，质量也比较高，充满干劲的一周』这种回答，而不是一堆专业名称」——① **摘要人话化**：活动计数行不再喂原始审计动作名（`course.create ×12` → 「录入课程 ×12」；未知动作聚合「其他整理操作」）；对比行去术语（「环比…基准 0」→「与上次对照（同等已走时长）：完成 X 件（上次 Y 件）· …」，**保留全部原始数字**供数字护栏）；② **提示词重写**：「复盘搭档 · 真诚朋友」口吻——说人话、有温度、可有情绪与主观判断但须邻句事实支撑；七段标题友好化（周：这周怎么样/干了些什么/和上周比/哪里卡住了/值得保持的/接下来/需要留意的；月版对应）；禁词扩充（基准/环比/同比/WIP/水位/收口/审计/字段/schema/英文点号动作名）；弱/强例重写；③ **兼容**：分节别名新旧双收录——旧归档（如 rev-0001）仍可解析并归一为新标题渲染。QA v63 **26/26**（真实周回顾 322 字：七段新标题齐全·禁词 0·指针在位·首段「开了个好头，但还只是个开头……」；真实月回顾 423 字同断言；旧归档阅读视图 7 分节回归；净零清理）；数字护栏核验（同指标差值派生已覆盖，无需扩展）；证据 `.qa/v63/`。
+答所有者「周回顾、月回顾目前版本的回答非常僵硬，全是系统层面的回答……我需要的是『这周完成的内容比上一周多，质量也比较高，充满干劲的一周』这种回答，而不是一堆专业名称」——① **摘要人话化**：活动计数行不再喂原始审计动作名（`course.create ×12` → 「录入课程 ×12」；未知动作聚合「其他整理操作」）；对比行去术语（「环比…基准 0」→「与上次对照（同等已走时长）：完成 X 件（上次 Y 件）· …」，**保留全部原始数字**供数字护栏）；② **提示词重写**：「复盘搭档 · 真诚口吻」——说人话、有温度、可有情绪与主观判断但须邻句事实支撑；七段标题友好化（周：这周怎么样/干了些什么/和上周比/哪里卡住了/值得保持的/接下来/需要留意的；月版对应）；禁词扩充（基准/环比/同比/WIP/水位/收口/审计/字段/schema/英文点号动作名）；弱/强例重写；③ **兼容**：分节别名新旧双收录——旧归档（如 rev-0001）仍可解析并归一为新标题渲染。QA v63 **26/26**（真实周回顾 322 字：七段新标题齐全·禁词 0·指针在位·首段「开了个好头，但还只是个开头……」；真实月回顾 423 字同断言；旧归档阅读视图 7 分节回归；净零清理）；数字护栏核验（同指标差值派生已覆盖，无需扩展）；证据 `.qa/v63/`。
 
 - **`server/ai.mjs`**：`humanizeActivityCounts` + `buildReviewDigest` + `buildReviewSystem` + `REVIEW_SECTION_ALIASES`；`src/lib/reviewReport.ts` + `src/views/Review.tsx` 同步。
 - **记录**：ADR-0013 §7（修订）；`public/guide.html`；`CHANGELOG.md`、`TASK_BOOK.md`、`AGENTS.md`。
@@ -518,7 +525,7 @@
 - **验证**：`.qa/v20/slice-e26-verify.py` **22/22**——含批量解析过程可视 / 缓存 3ms 就绪 / 间距 12px / 筛选条双断点零溢出 / 流式面板极差 0.00px / 任务列表 overlaps=0 / 零残留回到基线 / 控制台零错误；`npm run build` 通过。证据 `.qa/v20/`（`e26-batch-live.png` / `e26-stable.png` / `e26-task-transition.png`）。
 
 ### AI 挂靠判断 + 项目闭环 + 批量条侧挂 · Slice E2.5（已完成 · 2026-10-03）
-- **AI 挂靠判断修正（宁缺毋滥 + 新事务提示）**：`server/ai.mjs` 系统提示词修订——① 挂靠宁缺毋滥：只有当内容与现有项目 / 区域 / 标签有明确依据时才填，**表面相似（如都含「竞赛 / 比赛 / 规则」字样）不算依据**，拿不准一律 null；② 附件不可读（仅文件名 / 元数据）时更保守：除非文件名直接指向某现有项目（名称 / 主题强匹配），否则 `projectId` 一律 null，并在 reason 注明「仅基于文件名判断」；③ 新增 `newProjectHint`（string|null，≤40 字）：内容像一件需要多步推进的**新事务**（新比赛 / 新活动 / 新项目）且不属于任何现有项目时给出建议项目名（例「辩论赛筹备」）；④ `newProjectHint` 与 `projectId` **互斥**。
+- **AI 挂靠判断修正（宁缺毋滥 + 新事务提示）**：`server/ai.mjs` 系统提示词修订——① 挂靠宁缺毋滥：只有当内容与现有项目 / 区域 / 标签有明确依据时才填，**表面相似（如都含「竞赛 / 规则」字样）不算依据**，拿不准一律 null；② 附件不可读（仅文件名 / 元数据）时更保守：除非文件名直接指向某现有项目（名称 / 主题强匹配），否则 `projectId` 一律 null，并在 reason 注明「仅基于文件名判断」；③ 新增 `newProjectHint`（string|null，≤40 字）：内容像一件需要多步推进的**新事务**（新赛事 / 新活动 / 新项目）且不属于任何现有项目时给出建议项目名（例「辩论赛筹备」）；④ `newProjectHint` 与 `projectId` **互斥**。
 - **schema + 后校验**：`aiSuggestionSchema` 增 `newProjectHint: z.union([z.string(), z.null()]).optional()`；`normalizeSuggestion` 丢弃 null；`postValidate` trim + 截断 40 字 + 丢弃空串、与 `projectId` 互斥、与现有项目标题完全相同者丢弃。前端 `AiSuggestion.newProjectHint?`。
 - **收件箱建议卡**：`newProjectHint` 存在时安静显示「建议新项目：{X}」+ 小灰字「可到项目页新建」（仅提示，绝不自动建 / 不自动挂）。
 - **项目「新建」**：`server/index.mjs` 新增 `POST /api/projects { title, areaId? }`——title 非空（400）；创建 `{ id: nextId('projects'), title, outcome:'完成定义待整理', status:'active', areaId: areaId ?? 'a-0001', tags:[], createdAt, updatedAt }`；审计 `project.create`；201 `{ project }`。前端 `mutations.createProject`；`src/views/Projects.tsx` 增快速新建输入（镜像任务页 `.k-quickadd`，占位「新建项目，回车创建（写入 data/projects）」）→ Enter 创建 → upsert → toast「已创建项目 · 撤销」（撤销 `trashEntity` 进回收站，失败错误 toast）。
