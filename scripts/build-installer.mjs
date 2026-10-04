@@ -41,17 +41,30 @@ process.on('unhandledRejection', (err) => {
   process.exit(3)
 })
 
-// ---- 本机默认路径（可用环境变量覆盖）----
+// ---- 路径：一律可被环境变量覆盖，默认不写死任何本机路径 ----
+// 输出默认落在仓库的「同级」目录，保证在仓库之外（满足不污染仓库的约束）。
 const RELEASE_PARENT = process.env.KERNEL_RELEASE_DIR
   ? path.resolve(process.env.KERNEL_RELEASE_DIR)
-  : path.join('G:' + path.sep, '<workspace>', 'opencode', 'release')
+  : path.join(ROOT, '..', 'kernel-release')
 const OUT_DIR = path.join(RELEASE_PARENT, 'installer')
+// 内置运行时：node 直接用「当前正在运行的这个 node」（可移植）；opencode 需环境变量指定或能在 PATH 找到。
 const NODE_SRC = process.env.KERNEL_NODE_SRC
   ? path.resolve(process.env.KERNEL_NODE_SRC)
-  : path.join('C:' + path.sep, 'nodejs', 'node.exe')
+  : process.execPath
 const OPENCODE_SRC = process.env.KERNEL_OPENCODE_SRC
   ? path.resolve(process.env.KERNEL_OPENCODE_SRC)
-  : path.join('G:' + path.sep, '<workspace>', 'opencode', 'opencode.exe')
+  : resolveOpencode()
+
+/** 在 PATH 中查找 opencode 可执行文件；找不到时回退为命令名（后续 mustExist 会给出可读报错）。 */
+function resolveOpencode() {
+  const exe = process.platform === 'win32' ? 'opencode.exe' : 'opencode'
+  for (const dir of (process.env.PATH || '').split(path.delimiter)) {
+    if (!dir) continue
+    const candidate = path.join(dir, exe)
+    if (fs.existsSync(candidate)) return candidate
+  }
+  return exe
+}
 
 const ISCC = path.join(ROOT, 'node_modules', 'innosetup-compiler', 'bin', 'ISCC.exe')
 const ISS_PATH = path.join(ROOT, 'installer', ISS_NAME)
