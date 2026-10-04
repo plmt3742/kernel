@@ -128,6 +128,8 @@ export interface InboxItem {
   capturedAt: string
   status: InboxStatus
   linkedId?: string
+  /** Slice N4——AI 解析摘要（≤40 字），apply 时落档，引用展示用；旧数据缺省 */
+  summary?: string
   note?: string
   /** 文件投递附件元数据（二进制存 data/files/<id>-<name>，不进 git；见 ADR-0008） */
   file?: {

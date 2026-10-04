@@ -28,6 +28,12 @@ export interface AiSuggestionFormValues {
   estimateMin: string
   /** datetime-local（'' = 未设置） */
   dueAt: string
+  /** 仅 event 用：datetime-local（Slice N10；'' = 未设置） */
+  startAt: string
+  /** 仅 event 用：datetime-local（Slice N10；'' = 未设置） */
+  endAt: string
+  /** 仅 event 用：地点（Slice N10；'' = 未设置） */
+  location: string
   /** '' = 未关联 */
   projectId: string
   /** '' = 未归入 */
@@ -36,6 +42,8 @@ export interface AiSuggestionFormValues {
   tags: string
   /** 仅资源用：资料简介（Slice R2.5；'' = 未设置） */
   note: string
+  /** 仅资源用：资料链接（Slice N2；'' = 未设置） */
+  url: string
 }
 
 /** 可编辑字段键（与 AiSuggestionForm 的渲染单元一一对应） */
@@ -48,9 +56,13 @@ export type ClarifyFieldKey =
   | 'importance'
   | 'estimateMin'
   | 'dueAt'
+  | 'startAt'
+  | 'endAt'
+  | 'location'
   | 'projectId'
   | 'areaId'
   | 'note'
+  | 'url'
 
 /** 任务目标的完整字段集（表单默认） */
 export const ALL_CLARIFY_FIELDS: readonly ClarifyFieldKey[] = [
@@ -88,10 +100,14 @@ export const EMPTY_AI_FORM: AiSuggestionFormValues = {
   importance: '',
   estimateMin: '',
   dueAt: '',
+  startAt: '',
+  endAt: '',
+  location: '',
   projectId: '',
   areaId: '',
   tags: '',
   note: '',
+  url: '',
 }
 
 /**
@@ -100,12 +116,14 @@ export const EMPTY_AI_FORM: AiSuggestionFormValues = {
  *   · note     → title / tags / projectId / areaId
  *   · resource → title / tags / areaId
  *   · project  → title / outcome / tags / areaId
+ *   · event    → title / startAt / endAt / location / tags / projectId / areaId（Slice N10）
  */
 export const ACTION_FIELD_MATRIX: Record<AiActionKind, readonly ClarifyFieldKey[]> = {
   task: ALL_CLARIFY_FIELDS,
   note: ['title', 'tags', 'projectId', 'areaId'],
-  resource: ['title', 'note', 'tags', 'areaId'],
+  resource: ['title', 'note', 'url', 'tags', 'areaId'],
   project: ['title', 'outcome', 'tags', 'areaId'],
+  event: ['title', 'startAt', 'endAt', 'location', 'projectId', 'areaId', 'tags'],
 }
 
 /** 逗号列表 → 去空去重后的字符串数组 */
@@ -139,10 +157,14 @@ export function suggestionToForm(suggestion: AiSuggestion): AiSuggestionFormValu
     importance: String(suggestion.importance),
     estimateMin: suggestion.estimateMin === undefined ? '' : String(suggestion.estimateMin),
     dueAt: toLocalInput(suggestion.dueAt),
+    startAt: '',
+    endAt: '',
+    location: '',
     projectId: suggestion.projectId ?? '',
     areaId: suggestion.areaId ?? '',
     tags: listToText(suggestion.tags),
     note: '',
+    url: '',
   }
 }
 
@@ -156,10 +178,14 @@ export function draftToForm(title: string, draft: TaskDraftSuggestion): AiSugges
     importance: draft.importance === undefined ? '' : String(draft.importance),
     estimateMin: draft.estimateMin === undefined ? '' : String(draft.estimateMin),
     dueAt: toLocalInput(draft.dueAt),
+    startAt: '',
+    endAt: '',
+    location: '',
     projectId: draft.projectId ?? '',
     areaId: draft.areaId ?? '',
     tags: listToText(draft.tags),
     note: '',
+    url: '',
   }
 }
 
@@ -222,10 +248,14 @@ export function actionToForm(action: AiAction): AiSuggestionFormValues {
     importance: action.importance === undefined ? '' : String(action.importance),
     estimateMin: action.estimateMin === undefined ? '' : String(action.estimateMin),
     dueAt: toLocalInput(action.dueAt),
+    startAt: toLocalInput(action.startAt),
+    endAt: toLocalInput(action.endAt),
+    location: action.location ?? '',
     projectId: action.projectId ?? '',
     areaId: action.areaId ?? '',
     tags: listToText(action.tags),
     note: action.note ?? '',
+    url: action.url ?? '',
   }
 }
 
@@ -250,6 +280,14 @@ export function formToAction(action: AiAction, values: AiSuggestionFormValues): 
   else next.estimateMin = Number(values.estimateMin)
   if (values.dueAt === '') delete next.dueAt
   else next.dueAt = toISODateTime(new Date(values.dueAt))
+  // event 专属（Slice N10）：startAt / endAt 空则删除，否则转 ISO；location 空则删除
+  if (values.startAt === '') delete next.startAt
+  else next.startAt = toISODateTime(new Date(values.startAt))
+  if (values.endAt === '') delete next.endAt
+  else next.endAt = toISODateTime(new Date(values.endAt))
+  const location = values.location.trim()
+  if (location === '') delete next.location
+  else next.location = location
   if (values.projectId === '') delete next.projectId
   else next.projectId = values.projectId
   if (values.areaId === '') delete next.areaId
@@ -261,6 +299,10 @@ export function formToAction(action: AiAction, values: AiSuggestionFormValues): 
   const note = values.note.trim()
   if (note === '') delete next.note
   else next.note = note
+  // url 仅 resource 有意义（Slice N2）：空则删除，避免送出空串
+  const url = values.url.trim()
+  if (url === '') delete next.url
+  else next.url = url
   if (next.projectId !== undefined) delete next.linkToNewProject
   return next
 }

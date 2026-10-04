@@ -20,6 +20,7 @@ const KIND_LABEL: Record<AiActionKind, string> = {
   note: '笔记',
   resource: '资料',
   project: '新建项目',
+  event: '日程',
 }
 
 interface AiActionsCardProps {
