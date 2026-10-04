@@ -2,7 +2,7 @@
 // 依据 docs/04-DATA-MODEL.md 的外键字段（projectId / areaId / goalId / nextActionId /
 // parentTaskId / sourceInboxId / links），对当前数据快照做线性扫描，返回出链 + 入链。
 // 数据量级为数百条，线性扫描足够；结果不缓存、不写回。
-import type { CalendarEvent, Note, Project, Resource, Task } from '@/types'
+import type { CalendarEvent, InboxItem, Note, Project, Resource, Task } from '@/types'
 import { getSnapshot } from '@/lib/data'
 
 /** 可推导关联的实体类型（抽屉上下文） */
@@ -35,6 +35,59 @@ function emptyRelations(): EntityRelations {
   return { outbound: [], inbound: [] }
 }
 
+/**
+ * 内容折叠截断（Slice N4）：把空白（含换行 / 连续空格）折叠为单空格并去首尾空白；
+ * 超过 max 字（默认 ~90）时截断并追加省略号。用于收件箱来源标题的降级形态——
+ * 摘要缺失 / 旧数据时，以折叠后的原文起头代替冷编号（方案 B：截断、完整版去收件箱看）。
+ */
+export function condenseContent(text: string, max = 90): string {
+  const flat = text.replace(/\s+/g, ' ').trim()
+  return flat.length > max ? `${flat.slice(0, max)}…` : flat
+}
+
+/**
+ * 实体 id → 标题（Slice N4）：按 id 前缀在快照内线性查找标题型实体，未命中返回 null。
+ * 供「已澄清」产物标题化（收件箱）复用；解析不到时由调用方回退原 id。
+ */
+export function titleOfId(id: string): string | null {
+  const s = getSnapshot()
+  const dash = id.indexOf('-')
+  const prefix = dash === -1 ? id : id.slice(0, dash)
+  switch (prefix) {
+    case 't':
+      return s.tasks.find((x) => x.id === id)?.title ?? null
+    case 'p':
+      return s.projects.find((x) => x.id === id)?.title ?? null
+    case 'n':
+      return s.notes.find((x) => x.id === id)?.title ?? null
+    case 'r':
+      return s.resources.find((x) => x.id === id)?.title ?? null
+    case 'e':
+      return s.events.find((x) => x.id === id)?.title ?? null
+    case 'c':
+      return s.courses.find((x) => x.id === id)?.title ?? null
+    case 'a':
+      return s.areas.find((x) => x.id === id)?.title ?? null
+    case 'g':
+      return s.goals.find((x) => x.id === id)?.title ?? null
+    case 'h':
+      return s.habits.find((x) => x.id === id)?.title ?? null
+    default:
+      return null
+  }
+}
+
+/**
+ * 收件箱条目的可读标题（Slice N4）：优先服务端 AI 摘要（item.summary，≤40 字），
+ * 缺失 / 旧的冷数据则回退为折叠截断后的原文（condenseContent）。绝不再展示冷编号。
+ */
+function inboxDisplayTitle(item: InboxItem): string {
+  // 摘要已收录进 InboxItem（Slice N4）；缺失 / 旧数据回退折叠截断原文
+  const summary = item.summary?.trim() ?? ''
+  if (summary !== '') return summary
+  return condenseContent(item.content)
+}
+
 /** 任务：所属项目 / 区域 / 父任务 / 来源条目；子任务 / 作为下一步行动 */
 function taskRelations(task: Task): EntityRelations {
   const s = getSnapshot()
@@ -54,7 +107,10 @@ function taskRelations(task: Task): EntityRelations {
   }
   if (task.sourceInboxId !== undefined) {
     const source = s.inbox.find((x) => x.id === task.sourceInboxId)
-    if (source !== undefined) outbound.push(ref('inbox', source.id, source.content, '来源条目'))
+    if (source !== undefined) {
+      // Slice N4：来源标题人话化——优先服务端摘要，缺失则折叠截断原文（去冷编号）
+      outbound.push(ref('inbox', source.id, inboxDisplayTitle(source), '来源条目'))
+    }
   }
 
   const inbound: EntityRef[] = []

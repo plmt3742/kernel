@@ -35,11 +35,12 @@ export function Relations({ kind, id }: RelationsProps) {
         {refs.map((item) => {
           const path = PATH_OF[item.kind]
           const key = `${item.kind}-${item.id}-${item.label}`
+          // Slice N4：芯片 body 只留「标签 + 标题」——实体冷编号（i-0001 / t-0001）移入 tooltip，
+          // 不再可见；标题温和 clamp（≤3 行）由 .k-relations__title 兜底，防超长标题撑版。
           const body = (
             <>
               <span className="k-muted">{item.label}</span>
-              <span>{item.title}</span>
-              <span className="k-mono k-muted">{item.id}</span>
+              <span className="k-relations__title">{item.title}</span>
             </>
           )
           const title = `${item.label} · ${item.title} · ${item.id}`
