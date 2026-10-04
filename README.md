@@ -39,6 +39,7 @@ KERNEL 是一个本地优先（local-first）的个人事务管理系统，面�
 
 环境要求：Node.js 18+ 与 npm。
 
+
 ```bash
 # 1. 安装依赖
 npm install

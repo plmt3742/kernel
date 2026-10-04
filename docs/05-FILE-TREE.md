@@ -69,11 +69,11 @@ kernel/
 │  ├─ main.tsx                  # 挂载入口（样式导入、字体自托管）
 │  ├─ App.tsx                   # 应用壳与路由
 │  ├─ views/                    # 九个视图（Overview/Inbox/Tasks/Calendar/Timetable/Projects/Library/Review/Settings）
-│  ├─ components/               # 通用组件（Panel / Modal / Toast / EntityEditForm / CommandPalette / TaskDetail / TaskDetailModal / ProjectDetail / ProjectDetailModal / OverviewChat / AiSuggestionForm / TaskDraftModal …）
+│  ├─ components/               # 通用组件（Panel / Modal / Toast / EntityEditForm / CommandPalette / TaskDetail / TaskDetailModal / ProjectDetail / ProjectDetailModal / OverviewChat / AiSuggestionForm / TaskDraftModal / OrganizeProposalCard（项目 AI 整理建议卡）…）
 │  │  ├─ shell/                 # 应用壳（RailNav / TopBar / StatusBar / AppLayout）
 │  │  └─ charts/                # 图表（TrendLine / EnergyBars）
 │  ├─ context/                  # React Context（Theme / Toast / Palette）
-│  ├─ lib/                      # 数据访问与工具（data 可变快照 / api 客户端 / mutations 写入动作 / inboxAi 收件箱 AI 解析状态 / aiForm AI 建议表单换算 / derive / relations 互链派生 / date / format / motion / focus / hooks）
+│  ├─ lib/                      # 数据访问与工具（data 可变快照 / api 客户端 / mutations 写入动作 / inboxAi 收件箱 AI 解析状态 / organize 项目 AI 整理状态与每日调度 / imagePreview 长图 AI 分片（>400KB 大图切 ≤6 JPEG 供解析；失败回退单图） / aiForm AI 建议表单换算 / derive / relations 互链派生 / date / format / motion / focus / hooks）
 │  └─ styles/                   # 全局样式与 token（tokens / base / shell / components / views）
 │
 ├─ design-drafts/               # 设计选型稿（v1 视觉方向 a/b/c；v2 页面排版多版本 29 方案 + 选型页 index.html + 三版对比页 _sheets/）
@@ -82,12 +82,17 @@ kernel/
 ├─ scripts/                     # 脚本
 │  ├─ dev.mjs                   # 开发启动器（数据服务 + Vite 一体启动；--preview 走 preview）
 │  ├─ spawn-bg.mjs              # 后台安全启动器（detached spawn + 日志重定向；防工具调用挂起）
+│  ├─ package.mjs               # 分发包打包器（白名单拷贝 + 内置运行时 + 空白数据骨架 + 三重隐私闸门 → zip）
+│  ├─ assets/
+│  │  └─ welcome.html           # 启动页（自包含单文件；file:// 打开后探活本机，就绪自动跳转）
 │  ├─ seed.mjs                  # 种子数据生成
 │  └─ reset.mjs                 # 数据清零（预演 / --yes：备份到 .qa/backups/ 后清空；保留 config）
 └─ public/                      # 静态资源（字体、图标、guide.html 使用指南）
 ```
 
 > 具体文件名（如组件文件名、token 文件拆分方式）由脚手架实现决定；本树表达的是**结构与职责**，结构变化时更新本文件。
+>
+> **发布产物在仓库之外**：`scripts/package.mjs` 默认输出到 `<workspace>\release\KERNEL-分发包-v0.5.0\`（及同名 `.zip`），不属仓库、不纳入版本控制。详见 ADR-0031。
 
 ## 2. 目录职责
 
@@ -99,7 +104,7 @@ kernel/
 | `data/` | 数据源，一记录一文件 JSON + 附件二进制 `data/files/` + 回收站 `data/trash/`；v0.4 起写入一律经 `server/` 数据服务（单写者） | 数据服务（唯一写者） |
 | `server/` | 数据服务：Zod 校验 + 原子写 + 审计日志；仅监听 127.0.0.1:4097 | 数据层实现方 |
 | `src/` | React + TypeScript 前端应用（只读数据经水合，写入经 API） | 前端实现方 |
-| `scripts/` | 开发启动器（`dev.mjs`）、后台安全启动器（`spawn-bg.mjs`）、种子数据生成（`seed.mjs`）与数据清零（`reset.mjs`） | 工程 |
+| `scripts/` | 开发启动器（`dev.mjs`）、后台安全启动器（`spawn-bg.mjs`）、分发包打包器（`package.mjs`：白名单拷贝 + 内置运行时 + 三重隐私闸门）与启动页（`assets/welcome.html`）、种子数据生成（`seed.mjs`）、数据清零（`reset.mjs`） | 工程 |
 | `public/` | 静态资源：自托管字体、图标、自包含使用指南 `guide.html`（`/guide.html`，亦可 file:// 双击打开） | 前端实现方 |
 | 根目录 `*.md` | 门面与台账（README / AGENTS / CHANGELOG / TASK_BOOK） | 文档工程师 |
 
@@ -134,7 +139,7 @@ kernel/
 | `src/views/` | 九个视图页面，一一对应宪法 §4 的视图规格（`Calendar` 议程 · `Timetable` 课表，Slice H2 起课表独立成页） |
 | `src/components/` | 可复用组件（含 `shell/` 与 `charts/` 子目录），命名遵循设计系统签名词汇；`AiSuggestionForm`（AI 建议可编辑字段网格，任务弹窗 / 收件箱卡共用）、`TaskDraftModal`（先确认后写入的任务草稿弹窗） |
 | `src/context/` | React Context：主题、Toast、命令面板开关 |
-| `src/lib/` | 数据访问与写入动作（data 可变快照 / api 客户端 / mutations / inboxAi 收件箱 AI 解析模块级状态 / aiForm AI 建议表单值类型与换算 / derive / relations 实体互链）、日期、格式化、动效常量、焦点工具、共享 hooks |
+| `src/lib/` | 数据访问与写入动作（data 可变快照 / api 客户端 / mutations / inboxAi 收件箱 AI 解析模块级状态 / imagePreview 长图 AI 分片（客户端切图、失败回退单图）/ aiForm AI 建议表单值类型与换算 / derive / relations 实体互链）、日期、格式化、动效常量、焦点工具、共享 hooks |
 | `src/styles/` | 全局样式、CSS 变量 token、主题定义（唯一事实源 `tokens.css`） |
 
 ## 5. 维护规则

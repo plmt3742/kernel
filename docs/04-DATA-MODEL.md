@@ -64,6 +64,7 @@
 | linkedIds? | string[] | 一揽子应用创建的全部产物 id（Slice R1；撤回 / 撤销据此完整清理） |
 | appliedTagIds? | string[] | 一揽子应用时**新登记**的标签 id（Slice R1；撤销时清理未再使用的注册项，恢复注册表基线） |
 | note? | string | |
+| summary? | string | AI 生成的一句话来源摘要（≤40 字、单行、多要点「 · 」分隔；见 ADR-0029）；**仅在 apply 时落档**；引用展示优先用它 |
 | file? | `{ name, size, mime? }` | 文件投递附件元数据；二进制存 `data/files/<id>-<name>`（不进 git；见 ADR-0008） |
 
 > **文件投递（v0.5 · Slice D）**：`source:'file'` 的条目由 `POST /api/inbox/upload` 创建，`content` 取 caption（无则文件名）。二进制**不**进 JSON，仅存于 `data/files/`（`.gitignore`）；AI 解析时按「文本白名单 **或 Office Open XML（`.docx/.pptx/.xlsx`，Slice J）** + ≤5MB → 前 8000 字摘录，否则仅元数据」注入提示。删除条目经 `POST /api/inbox/:id/remove`（已澄清条目 409，需先 revert）。附件**本机动作**（Slice J2）经 `POST /api/inbox/:id/open`（系统默认程序打开）/ `POST /api/inbox/:id/reveal`（文件管理器定位）——服务端解析 `data/files/<id>-<name>` 并做条目 / 元数据 / 磁盘三重校验，缺一 404；`{dryRun:true}`（`/api/inbox/:id/(open|reveal)` 与 `/api/open`）仅解析校验、绝不 spawn（自动化测试用）。详见 ADR-0008。
@@ -73,6 +74,8 @@
 > **一揽子处置（v0.5 · Slice R1，见 ADR-0015）**：`POST /api/inbox/:id/apply { actions }` 一次写入把条目拆解出的全部动作落位——先建新项目（`kind:'project'`，至多 1 个），再逐条建 `task` / `note` / `resource`（`task` / `note` 的 `linkToNewProject:true` 自动挂到新项目）；标签以 `origin:'ai'` 登记。条目置 `clarified`，`linkedId` = 首个产物、`linkedIds` = 全部产物、`appliedTagIds` = 本次新登记标签。撤销 `POST /api/inbox/:id/unapply` 删除全部 `linkedIds` 产物并 `pruneTags(appliedTagIds)` → 条目回 `unprocessed`（`revert` 同语义，兼容旧单 `linkedId`）。动作矩阵见 §4.14。
 
 > **公告解析（v0.5 · Slice N0，见 ADR-0023）**：收件箱解析输出在动作数组之外增顶层 **`facts: string[]`**（硬事实要点：放假时间、调课、截止日期等；≤8 条、每条 ≤140 字、须含日期或关键数字；`cleanFacts` trim / 去空 / 截断 / 去重 / 封顶；**为解析临时产物、不落盘**，UI 以「要点」块呈现并可一键「存为要点笔记」）。需完成的义务仍是 `kind:'task'` 动作，可带可选 **`condition`**（适用前提，≤30 字，如「仅出国（境）者」「仅留校学生」；对所有人生效则省略）——`aiActionSchema.condition` + `postValidateActions`（null / 非 task / 空串清理）保证其只随 `task` 动作存活；前端带条件的动作**默认不勾选**（勾选 = 相关 / 要做），应用经 `formToAction` 透传。图片（`isImageFile()`：扩展名或 `image/*`）走同一解析管线，`buildFileSection` 返回「见附图」+ opencode file part（读失败优雅降级），并**跳过**文件「恰 1 条 resource」硬归一化（非图片行为不变）。**解析产物（`actions` / `facts`）均为临时结果、不落盘**。`inbox.apply` 审计增 `detail.signals.conditions`（已应用动作非空条件去重、首见顺序）为后续画像留痕。
+
+> **来源摘要（v0.5 · Slice N4，见 ADR-0029）**：收件箱解析在动作数组 / `facts` 之外增顶层 **`summary`**（一句话概括原始输入：≤40 字、单行、多要点「 · 」分隔、含关键时间 / 事项、不引入原文外信息；服务端清洗折叠空白 / 去引号 / 硬截断 40，**为解析临时产物、不落盘**）。`POST /api/inbox/:id/apply { actions, summary? }` 的 `summary` 可选（≤100 校验），提供且非空时写入条目 `summary`（`inboxItemSchema.summary` 可选、≤200 防御）；只在 apply 落档是刻意取舍（解析可重跑、零写入纪律）。引用展示据此人话化：关联区块「来源条目」标题 `summary` 非空优先、否则原文折叠截断 ~90 字；来源芯片不再显示可见编号（编号入 tooltip）；收件箱「已澄清」区产物引用显示产物标题（解析不到回退 id）。历史条目录档前无 `summary`，展示自动降级、不做回填。
 
 ### 4.2 task（`t-`）
 
@@ -219,6 +222,8 @@
 > **状态判断标准 + 可设置（v0.5 · Slice H）**：资料状态五档——`unread` 未读（收进资料库、尚未开始阅读）、`reading` 在读（正在读、有明确推进）、`read` 读完（已完整读完）、`reference` 参考（不打算通读，仅备查引用）、`archived` 归档（已处理完，退出主动视野）。资料详情弹窗内以安静分段控件直接设置（经 `POST /api/resources/:id/update`，审计 `resource.update`）；`areaId` 也可在编辑表单中设置（`resources` 编辑白名单已含 `areaId / status`，见 ADR-0011）。UI helper 文本与本文一致（`src/lib/format.ts` `RESOURCE_STATUS_DEF`）。
 
 > **直接新建（v0.5 · Slice Y，见 ADR-0021）**：新增 `POST /api/resources`（`resourceCreateSchema`：`title` 必填；`kind` / `status` 缺省 `article` / `unread`；可选 `url` / `path` / `note` / `areaId` / `tags`；`areaId` 真实存在校验；标签规格化 + `ensureTags` 登记；审计 `resource.create`）。资料页「新建资料」→ 草稿弹窗（标题 / 类型 / 链接 / 简介 / 标签）→ 点「创建资料」才落盘（ESC / 取消零写入）→ toast 撤销（= 移入回收站）+ 打开 `?resource=` 深链。镜像 Slice M 的「新建笔记」流。
+
+> **链接自动填充（v0.5 · Slice N2，见 ADR-0027）**：收件箱**文本条目**含网页链接时，AI 链接解析会抓取正文并据实写简介，同时把原始链接写入 `url`（`aiActionSchema.url` ≤2000，仅 http(s)；`POST /api/inbox/:id/apply` 的 resource 分支持久化）；用户在建议卡中可编辑该「链接」字段。
 
 ### 4.10 review（`rev-`）
 

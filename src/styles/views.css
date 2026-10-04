@@ -400,6 +400,12 @@ button.r3c-w40:hover {
   color: var(--muted);
   font-size: var(--text-caption);
 }
+/* Slice N4：已澄清行的产物标题（取代冷编号 i-0001）；长标题温和折行不撑版 */
+.k-inbox-item__product {
+  color: var(--ink-2);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 /* 生命周期动作（Slice V · F15/F34/F37）：已澄清 / 已丢弃行的查看产物 · 撤回 / 恢复 / 删除 */
 .k-inbox-item__actions {
   display: flex;
@@ -474,6 +480,8 @@ button.k-pill.is-danger:hover {
   place-items: center;
   width: 26px;
   height: 26px;
+  /* 固定尺寸徽标：不得被长内容行挤压（N0.10：实测长文本行曾被收缩到 7.7px） */
+  flex-shrink: 0;
   border-radius: var(--radius-inner);
   background: var(--fill-subtle);
   color: var(--muted);
@@ -561,6 +569,16 @@ button.k-pill.is-danger:hover {
   color: var(--ink);
   font-size: var(--text-body-sm);
   line-height: 1.4;
+  /* 任意长 token（无空格 URL / 长混排串）必须可在行内折行，
+     否则窄屏会撑出文档级横溢（2026-10-03 实测 390 宽横溢 160px：长链接条目） */
+  overflow-wrap: anywhere;
+}
+/* 附件说明行（本切片）：文字 +「附 1 个文件」同时呈现，不再只显示其中一种 */
+.ic-row__attach {
+  color: var(--muted);
+  font-size: var(--text-caption);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
 }
 .ic-row__meta {
   display: flex;
@@ -1047,6 +1065,8 @@ button.k-pill.is-danger:hover {
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  /* 本切片：新增「进行中 / 含已结束」segmented，窄屏与 3 枚按钮同行会溢出——允许换行 */
+  flex-wrap: wrap;
 }
 .k-cal__date {
   font-size: var(--text-h2);
@@ -1161,6 +1181,10 @@ button.k-pill.is-danger:hover {
 .k-cal-c__grouphd .k-mono {
   color: var(--muted);
 }
+/* 已结束日程（本切片）：可查阅 / 可编辑，视觉降一档 */
+.k-cal-c__group.is-past .k-lib-row__title {
+  color: var(--ink-2);
+}
 .k-cal-c .k-lib-row__kind {
   min-width: 116px;
 }
@@ -1269,10 +1293,16 @@ button.k-pill.is-danger:hover {
   display: flex;
   align-items: center;
   gap: var(--space-5);
+  flex-wrap: wrap; /* 窄容器（390px）允许换行，避免横向溢出 */
 }
 .k-projects__toolbar .k-quickadd {
   flex: 1 1 320px;
   max-width: 620px;
+}
+/* 「AI 整理」按钮：与快速新建同一轨道，不参与收缩、不被折断标签 */
+.k-projects__toolbar .k-projects__organize {
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .k-plist {
@@ -2466,6 +2496,15 @@ button.k-act__link:hover {
   white-space: normal;
   text-align: left;
 }
+/* Slice N4：芯片标题温和 clamp（≤3 行、ellipsis）兜底，防超长标题撑版；冷编号已移入 tooltip */
+.k-relations .k-relations__title {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
 
 /* 弹窗内字段网格：dt/dd 成对铺成 2 列（阅读顺序 内容 → 元数据）
  * 基础 .k-dl 为单列 label/value；此处限定详情弹窗，升级为 4 列 = 每行两对。
@@ -2560,6 +2599,11 @@ button.k-act__link:hover {
   gap: var(--space-2);
 }
 .k-field__label {
+  color: var(--muted);
+}
+.k-field__hint {
+  margin: 4px 0 0;
+  font-size: var(--text-caption);
   color: var(--muted);
 }
 /* 布尔字段（Slice W）：全天等；与字段标签同排，勾选图形走强调色 */
@@ -3338,10 +3382,13 @@ button.k-act__link:hover {
   flex-direction: column;
   gap: var(--space-3);
 }
+.ic-composer.k-chat__composer {
+  border-radius: var(--radius-inner);
+}
 .k-chat__input {
   width: 100%;
-  min-height: 30px;
-  max-height: 140px;
+  min-height: 44px;
+  max-height: 180px;
   background: transparent;
   color: var(--ink);
   outline: none;
@@ -3380,19 +3427,19 @@ button.k-act__link:hover {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
-  max-height: 320px;
+  max-height: 560px;
   overflow-y: auto;
   padding: var(--space-4);
   background: var(--surface-elevated);
   border: var(--hairline) solid var(--outline);
-  border-radius: calc(var(--radius-card) + 4px);
+  border-radius: var(--radius-inner);
   box-shadow: var(--shadow-card), var(--shadow-highlight);
 }
 .k-chat__msg {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
-  max-width: 88%;
+  max-width: 94%;
 }
 .k-chat__msg--me {
   align-self: flex-end;
@@ -3410,7 +3457,7 @@ button.k-act__link:hover {
   border-radius: var(--radius-inner);
   background: var(--fill-subtle);
   color: var(--ink-2);
-  font-size: var(--text-body-sm);
+  font-size: var(--text-body);
   line-height: 1.6;
   white-space: pre-wrap;
   word-break: break-word;
@@ -3421,6 +3468,80 @@ button.k-act__link:hover {
 }
 .k-chat__text--thinking {
   color: var(--muted);
+}
+/* 助手 markdown 正文（Slice G.1）：恢复普通流、内距收敛、元素 token 化 */
+.k-chat__md {
+  white-space: normal;
+}
+.k-chat__md > :first-child {
+  margin-top: 0;
+}
+.k-chat__md > :last-child {
+  margin-bottom: 0;
+}
+.k-chat__md p {
+  margin: var(--space-2) 0;
+}
+.k-chat__md ul,
+.k-chat__md ol {
+  margin: var(--space-2) 0;
+  padding-left: 1.35em;
+}
+.k-chat__md li {
+  margin: 2px 0;
+}
+.k-chat__md h1,
+.k-chat__md h2,
+.k-chat__md h3,
+.k-chat__md h4 {
+  margin: var(--space-3) 0 var(--space-2);
+  color: var(--ink);
+  font-size: var(--text-body);
+}
+.k-chat__md strong {
+  color: var(--ink);
+}
+.k-chat__md code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  background: var(--fill-subtle);
+  border-radius: 6px;
+  padding: 0 4px;
+}
+.k-chat__md blockquote {
+  margin: var(--space-2) 0;
+  padding-left: var(--space-3);
+  border-left: var(--hairline) solid var(--outline-strong);
+  color: var(--muted);
+}
+.k-chat__md hr {
+  border: 0;
+  border-top: var(--hairline) solid var(--outline);
+  margin: var(--space-3) 0;
+}
+/* 联网检索安静行（Slice G.1） */
+.k-chat__searched {
+  display: block;
+  margin-top: var(--space-1);
+  word-break: break-word;
+}
+/* 「打开笔记」/「存为笔记」安静小按钮（与 .k-chat__clear 同族） */
+.k-chat__notelink,
+.k-chat__save {
+  align-self: flex-start;
+  height: 26px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-pill);
+  color: var(--muted);
+  background: transparent;
+  font-size: var(--text-body-sm);
+  transition: color var(--dur-fast) var(--ease-standard),
+    background var(--dur-fast) var(--ease-standard);
+}
+.k-chat__notelink:hover,
+.k-chat__save:hover {
+  color: var(--ink);
+  background: var(--fill-subtle);
 }
 .k-chat__error {
   display: flex;
@@ -3437,10 +3558,48 @@ button.k-act__link:hover {
   min-width: 0;
   word-break: break-word;
 }
+/* 实体修改提案卡（本切片）：AI 生成 · 用户确认后应用；确认前零写入 */
+.k-chat__edit {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  padding: var(--space-3);
+  border: var(--hairline) solid var(--outline);
+  border-radius: var(--radius-inner);
+  background: var(--surface-sunken);
+}
+.k-chat__edit-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.k-chat__edit-title {
+  color: var(--ink);
+  font-size: var(--text-body-sm);
+  overflow-wrap: anywhere;
+}
+.k-chat__edit-diff {
+  color: var(--ink-2);
+  font-size: var(--text-caption);
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}
+.k-chat__edit-old {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+.k-chat__edit-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+}
 
 @container route (max-width: 640px) {
   .k-chat__thread {
-    max-height: 260px;
+    max-height: 420px;
   }
   .k-chat__msg {
     max-width: 100%;
@@ -3543,6 +3702,262 @@ button.k-act__link:hover {
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+/* ---------------------------------------------------------------------------
+ * 项目「AI 整理」建议卡（Slice N8）：归并到已有项目 + 建议新项目；token-only
+ * 外壳与 .ic-cluster 同族（surface + hairline + radius-card + 柔影 + k-ai-fade）；
+ * 行用 surface-elevated / radius-inner / space token（同 .ic-action）。
+ * ------------------------------------------------------------------------- */
+.ic-organize {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--surface);
+  border: var(--hairline) solid var(--outline);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card), var(--shadow-highlight);
+  animation: k-ai-fade var(--dur-fast) var(--ease-enter);
+}
+@media (prefers-reduced-motion: reduce) {
+  .ic-organize {
+    animation: none;
+  }
+}
+.ic-organize__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.ic-organize__hint {
+  min-width: 0;
+}
+.ic-organize__caption {
+  margin-left: auto;
+}
+.ic-organize__msg {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  color: var(--muted);
+  font-size: var(--text-caption);
+  line-height: 1.5;
+  max-width: var(--measure);
+}
+.ic-organize__msg.is-error {
+  color: var(--danger-text);
+}
+.ic-organize__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.ic-organize__section-title {
+  color: var(--muted);
+}
+.ic-organize__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.ic-organize__row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: var(--surface-elevated);
+  border-radius: var(--radius-inner);
+}
+.ic-organize__row.is-excluded {
+  opacity: 0.5;
+}
+.ic-organize__row-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.ic-organize__row-title {
+  color: var(--ink);
+  font-size: var(--text-body-sm);
+  font-weight: 600;
+  line-height: 1.4;
+}
+.ic-organize__outcome {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: var(--text-caption);
+  line-height: 1.5;
+  max-width: var(--measure);
+}
+.ic-organize__members {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.ic-organize__member {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-size: var(--text-caption);
+  min-width: 0;
+}
+.ic-organize__member-title {
+  color: var(--ink-2);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ic-organize__related,
+.ic-organize__reason {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-caption);
+  line-height: 1.5;
+  max-width: var(--measure);
+  overflow-wrap: anywhere;
+}
+.ic-organize__skipped {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-caption);
+  color: var(--muted);
+}
+.ic-organize__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+/* ---------------------------------------------------------------------------
+ * 项目「AI 整理」建议卡（Slice N8）：归并 / 新项目两段，勾选后一次应用；token-only
+ * 卡片外壳与 .ic-cluster 同族（surface + hairline + radius-card + 柔影 + k-ai-fade）。
+ * ------------------------------------------------------------------------- */
+.k-organize {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--surface);
+  border: var(--hairline) solid var(--outline);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card), var(--shadow-highlight);
+  animation: k-ai-fade var(--dur-fast) var(--ease-enter);
+}
+.k-organize__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.k-organize__hint {
+  min-width: 0;
+}
+.k-organize__stamp {
+  margin-left: auto;
+  white-space: nowrap;
+}
+.k-organize__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.k-organize__section-title {
+  color: var(--muted);
+}
+.k-organize__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.k-organize__item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: var(--fill-subtle);
+  border-radius: var(--radius-inner);
+  transition: opacity var(--dur-fast) var(--ease-standard);
+}
+.k-organize__item.is-excluded {
+  opacity: 0.55;
+}
+.k-organize__head-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.k-organize__item-title {
+  color: var(--ink);
+  font-size: var(--text-body);
+  font-weight: 600;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+.k-organize__outcome {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: var(--text-caption);
+  line-height: 1.5;
+  max-width: var(--measure);
+  overflow-wrap: anywhere;
+}
+.k-organize__members {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.k-organize__member {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-size: var(--text-caption);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.k-organize__member-title {
+  color: var(--ink-2);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.k-organize__reason {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-caption);
+  line-height: 1.5;
+  max-width: var(--measure);
+  overflow-wrap: anywhere;
+}
+.k-organize__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.k-organize__empty {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
   flex-wrap: wrap;
 }
 

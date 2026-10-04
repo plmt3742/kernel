@@ -4,6 +4,138 @@
 
 ## [Unreleased]
 
+### 总览 AI 查阅/代改 + 解析默认 + 长图分片 + 体验修复批 · QA v73（已完成 · 2026-10-04）
+答 owner 批次诉求「请你为总览页面的 AI 添加一个功能……比如我现在想要了解某个日程或任务或者是资料或者笔记什么的东西，它就可以帮我回答出来，就是这一个东西的详细内容。比如说我要说改一下这个日程的某个时间，那它就会帮我改」＋「我希望在工作台点击日程的时候，它会直接弹出详情弹窗，而不是跳转到日程页面去」＋「在日程页面……添加一个显示已结束日程的功能」＋「在收信箱处……你应该呈现文字，然后附带说明这里有什么文件」＋「收信箱的 AI 需要更加智能……把时间点安排得比较好……吃晚饭……时间一般就定成 6 点……我说要去大鱼吃什么什么，那它的地点最好还是能给我显示为那个餐厅的名字……把标签给我整出来……也要让它能够知道现有的标签和项目都是什么」＋「长截图了一个 1.2M 的聊天记录 结果它阅读超时」＋追问「工作台没有显示今天的日程安排？」——**六项功能**一次交付。① **总览 AI 查阅 + 代改**（ADR-0035）：`entityQueries`（1–3 条 ≤30 字）→ `resolveEntities` 回喂完整记录（响应 `focused` ≤6）+ `editRequest` → `buildChatEdits` 白名单校验（≤3 条、fields ≤12 键）→ 前端「修改卡」逐字段「旧值 → 新值」，点「应用」才经 `POST /api/<kind>/:id/update` 写入（toast 可撤销、逆序写回 `before`），**确认前零写入**；② **工作台今日日程**：未结束的今日日程在「现在」线下就地渲染（修复此前只显示已结束事件），点击行直接弹 `EventDetailModal`（不跳转）；③ **日历「含已结束」**（localStorage 记忆、最多 50 条、排除已取消，独立「已结束」分组）；④ **收件箱「文字 + 附件」行**：文字与「附 N 个文件 · 文件名 · 大小」并显；⑤ **解析默认时间/地点/活动标签**（ADR-0036）：默认钟点补全（早 08:00 / 上午 09:30 / 中午 12:00 / 下午 14:30 / 傍晚 17:30 / 晚上 19:30；用餐：晚饭 18:00 / 夜宵 21:30……系统认可不算编造）+ 地点提取 + 活动标签（`topic:吃饭`），感知现有标签/项目；⑥ **长图分片**（ADR-0036）：>400KB 大图客户端切 ≤6 张 JPEG 经 `POST /api/inbox/:id/ai-preview?index=1..6` 落派生分片 → 解析多发 file part、图片解析超时放宽 180s。**i-0024 数据事故披露**：owner 12:13 捕捉的「今晚要去吃某餐厅的自助餐」（i-0024）在当日试验 / 清理过程中 json 被误删并以简报重建、其产物事件 e-0002 于 12:46 入回收站；owner 随后自建 i-0026 → e-0003 承接晚餐事件；收尾期从解析会话**精确找回原句**，i-0024 `content` 已恢复（修复前备份 `.qa/v73/i-0024-before-restore.json`；e-0002 保留在回收站由 owner 处置）。**QA v73**：探针 `probe-longimg` **15 项 ALL PASS**（6 片 864×1600、解析 5.1s、零残留）；服务端冒烟 **41 项 ALL PASS**；浏览器 verify **0 FAIL（PASS 32 行）**；`npm run build` 退出 0；**基线增量核验**（`verify-baseline-delta.mjs`）证明终态 = QA 基线 `24b7252f…`（71 文件）**仅两处已知差异**（owner 自建 i-0027、i-0024 原文恢复），其余逐字节一致。
+
+- **新增**：`src/lib/imagePreview.ts`（长图切片）；`POST /api/inbox/:id/ai-preview?index=1..6`（分片 RAW 上传，派生、无审计）；`docs/decisions/0035-chat-lookup-edit.md`、`docs/decisions/0036-parse-defaults-long-image.md`；`.qa/v73/**`（含探针 `probe-longimg`）。
+- **修改**：`server/{ai,index,schemas}.mjs`（`entityQueries` / `resolveEntities` / `editRequest` / `buildChatEdits` + 解析默认钟点 / 地点 + 分片多发 part + 180s 超时）、`src/{components/OverviewChat.tsx,views/{Overview,Calendar,Inbox}.tsx,lib/mutations.ts,styles/views.css}`、`docs/{02,05,README}`、`public/guide.html`、`CHANGELOG.md`、`TASK_BOOK.md`、`AGENTS.md`。
+- **验证**：见上；证据 `.qa/v73/`（`logs/{probe-longimg,server-smoke,verify}.log` + 截图 + 核验脚本）。
+- **记录**：ADR-0035 / ADR-0036；`docs/02`、`docs/05`、`docs/README`；`public/guide.html`；`CHANGELOG.md`、`TASK_BOOK.md`、`AGENTS.md`。
+
+### 总览 AI 对话 · 升级 · Slice G.1（已完成 · 2026-10-03）
+答所有者「这个的 md 格式没有正常显示，然后添加一下它能联网搜索以及自由回答功能，如果我觉得回答的不错，然后对他说把你现在说的这个点整理进笔记，然后他就能将某个回答整理进笔记里面单独一个笔记」+「这个聊天框我希望圆角小一些，界面宽一些大一些，上下长度也长一些」——在 Slice G 只读对话盒之上做四项升级。① **Markdown 渲染**：助手回复改 `react-markdown`（`<div className="k-chat__text k-chat__md">`，沿用 Library 同款 import，**无 `dangerouslySetInnerHTML`**），用户轮保持纯文本；`.k-chat__md` 全套 token-only 样式（p / ul / li / strong / code / blockquote / hr / h1–h4）。② **尺寸调整**（token-only）：`.k-chat__thread` max-height 320→**560px**（≤640px 容器 420px）、圆角 → `var(--radius-inner)`（12）；消息 max-width 88%→**94%**；正文 13→**15px**；composer 圆角 → 12（`.ic-composer.k-chat__composer` 覆盖）；输入 min-height 30→**44px**（max 180）。③ **联网搜索 + 自由回答**：`buildChatSystem` 重写为三类——读库事实（依据摘要、不编造用户数据）/ 一般知识自由回答 / 需要外部事实时**只输出 JSON** `{"searchQueries":[...]}`（≤2 条、≤60 字、含年份；一次对话最多请求一次检索）；`chatWithKernel` 两阶段：模型请求 → 复用 N9 `buildSearchSection`（Sogou→360→Bing + 相关性过滤 + 首条页摘录）→ 同会话回喂正式作答；**检索失败** → 让模型保守作答并注明无法确认最新信息；响应新增 `searched: string[]`；前端助手轮下方显示安静行「已联网检索 · q1 · q2」；`tryParseSearchRequest` 导出供单测；提示行改「读库 · 联网 · 自由回答 · Enter 发送 · Shift+Enter 换行」。④ **整理进笔记**：对话式——用户消息命中意图正则（整理/保存/存/归档 + 进/到/为/成/入 + 笔记）且存在上一条助手回答时，调 `POST /api/ai/chat/note {instruction, answer}`（`chatNoteRequestSchema`：instruction ≤400 / answer ≤8000）→ `draftChatNote`（AI 出 `{title ≤40, body markdown}`；**失败 / 解析失败回退确定性**：首行标题 + 原文正文，绝不抛错）→ 服务端 `commit('notes', …, note.create, detail.via:'chat.note')` → 助手轮「已整理为笔记：**「title」**」+「打开笔记」链接（`/library?note=`）；每轮助手回复下另有「存为笔记」安静按钮（同端点），失败走既有错误条。**实测**：搜索问答 24.5s（`searched` 2 条）→「笔试 12月12日 9:00–11:20 · 口试 11/21–22 · 报名」并自动对照本库任务 `t-0008`；读库问答 7.5s 无检索引真实数据；笔记 `n-0004`「2026 年英语四级考试时间与报名安排」301 字落盘 + 清理。**边界**：对话本身仍**不落盘无审计**（检索同 N9 纪律）；笔记落盘可撤销（回收站）；一次对话最多一次检索；「这个点」= 上一条回答（更早引用不支持）。
+
+- **新增**：`POST /api/ai/chat/note`（对话回答 → 独立笔记）；`.qa/v72/**`、`.qa/probe-g1/**`。
+- **修改**：`server/{ai,schemas,index}.mjs`（三类 `buildChatSystem` + `chatWithKernel` 两阶段 + `searched` + `draftChatNote` + 笔记端点）、`src/components/OverviewChat.tsx`、`src/lib/mutations.ts`、`src/styles/views.css`。
+- **验证**：QA `.qa/v72/` 服务端 **25 PASS** + 浏览器 **25 PASS** = **50 PASS · 0 FAIL**（单测 6 组 / 真搜 + 真库 + note + 空指令 400 / markdown 元素与字面 `**` 为 0 / computed 12px·560px·44px / 对话式与按钮双路径 / UI 搜索 12月12日 / 390 零横溢 / console 0）；**零残留**（53 文件哈希基线 == 终态、`tags.json` 不变、notes 回到 n-0001..n-0003）；探针 `.qa/probe-g1/`。
+- **记录**：ADR-0010 修订节；`docs/02`、`docs/README`；`public/guide.html`；`CHANGELOG.md`、`TASK_BOOK.md`、`AGENTS.md`。
+
+### 产品展示页 · showcase.html（已完成 · 2026-10-03）
+答所有者「把我这个程序的每个部分都截图，弄成一份 HTML 展示产品用，我要发给其他人看我这个产品」——新增 `public/showcase.html`：**单文件自包含产品展示页**（**3.62 MB**；base64 内嵌 **15 张真实界面截图**——10 个模块 + 命令面板 + 任务详情弹窗 + AI 处置卡（日程 + 任务双动作、含「日程」识别卖点）+ 双移动端；**零外部请求**、file:// 直接打开；暗色 token 与 `guide.html` 同族；结构：Hero（v0.5.0 / 本机运行 / 数据不外传）→ 锚点导航 → 12 个模块章节（描述 + 特性 + 截图）→ 技术一览 → 页脚）。构建脚本 `.qa/showcase/build.py`（Playwright，可重跑再生成；一次性展示条目用后即清、构建前后数据哈希一致零残留）。**注意**：截图取自本机真实数据（可能含少量人名 / 项目信息），对外分发前请自行确认。
+
+- **新增**：`public/showcase.html`、`.qa/showcase/**`。
+- **验证**：构建器自验（file:// 载入 console 0 错误、`img` 15/15 `naturalWidth>0`）；零残留（`data/**/*.json` 哈希前后一致 `bd821687…`）。
+- **记录**：`CHANGELOG.md`、`TASK_BOOK.md`。
+
+### 收件箱 AI · 事件识别 · Slice N10（已完成 · 2026-10-03）
+答所有者「但是类似于学生组织第二轮面试、例会、考试、约谈，我丢进了收信箱，并没有给我划分为事件，而是任务」——此前 AI 动作只有 `task / note / resource / project` 四类，定点安排被压成任务；本切片新增**第 5 类动作 `kind:"event"`（日程 / 事件）**。① **判定与规则 12**（`buildSystem`）：会在某个时刻「发生」的事（面试 / 会议 / 考试 / 约谈 / 活动）→ `event`，只有「需要去做」的动作才 → `task`，同一内容可同时产出 event + task（发生的事 + 要做的准备），不重复拆条；`startAt` ISO8601 带时区**必填**，明确结束时间才填 `endAt`，只有日期 → `allDay:true`（startAt 填当天 00:00）；**时间无法明确推出就不产 event**（宁可 task + facts）；文件条目（非图片）仍只产 resource（禁止列表加 `event`），截图条目走文本管线可用。② **schema 与清洗**：`aiActionKind` + `'event'`；`aiActionSchema` + `startAt/endAt/allDay/location`；`postValidateActions` event 清洗——`startAt` 无效 / 缺失**丢弃该动作**、`endAt` 须 ≥ startAt 否则删除、`allDay` 仅 true 保留、`location` trim ≤60、**非 event 动作一律剥离这些字段**、`linkToNewProject` 放行 event。③ **apply / 撤销**：event 分支落 `events`（对齐 `POST /api/events`：**无 createdAt/updatedAt**、`status:'confirmed'`、纵深校验 startAt/endAt/location、`projectId`/`areaId` 挂接、`via:'inbox.apply'`）；撤销走通用 `linkedIds` → `remove('events')`——**顺带修复 `kindOfId` 缺 `e-` 映射**（此前事件无法经该链路清理）。④ **前端**：`AiActionKind` + `'event'`；`ACTION_FIELD_MATRIX.event = ['title','startAt','endAt','location','projectId','areaId','tags']`；`AiSuggestionForm` 渲染 开始 / 结束（datetime-local）+ 地点（text）；`AiActionsCard` `KIND_LABEL.event = '日程'`。⑤ **实测**：投递「10月7号晚上7点到11点，在某教室进行学生组织第二轮面试」→ event「学生组织第二轮面试（我任面试官）」`startAt=2026-10-07T19:00:00+08:00` / `endAt=23:00` / `location=某教室` / `projectId=p-0002` + task「提前十分钟到场（学生组织面试）」due 18:50（发生与动作正确分离）；apply → `e-0001`，unapply → 归零。
+
+- **新增**：`docs/decisions/0034-inbox-ai-event-actions.md`；`.qa/v71/**`、`.qa/probe-n10/**`。
+- **修改**：`server/{ai,schemas,index}.mjs`（第 5 类动作 + 规则 12 + event 清洗 + `applyInboxActions` event 分支 + `kindOfId` 补 `e-`）、`src/{types.ts,lib/aiForm.ts,components/{AiSuggestionForm,AiActionsCard}.tsx}`。
+- **验证**：QA `.qa/v71/` 服务端冒烟 **35 PASS** + 浏览器 **24 PASS** = **59 PASS · 0 FAIL**（6 组 `postValidateActions` 单测、live parse / apply / unapply、UI「日程」pill + 可编辑字段、撤销往返、390 零横溢、console 0）；**零残留**（45 文件哈希基线 == 终态、`tags.json` 不变）；探针 `.qa/probe-n10/`。
+- **记录**：ADR-0034；`docs/02`、`docs/README`；`public/guide.html`；`CHANGELOG.md`、`TASK_BOOK.md`、`AGENTS.md`。
+
+### 日程聚合 · Slice H3（已完成 · 2026-10-03）
+答所有者「日程页怎么不显示任务以及课表等内容，这些也是需要做的日程啊」——日历页从「只看事件」升级为**三类聚合**：① **今日课程**：按「星期 + 学期第几周」过滤并合并连续节次（复用 `mergeDayRuns`），在议程流顶部独立区块展示（节次 + 课程 + 地点；点击开 `CourseDetailModal`）；未设学期时按 Timetable 同口径不按周过滤。② **任务截止**：有 `dueAt` 且未完成 / 未丢弃的任务按截止时间归入 今天 / 明天 / 本周 / 下周 / 更远 桶（已逾期落「今天」），行内「截止 HH:mm」标注、meta 显示所属项目（点击开 `TaskDetailModal`）。③ **联动更新**：bar 追加「今日 N 节课 · M 项截止」；迷你月历「有安排」圆点 = 事件 ∪ 任务截止 ∪ 当日有课（按周过滤）；月统计 = 事件 + 截止 + 课次（foot「事件 E · 截止 T · 课程 C」）；hero 空事件时提示今日课程 / 截止；空态仅当三类全空。边界：无截止任务不显示；课程仅「今日」（全周网格仍在 `/timetable`）；不改服务端、无新依赖。
+
+- **修改**：`src/views/Calendar.tsx`（唯一文件：聚合 memos + 桶结构 events/tasks + 今日课程块 + 任务行 + 双详情弹窗 + 月历 / 月统计 / bar）。
+- **验证**：QA `.qa/v70/`（Playwright 确定性：一次性任务截止今天 + 一次性课程排今天 → 两行可见、双弹窗可开、圆点 / 统计 / bar 断言、390 零横溢、清理后 data 指纹回基线、console 0）**21 PASS · 0 FAIL**。
+- **记录**：`CHANGELOG.md`、`TASK_BOOK.md`、`AGENTS.md`、`public/guide.html`。
+
+### 项目详情 · 状态快捷切换 · N8.2（已完成 · 2026-10-03）
+答所有者追问（截图圈出「暂停 / 将来」两个空区块：「关于这两个有回复吗」）→ 选定方案 B——项目详情弹窗新增**状态快捷切换**（`ProjectDetail` 的 `StatusSegmented`，与日程同款安静 segmented：复用 `.k-lib__seg` 轨道 + `TagPill` 选中反转）：4 枚 chip「进行中 / 暂停 / 将来 / 已完成」**一点即保存**（`updateEntity` 写 `status`，项目随即移动分组），toast「状态已设为「X」」+ **撤销**回原状态；「已归档」仍走编辑表单（不在项目页显示）；提示行「点选即保存 · 可撤销；『已归档』在编辑表单中设置」。写入 / 撤销由 `ProjectDetailModal` 注入（项目页与总览就地弹窗同源生效）；无新增样式、无新增端点、无新依赖。
+
+- **修改**：`src/components/ProjectDetail.tsx`（`onSetStatus` + `StatusSegmented`）、`src/components/ProjectDetailModal.tsx`（`handleSetStatus` + 注入）。
+- **验证**：QA `.qa/v69/`（Playwright：4 chip / 暂停 toast + 撤销往返 / 将来→已完成→进行中依次落盘 / 幂等 / 390 零横溢 / 清理后快照与 data 指纹回基线 / console 0 预期外错误）**17 PASS · 0 FAIL**。
+- **记录**：`CHANGELOG.md`、`TASK_BOOK.md`、`AGENTS.md`、`public/guide.html`。
+
+### 收件箱 AI · 联网检索 · Slice N9 / N9.1（已完成 · 2026-10-03）
+答所有者「我输入了准备一下今年的四级考试，它应该自行去搜索今年四级考试什么时候，作为截止日期；搜索能力需要具备上」——① **模型请求式两阶段检索**：收件箱解析输出新增顶层 `searchQueries`（≤2 条、每条 ≤60 字，模型主动请求），服务端先检索、再把【联网检索】结果**回喂同一会话**做第二轮（补全 `dueAt` / `facts`），第二轮失败沿用首轮；响应新增 `searched: string[]`（实际执行的检索问题）；流式路径先发 `{kind:'status',status:'searching'}`，前端阶段文案「正在联网检索…」。② **引擎链（N9.1）**：**Sogou 主 → 360 次 → Bing 备**，每引擎结果经**相关性令牌过滤**（CJK 二元组去通用词 + 拉丁词；不含任何检索词的泛化 / 限流结果视为该引擎失败并换下一引擎；全失败 → 返回空、模型保守不编造），每条成功问题**补抓首条结果页正文摘录**（≤900 字，复用 N2 `fetchLinkExcerpt`）。③ **注入与纪律**：段落「【联网检索】（…只可据此修正时间与事实，不得编造）」；固定引擎主机、12s 超时、≤5 结果 / 问、snippet ≤300 字、段落 ≤2600 字；**不落盘、无审计**、任何失败静默降级。④ **边界**：仅文本 / 截图条目（文件 = 资料归一化路径不触发）；引擎限流时可能保守失败（安全优先）；不抓多页、不做 JS 渲染。⑤ **实测**：输入「准备一下今年的四级考试」→ AI 检索 2 问（「2026年下半年 全国大学英语四级考试 时间」等）→ 任务 `dueAt=2026-12-12T09:00:00+08:00`、`facts` 含「笔试 12 月 12 日 9:00–11:20 · 口试 11 月 21–22 日 · 报名入口 cet-bm.neea.edu.cn」、18.2s；N9.1 修复复验见 `.qa/v68/`（`logs/reverify.log`）。
+
+- **新增**：`docs/decisions/0033-web-search.md`；`.qa/v68/**`、`.qa/probe-search/**`（探针 probe4 / probe5 验证提取器）。
+- **修改**：`server/ai.mjs`（`searchQueries` 契约 + Sogou→360→Bing 链 + 相关性过滤 + 首条页摘录 + 第二轮回喂 + `buildSearchSection`）、`src/views/Inbox.tsx`（阶段文案「正在联网检索…」）。
+- **验证**：见上；证据 `.qa/v68/`（服务端 + 浏览器 + N9.1 复验）+ `.qa/probe-search/`。
+- **记录**：ADR-0033；`docs/02`、`docs/README`；`public/guide.html`；`CHANGELOG.md`、`TASK_BOOK.md`、`AGENTS.md`。
+
+### 项目「AI 整理」· 智能升级 · Slice N8.1（已完成 · 2026-10-03）
+答所有者「把能规划的任务都规划一下项目区分，AI 要够智能，体现在分类标准与规则设定」+「自行判断是不是需要建立新项目来收纳相关任务」——① **分类标准 v2**（`server/ai.mjs` `buildOrganizeSystem`）：三分类——【A 归并到现有项目】（具体归属关系：同课程 / 同活动赛事 / 同组织的一件事 / 同委托方 / 同一人的同一事务 / 或它是项目完成定义里的一步；仅「领域相近」不算）、【B 建议新项目】（≥2 条同一件多步事务；**单条**候选若明确是多步事务——准备考核 / 组织活动 / 开发交付 / 长期训练——可自行判断单独立项，须给出 `outcome` + `reason`）、【C 不规划】（单步即可完成的事务正确不输出）；目标「遍历全部候选，能合理规划的都给归属（不漏），每条建议能写出可核对 `reason`（不硬塞）」，含正 / 反例。② **限额放宽**：assignments 5→**8**、clusters 3→**5**、新项目簇 ≥2 成员即可（`ORGANIZE_MIN_CLUSTER_ENTRIES = 2`）；单条任务成簇门槛 = 非空 `outcome` + `reason` ≥6 字（`postValidateOrganize`）；确定性兜底仍 ≥3 条、不造单条。③ **响应与 UI**：新增 `unplanned`（未纳入任何建议的候选数），前端卡片显示「另有 N 项未纳入规划（单项事务或联系不足）」；schema 上限同步（draft / apply / unapply：8 / 5）；`digest` 对占位完成定义（空 / 「完成定义待整理」开头）显示「（未填写，参考标题与标签判断）」。④ **附带**：项目状态编辑表单新增**判断标准提示**（`EntityEditForm` 支持 `hint`；`ProjectDetailModal` 状态字段提示「进行中 = 正在推进；暂停 = 已开始但暂时搁置（计划恢复）；将来 = 未承诺、也许哪天做；已完成 = 完成定义达成；已归档 = 不再跟进（从项目页隐藏）」；`.k-field__hint` QUIET 样式）。⑤ **实测**：真实数据 t-0003 → 单独立项「Python 5 日速成」（含 `outcome` / `reason`，`unplanned=1`）；QA v68 浏览器全过 + 服务端单测全过（单条门槛 / ≥2 / 截断 8 / 5 / claimed 去重 / `unplanned + covered === candidates`）。
+
+- **新增**：`docs/decisions/0032-ai-organize-projects.md` §7（修订）；`.qa/v68/**`。
+- **修改**：`server/ai.mjs`（`buildOrganizeSystem` 三分类 + 限额 + 单条门槛 + `unplanned`）、`server/schemas.mjs`（draft / apply / unapply 上限 8 / 5）、`src/components/{OrganizeProposalCard,ProjectDetailModal,EntityEditForm}.tsx`、`src/styles/views.css`（`.k-field__hint`）。
+- **验证**：见上；证据 `.qa/v68/`。
+- **记录**：ADR-0032 §7；`docs/02`、`docs/README`；`public/guide.html`；`CHANGELOG.md`、`TASK_BOOK.md`、`AGENTS.md`。
+
+### 项目「AI 整理」+ 每日调度 · Slice N8（已完成 · 2026-10-03）
+答所有者「在项目页加一个 AI 整理功能：把现有的任务整理进高度相关的已有项目；剩下的相关任务建议新建项目；并且每天中午 12 点后自动跑一次」——① **草稿（只读、绝不落盘）**：新增 `POST /api/ai/organize/draft`（无 body）——候选 = 无 `projectId` 的未完成任务 + 未澄清收件箱（≤50），先做**确定性预分组提示**，再由 AI **两阶段按候选编号引用**出提案（模型无法编造 id，抗幻觉由构造保证）；后校验 ≤5 条归并（每条 ≤10 任务）/ ≤3 个新项目簇（≥3 成员、须含任务、标题不与现有项目冲突、`areaId` 须真实存在、标签优先复用），未被 AI 覆盖的预分组以**确定性兜底簇**补齐；返回 `{ assignments, clusters, model, ms, candidates }`（opencode 离线 503 / 失败 502）。② **应用 / 撤销（一次写入）**：`POST /api/projects/organize-apply`（201）服务端重校验（`organizeApplySchema` + 真实存在 / 状态 / 打开态）——归并**只写任务文件**（目标项目文件字节不动），逐簇建项目并归入，单簇失败不中止整批，审计 `via:'organize'`；无有效项 → 400「没有可应用的整理项」；`POST /api/projects/organize-unapply` 精确复原（新项目经 `clusterTaskIds` 入回收站、任务 `projectId` 清空，审计 `organize-unapply`）。③ **前端**：`src/lib/organize.ts`（模块 store `kernel.ui.organize.v1`：提案 / 上次运行日 / 在途态跨刷新保留；`runOrganizeNow` 手动；`useOrganizeScheduler` 每日调度；跨标签锁 `kernel.ui.organize.lock.v1` TTL 120s + 会话守卫；**只调草稿端点、绝不自动应用**）+ `OrganizeProposalCard`（两段「归并到已有项目」/「建议新项目」、逐行勾选默认全选、排除行 `.is-excluded`、页脚「全部应用（K 项）」/「重新整理」/「忽略」、无提案且已运行显示「今日整理已完成 · 暂无待确认建议」）+ `Projects` 工具条 `.k-projects__organize` 文案「AI 整理」/「整理中…」+ 成功 toast「已整理 N 项 · 撤销」；`AppLayout` 挂载调度器（**中午 12:00 后**每日一次，30s tick + focus / visibility 补跑，打开应用时若已过午即补跑，AI 离线静默跳过；**只出草案，应用仍需用户确认**——全站「先确认后写入」纪律不变）。④ **验证**：QA `.qa/v67/` 服务端冒烟 **47 PASS** + 浏览器 **39 PASS** = **86 PASS · 0 FAIL**；调度器以 Playwright clock 验证（11:30 → 0 次；跨 12:00 → 1 次；当日刷新不重跑）；**零残留**（37 个数据文件字节级一致，manifest SHA256 `3403f2a9…`）；无新增依赖、无数据模型变化。
+
+- **新增**：`src/lib/organize.ts`、`src/components/OrganizeProposalCard.tsx`、`.qa/v67/**`。
+- **修改**：`src/views/Projects.tsx`（工具条 + 卡片 + toast）、`src/components/shell/AppLayout.tsx`（挂载调度器）、`server/{schemas,ai,index}.mjs`（草稿 / 应用 / 撤销三端点）。
+- **验证**：见上；证据 `.qa/v67/`（`REPORT.md` + 数据指纹 manifest + 5 张截图）。
+- **记录**：ADR-0032；`docs/02`、`docs/05`、`docs/README`；`public/guide.html`；`CHANGELOG.md`、`TASK_BOOK.md`、`AGENTS.md`。
+
+### 桌面启动器（HTA）· N7.1（已完成 · 2026-10-03）
+答所有者「做一个启动器软件，放置在桌面，点击后会出现软件，点击可以直接打开浏览器弹出对应界面」——新增 `启动器.hta`（单文件 Windows 原生窗口，mshta/IE11 引擎 + JScript，**零依赖零安装**；UTF-8 BOM + 全部中文 `\uXXXX` 转义防编码坑）：窗口内状态机「未启动 → 启动 KERNEL（**隐藏**拉起 dev，10–30s）→ 已就绪（**自动打开浏览器一次**）→ 停止服务（taskkill 树级）」；`WshShell.Run` 不返回 PID → 用 PowerShell CIM 按 `dev.mjs` 命令行解析真实 PID 写 `%TEMP%\kernel-launcher.pid`；常驻「创建桌面快捷方式」；90s 超时回退「用 启动.cmd 查看日志」；`KERNEL_HTA_SELFTEST` 环境变量自检钩子。桌面快捷方式 `KERNEL 启动器.lnk` 已创建（mshta 目标，字节级核验）；分发包同步收录（白名单 + 扫描扩展 `.hta`；重建 16,290 条目 / 127 MB）。QA v65 全绿（包内启动器自检：ROOT / 内置 node / 内置 opencode 全识别；zip 与包内文件字节一致；隐私 0 命中；快捷方式核验）；selftest 实证 JScript 全量解析 + 中文路径 decode 链正确。已知边界：zip 内 CJK 文件名以 GBK 字节存储（中文 Windows 资源管理器解压正常；非中文区第三方工具可能乱码）；「点击→启动」真实链路由所有者实机体验。证据 `.qa/v65/`。
+
+- **新增**：`启动器.hta`、`.qa/v65/**`；`scripts/package.mjs`（收录 `.hta` + 扫描扩展）、`使用说明.md`、`README.md`。
+- **记录**：`CHANGELOG.md`、`TASK_BOOK.md`、`AGENTS.md`。
+
+### 分发包打包 + 运行时接入 · Slice N7（已完成 · 2026-10-03）
+
+- **新增**：`scripts/package.mjs`、`scripts/assets/welcome.html`。
+- **修改**：`scripts/{dev,launcher,spawn-bg}.mjs`、`启动.cmd`、`使用说明.md`。
+- **自检**：`node --check`（package / dev / launcher / spawn-bg / reset）全部通过；`启动.cmd` CRLF 20 行 · 无 BOM。
+
+### 收件箱窄屏长 token 折行修复 · N3.1（已完成 · 2026-10-03）
+场景：所有者「全清空（含历史）从零体验」——数据清零（备份 `.qa/backups/data-20261003-152819`）后随用随验，暴露 390 宽下 `/inbox` 文档级横溢 **160px**：长 URL / 长文件名条目（`.ic-row__title`）无折行点、不换行撑宽文档。修复：`.ic-row__title` 增 `overflow-wrap: anywhere`（一行 + 注释；`.ic-row__file` 既有 ellipsis 截断保持不变）。复验：390 横溢 160→**0**、桌面 1440 → 0、真实数据下 10 路由 × 2 视口**横溢全 0 · console error 全 0**（`/timetable` 空态含「未设置学期」提示正常）。巡检脚本同步修订：过期「日历课表模式切换」断言改为 `/timetable` 独立页断言（Slice H2 已迁移）并新增 `/timetable` 路由覆盖；证据 `.qa/v60/`。
+
+- **`src/styles/views.css`**：`.ic-row__title { overflow-wrap: anywhere }` + 注释。
+- **运维**：第二次数据清零（实体 20 · 回收站 2 · 附件 1 · 审计 192 行；标签重置 / term 删除 / config 保留）；服务重启复验全零。
+- **工具**：`.qa/v60/{verify-empty.py（修订）,check-overflow-390.py,REPORT.md}`。
+
+### 回顾人话化 · Slice N6（已完成 · 2026-10-03）
+答所有者「周回顾、月回顾目前版本的回答非常僵硬，全是系统层面的回答……我需要的是『这周完成的内容比上一周多，质量也比较高，充满干劲的一周』这种回答，而不是一堆专业名称」——① **摘要人话化**：活动计数行不再喂原始审计动作名（`course.create ×12` → 「录入课程 ×12」；未知动作聚合「其他整理操作」）；对比行去术语（「环比…基准 0」→「与上次对照（同等已走时长）：完成 X 件（上次 Y 件）· …」，**保留全部原始数字**供数字护栏）；② **提示词重写**：「复盘搭档 · 真诚朋友」口吻——说人话、有温度、可有情绪与主观判断但须邻句事实支撑；七段标题友好化（周：这周怎么样/干了些什么/和上周比/哪里卡住了/值得保持的/接下来/需要留意的；月版对应）；禁词扩充（基准/环比/同比/WIP/水位/收口/审计/字段/schema/英文点号动作名）；弱/强例重写；③ **兼容**：分节别名新旧双收录——旧归档（如 rev-0001）仍可解析并归一为新标题渲染。QA v63 **26/26**（真实周回顾 322 字：七段新标题齐全·禁词 0·指针在位·首段「开了个好头，但还只是个开头……」；真实月回顾 423 字同断言；旧归档阅读视图 7 分节回归；净零清理）；数字护栏核验（同指标差值派生已覆盖，无需扩展）；证据 `.qa/v63/`。
+
+- **`server/ai.mjs`**：`humanizeActivityCounts` + `buildReviewDigest` + `buildReviewSystem` + `REVIEW_SECTION_ALIASES`；`src/lib/reviewReport.ts` + `src/views/Review.tsx` 同步。
+- **记录**：ADR-0013 §7（修订）；`public/guide.html`；`CHANGELOG.md`、`TASK_BOOK.md`、`AGENTS.md`。
+
+### AI Key 本地配置 + 启动器 · Slice N5（已完成 · 2026-10-03）
+
+- **服务端**（`server/secrets.mjs`（新）+ `server/index.mjs`）：凭据模块（无副作用 / 原子写 / 静默容错）+ 两端点。
+- **前端**（`src/views/Settings.tsx`、`src/lib/{hooks,mutations}.ts`）：Key 配置块。
+- **启动器**（`启动.cmd`、`scripts/launcher.mjs`、`使用说明.md`、`README.md`、`.gitignore`、`scripts/dev.mjs`）。
+- **记录**：ADR-0030；`docs/02`；`docs/README`；`public/guide.html`；`CHANGELOG.md`、`TASK_BOOK.md`、`AGENTS.md`。
+
+### 来源摘要 · Slice N4（已完成 · 2026-10-03）
+答所有者「关联的是我原始输入文本，但确认执行 AI 建议后原文就没了……不要 i-1234 这样子冷冰冰的说辞」+ 选定方案 B——① **解析产出一句话摘要**：收件箱 AI 解析（同步 + 流式）新增 `summary`（≤40 字、单行、多要点「 · 」分隔、含关键时间/事项；`cleanSummary` 清洗（折叠空白/去引号/硬截断）；解析仍零写入）；② **apply 落档**：`POST /api/inbox/:id/apply { actions, summary? }` 落档条目 `summary`（撤回/恢复时删除；旧调用兼容）；③ **引用人话化**：任务详情「来源条目」= summary 优先、否则内容折叠截断（~90 字 + …）——关联芯片一律不再显示可见编号（入 tooltip）；收件箱「已澄清」区产物引用显示产物**标题**（解析不到回退 id）。QA v61：冒烟 **25/25**（真实摘要恰好 40 字单行 / apply 落档与撤回清除 / 不带 summary 旧兼容 / probe-n2 23/23 + probe-h1 19/19）+ E2E **24/24**（关联显示摘要·无可见 i- 编号·tooltip 保留；无摘要降级折叠截断 91 字；已澄清显示产物标题）；三重哈希逐字节一致；证据 `.qa/v61/`。
+
+- **服务端**（`server/{ai,schemas,index}.mjs`）：`summary` 指令 + `cleanSummary` + 双路径携带 + apply 落档 + schema（item ≤200 / apply ≤100）。
+- **前端**（`src/lib/{mutations,relations}.ts`、`src/components/Relations.tsx`、`src/views/Inbox.tsx`、`src/types.ts`）：类型与透传；`condenseContent`/`titleOfId`/`inboxDisplayTitle`；芯片去编号；已澄清产物标题化。
+- **记录**：ADR-0029；`docs/02`；`docs/04`；`docs/README`；`public/guide.html`；`CHANGELOG.md`、`TASK_BOOK.md`、`AGENTS.md`。
+
+### 并行解析 · Slice N3（已完成 · 2026-10-03）
+答所有者「ai解析改成能并行的，只要及时处理完成的opencode会话就行了，不然我丢快点，跑一半的ai解析全断了」——根因：全局单令牌 + 单面板，任一新解析自增令牌即令所有旧解析的 UI 回调失效、面板被接管（HTTP 流本就未断）；批量与多文件解析为严格顺序。重构为**每条目独立 job 的并行调度器**：每 id 令牌（新解析只取代同一 id 的在途结果）、分桶增量缓冲 + 共享节流、FIFO 队列 + **并发上限 3**（完成自动进位）、批量完成驱动进度（done/total）、按条清理（`clearInboxAiJob`）、N0.9 迟到结果语义完整保留（唯一作废=显式忽略）；多文件投递通用条目并行（课表类仍顺序）。服务端专项审计：**零全局锁、每解析独立 opencode session → 零改动**（唯一串行是写盘 writeChain）。QA **26/26**（3 条同显解析中·完成序 C→B→A·各卡各 payload；重解析接管；批量 0/4→4/4 墙钟 4.23s ≪ 顺序下界 8s；**真实场景**连发两条 → 双「AI 建议就绪」未断）；零残留（filesHash 与 v57 基线逐位一致）；证据 `.qa/v59/`。
+
+- **`src/lib/inboxAi.ts`**：jobs Map 快照（每条目 phase/stage/text/reasoning/result/error）+ itemTokens + FIFO/`AI_PARSE_CONCURRENCY=3` + `clearInboxAiJob`（取代全局清空）+ reconcile 清 job；sentinel（GONE/SUPERSEDED）批量不计失败。
+- **`src/views/Inbox.tsx`**：面板按 `jobs.get(id)` 派生；「解析中…」按条显示；「AI 解析中 · 已完成 done/total」×2；上传流并行 `Promise.all`；5 处调用点改按条清理。
+- **记录**：ADR-0028；`docs/02`；`docs/README.md`；`public/guide.html`；`CHANGELOG.md`、`TASK_BOOK.md`、`AGENTS.md`。
+
+### 链接阅读 + 粘贴截图 · Slice N2 / N2.5（已完成 · 2026-10-03）
+答所有者「目前程序能阅读图片和链接吗」——图片早已可读（N0）；链接实测不能读正文。本切片补上**链接阅读**（系统**首次出站抓取**）：文本条目含 http(s) 链接时，解析前在数据服务抓取**首个**链接正文并注入上下文，AI 基于实际内容写资料简介；`resource` 动作新增 `url` 字段端到端持久化（schema → apply `record.url` → 建议卡「链接」可编辑 → 资料详情可点链接行）。抓取约束：仅 http(s)、**私网 / 环回 / 链路本地 hostname 直接拒绝且不发请求**、8s 超时、2MB 流式截断、仅 html/xhtml/plain、charset 探测（GBK 回退）、正文 ≤8000 字；失败回退「按链接保守处理」不阻断解析。附带 **Ctrl+V 粘贴截图**：收件箱页粘贴剪贴板图片直接入待上传队列（纯文本不拦截）。服务端冒烟 **16/16**（真实抓取 example.com → 简介基于正文；失败回退含「抓取未成功」；内网拒抓）+ E2E **9/9**（链接字段编辑 → 落库 → 详情链接）+ 粘贴 E2E **10/10**；探针 `.qa/probe-n2/` 23/23 + probe-h1 回归 19/19；零残留；证据 `.qa/v57/`、`.qa/v58/`。
+
+- **服务端（`server/{ai,schemas,index}.mjs`）**：`extractFirstUrl` / `isPrivateHostname` / `readBodyLimited` / `fetchLinkExcerpt` / `htmlToArticleText` / `buildLinkSection` / `applyLinkUrlFallback`；`aiActionSchema.url`（≤2000）；apply resource 写 `url`；提示词字段与「基于摘录撰写」规则。
+- **前端（`src/views/Inbox.tsx` / `src/lib/{mutations,aiForm}.ts` / `src/components/AiSuggestionForm.tsx`）**：window 级 paste（仅 Inbox 存活；图片拦截 / 文本放行；`粘贴截图-<时间戳>` 命名）；`AiAction.url` + 字段矩阵 + 「链接」输入；资料详情链接行既有。
+- **记录**：新增 ADR-0027；`docs/02`；`docs/04`（§4.9 注记）；`docs/README.md`；`public/guide.html`；`CHANGELOG.md`、`TASK_BOOK.md`、`AGENTS.md`（含 §8 出站抓取纪律）。
+
+### 收件箱来源图标挤压变形修复 · N0.10（已完成 · 2026-10-03）
+答所有者截图「按钮被挤压变形都不一样了」：行内**来源图标徽标**（`.k-source-icon`）缺 `flex-shrink: 0`——长文本行的内容基准宽度过大时，flex 收缩被按比例分摊到徽标上。DOM 实测：i-0005（长文）徽标被压到 **7.7px**（内嵌图标同缩 7.7px），i-0004（短文）仍 26px → 两行观感不一致。修复：`.k-source-icon { flex-shrink: 0 }`（固定尺寸徽标不参与收缩）。复测：长/短文本行徽标均 **26×26 · 图标 13px**；`npm run build` 退出 0；只读；证据 `.qa/v56/diag-source-icon.py` + 行级 3× 截图。
+
+### 解析状态跨页存活修复 · N0.9（已完成 · 2026-10-03）
+答所有者「AI 解析进行一半切换页面就消失不见」。Playwright 复现矩阵锁定根因：**单条解析中点击「收起」会调 `clearInboxAiActive()` → 请求令牌作废 → 完成结果被永久丢弃**（无缓存 / 标记 / 卡片，与截图状态一致）；「切页穿越完成」本身实测正常（`.qa/v56/repro-matrix.py` 场景 A/B 对照）。修复：① `toggleExpand` 改为**纯视图切换**（收起 / 展开绝不动解析态与在途请求）；② **纵深防御**——迟到（stale token）但未被显式忽略、且无同 id 更新解析接管的完成结果，仍写入建议缓存（行尾「AI 建议就绪」）；唯一作废意图 = 用户显式「忽略」（`dismissedIds` 显式作废集；重新解析即撤销标记；条目离场同步清理）。`npm run build` 退出 0；复验 `.qa/v56/verify-n09.py`：B′（收起→展开→恢复→出卡）PASS、C′（解析 A → 切去解析 B → A 迟到结果入缓存）PASS；只读零写入；证据 `.qa/v56/`。
+
+- **前端（`src/views/Inbox.tsx` / `src/lib/inboxAi.ts`）**：`toggleExpand` 视图化；`dismissedIds` + `parseItem` stale 兜底缓存；注释同步。
+- **记录**：`CHANGELOG.md`、`TASK_BOOK.md`、`AGENTS.md`；backlog 增「spawn-bg 日志文件为空（npm 子进程 stdout 未落盘）」。
+- **备注**：服务端零改动；已登录页面热载即生效。
+
 ### 总览「习惯打卡」条修复 · N0.8（已完成 · 2026-10-03）
 答所有者截图反馈（零习惯时该条布局崩坏：「今日打卡」被长文本挤成竖排、与点阵/缺口文案叠挤）：① **零习惯空态**——无任何习惯时渲染「还没有习惯 · 去设置创建」（深链 `/settings?section=habits`），不再渲染按钮 / 点阵 / 缺口；② **布局硬化**——「今日打卡」按钮 `flex-shrink:0 + white-space:nowrap`、缺口文案侧 `overflow-wrap:anywhere`（长 14 天列表自然换行不叠挤）。`npm run build` 退出 0；QA **29/29**（空态 / 真实「创建 → 打卡 → 清理」全流程：`0 天 → 1 天` + 点阵命中 + toast 撤销 / 390 零横溢 / 零残留）；证据 `.qa/v55/`。
 
