@@ -59,7 +59,11 @@ async function readDirRecords(dir) {
   const records = []
   for (const name of names) {
     if (!name.endsWith('.json')) continue
-    records.push(await readJson(path.join(dir, name)))
+    try {
+      records.push(await readJson(path.join(dir, name)))
+    } catch {
+      /* 文件在 readdir 与 readFile 之间被删除 / 损坏：跳过（并发读竞态防护） */
+    }
   }
   return records
 }
@@ -76,7 +80,11 @@ export async function readKind(kind) {
   const records = []
   for (const name of names) {
     if (!name.endsWith('.json')) continue
-    records.push(await readJson(path.join(dir, name)))
+    try {
+      records.push(await readJson(path.join(dir, name)))
+    } catch {
+      /* 文件在 readdir 与 readFile 之间被删除 / 损坏：跳过（并发读竞态防护） */
+    }
   }
   return records.sort((a, b) => String(a.id).localeCompare(String(b.id)))
 }
@@ -94,8 +102,20 @@ export async function readEntity(kind, id) {
 export async function readSnapshot() {
   const entries = await Promise.all(KINDS.map(async (kind) => [kind, await readKind(kind)]))
   const byKind = Object.fromEntries(entries)
-  const config = await readJson(CONFIG_FILE)
-  const tagRegistry = await readJson(path.join(DATA_DIR, 'meta', 'tags.json'))
+  // 配置 / 标签注册表缺失或损坏：静默降级（与 readTerm 同口径），避免快照整体 500
+  let config
+  try {
+    config = await readJson(CONFIG_FILE)
+  } catch {
+    config = { name: 'KERNEL', owner: '', version: '', locale: 'zh-CN', weekStart: 'monday', createdAt: '' }
+  }
+  let tagRegistry = { tags: [] }
+  try {
+    const parsed = await readJson(path.join(DATA_DIR, 'meta', 'tags.json'))
+    if (Array.isArray(parsed?.tags)) tagRegistry = parsed
+  } catch {
+    /* 视作空注册表 */
+  }
   return {
     inbox: byKind.inbox,
     tasks: byKind.tasks,
@@ -763,7 +783,15 @@ async function appendActivity(entry) {
   await fs.appendFile(ACTIVITY_FILE, line, 'utf8')
 }
 
-/** 下一个顺序 id：t-0001 → t-0002（扫描目录 + 回收站取最大值 +1，防回收后 id 复用） */
+/**
+ * 已分配但可能尚未落盘的 id 水位（防并发分配撞号）。
+ * 背景：nextId 与随后的 commit 是两次独立调用；两个并发创建可能在各自落盘前拿到同一 id，
+ * 后者覆盖前者。此处让 nextId 在返回前同步抬高水位（读-改-写之间无 await，单线程下原子），
+ * 与文件扫描取最大值，保证连续分配不重复。
+ */
+const reservedMax = new Map()
+
+/** 下一个顺序 id：t-0001 → t-0002（扫描目录 + 回收站取最大值 +1，防回收后 id 复用；含在途水位） */
 export async function nextId(kind) {
   const prefix = {
     tasks: 't',
@@ -781,10 +809,12 @@ export async function nextId(kind) {
   if (!prefix) throw new Error(`未知实体类型：${kind}`)
   const list = await readKind(kind)
   const trashed = await readDirRecords(path.join(TRASH_DIR, kind))
-  let max = 0
+  let max = reservedMax.get(kind) ?? 0
   for (const record of [...list, ...trashed]) {
     const match = /-(\d+)$/.exec(String(record.id))
     if (match) max = Math.max(max, Number(match[1]))
   }
-  return `${prefix}-${String(max + 1).padStart(4, '0')}`
+  const next = max + 1
+  reservedMax.set(kind, next)
+  return `${prefix}-${String(next).padStart(4, '0')}`
 }

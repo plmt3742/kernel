@@ -696,7 +696,7 @@ const events = [
   }),
   event('e-0008', 'demo 开发实验室面试约谈', {
     startAt: '2026-10-05T15:00:00+08:00', endAt: '2026-10-05T15:45:00+08:00',
-    location: '松山湖实验楼 512', areaId: 'a-0004', projectId: 'p-0005',
+    location: '某实验楼 512', areaId: 'a-0004', projectId: 'p-0005',
     tags: ['role:acm', 'topic:面试'],
   }),
   event('e-0009', '计算机组成原理', {
@@ -731,7 +731,7 @@ const events = [
   }),
   event('e-0015', '学生组织物资清点', {
     startAt: '2026-10-09T20:00:00+08:00', endAt: '2026-10-09T21:00:00+08:00',
-    location: '某教室 仓库', areaId: 'a-0003', projectId: 'p-0002',
+    location: '某仓库', areaId: 'a-0003', projectId: 'p-0002',
     tags: ['role:competition-head'],
   }),
   event('e-0016', '数据结构实验课', {
@@ -764,7 +764,7 @@ const events = [
  * ========================================================================= */
 const notes = [
   note('n-0001', '学生组织 10 月例会纪要', 'meeting',
-    '# 学生组织 10 月例会纪要\n\n- 时间：2026-09-29 19:30\n- 议题：程序设计大赛筹备\n\n## 结论\n1. 大赛定于 10 月 18 日，机房 6B-201/202。\n2. 报名目标 120 人，10 月 12 日截止。\n3. 赛制采用 ACM 赛制，3 小时 8 题。\n\n## 待办\n- 策划书终稿（负责人：我）\n- 场地与预算确认（对接老师）\n',
+    '# 学生组织 10 月例会纪要\n\n- 时间：2026-09-29 19:30\n- 议题：程序设计大赛筹备\n\n## 结论\n1. 大赛定于 10 月 18 日，机房 A/B。\n2. 报名目标 120 人，10 月 12 日截止。\n3. 赛制采用 ACM 赛制，3 小时 8 题。\n\n## 待办\n- 策划书终稿（负责人：我）\n- 场地与预算确认（对接老师）\n',
     { links: ['n-0003'], areaId: 'a-0003', projectId: 'p-0002', distillLevel: 1,
       tags: ['role:competition-head', 'topic:竞赛'] }),
   note('n-0002', '我的 GTD 循环设计', 'permanent',
@@ -1038,7 +1038,7 @@ for (const rev of reviews) writeRecord('reviews', rev.id, rev)
 
 writeMeta('config', {
   name: 'KERNEL',
-  owner: '某高校 · 工业软件 · 大二',
+  owner: '某高校 · 软件工程 · 大二',
   version: '0.1.0',
   locale: 'zh-CN',
   weekStart: 'monday',

@@ -90,7 +90,7 @@ import { getDeepseekKey, setDeepseekKey } from './secrets.mjs'
 const HOST = '127.0.0.1'
 const PORT = 4097
 const BODY_LIMIT = 256 * 1024
-const SERVICE_VERSION = '0.4.0'
+const SERVICE_VERSION = '0.5.0'
 /** 文件投递单文件上限（RAW body；超出即 413 并中断请求） */
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 /** 长截图 AI 分片上限（RAW body；每片为前端切好的 JPEG） */
