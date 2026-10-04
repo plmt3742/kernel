@@ -306,14 +306,18 @@ export function extractOfficeText(ext, buf) {
 
 /** 表格行数硬上限（有界读取，避免超大表耗尽内存 / 提示词） */
 const XLSX_MAX_ROWS = 500
+/** 表格列数硬上限（安全加固：防 r="…" 超大列号触发补齐循环耗尽内存 / CPU） */
+const XLSX_MAX_COLS = 256
 
-/** 单元格引用（如 "C3" / "AA12"）的列字母 → 0-based 列号；无法解析返回 -1 */
+/** 单元格引用（如 "C3" / "AA12"）的列字母 → 0-based 列号；无法解析返回 -1；超上限返回 XLSX_MAX_COLS */
 function columnIndexFromRef(ref) {
   const letters = /^[A-Za-z]+/.exec(String(ref ?? ''))
   if (letters === null) return -1
   let index = 0
   for (const ch of letters[0].toUpperCase()) {
     index = index * 26 + (ch.charCodeAt(0) - 64)
+    // 超上限提前返回，避免超长列引用序列无谓计算
+    if (index > XLSX_MAX_COLS) return XLSX_MAX_COLS
   }
   return index - 1
 }
@@ -377,6 +381,8 @@ export function extractXlsxGrid(buf) {
       const inner = cm[2] ?? ''
       const refMatch = /\br="([A-Za-z]+\d+)"/.exec(attrs)
       const col = refMatch !== null ? columnIndexFromRef(refMatch[1]) : cells.length
+      // 安全加固：列号超上限直接忽略该单元格（防补齐循环 DoS）
+      if (col >= XLSX_MAX_COLS) continue
       const typeMatch = /\bt="([^"]*)"/.exec(attrs)
       const type = typeMatch !== null ? typeMatch[1] : ''
       let value = ''
@@ -1091,6 +1097,8 @@ export function normalizeResourceNote(raw, fallback = '') {
 const LINK_FETCH_TIMEOUT_MS = 8000
 /** 链接抓取响应流上限（字节）；超限截断后继续解析 */
 const LINK_FETCH_MAX_BYTES = 2 * 1024 * 1024
+/** 链接抓取最大重定向跳数（安全加固：每跳重新校验私网，防重定向绕过） */
+const LINK_MAX_REDIRECTS = 3
 /** 链接正文摘录上限（字符；汉字 / 字符数） */
 const LINK_EXCERPT_MAX_CHARS = 8000
 /** 网页标题上限（字符） */
@@ -1139,6 +1147,16 @@ function isPrivateHostname(hostname) {
   if (host === '') return true
   if (host === 'localhost' || host.endsWith('.localhost')) return true
   if (host === '::1') return true
+  // IPv4-mapped IPv6（如 [::ffff:127.0.0.1]）：解出内嵌 IPv4 再判定
+  const mapped = /^::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/.exec(host)
+  if (mapped !== null) return isPrivateHostname(mapped[1])
+  // 十六进制分组的映射形式（如 [::ffff:7f00:1]）
+  const hexMapped = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i.exec(host)
+  if (hexMapped !== null) {
+    const hi = Number.parseInt(hexMapped[1], 16)
+    const lo = Number.parseInt(hexMapped[2], 16)
+    return isPrivateHostname(`${(hi >> 8) & 0xff}.${hi & 0xff}.${(lo >> 8) & 0xff}.${lo & 0xff}`)
+  }
   const ipv4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host)
   if (ipv4 !== null) {
     const a = Number(ipv4[1])
@@ -1262,6 +1280,46 @@ export function htmlToArticleText(html) {
 }
 
 /**
+ * 受限抓取：手动处理重定向，每一跳都重新校验协议与私网 hostname（安全加固，防重定向绕过 SSRF）。
+ * 最多 LINK_MAX_REDIRECTS 跳；拒绝 / 超跳 / 异常返回 null。绝不抛出。
+ * @param {string} startUrl 起始 URL
+ * @param {AbortSignal} signal 超时信号
+ * @returns {Promise<{ response: Response, url: URL } | null>}
+ */
+async function fetchLinkLimited(startUrl, signal) {
+  let current = startUrl
+  for (let i = 0; i <= LINK_MAX_REDIRECTS; i += 1) {
+    let parsed
+    try {
+      parsed = new URL(current)
+    } catch {
+      return null
+    }
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null
+    if (isPrivateHostname(parsed.hostname)) return null
+    const response = await fetch(parsed.toString(), {
+      method: 'GET',
+      redirect: 'manual',
+      signal,
+      headers: {
+        'User-Agent': LINK_USER_AGENT,
+        'Accept-Language': 'zh-CN,zh;q=0.9',
+        Accept: 'text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.5',
+      },
+    })
+    if (response.status >= 300 && response.status < 400) {
+      const location = response.headers.get('location')
+      if (location === null || location === '') return null
+      // 相对跳转按当前 URL 解析；下一轮循环再校验 hostname
+      current = new URL(location, parsed).toString()
+      continue
+    }
+    return { response, url: parsed }
+  }
+  return null
+}
+
+/**
  * 抓取首个链接的网页正文摘录（Slice N2）。绝不抛出：
  * @param {string} url 目标链接（仅 http / https；私网 / 环回直接拒绝，不发请求）
  * @returns {Promise<{ url: string, title: string, text: string } | null>}
@@ -1279,16 +1337,9 @@ export async function fetchLinkExcerpt(url) {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), LINK_FETCH_TIMEOUT_MS)
   try {
-    const response = await fetch(parsed.toString(), {
-      method: 'GET',
-      redirect: 'follow',
-      signal: controller.signal,
-      headers: {
-        'User-Agent': LINK_USER_AGENT,
-        'Accept-Language': 'zh-CN,zh;q=0.9',
-        Accept: 'text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.5',
-      },
-    })
+    const fetched = await fetchLinkLimited(parsed.toString(), controller.signal)
+    if (fetched === null) return null
+    const { response, url: finalUrl } = fetched
     if (!response.ok) return null
     const contentType = String(response.headers.get('content-type') ?? '').toLowerCase()
     if (
@@ -1314,7 +1365,7 @@ export async function fetchLinkExcerpt(url) {
     const title = extractHtmlTitle(html)
     const text = htmlToArticleText(html)
     if (text === '') return null
-    return { url: parsed.toString(), title, text }
+    return { url: finalUrl.toString(), title, text }
   } catch {
     return null
   } finally {
