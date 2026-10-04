@@ -60,6 +60,7 @@ const ICON_SRC = path.join(ROOT, 'kernel.ico')
 
 // 暂存目录（均位于仓库之外，构建结束后清理）。
 const STAGE = path.join(OUT_DIR, '.payload')
+const STAGE_DATA = path.join(OUT_DIR, '.payload-data')
 const ISSBUILD = path.join(OUT_DIR, '.issbuild')
 
 const ENTITY_DIRS = [
@@ -149,8 +150,10 @@ fs.mkdirSync(OUT_DIR, { recursive: true })
 
 // ---- 幂等：清空暂存目录 ----
 rmrf(STAGE)
+rmrf(STAGE_DATA)
 rmrf(ISSBUILD)
 fs.mkdirSync(STAGE, { recursive: true })
+fs.mkdirSync(STAGE_DATA, { recursive: true })
 
 log('[installer] 组装安装载荷（白名单拷贝）…')
 copyDir(path.join(ROOT, 'src'), path.join(STAGE, 'src'))
@@ -216,7 +219,7 @@ fs.writeFileSync(path.join(STAGE, 'opencode.json'), JSON.stringify(opencodeConfi
 
 // ---- 空白数据骨架（绝不拷贝 owner 数据）----
 log('[installer] 生成空白数据骨架…')
-for (const d of DATA_DIRS) fs.mkdirSync(path.join(STAGE, 'data', d), { recursive: true })
+for (const d of DATA_DIRS) fs.mkdirSync(path.join(STAGE_DATA, 'data', d), { recursive: true })
 const config = {
   name: 'KERNEL',
   owner: '',
@@ -225,11 +228,11 @@ const config = {
   weekStart: 'monday',
   aiAutomation: 'confirm',
 }
-fs.writeFileSync(path.join(STAGE, 'data', 'meta', 'config.json'), JSON.stringify(config, null, 2) + '\n', 'utf8')
-fs.writeFileSync(path.join(STAGE, 'data', 'meta', 'tags.json'), JSON.stringify({ tags: [] }, null, 2) + '\n', 'utf8')
+fs.writeFileSync(path.join(STAGE_DATA, 'data', 'meta', 'config.json'), JSON.stringify(config, null, 2) + '\n', 'utf8')
+fs.writeFileSync(path.join(STAGE_DATA, 'data', 'meta', 'tags.json'), JSON.stringify({ tags: [] }, null, 2) + '\n', 'utf8')
 
 // ---- 结构校验（防回归）----
-for (const bad of ['.git', '.qa', '.omo', 'docs', 'design-drafts', 'data/meta/secrets.json', 'data/activity.jsonl', 'scripts/seed.mjs', 'scripts/assets', 'public/showcase.html', '使用说明.md']) {
+for (const bad of ['.git', '.qa', '.omo', 'docs', 'design-drafts', 'data', 'data/meta/secrets.json', 'data/activity.jsonl', 'scripts/seed.mjs', 'scripts/assets', 'public/showcase.html', '使用说明.md']) {
   if (fs.existsSync(path.join(STAGE, bad))) fatal(`禁用路径出现在载荷内：${bad}`)
 }
 if (fs.existsSync(path.join(STAGE, 'AGENTS.md'))) fatal('AGENTS.md 不应进载荷')
@@ -245,6 +248,7 @@ log('[installer] 调用内置 Inno Setup 编译器…')
 const isccArgs = [
   path.join(ISSBUILD, ISS_NAME),
   `/DStageDir=${STAGE}`,
+  `/DDataDir=${STAGE_DATA}`,
   `/DOutputDir=${OUT_DIR}`,
 ]
 const r = spawnSync(ISCC, isccArgs, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
@@ -261,6 +265,7 @@ ok('编译通过')
 
 // ---- 清理暂存（仓库与发布区都不留临时目录）----
 rmrf(STAGE)
+rmrf(STAGE_DATA)
 rmrf(ISSBUILD)
 
 // ---- 结果 ----

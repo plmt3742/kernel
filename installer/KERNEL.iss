@@ -22,6 +22,10 @@
   #define OutputDir "."
 #endif
 
+#ifndef DataDir
+  #error 缺少 DataDir：请通过 ISCC /DDataDir=<数据骨架目录> 传入空白数据骨架目录。
+#endif
+
 #define AppName "KERNEL"
 #define AppVersion "0.5.0"
 #define AppPublisher "KERNEL"
@@ -60,10 +64,11 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
-; 主载荷：整目录递归拷贝，排除 data\（数据骨架单独处理以免被卸载）。
-Source: "{#StageDir}\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion; Excludes: "data\*"
-; 空白数据骨架：仅在目标不存在时植入；卸载时永不删除（用户数据保留）。
-Source: "{#StageDir}\data\*"; DestDir: "{app}\data"; Flags: recursesubdirs createallsubdirs onlyifdoesntexist uninsneveruninstall
+; 主载荷：整目录递归拷贝（不含任何 data\；数据骨架在独立暂存目录）。
+; 注意：此处刻意不用 Excludes——Inno 的 * 通配会跨目录匹配，曾把 node_modules 内嵌套的 data 目录（如 node-releases\data）一并误删。
+Source: "{#StageDir}\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
+; 空白数据骨架（独立目录）：仅在目标不存在时植入；卸载时永不删除（用户数据保留）。
+Source: "{#DataDir}\data\*"; DestDir: "{app}\data"; Flags: recursesubdirs createallsubdirs onlyifdoesntexist uninsneveruninstall
 
 [Dirs]
 ; 空白数据子目录（多数初始为空，需显式创建）；卸载时永不删除。
@@ -83,11 +88,11 @@ Name: "{app}\data\files"; Flags: uninsneveruninstall
 Name: "{app}\data\meta"; Flags: uninsneveruninstall
 
 [Icons]
-Name: "{group}\{#AppName}"; Filename: "{app}\启动器.vbs"; WorkingDir: "{app}"; IconFilename: "{app}\kernel.ico"
-Name: "{userdesktop}\{#AppName}"; Filename: "{app}\启动器.vbs"; WorkingDir: "{app}"; IconFilename: "{app}\kernel.ico"; Tasks: desktopicon
+Name: "{group}\{#AppName}"; Filename: "{sys}\wscript.exe"; Parameters: """{app}\启动器.vbs"""; WorkingDir: "{app}"; IconFilename: "{app}\kernel.ico"
+Name: "{userdesktop}\{#AppName}"; Filename: "{sys}\wscript.exe"; Parameters: """{app}\启动器.vbs"""; WorkingDir: "{app}"; IconFilename: "{app}\kernel.ico"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\启动器.vbs"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent
+Filename: "{sys}\wscript.exe"; Parameters: """{app}\启动器.vbs"""; WorkingDir: "{app}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent
 
 [UninstallDelete]
 ; 运行期缓存（Vite 依赖预打包等）不属于安装内容，卸载时一并清理；
