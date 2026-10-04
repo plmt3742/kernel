@@ -4,6 +4,18 @@
 
 ## [Unreleased]
 
+### 文档审计对齐 + 会话交付记录（已完成 · 2026-10-05）
+
+本会话余下的交付与文档审计对齐：
+
+- **Windows 安装包**：`installer/KERNEL.iss`（Inno Setup 6；每用户安装 `PrivilegesRequired=lowest`、自选安装目录、开始菜单 + 可选桌面快捷方式、标准卸载程序）+ `installer/welcome.html` + `scripts/build-installer.mjs`（白名单组装载荷 + 仓库内置 `innosetup-compiler` 编译器，无需系统安装 Inno Setup）；数据位于 `<安装目录>\data` 并以 `uninsneveruninstall` 标记（覆盖安装不清空、**卸载保留**）；两处修复（启动改 `wscript` 解析 `.vbs`；主载荷去除 `Excludes` 误删 `node_modules` 内嵌套 data 目录）；`build-installer` 去除写死本机路径。
+- **README 重写**：门面 + 界面截图（`docs/assets/**`）+ 团队信息占位。
+- **仓库卫生**：删除旧分支 + `gc`（仓库 3.24 MiB）、`.gitignore` 固化本地私有排除、新增 `.gitattributes` 与 MIT LICENSE。
+- **本地服务加固**：dev / preview 默认仅本机（`server.host: false`）；数据服务 Origin 同源校验、`/api/files` 响应 `attachment` / `nosniff`、`/api/open` 注入防护、AI 链接抓取 SSRF 加固、500 收敛、`readBody` 413、xlsx 列上限、`toDate` 兜底、任务引用校验。
+- **文档审计对齐**：新建 `docs/decisions/0031-installer-distribution.md`（填补 ADR-0031 空缺）；修正 `docs/00` §6.4 与 `docs/07` §4.3 托管说明（默认仅本机、`--host` 开局域网）；`docs/00` 补路由 `/timetable`·`/trash`、实体计数与 `course`、ID `c-`、§6.2 数据服务更正为 v0.4；`docs/05` 发布产物说明改指向 `scripts/build-installer.mjs`；`docs/README` ADR 索引按 0001–0037 升序重排并补 0031；修正 0032 / 0037 的 ADR-0031 引用。
+
+- **修改**：installer/{KERNEL.iss,welcome.html}、scripts/build-installer.mjs、README.md、vite.config.ts、server/**、docs/{00,02,05,07,README}、docs/decisions/{0030,0031,0032,0037}-*.md、.gitignore、.gitattributes、LICENSE、AGENTS.md、CHANGELOG.md、TASK_BOOK.md
+
 ### Windows 安装包（Setup.exe）· 安装向导 + 数据随程序目录 + 卸载保留数据（已完成 · 2026-10-05）
 
 - **新增**：Windows 安装包——`installer/KERNEL.iss`（Inno Setup 6 脚本：安装向导、可选安装目录、开始菜单与可选桌面快捷方式、卸载程序；`PrivilegesRequired=lowest` 每用户安装、无需管理员）与 `installer/welcome.html`（启动页）；`scripts/build-installer.mjs`（按白名单组装干净载荷 + 调用仓库内置 Inno Setup 编译器 `node_modules/innosetup-compiler/bin/ISCC.exe` + 打印产物路径，**无需在系统中单独安装 Inno Setup**）。
@@ -29,10 +41,10 @@
 - **验证**：见上；证据 `.qa/v75/`（`spawnbg-diagnose*.mjs` + `relay-sim.mjs` + `logs/{t5-noshell,b-relay,spawnbg-new,package-rebuild-2}.log`）。
 
 ### 桌面启动器 · 原生 WPF 重做 · Slice N7.2（已完成 · 2026-10-04）
-答 owner「桌面快捷按钮也就是启动器太丑了，优化一下，现在只是网页套壳而已，很低廉」——旧 `启动器.hta`（mshta / IE 套壳：白色系统标题栏 + mshta 默认图标 + 方角窗口 + IE11 渲染天花板）整体替换为**原生窗口链**：`启动器.vbs`（纯 ASCII 入口，`wscript` 隐藏拉起，零黑窗）→ `启动器.ps1`（PowerShell 5.1 + .NET Framework WPF，Win10 / 11 内置、零安装）——无边框圆角卡片（16px）+ 自绘标题栏（拖拽 / 最小化 / 关闭）+ 品牌 K 笔画标记（复用 `public/favicon.svg` 几何）+ 状态脉冲 / 进度轨 / 强调色 CTA（仅信号用色）；`kernel.ico` 多尺寸（16–256，`scripts/make-icon.ps1` 由同一几何生成，可重跑）。**行为与旧版逐项对齐**（探活 `127.0.0.1:5173` 每 800ms、启动 / 停止 dev 栈、就绪自动开浏览器、创建桌面快捷方式、日志按钮 → `启动.cmd`、状态机与超时口径一致），新增**单实例互斥锁**与测试钩子（`KERNEL_LAUNCHER_SELFTEST` 写 `%TEMP%\kernel-launcher-selftest.txt`、`KERNEL_LAUNCHER_SMOKE_MS` 自动关窗、`KERNEL_LAUNCHER_PROBE_URL` 覆盖探活地址），停止态文案修正（「停止中…」）。桌面快捷方式 `KERNEL 启动器.lnk` 重建（目标 `wscript.exe` + `启动器.vbs`、图标 `kernel.ico`）；打包同步（`package.mjs` 白名单改收 ps1 / vbs / ico、`.ps1`/`.vbs` 纳入隐私扫描、scripts 过滤 `make-icon.ps1`）。QA `.qa/v75/`：替换前后截图 + 子代理 3 轮视觉迭代；独立复验——自检 PS_EXIT=0（四行内容正确）、vbs 链 1180ms 窗口可见 / 5591ms 自动关闭、**真实桌面快捷方式端到端**（DURING=1 / AFTER=0）、图标 7 尺寸预览、快捷方式读回 6 项全 True、WSCRIPT=0 · MSHTA=0 · 5173 在线 · 无残留。
+答 owner「桌面快捷按钮也就是启动器太丑了，优化一下，现在只是网页套壳而已，很低廉」——旧 `启动器.hta`（mshta / IE 套壳：白色系统标题栏 + mshta 默认图标 + 方角窗口 + IE11 渲染天花板）整体替换为**原生窗口链**：`启动器.vbs`（纯 ASCII 入口，`wscript` 隐藏拉起，零黑窗）→ `启动器.ps1`（PowerShell 5.1 + .NET Framework WPF，Win10 / 11 内置、零安装）——无边框圆角卡片（16px）+ 自绘标题栏（拖拽 / 最小化 / 关闭）+ 品牌 K 笔画标记（复用 `public/favicon.svg` 几何）+ 状态脉冲 / 进度轨 / 强调色 CTA（仅信号用色）；`kernel.ico` 多尺寸（16–256，`scripts/make-icon.ps1` 由同一几何生成，可重跑）。**行为与旧版逐项对齐**（探活 `127.0.0.1:5173` 每 800ms、启动 / 停止 dev 栈、就绪自动开浏览器、创建桌面快捷方式、日志按钮 → `启动.cmd`、状态机与超时口径一致），新增**单实例互斥锁**与测试钩子（`KERNEL_LAUNCHER_SELFTEST` 写 `%TEMP%\kernel-launcher-selftest.txt`、`KERNEL_LAUNCHER_SMOKE_MS` 自动关窗、`KERNEL_LAUNCHER_PROBE_URL` 覆盖探活地址），停止态文案修正（「停止中…」）。桌面快捷方式 `KERNEL 启动器.lnk` 重建（目标 `wscript.exe` + `启动器.vbs`、图标 `kernel.ico`）；打包同步（打包器白名单改收 ps1 / vbs / ico、`.ps1`/`.vbs` 纳入隐私扫描、scripts 过滤 `make-icon.ps1`）。QA `.qa/v75/`：替换前后截图 + 子代理 3 轮视觉迭代；独立复验——自检 PS_EXIT=0（四行内容正确）、vbs 链 1180ms 窗口可见 / 5591ms 自动关闭、**真实桌面快捷方式端到端**（DURING=1 / AFTER=0）、图标 7 尺寸预览、快捷方式读回 6 项全 True、WSCRIPT=0 · MSHTA=0 · 5173 在线 · 无残留。
 
 - **新增**：`启动器.ps1`、`启动器.vbs`、`kernel.ico`、`scripts/make-icon.ps1`、`docs/decisions/0037-native-launcher.md`、`.qa/v75/**`。
-- **修改**：`scripts/package.mjs`（白名单 / 必需清单 / `TEXT_EXT` / scripts 过滤）、`README.md`、`使用说明.md`、`docs/{02,05,README}`。
+- **修改**：打包器（白名单 / 必需清单 / `TEXT_EXT` / scripts 过滤）、`README.md`、`docs/{02,05,README}`。
 - **删除**：`启动器.hta`。
 - **验证**：见上；证据 `.qa/v75/`（`after-launcher{,-2,-3}.png` + `verify-after.png` + `icon-preview.png` + `logs/**`，含主会话独立终验 `verify-final.log`）。
 - **记录**：ADR-0037；`docs/02`、`docs/05`、`docs/README`；`CHANGELOG.md`、`TASK_BOOK.md`、`AGENTS.md`（另补记 QA v74 变更行）。
@@ -60,9 +72,9 @@
 - **记录**：ADR-0010 修订节；`docs/02`、`docs/README`；`public/guide.html`；`CHANGELOG.md`、`TASK_BOOK.md`、`AGENTS.md`。
 
 ### 产品展示页 · showcase.html（已完成 · 2026-10-03）
-答所有者「把我这个程序的每个部分都截图，弄成一份 HTML 展示产品用，我要发给其他人看我这个产品」——新增 `public/showcase.html`：**单文件自包含产品展示页**（**3.62 MB**；base64 内嵌 **15 张真实界面截图**——10 个模块 + 命令面板 + 任务详情弹窗 + AI 处置卡（日程 + 任务双动作、含「日程」识别卖点）+ 双移动端；**零外部请求**、file:// 直接打开；暗色 token 与 `guide.html` 同族；结构：Hero（v0.5.0 / 本机运行 / 数据不外传）→ 锚点导航 → 12 个模块章节（描述 + 特性 + 截图）→ 技术一览 → 页脚）。构建脚本 `.qa/showcase/build.py`（Playwright，可重跑再生成；一次性展示条目用后即清、构建前后数据哈希一致零残留）。**注意**：截图取自本机真实数据（可能含少量人名 / 项目信息），对外分发前请自行确认。
+答所有者「把我这个程序的每个部分都截图，弄成一份 HTML 展示产品用，我要发给其他人看我这个产品」——新增**产品展示页**（单文件自包含，**3.62 MB**；base64 内嵌 **15 张真实界面截图**——10 个模块 + 命令面板 + 任务详情弹窗 + AI 处置卡（日程 + 任务双动作、含「日程」识别卖点）+ 双移动端；**零外部请求**、file:// 直接打开；暗色 token 与 `guide.html` 同族；结构：Hero（v0.5.0 / 本机运行 / 数据不外传）→ 锚点导航 → 12 个模块章节（描述 + 特性 + 截图）→ 技术一览 → 页脚）。构建脚本 `.qa/showcase/build.py`（Playwright，可重跑再生成；一次性展示条目用后即清、构建前后数据哈希一致零残留）。**注意**：截图取自本机真实数据（可能含少量人名 / 项目信息），对外分发前请自行确认。
 
-- **新增**：`public/showcase.html`、`.qa/showcase/**`。
+- **新增**：产品展示页、`.qa/showcase/**`。
 - **验证**：构建器自验（file:// 载入 console 0 错误、`img` 15/15 `naturalWidth>0`）；零残留（`data/**/*.json` 哈希前后一致 `bd821687…`）。
 - **记录**：`CHANGELOG.md`、`TASK_BOOK.md`。
 
@@ -115,13 +127,13 @@
 ### 桌面启动器（HTA）· N7.1（已完成 · 2026-10-03）
 答所有者「做一个启动器软件，放置在桌面，点击后会出现软件，点击可以直接打开浏览器弹出对应界面」——新增 `启动器.hta`（单文件 Windows 原生窗口，mshta/IE11 引擎 + JScript，**零依赖零安装**；UTF-8 BOM + 全部中文 `\uXXXX` 转义防编码坑）：窗口内状态机「未启动 → 启动 KERNEL（**隐藏**拉起 dev，10–30s）→ 已就绪（**自动打开浏览器一次**）→ 停止服务（taskkill 树级）」；`WshShell.Run` 不返回 PID → 用 PowerShell CIM 按 `dev.mjs` 命令行解析真实 PID 写 `%TEMP%\kernel-launcher.pid`；常驻「创建桌面快捷方式」；90s 超时回退「用 启动.cmd 查看日志」；`KERNEL_HTA_SELFTEST` 环境变量自检钩子。桌面快捷方式 `KERNEL 启动器.lnk` 已创建（mshta 目标，字节级核验）；分发包同步收录（白名单 + 扫描扩展 `.hta`；重建 16,290 条目 / 127 MB）。QA v65 全绿（包内启动器自检：ROOT / 内置 node / 内置 opencode 全识别；zip 与包内文件字节一致；隐私 0 命中；快捷方式核验）；selftest 实证 JScript 全量解析 + 中文路径 decode 链正确。已知边界：zip 内 CJK 文件名以 GBK 字节存储（中文 Windows 资源管理器解压正常；非中文区第三方工具可能乱码）；「点击→启动」真实链路由所有者实机体验。证据 `.qa/v65/`。
 
-- **新增**：`启动器.hta`、`.qa/v65/**`；`scripts/package.mjs`（收录 `.hta` + 扫描扩展）、`使用说明.md`、`README.md`。
+- **新增**：`启动器.hta`、`.qa/v65/**`；打包器（收录 `.hta` + 扫描扩展）、`README.md`。
 - **记录**：`CHANGELOG.md`、`TASK_BOOK.md`、`AGENTS.md`。
 
 ### 分发包打包 + 运行时接入 · Slice N7（已完成 · 2026-10-03）
 
-- **新增**：`scripts/package.mjs`、`scripts/assets/welcome.html`。
-- **修改**：`scripts/{dev,launcher,spawn-bg}.mjs`、`启动.cmd`、`使用说明.md`。
+- **新增**：打包器、`scripts/assets/welcome.html`。
+- **修改**：`scripts/{dev,launcher,spawn-bg}.mjs`、`启动.cmd`。
 - **自检**：`node --check`（package / dev / launcher / spawn-bg / reset）全部通过；`启动.cmd` CRLF 20 行 · 无 BOM。
 
 ### 收件箱窄屏长 token 折行修复 · N3.1（已完成 · 2026-10-03）
@@ -141,7 +153,7 @@
 
 - **服务端**（`server/secrets.mjs`（新）+ `server/index.mjs`）：凭据模块（无副作用 / 原子写 / 静默容错）+ 两端点。
 - **前端**（`src/views/Settings.tsx`、`src/lib/{hooks,mutations}.ts`）：Key 配置块。
-- **启动器**（`启动.cmd`、`scripts/launcher.mjs`、`使用说明.md`、`README.md`、`.gitignore`、`scripts/dev.mjs`）。
+- **启动器**（`启动.cmd`、`scripts/launcher.mjs`、`README.md`、`.gitignore`、`scripts/dev.mjs`）。
 - **记录**：ADR-0030；`docs/02`；`docs/README`；`public/guide.html`；`CHANGELOG.md`、`TASK_BOOK.md`、`AGENTS.md`。
 
 ### 来源摘要 · Slice N4（已完成 · 2026-10-03）

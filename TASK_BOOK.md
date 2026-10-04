@@ -16,9 +16,11 @@ KERNEL 的任务台账与迭代记录。记录当前迭代目标、未来待办�
 
 > **运维（2026-10-03）**：数据清零——新增 `scripts/reset.mjs`（预演 / `--yes` 自动备份后清空；保留 `config.json`）；owner 数据已清零（备份 `.qa/backups/data-20261003-133539`）；零状态空态巡检 9 路由 × 2 视口全绿；证据 `.qa/v48/`。
 
-> **最新（Windows 安装包 · 2026-10-05）**：Windows 安装包（Setup.exe）——新增 `installer/KERNEL.iss`（安装向导 / 可选安装目录 / 开始菜单与可选桌面快捷方式 / 卸载程序；每用户安装、无需管理员）+ `installer/welcome.html`（启动页）；`scripts/build-installer.mjs` 按白名单组装干净载荷并调用仓库内置 Inno Setup 编译器（`node_modules\innosetup-compiler\bin\ISCC.exe`，无需系统安装）+ `package.json` script `installer`；数据位于 `<安装目录>\data`，空白骨架标记 `uninsneveruninstall`，**卸载保留用户数据**；`启动.cmd` 未检测到 Node 的提示文案中性化。验证：静默安装退出码 0、`curl` 5173 与 `/api/snapshot` 均 200、`POST /api/tasks` 201 且写入安装目录 `data\`、静默卸载退出码 0 且数据保留。
+> **最新（文档审计对齐 · 2026-10-05）**：本会话交付与文档对齐——**Windows 安装包**（`installer/KERNEL.iss` + `installer/welcome.html` + `scripts/build-installer.mjs`，内置 Inno Setup 编译器；数据位于 `<安装目录>\data` 并以 `uninsneveruninstall` 标记——覆盖安装不清空、卸载保留；两处修复：启动改 `wscript` 解析 `.vbs`、主载荷去除 `Excludes` 误删 `node_modules` 内嵌套 data 目录；build-installer 去机器路径）；**README 重写**（门面 + 界面截图 + 团队信息占位）；**仓库卫生**（删除旧分支 + `gc` 至 3.24 MiB、`.gitignore` 固化、`.gitattributes`、MIT LICENSE）；**本地服务加固**（dev / preview 默认仅本机 `server.host:false`、Origin 同源校验、`/api/files` attachment/nosniff、`/api/open` 注入防护、SSRF 加固、500 收敛、xlsx 列上限、`toDate` 兜底）；**文档审计对齐**（新建 ADR-0031、修正 `docs/00`·`05`·`07`·`README` 一致性 + 0031 引用、清理已移除产物的过期引用）。
 
-> **上一个（Slice N7.2 · 2026-10-04）**：桌面启动器原生重做——答 owner「桌面快捷按钮也就是启动器太丑了，优化一下，现在只是网页套壳而已，很低廉」。旧 `启动器.hta`（mshta / IE 套壳：白色系统标题栏 + mshta 图标 + 方角窗口 + IE11 天花板）→ **`启动器.vbs`（纯 ASCII 入口，`wscript` 隐藏拉起，零黑窗）→ `启动器.ps1`（PowerShell 5.1 + WPF 原生窗口：无边框圆角卡片 + 自绘标题栏 + 品牌 K 笔画标记 + 状态脉冲 / 进度轨 / 强调色 CTA）**；`kernel.ico`（16–256）由 `scripts/make-icon.ps1` 从 `public/favicon.svg` 几何生成；桌面快捷方式重建（`wscript.exe` + 启动器.vbs + kernel.ico）；**行为 parity**（探活 800ms / 启停 dev 栈 / 就绪自动开浏览器 / 创建快捷方式 / 日志 → 启动.cmd / 状态机与超时口径一致）+ 单实例互斥锁 + selftest / smoke / probe 钩子 + 停止态文案修正；打包同步（package.mjs 改收 ps1/vbs/ico）；QA v75（前后截图 + 3 轮视觉迭代 / 自检独立复验 PS_EXIT=0 / vbs 链 1180ms 可见·5591ms 自关 / 真实快捷方式端到端 DURING=1·AFTER=0 / 图标 7 尺寸 / 快捷方式 6 项读回 / WSCRIPT=0·MSHTA=0·5173 在线）；新增 **ADR-0037**；收尾另修复 `scripts/spawn-bg.mjs` 日志捕获失效（`shell:true` 下 fd 经 cmd.exe 失效 → 自中继模式；对照实验与分发包重建证据同目录）；证据 `.qa/v75/`。
+> **上一个（Windows 安装包 · 2026-10-05）**：Windows 安装包（Setup.exe）——新增 `installer/KERNEL.iss`（安装向导 / 可选安装目录 / 开始菜单与可选桌面快捷方式 / 卸载程序；每用户安装、无需管理员）+ `installer/welcome.html`（启动页）；`scripts/build-installer.mjs` 按白名单组装干净载荷并调用仓库内置 Inno Setup 编译器（`node_modules\innosetup-compiler\bin\ISCC.exe`，无需系统安装）+ `package.json` script `installer`；数据位于 `<安装目录>\data`，空白骨架标记 `uninsneveruninstall`，**卸载保留用户数据**；`启动.cmd` 未检测到 Node 的提示文案中性化。验证：静默安装退出码 0、`curl` 5173 与 `/api/snapshot` 均 200、`POST /api/tasks` 201 且写入安装目录 `data\`、静默卸载退出码 0 且数据保留。
+
+> **上一个（Slice N7.2 · 2026-10-04）**：桌面启动器原生重做——答 owner「桌面快捷按钮也就是启动器太丑了，优化一下，现在只是网页套壳而已，很低廉」。旧 `启动器.hta`（mshta / IE 套壳：白色系统标题栏 + mshta 图标 + 方角窗口 + IE11 天花板）→ **`启动器.vbs`（纯 ASCII 入口，`wscript` 隐藏拉起，零黑窗）→ `启动器.ps1`（PowerShell 5.1 + WPF 原生窗口：无边框圆角卡片 + 自绘标题栏 + 品牌 K 笔画标记 + 状态脉冲 / 进度轨 / 强调色 CTA）**；`kernel.ico`（16–256）由 `scripts/make-icon.ps1` 从 `public/favicon.svg` 几何生成；桌面快捷方式重建（`wscript.exe` + 启动器.vbs + kernel.ico）；**行为 parity**（探活 800ms / 启停 dev 栈 / 就绪自动开浏览器 / 创建快捷方式 / 日志 → 启动.cmd / 状态机与超时口径一致）+ 单实例互斥锁 + selftest / smoke / probe 钩子 + 停止态文案修正；打包同步（打包器改收 ps1/vbs/ico）；QA v75（前后截图 + 3 轮视觉迭代 / 自检独立复验 PS_EXIT=0 / vbs 链 1180ms 可见·5591ms 自关 / 真实快捷方式端到端 DURING=1·AFTER=0 / 图标 7 尺寸 / 快捷方式 6 项读回 / WSCRIPT=0·MSHTA=0·5173 在线）；新增 **ADR-0037**；收尾另修复 `scripts/spawn-bg.mjs` 日志捕获失效（`shell:true` 下 fd 经 cmd.exe 失效 → 自中继模式；对照实验与分发包重建证据同目录）；证据 `.qa/v75/`。
 
 > **上一个（QA v74 · 2026-10-04）**：图片条目多动作修复——答 owner「丢入了资料（图片）……ai解析后触发了bug……有时候是单纯想要存入这个资料，有时候是为了辅助我的文字内容……在分析后也需要分析这个资料本身该如何被简介后存入资料库」。**根因**：解析侧对图片走多动作管线（N0），apply 侧却按「文件条目」一律只放行 resource（400「文件条目只能应用为资料」），两侧口径不一致。**修复**（仅图片条目；非图片文件 R2.5 不变）：① 规则 9——图片始终产出 1 个 resource 收录图片本身（note = 简介）+ 多动作；② `postValidateActions` 兜底补齐图片 resource（文件名兜底 / 置首 / ≤6）；③ apply 纵深防御收窄为 `hasFile && !isImageFile(item)`。**owner 实机复核**：i-0027 重解析 →「全部应用」成功（e-0004 / e-0005 / r-0006 + 标签 topic:ICPC）。QA v74：`fix-image-actions` **11 PASS · 0 FAIL**（一揽子 200 / path / 撤销 / 非图片仍 400 / 零残留）；构建 0；ADR-0015 §5.5；证据 `.qa/v74/`。
 
@@ -26,7 +28,7 @@ KERNEL 的任务台账与迭代记录。记录当前迭代目标、未来待办�
 
 > **上一个（Slice G.1 · 2026-10-03）**：总览 AI 对话升级——① 助手回复改 **Markdown 渲染**（`react-markdown`，无 `dangerouslySetInnerHTML`；用户轮纯文本；`.k-chat__md` token-only）；② 尺寸放宽（thread max-height 560px、消息 94%、正文 15px、输入 44px、圆角 12）；③ **联网检索 + 自由回答**：`buildChatSystem` 三类（读库事实 / 一般知识自由答 / 需外部事实时只输出 `searchQueries` ≤2）→ 复用 N9 `buildSearchSection`（Sogou→360→Bing + 相关性过滤 + 首条页摘录）→ 同会话回喂作答，响应 `searched`，失败保守注明；④ **整理进笔记**：对话式（命中「整理/保存/归档…进笔记」意图）或每轮「存为笔记」按钮 → `POST /api/ai/chat/note` → `draftChatNote`（AI 出标题 + 正文；失败确定性回退首行标题 + 原文）→ `note.create` · via:'chat.note' 可撤销；对话仍**不落盘无审计**；QA v72 **50 PASS · 0 FAIL**（零残留 53 文件、notes 回基线）；证据 `.qa/v72/` + 探针 `.qa/probe-g1/`。
 
-> **上一个（产品展示页 · 2026-10-03）**：`public/showcase.html`——单文件自包含产品展示页（3.62 MB；base64 内嵌 15 张真实界面截图 = 10 模块 + 命令面板 + 任务弹窗 + AI 处置卡 + 双移动端；零外链、file:// 直接发人）；构建器 `.qa/showcase/build.py` 可重跑；零残留；注意截图含本机真实数据，外发前自行确认。
+> **上一个（产品展示页 · 2026-10-03）**：产品展示页——单文件自包含（3.62 MB；base64 内嵌 15 张真实界面截图 = 10 模块 + 命令面板 + 任务弹窗 + AI 处置卡 + 双移动端；零外链、file:// 直接发人）；构建器 `.qa/showcase/build.py` 可重跑；零残留；注意截图含本机真实数据，外发前自行确认。
 
 > **上一个（Slice N10 · 2026-10-03）**：收件箱 AI 事件识别——AI 动作新增**第 5 类 `event`（日程 / 事件）**：会在某时刻「发生」的事（面试 / 会议 / 考试 / 约谈 / 活动）产日程（`startAt` 必填 + `endAt` / `allDay` / `location`；**时间无法明确推出就不产**，宁可 task + facts），「要做的动作」仍产 task，同一内容可 event + task 同时产出不重复拆条；`postValidateActions` 清洗（startAt 无效即丢弃、endAt ≥ startAt）、apply 落 `events`（**无时间戳**、`status:'confirmed'`、via:'inbox.apply'）、撤销经 `linkedIds`（顺带修复 `kindOfId` 缺 `e-` 映射）；文件条目仍只产 resource、截图走文本管线；QA v71 **59 PASS · 0 FAIL**（零残留 45 文件）；证据 `.qa/v71/` + 探针 `.qa/probe-n10/`。
 
@@ -42,11 +44,11 @@ KERNEL 的任务台账与迭代记录。记录当前迭代目标、未来待办�
 
 > **上一个（N7.1 · 2026-10-03）**：桌面启动器——`启动器.hta`（Windows 原生窗口，零依赖：启动/打开/停止/创建桌面快捷方式；隐藏拉起 dev + 自动开浏览器；selftest 钩子）；桌面快捷方式已创建（`KERNEL 启动器.lnk`）；分发包同步收录并重建（16,290 条目）；QA v65 全绿；证据 `.qa/v65/`。
 
-> **上一个（Slice N7 · 2026-10-03）**：分发包打包 + 运行时接入——新增 `scripts/package.mjs`（白名单拷贝 + 内置 node/opencode 运行时 + 空白数据骨架 + 无密钥 `opencode.json` + **强制隐私扫描 → zip**）+ `scripts/assets/welcome.html` 启动页 + 零安装 `使用说明.md`；`dev.mjs` 支持 `KERNEL_OPENCODE_BIN`、`启动.cmd` 单一版本两用、`launcher.mjs` 启动页优先（就绪不再开第二个标签）；实产物：`release\KERNEL-分发包-v0.5.0\` + zip（**127 MB** / 未压缩 385.3 MB）；QA v64 独立复核全绿（隐私 0 命中 / 内置 node v22.22.3 + opencode 1.18.32 可执行 / 启动页 11/11 / zip 16,289 条目）；自检全过；证据 `.qa/v64/`。
+> **上一个（Slice N7 · 2026-10-03）**：分发包打包 + 运行时接入——新增打包器（白名单拷贝 + 内置 node/opencode 运行时 + 空白数据骨架 + 无密钥 `opencode.json` + **强制隐私扫描 → zip**）+ 零安装；`dev.mjs` 支持 `KERNEL_OPENCODE_BIN`、`启动.cmd` 单一版本两用、`launcher.mjs` 启动页优先（就绪不再开第二个标签）；实产物：`release\KERNEL-分发包-v0.5.0\` + zip（**127 MB** / 未压缩 385.3 MB）；QA v64 独立复核全绿（隐私 0 命中 / 内置 node v22.22.3 + opencode 1.18.32 可执行 / 启动页 11/11 / zip 16,289 条目）；自检全过；证据 `.qa/v64/`。
 
 > **上一个（Slice N6 · 2026-10-03）**：回顾人话化——digest 活动行/对比行人话化（无审计动作名、无「基准/环比」）+ 提示词改「真诚口吻」 + 七段标题友好化（这周怎么样/干了些什么/和上周比/哪里卡住了/值得保持的/接下来/需要留意的）+ 新旧标题双兼容；QA v63 26/26（真实周/月新标题·禁词 0·「开了个好头……」；旧归档回归）；证据 `.qa/v63/`。
 
-> **上一个（Slice N5 · 2026-10-03）**：AI Key 本地配置 + 双击启动器——设置页填 DeepSeek API Key（密码型/不回显）→ 本机 `data/meta/secrets.json`（gitignore，绝不入库）→ 启动器注入 `DEEPSEEK_API_KEY`；`启动.cmd` + `launcher.mjs` + `使用说明.md`；QA v62 35/35；零泄漏；证据 `.qa/v62/`。
+> **上一个（Slice N5 · 2026-10-03）**：AI Key 本地配置 + 双击启动器——设置页填 DeepSeek API Key（密码型/不回显）→ 本机 `data/meta/secrets.json`（gitignore，绝不入库）→ 启动器注入 `DEEPSEEK_API_KEY`；`启动.cmd` + `launcher.mjs`；QA v62 35/35；零泄漏；证据 `.qa/v62/`。
 
 > **上一个（Slice N4 · 2026-10-03）**：来源摘要——解析产出 `summary`（≤40 字）→ apply 落档 → 引用人话化（关联显示摘要/折叠截断、无可见编号；已澄清显示产物标题）；QA v61 25/25+24/24；证据 `.qa/v61/`。
 
@@ -134,10 +136,10 @@ KERNEL 的任务台账与迭代记录。记录当前迭代目标、未来待办�
 
 ## 产品展示页 · showcase.html（已完成 · 2026-10-03）
 
-答所有者「把我这个程序的每个部分都截图，弄成一份 HTML 展示产品用，我要发给其他人看我这个产品」——新增 `public/showcase.html`：**单文件自包含产品展示页**——base64 内嵌 **15 张真实界面截图**（总 2.70 MB → HTML **3.62 MB**；10 个模块 + 命令面板 + 任务详情弹窗 + AI 处置卡（日程 + 任务双动作）+ 移动端 ×2；JPEG q78 · 2x DPR）；**零外部请求 / 零字体外链**，双击 file:// 即可打开、可直接作为单个文件转发；暗色 token 与 `guide.html` 同族（Hero → 锚点导航 01–12 → 模块章节（描述 + 特性 bullet + 截图 + 图注）→ 技术一览 6 条 → 页脚「v0.5.0（切片）· 截图于 2026-10-03 · 本机真实数据」）；文案写实克制、无 emoji。构建脚本 `.qa/showcase/build.py`（Playwright；可重跑再生成：重新截图 → 重新组装 → 自验 file:// 载入 console 0 / `img` 15/15 `naturalWidth>0`）；一次性展示条目（面试通知）仅用于 AI 卡截图、用后即清；构建前后 `data/**/*.json` 哈希一致（`bd821687…`，排除 activity.jsonl）零残留。**注意**：截图取自本机真实数据（可能含少量人名 / 项目信息），对外分发前自行确认。
+答所有者「把我这个程序的每个部分都截图，弄成一份 HTML 展示产品用，我要发给其他人看我这个产品」——新增**产品展示页**（单文件自包含）——base64 内嵌 **15 张真实界面截图**（总 2.70 MB → HTML **3.62 MB**；10 个模块 + 命令面板 + 任务详情弹窗 + AI 处置卡（日程 + 任务双动作）+ 移动端 ×2；JPEG q78 · 2x DPR）；**零外部请求 / 零字体外链**，双击 file:// 即可打开、可直接作为单个文件转发；暗色 token 与 `guide.html` 同族（Hero → 锚点导航 01–12 → 模块章节（描述 + 特性 bullet + 截图 + 图注）→ 技术一览 6 条 → 页脚「v0.5.0（切片）· 截图于 2026-10-03 · 本机真实数据」）；文案写实克制、无 emoji。构建脚本 `.qa/showcase/build.py`（Playwright；可重跑再生成：重新截图 → 重新组装 → 自验 file:// 载入 console 0 / `img` 15/15 `naturalWidth>0`）；一次性展示条目（面试通知）仅用于 AI 卡截图、用后即清；构建前后 `data/**/*.json` 哈希一致（`bd821687…`，排除 activity.jsonl）零残留。**注意**：截图取自本机真实数据（可能含少量人名 / 项目信息），对外分发前自行确认。
 
 - [x] `.qa/showcase/build.py`（截图 + 组装 + 自验一体）+ `.qa/showcase/shots/**`（15 图）+ `.qa/showcase/showcase-check.png`（自验截图）。
-- [x] `public/showcase.html`（3.62 MB 单文件；`/showcase.html` 亦可访问）。
+- [x] 产品展示页（3.62 MB 单文件；`/showcase.html` 亦可访问）。
 - [x] 验证：自验全绿；零残留（哈希回基线）。
 - [x] 记录：`CHANGELOG.md`、`TASK_BOOK.md`。
 
@@ -206,7 +208,7 @@ KERNEL 的任务台账与迭代记录。记录当前迭代目标、未来待办�
 答所有者「做一个启动器软件，放置在桌面，点击后会出现软件，点击可以直接打开浏览器弹出对应界面」——新增 `启动器.hta`：单文件 Windows 原生窗口（mshta 引擎 + JScript，零依赖；UTF-8 BOM + 中文全 `\uXXXX` 转义）；状态机「未启动 → 启动 KERNEL（隐藏拉起 dev；`WshShell.Run` 不返回 PID → PowerShell CIM 按 `dev.mjs` 解析真实 PID 写 `%TEMP%\kernel-launcher.pid`）→ 已就绪（自动打开浏览器一次）→ 停止服务（taskkill /F /T）」；常驻「创建桌面快捷方式」；90s 超时回退「用 启动.cmd 查看日志」；`KERNEL_HTA_SELFTEST` 自检钩子（mshta 实测：JScript 全量解析、中文路径 decode、内置 runtime 识别全部正确）。桌面快捷方式 `KERNEL 启动器.lnk` 已创建并字节级核验；分发包同步收录（扫描扩展 `.hta`；重建 16,290 条目 / 127 MB）。QA v65 全绿（包内自检 `NODE=<pkg>\runtime\node.exe` + `BUNDLED_OPENCODE=true`；zip 字节一致；隐私 0 命中）。已知边界：zip 内 CJK 文件名 GBK 字节存储（中文 Windows 正常；非中文区第三方解压工具可能乱码）；「点击→启动」真实链路由所有者实机体验。证据 `.qa/v65/`。
 
 - [x] `启动器.hta`（新）+ 桌面快捷方式（已创建）。
-- [x] `scripts/package.mjs`（收录 + `.hta` 扫描）、`使用说明.md`、`README.md` 更新。
+- [x] 打包器（收录 + `.hta` 扫描）、`README.md` 更新。
 - [x] 验证：QA v65（见上）；证据 `.qa/v65/`。
 - [x] 记录：`CHANGELOG.md`、`AGENTS.md`。
 
@@ -215,7 +217,7 @@ KERNEL 的任务台账与迭代记录。记录当前迭代目标、未来待办�
 ## 分发包 + 启动页 · Slice N7（已完成 · 2026-10-03）
 
 
-- [x] `scripts/package.mjs`（新）+ `scripts/assets/welcome.html`（新）；`scripts/{dev,launcher,spawn-bg}.mjs`、`启动.cmd`、`使用说明.md`、`package.json`（包内去 seed）。
+- [x] 打包器（新）+ `scripts/assets/welcome.html`（新）；`scripts/{dev,launcher,spawn-bg}.mjs`、`启动.cmd`、`package.json`（包内去 seed）。
 - [x] 验证：见上；证据 `.qa/v64/`（含 `package-check.py` / `package-REPORT.md` / welcome 截图）。
 - [x] 记录：ADR-0031；`docs/05`；`docs/README`；`CHANGELOG.md`、`AGENTS.md`。
 
@@ -237,7 +239,7 @@ KERNEL 的任务台账与迭代记录。记录当前迭代目标、未来待办�
 
 - [x] 服务端：`server/secrets.mjs`（新，无副作用/原子写/静默容错）+ 两端点 + 审计。
 - [x] 前端：Settings「AI 集成」Key 块 + hooks/mutations。
-- [x] 启动器：`启动.cmd` / `launcher.mjs` / `使用说明.md` / README / `.gitignore` / `dev.mjs` 注入。
+- [x] 启动器：`启动.cmd` / `launcher.mjs` / README / `.gitignore` / `dev.mjs` 注入。
 - [x] 记录：ADR-0030；`docs/02`；`docs/README`；`public/guide.html`；`CHANGELOG.md`、`AGENTS.md`。
 
 ---
