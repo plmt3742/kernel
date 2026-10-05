@@ -316,6 +316,11 @@ export function getInboxCount(): number {
   return state.inbox.filter((i) => i.status === 'unprocessed').length
 }
 
+/** 收件箱条目总数（含已澄清 / 已丢弃）——首启「开始使用」判断用，纯派生不落盘 */
+export function getInboxTotalCount(): number {
+  return state.inbox.length
+}
+
 /** 逾期任务：有 dueAt、已过期、且未 done/dropped */
 export function getOverdueTasks(now: Date = new Date()): Task[] {
   return state.tasks.filter(

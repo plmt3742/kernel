@@ -210,7 +210,7 @@ export function Projects() {
 
       {projects.length === 0 ? (
         <div className="k-plist__empty">
-          <EmptyState title="暂无项目" hint="还没有任何项目。从收件箱澄清，或直接创建一个。" />
+          <EmptyState title="暂无项目" hint="还没有任何项目。从收件箱澄清，或直接创建一个。" guide />
         </div>
       ) : (
         <div className="k-plist">

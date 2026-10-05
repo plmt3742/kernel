@@ -11,6 +11,7 @@ import { TaskDetailModal } from '@/components/TaskDetailModal'
 import { ProjectDetailModal } from '@/components/ProjectDetailModal'
 import { EventDetailModal } from '@/components/EventDetailModal'
 import { OverviewChat } from '@/components/OverviewChat'
+import { StartHereCard, isWorkspaceStarted, isWorkspaceBlank } from '@/components/StartHereCard'
 import { TrendLine } from '@/components/charts/TrendLine'
 import {
   getActiveProjects,
@@ -195,11 +196,15 @@ export function Overview() {
         </button>
       </div>
 
+      {/* 首启「开始使用」清单（Phase 2 · ADR-0041）：工作区尚未开始沉淀时置顶引导；
+          完成态由数据派生，任一实体落地即自动消失 */}
+      {!isWorkspaceStarted() && <StartHereCard />}
+
       {/* AI 对话盒（Slice G）：状态条之下、工作台之上 */}
       <OverviewChat />
 
-      {/* 踪迹小组件（「踪迹」功能）：最近几条 + 跳转独立页 */}
-      {recentTraces.length > 0 && (
+      {/* 踪迹小组件（「踪迹」功能）：最近几条 + 跳转独立页；空工作区随渐进披露隐藏 */}
+      {!isWorkspaceBlank() && recentTraces.length > 0 && (
         <Panel
           title="踪迹"
           en="TRACES"
@@ -231,8 +236,10 @@ export function Overview() {
         </Panel>
       )}
 
-      <div className="r3c-body">
-        {/* 左 2/3：工作台（已结束日程 + 现在分界 + 行动） */}
+      {/* 渐进披露（Phase 2 · ADR-0041）：空工作区不渲染工作台 / 监视柱 */}
+      {!isWorkspaceBlank() && (
+        <div className="r3c-body">
+          {/* 左 2/3：工作台（已结束日程 + 现在分界 + 行动） */}
         <Panel
           title="工作台"
           en="WORKBENCH"
@@ -407,10 +414,12 @@ export function Overview() {
             </div>
           </div>
         </Panel>
-      </div>
+        </div>
+      )}
 
-      {/* 底部：项目推进（首个 4 个活跃项目 + W40 回顾行） */}
-      <Panel
+      {/* 底部：项目推进（首个 4 个活跃项目 + W40 回顾行）；空工作区随渐进披露隐藏 */}
+      {!isWorkspaceBlank() && (
+        <Panel
         title="项目推进"
         en="PROJECTS"
         actions={<span className="u-label k-muted">{activeProjectList.length} 个进行中</span>}
@@ -461,6 +470,7 @@ export function Overview() {
           <EmptyState title="暂无进行中项目" hint="所有项目都在暂停或已完成状态。" />
         )}
       </Panel>
+      )}
 
       {/* 就地详情弹窗（Slice K）：与 Tasks / Projects 页共用同一居中详情组件，
           任务与项目均补齐「编辑 / 删除」常规操作，全站动作一致。URL 保持 "/"。 */}

@@ -17,6 +17,7 @@ import {
 import { useSearchParams } from 'react-router-dom'
 import { Paperclip } from 'lucide-react'
 import { useToast } from '@/context/ToastContext'
+import { EmptyState } from '@/components/EmptyState'
 import { TagPill } from '@/components/TagPill'
 import {
   TraceDetailModal,
@@ -465,7 +466,7 @@ export function Traces(): ReactNode {
       </form>
 
       {traces.length === 0 ? (
-        <p className="k-traces__empty">还没有踪迹 · 干完一件事，上来记一笔</p>
+        <EmptyState title="还没有踪迹" hint="干完一件事，上来记一笔。" guide />
       ) : filtered.length === 0 ? (
         <p className="k-traces__empty">没有匹配的踪迹</p>
       ) : view === 'feed' ? (

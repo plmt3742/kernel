@@ -84,6 +84,10 @@
   overflow-y: auto;
   overflow-x: hidden;
 }
+/* 子项不参与收缩：内容超高时由列表自身滚动承载（组标签曾因唯一 overflow:hidden 被压扁裁切） */
+.k-rail__list > li {
+  flex-shrink: 0;
+}
 
 .k-rail__item {
   position: relative;
@@ -120,6 +124,13 @@
 .k-app[data-rail='collapsed'] .k-rail__cn {
   display: none;
 }
+.k-app[data-rail='collapsed'] .k-rail__grouphead {
+  padding: var(--space-1) 0;
+}
+.k-app[data-rail='collapsed'] .k-rail__grouphead-cn,
+.k-app[data-rail='collapsed'] .k-rail__grouphead-en {
+  display: none;
+}
 .k-rail__item:hover {
   background: var(--hover-veil);
   color: var(--ink);
@@ -130,6 +141,31 @@
 }
 .k-rail__item.is-active::before {
   background: var(--accent);
+}
+
+.k-rail__grouphead {
+  list-style: none;
+  margin-top: var(--space-2);
+  padding: var(--space-2) 0 var(--space-1);
+  border-top: var(--hairline) solid var(--outline);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.k-rail__grouphead-cn {
+  font-size: var(--text-micro);
+  line-height: 1.3;
+  letter-spacing: 0.06em;
+  color: var(--ink-2);
+}
+.k-rail__grouphead-en {
+  font-size: var(--text-micro);
+  line-height: 1.3;
+  letter-spacing: 0.08em;
+  color: var(--muted);
 }
 
 .k-rail__foot {
@@ -652,6 +688,13 @@
   .k-app .k-rail__brandtext {
     display: none;
   }
+  .k-app .k-rail__grouphead {
+    padding: var(--space-1) 0;
+  }
+  .k-app .k-rail__grouphead-cn,
+  .k-app .k-rail__grouphead-en {
+    display: none;
+  }
   .k-app .k-main {
     margin-left: var(--rail-w-collapsed);
   }
@@ -698,7 +741,14 @@
     display: block;
     font-size: 10px;
   }
-  .k-rail__item[data-secondary='true'] {
+  .k-rail__grouphead {
+    display: none;
+  }
+  .k-rail__list > li {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+  .k-rail__list > li[data-mobile='false'] {
     display: none;
   }
   .k-rail__foot {

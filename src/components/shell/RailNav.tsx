@@ -1,8 +1,9 @@
 // KERNEL · RailNav（左侧索引轨道；移动端变底部标签栏）
+import { Fragment } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { clsx } from 'clsx'
 import { MoreHorizontal, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
-import { NAV_ITEMS } from '@/lib/nav'
+import { NAV_ITEMS, NAV_GROUP_LABELS } from '@/lib/nav'
 
 interface RailNavProps {
   collapsed: boolean
@@ -26,23 +27,36 @@ export function RailNav({ collapsed, onToggle, onMore }: RailNavProps) {
       </div>
 
       <ul className="k-rail__list">
-        {NAV_ITEMS.map((item) => {
+        {NAV_ITEMS.map((item, i) => {
           const active = location.pathname === item.path
           const Icon = item.icon
+          const prevGroup = i > 0 ? NAV_ITEMS[i - 1].group : null
+          // 仅在每组首项前渲染一次组标题（总览组不渲染，'home' 组无标题）
+          const headLabel =
+            item.group !== 'home' && prevGroup !== item.group
+              ? NAV_GROUP_LABELS[item.group]
+              : null
           return (
-            <li key={item.path}>
-              <Link
-                to={item.path}
-                viewTransition
-                className={clsx('k-rail__item', active && 'is-active')}
-                data-secondary={item.secondary === true ? 'true' : undefined}
-                aria-current={active ? 'page' : undefined}
-                title={`${item.cn} · ${item.en}`}
-              >
-                <Icon size={19} strokeWidth={1.5} aria-hidden />
-                <span className="k-rail__cn">{item.cn}</span>
-              </Link>
-            </li>
+            <Fragment key={item.path}>
+              {headLabel !== null && (
+                <li className="k-rail__grouphead" aria-hidden="true">
+                  <span className="k-rail__grouphead-cn">{headLabel.cn}</span>
+                  <span className="k-rail__grouphead-en">{headLabel.en}</span>
+                </li>
+              )}
+              <li data-mobile={item.mobile === true ? 'true' : 'false'}>
+                <Link
+                  to={item.path}
+                  viewTransition
+                  className={clsx('k-rail__item', active && 'is-active')}
+                  aria-current={active ? 'page' : undefined}
+                  title={`${item.cn} · ${item.en}`}
+                >
+                  <Icon size={19} strokeWidth={1.5} aria-hidden />
+                  <span className="k-rail__cn">{item.cn}</span>
+                </Link>
+              </li>
+            </Fragment>
           )
         })}
       </ul>

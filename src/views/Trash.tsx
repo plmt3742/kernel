@@ -43,7 +43,11 @@ function movedAt(record: TrashItem['record']): string {
   return r.trashedAt ?? r.updatedAt ?? r.addedAt ?? r.createdAt ?? ''
 }
 
-export function Trash() {
+/**
+ * 回收站面板：按类型分组的列表 + 恢复 / 彻底删除（二次点击确认）。
+ * 供 /trash 路由页与设置页「回收站」分区共用（ADR-0041 Phase 3）——所有行为 / 类名不变。
+ */
+export function TrashPanel() {
   const now = useNow()
   const { toast } = useToast()
   const reduce = useReducedMotion()
@@ -105,75 +109,79 @@ export function Trash() {
 
   const isEmpty = !loading && items.length === 0
 
+  if (loading) return <p className="k-muted">回收站加载中…</p>
+  if (isEmpty) {
+    return <EmptyState title="回收站为空" hint="删除的条目会出现在这里，可恢复或彻底删除。" />
+  }
+  return (
+    <div className="k-trash">
+      {GROUPS.map((group) => {
+        const groupItems = items.filter((item) => item.kind === group.kind)
+        if (groupItems.length === 0) return null
+        return (
+          <Panel
+            key={group.kind}
+            title={group.cn}
+            en={group.en}
+            actions={<span className="u-label k-muted">{groupItems.length}</span>}
+          >
+            <div className="k-trash__list">
+              <AnimatePresence initial={false}>
+                {groupItems.map((item) => {
+                  const key = itemKey(item)
+                  const confirming = confirmKey === key
+                  return (
+                    <motion.div
+                      key={key}
+                      layout
+                      className="k-trash-row"
+                      initial={reduce === true ? { opacity: 0 } : { opacity: 0, y: 6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: DUR.base, ease: EASE_ENTER }}
+                    >
+                      <span className="k-trash-row__main">
+                        <span className="k-trash-row__title">{item.record.title}</span>
+                        <span className="k-trash-row__meta u-mono">
+                          {item.record.id} · 移入 {formatRelative(movedAt(item.record), now)}
+                        </span>
+                      </span>
+                      <span className="k-trash-row__actions">
+                        <button
+                          type="button"
+                          className="k-btn k-btn--sm"
+                          onClick={() => handleRestore(item)}
+                        >
+                          恢复
+                        </button>
+                        <button
+                          type="button"
+                          className={confirming ? 'k-btn k-btn--sm is-danger' : 'k-btn k-btn--sm'}
+                          onClick={() => handlePurge(item)}
+                        >
+                          {confirming ? '再点一次确认' : '彻底删除'}
+                        </button>
+                      </span>
+                    </motion.div>
+                  )
+                })}
+              </AnimatePresence>
+            </div>
+          </Panel>
+        )
+      })}
+    </div>
+  )
+}
+
+/** /trash 路由页：页首说明 + 回收站面板（深层链接与标题仍由路由解析保留）。 */
+export function Trash() {
   return (
     <div className="k-view">
       <p className="k-view__intro">
         删除不会立即消失：任务、项目、笔记、资料、日程、课程、区域、目标与习惯会先移入回收站。可随时恢复；「彻底删除」不可撤销，需点两次确认。
       </p>
-
-      {loading ? (
-        <p className="k-muted">回收站加载中…</p>
-      ) : isEmpty ? (
-        <EmptyState title="回收站为空" hint="删除的条目会出现在这里，可恢复或彻底删除。" />
-      ) : (
-        <div className="k-trash">
-          {GROUPS.map((group) => {
-            const groupItems = items.filter((item) => item.kind === group.kind)
-            if (groupItems.length === 0) return null
-            return (
-              <Panel
-                key={group.kind}
-                title={group.cn}
-                en={group.en}
-                actions={<span className="u-label k-muted">{groupItems.length}</span>}
-              >
-                <div className="k-trash__list">
-                  <AnimatePresence initial={false}>
-                    {groupItems.map((item) => {
-                      const key = itemKey(item)
-                      const confirming = confirmKey === key
-                      return (
-                        <motion.div
-                          key={key}
-                          layout
-                          className="k-trash-row"
-                          initial={reduce === true ? { opacity: 0 } : { opacity: 0, y: 6 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={{ opacity: 0 }}
-                          transition={{ duration: DUR.base, ease: EASE_ENTER }}
-                        >
-                          <span className="k-trash-row__main">
-                            <span className="k-trash-row__title">{item.record.title}</span>
-                            <span className="k-trash-row__meta u-mono">
-                              {item.record.id} · 移入 {formatRelative(movedAt(item.record), now)}
-                            </span>
-                          </span>
-                          <span className="k-trash-row__actions">
-                            <button
-                              type="button"
-                              className="k-btn k-btn--sm"
-                              onClick={() => handleRestore(item)}
-                            >
-                              恢复
-                            </button>
-                            <button
-                              type="button"
-                              className={confirming ? 'k-btn k-btn--sm is-danger' : 'k-btn k-btn--sm'}
-                              onClick={() => handlePurge(item)}
-                            >
-                              {confirming ? '再点一次确认' : '彻底删除'}
-                            </button>
-                          </span>
-                        </motion.div>
-                      )
-                    })}
-                  </AnimatePresence>
-                </div>
-              </Panel>
-            )
-          })}
-        </div>
-      )}
+      <TrashPanel />
     </div>
   )
 }

@@ -85,6 +85,8 @@ KERNEL 的完整文档集。本文件是导航中心，说明每份文档的职�
 | `decisions/0038-review-automation.md` | ADR | 回顾自动化：周期调度自动生成 + 迁移建议持久化——`useReviewScheduler`（周一 12:00 后 / 每月 1 日 12:00 后，周期已归档 / 未水合 / 会话已试 / 跨标签锁 / AI 离线均跳过；成功 toast + 水合，失败静默；**绝不自动应用建议**）；`reviewSchema` 增可选 `staleAdvice`（draft 归档随报告持久化、手工保存可透传清洗、update 白名单不变），归档报告阅读视图「迁移建议」块；证据 `.qa/v76/`（WS5 25/25 + 前端回归 40/40） |
 | `decisions/0039-profile-and-habits-pages.md` | ADR | 个人页 + 习惯页：热力图迁往个人页、习惯独立成页、总览降级入口卡——`/habits` 一级页（打卡 + 热力图 + CRUD，设置页移除习惯区，`h-` 深链改 `/habits?habit=`）；`/profile`（顶栏头像进入：资料 `config.owner/bio/avatarPath` + 头像本地文件端点 + 活跃日历 `GET /api/activity/summary` 本地日聚合含习惯打卡 + 复用动作时间线）；总览习惯块 → `今日 N/M` + 常用习惯 chips 整卡跳转；config 写入在 index.mjs 镜像 store 模式（store.mjs 未改，记录为收敛项）；证据 `.qa/v76/`（服务端 10/10 + 浏览器 28/28） |
 | `decisions/0040-traces-feature.md` | ADR | 新功能「踪迹」：新一等实体 `trace`（`tr-`：`title`/`note?`/`at`/`tags`/`area·project`，无 `createdAt`）+ 独立页 `/traces`（动态朋友圈卡 ⇄ 时间线，持久化 `kernel.ui.traces.v1`，速记框 / `?trace=` 深链 / 回收站可撤销）+ 收件箱 AI 第 6 类动作 `trace` + 总览小组件与对话 `traceRequest` 意图；`tr-` 深链 / 回收站 / 动作记录标签；`docs/04` §4.7b；修订（2026-10-05）：回车提交修复 / 无壳流水 CSS / 全局搜索 / 详情·编辑弹窗 / 标签·搜索筛选 |
+| `decisions/0041-layered-navigation-ia.md` | ADR | 分层导航：轨道按功能分四组（行动 / 时间 / 记录 / 系统 + 总览置顶），`NavItem` 增 `group`/`mobile`（取代仅移动端生效的 `secondary`）；桌面轨道 / 命令面板 / 移动底栏同源同组，移动端收敛为 5 项 + 「更多」；**路由与深链全部冻结、不合并页面**；确立一级项准入规则（新功能默认进组 / hub / 上下文入口）；宪法 §3/§4 受控修订 |
+| `decisions/0042-settings-data-management.md` | ADR | 设置内数据管理（ADR-0041 Phase 3）：**回收站并入设置**（`/trash` 移入 `EXTRA_PAGES`、路由与深链保留、命令面板动作、设置分区复用同一 `TrashPanel`）；**示例数据载入 / 清空**——`POST /api/demo/seed`（仅空工作区 + `confirm` + 审计，复用维护脚本 `scripts/seed.mjs`）与 `POST /api/demo/reset`（`confirm` + 复用 `scripts/reset.mjs --yes` 先自动备份）；安装包白名单纳入 `seed.mjs`；维护脚本例外显式引用，不新增常规写路径 |
 
 ## 根目录文档（不在本目录）
 

@@ -785,6 +785,16 @@ async function appendActivity(entry) {
 }
 
 /**
+ * 追加审计条目（公开包装，ADR-0041 Phase 3）：供路由层在「维护脚本」这类**非实体写入**后登记——
+ * 示例数据载入 / 清空（demo.seed / demo.reset）绕过 store.commit（脚本直写 node:fs，属 AGENTS §4
+ * 维护脚本例外），故由调用方显式补记一条审计。内部沿用同一 appendActivity，单写入口径不变。
+ * @param {{ action: string, entity: string, id: string, detail?: object }} entry
+ */
+export function audit(entry) {
+  return appendActivity(entry)
+}
+
+/**
  * 已分配但可能尚未落盘的 id 水位（防并发分配撞号）。
  * 背景：nextId 与随后的 commit 是两次独立调用；两个并发创建可能在各自落盘前拿到同一 id，
  * 后者覆盖前者。此处让 nextId 在返回前同步抬高水位（读-改-写之间无 await，单线程下原子），

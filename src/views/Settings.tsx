@@ -3,15 +3,18 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Panel } from '@/components/Panel'
+import { Modal } from '@/components/Modal'
 import { TagManager } from '@/components/TagManager'
 import { AreaManager, GoalManager } from '@/components/DimensionManagers'
 import { AiActivityFeed } from '@/components/AiActivityFeed'
+import { isWorkspaceBlank } from '@/components/StartHereCard'
+import { TrashPanel } from '@/views/Trash'
 import { useTheme } from '@/context/ThemeContext'
 import { useToast } from '@/context/ToastContext'
 import { getConfig, getSnapshot } from '@/lib/data'
 import { getDataRecordCount } from '@/lib/derive'
 import { useAiHealth, useDataRevision, useDataSource } from '@/lib/hooks'
-import { setAiKey, updateAiAutomation } from '@/lib/mutations'
+import { hydrateFromServer, setAiKey, updateAiAutomation } from '@/lib/mutations'
 import { api, errorText } from '@/lib/api'
 import { formatTime } from '@/lib/date'
 import type { AiAutomation } from '@/types'
@@ -32,6 +35,7 @@ type SectionId =
   | 'areas'
   | 'goals'
   | 'data'
+  | 'trash'
   | 'service'
   | 'about'
 
@@ -43,6 +47,7 @@ const SECTIONS: Array<{ id: SectionId; cn: string; en: string }> = [
   { id: 'areas', cn: '区域', en: 'AREAS' },
   { id: 'goals', cn: '目标', en: 'GOALS' },
   { id: 'data', cn: '数据统计', en: 'DATA' },
+  { id: 'trash', cn: '回收站', en: 'TRASH' },
   { id: 'service', cn: '数据服务', en: 'SERVICE' },
   { id: 'about', cn: '关于', en: 'ABOUT' },
 ]
@@ -129,6 +134,61 @@ export function Settings() {
     })()
   }
 
+  // 示例数据 / 清空所有数据（ADR-0041 Phase 3）：维护脚本（seed / reset）经数据服务执行；
+  // 成功后整体水合，使统计与各视图即时刷新。清空需显式勾选确认（见 Modal）。
+  const [demoBusy, setDemoBusy] = useState(false)
+  const [seedOpen, setSeedOpen] = useState(false)
+  const [resetOpen, setResetOpen] = useState(false)
+  const [resetAck, setResetAck] = useState(false)
+  // 是否空工作区（运行时派生；载入示例数据仅空工作区可用）
+  const workspaceBlank = isWorkspaceBlank()
+
+  const closeSeed = (): void => {
+    if (demoBusy) return
+    setSeedOpen(false)
+  }
+
+  const closeReset = (): void => {
+    if (demoBusy) return
+    setResetOpen(false)
+    setResetAck(false)
+  }
+
+  const loadDemoData = (): void => {
+    if (demoBusy) return
+    setDemoBusy(true)
+    void (async () => {
+      try {
+        await api.post<{ ok: boolean }>('/api/demo/seed', { confirm: true })
+        await hydrateFromServer()
+        setSeedOpen(false)
+        toast('已载入示例数据')
+      } catch (err) {
+        toast(`载入失败：${errorText(err)}`, { tone: 'error' })
+      } finally {
+        setDemoBusy(false)
+      }
+    })()
+  }
+
+  const resetAllData = (): void => {
+    if (demoBusy || !resetAck) return
+    setDemoBusy(true)
+    void (async () => {
+      try {
+        await api.post<{ ok: boolean }>('/api/demo/reset', { confirm: true })
+        await hydrateFromServer()
+        setResetOpen(false)
+        setResetAck(false)
+        toast('已清空全部数据（已自动备份）')
+      } catch (err) {
+        toast(`清空失败：${errorText(err)}`, { tone: 'error' })
+      } finally {
+        setDemoBusy(false)
+      }
+    })()
+  }
+
   const snapshot = getSnapshot()
   const total = getDataRecordCount(snapshot)
 
@@ -168,7 +228,7 @@ export function Settings() {
   return (
     <div className="k-view">
       <p className="k-view__intro">
-        按分类浏览设置：外观、AI 集成、AI 自动化、标签管理、区域、目标、数据统计、数据服务、关于。左侧选中分类决定右侧面板内容。
+        按分类浏览设置：外观、AI 集成、AI 自动化、标签管理、区域、目标、数据统计、回收站、数据服务、关于。左侧选中分类决定右侧面板内容。
       </p>
 
       <div className="k-settings__grid">
@@ -393,8 +453,46 @@ export function Settings() {
               <p className="k-view__intro">
                 合计 = 10 类实体记录 {total - 2} 条 + 配置 1 + 标签注册表 1；均为文件式 JSON（一记录一文件）。
               </p>
+
+              <div className="k-settings__divider" aria-hidden />
+
+              {/* 示例数据 / 维护（ADR-0041 Phase 3）：载入示例仅在空工作区；清空需勾选确认并先自动备份 */}
+              <div className="k-between">
+                <span className="k-panel__cn">示例数据 / 维护</span>
+                <span className="u-label k-muted">DEMO · MAINTENANCE</span>
+              </div>
+              <p className="k-view__intro">
+                空工作区可一键载入约 150 条示例记录（任务 / 项目 / 日程 / 笔记 / 资料 / 习惯 / 踪迹 / 回顾），
+                用于快速体验。之后可在本区「清空所有数据」中清除（清空前会自动备份）。
+              </p>
+              <div className="k-view__actions">
+                <button
+                  type="button"
+                  className="k-btn is-solid"
+                  onClick={() => setSeedOpen(true)}
+                  disabled={demoBusy || !workspaceBlank}
+                >
+                  载入示例数据
+                </button>
+                <button
+                  type="button"
+                  className="k-btn is-danger"
+                  onClick={() => {
+                    setResetAck(false)
+                    setResetOpen(true)
+                  }}
+                  disabled={demoBusy}
+                >
+                  清空所有数据
+                </button>
+              </div>
+              {!workspaceBlank && (
+                <p className="k-view__intro k-muted">仅空工作区可载入（当前已有记录）。</p>
+              )}
             </Panel>
           )}
+
+          {section === 'trash' && <TrashPanel />}
 
           {section === 'service' && (
             <Panel title="数据服务" en="DATA SERVICE">
@@ -459,11 +557,86 @@ export function Settings() {
                 <dd className="k-mono">{snapshot.config.version}</dd>
                 <dt>所有者</dt>
                 <dd>{snapshot.config.owner}</dd>
+                <dt>使用指南</dt>
+                <dd>
+                  <a
+                    className="k-empty__guide"
+                    href="/guide.html"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    打开使用指南 →
+                  </a>
+                </dd>
               </dl>
             </Panel>
           )}
         </div>
       </div>
+
+      {/* 示例数据 / 清空确认弹窗（自适应 portal 到 body；确认前零写入） */}
+      <Modal
+        open={seedOpen}
+        onClose={closeSeed}
+        kicker="DEMO"
+        title="载入示例数据"
+        footer={
+          <div className="k-modal__foot-actions">
+            <button type="button" className="k-btn" onClick={closeSeed} disabled={demoBusy}>
+              取消
+            </button>
+            <button
+              type="button"
+              className="k-btn is-solid"
+              onClick={loadDemoData}
+              disabled={demoBusy}
+            >
+              {demoBusy ? '载入中…' : '确认载入'}
+            </button>
+          </div>
+        }
+      >
+        <p className="k-view__intro">
+          将在空工作区写入约 150 条示例记录（任务 / 项目 / 日程 / 笔记 / 资料 / 习惯 / 踪迹 / 回顾）。
+          这是演示数据，可随时在本区「清空所有数据」中移除。
+        </p>
+      </Modal>
+
+      <Modal
+        open={resetOpen}
+        onClose={closeReset}
+        kicker="DANGER"
+        title="清空所有数据"
+        footer={
+          <div className="k-modal__foot-actions">
+            <button type="button" className="k-btn" onClick={closeReset} disabled={demoBusy}>
+              取消
+            </button>
+            <button
+              type="button"
+              className="k-btn is-danger"
+              onClick={resetAllData}
+              disabled={demoBusy || !resetAck}
+            >
+              {demoBusy ? '清空中…' : '确认清空'}
+            </button>
+          </div>
+        }
+      >
+        <p className="k-view__intro">
+          将清空全部实体、回收站、附件与审计日志（保留应用设置），并<b>先自动备份</b>到{' '}
+          <code>.qa/backups/</code>。此操作不可在界面内撤销。
+        </p>
+        <label className="k-field__check">
+          <input
+            type="checkbox"
+            checked={resetAck}
+            disabled={demoBusy}
+            onChange={(event) => setResetAck(event.target.checked)}
+          />
+          <span>我确认清空全部数据（将先自动备份到 .qa/backups/）</span>
+        </label>
+      </Modal>
     </div>
   )
 }

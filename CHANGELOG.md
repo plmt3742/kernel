@@ -4,6 +4,51 @@
 
 ## [Unreleased]
 
+### 设置内数据管理 · 回收站并入 + 示例数据载入 / 清空（ADR-0042 · ADR-0041 Phase 3）（已完成 · 2026-10-05）
+
+答 owner「继续」并拍板 Phase 3 范围「示例数据载入器 + 回收站并入设置」：
+
+- **回收站并入设置**：`/trash` 从 `NAV_ITEMS` 移入 `EXTRA_PAGES`（轨道 12 → **11 项**、系统组仅 设置；`navByPath` 仍解析页面标题）；`Trash.tsx` 抽出 `TrashPanel`，设置页新增「回收站 / TRASH」分区（与 `/trash` 路由**共用同一面板**，行为 / 类名逐字不变）；命令面板「动作」组新增「回收站」；`/trash` 路由与深链保留。
+- **示例数据载入 / 清空**（设置 · 数据「示例数据 / 维护」）：`POST /api/demo/seed`（要求 `{confirm:true}`；**仅空工作区**——服务端二次校验、非空 409；子进程执行既有维护脚本 `scripts/seed.mjs`；审计 `demo.seed`）与 `POST /api/demo/reset`（要求 `{confirm:true}`；执行 `scripts/reset.mjs --yes`，**先自动备份到 `.qa/backups/`**；审计 `demo.reset`）；`server/store.mjs` 增公开 `audit()` 薄包装。前端：载入按钮**非空库时禁用**并显示提示；清空需勾选「我确认清空全部数据（将先自动备份）」方可提交；成功后 `hydrateFromServer()` + toast。
+- **安装包**：`scripts/build-installer.mjs` 白名单纳入 `scripts/seed.mjs`（原排除；`reset.mjs` 本就在包内），使**安装版**也可「载入示例数据」。
+
+- **修改**：`src/lib/nav.ts`、`src/components/CommandPalette.tsx`、`src/views/{Trash,Settings}.tsx`、`server/{store,index}.mjs`、`scripts/build-installer.mjs`、`docs/decisions/0042-settings-data-management.md`（新）、`docs/{00-DESIGN-BRIEF,README}.md`
+- **验证**：`node --check server/index.mjs` 0；`npx tsc --noEmit` 0；`npm run build` 退出 0（Settings 24.33 kB / Trash 3.27 kB）；**隔离 QA**（Playwright，`/api/snapshot` `/api/demo/*` `/api/trash` 全拦截 mock，**真实数据零触达**；`.qa/v79/qa-phase3.py`）**21/21 PASS**——空库：按钮可用 / 弹窗 / `confirm:true` 请求 / toast；清空：未勾选确认禁用 / 勾选后提交 / toast；轨道 11 项且无「回收站」；面板含「回收站」动作；设置「回收站」分区空态；`/trash` 深链可用；真实数据下按钮禁用 + 提示；console 0 error；截图 `.qa/v79/settings-{data-empty,demo-block,trash,reset-modal}.png`。
+- **纪律与备注**：载入 / 清空是 AGENTS §4「维护脚本例外」的显式引用（仅空库或显式确认触发，**不新增常规写路径**）；端点未对真实数据触发（破坏性初始化留待所有者在空库时使用）。QA 中一次「页面空白」系夹具 `/api/trash` 形状错误（应为 `{"items":[]}`），非应用缺陷。
+
+### 首启体验 · 开始使用清单 + 渐进披露 + 指南入口（ADR-0041 Phase 2）（已完成 · 2026-10-05）
+
+答「整体页面过多，用户初次使用体验凌乱」的第二阶段（ADR-0041 §5 Phase 2）——新用户不再面对「12 扇门 + 每扇门后都是空的」：
+
+- **开始使用卡**（新 `src/components/StartHereCard.tsx`）：三步引导——① 设置学期（→ `/timetable`）② 丢第一件事进收件箱 ③ 澄清成任务 / 日程 / 笔记（AI 会给建议）；完成态**全部由数据派生**（`getTerm` / 收件箱条目总数 / 任一实体非空），**零 localStorage、零写入**；步骤状态同时以 ✓ 图形 + sr-only 文本表达（不只靠颜色）；卡脚附「查看使用指南 →」外链。导出纯函数 `isWorkspaceStarted()` / `isWorkspaceBlank()`。
+- **总览渐进披露**：空工作区只渲染 状态条 → 开始使用卡 → AI 对话（工作台 / 监视柱 / 项目推进 / 踪迹小组件隐藏）；任一实体落地后恢复常规版式、清单卡自动消失。
+- **指南入口**（`public/guide.html` 不再孤儿）：命令面板「动作」组新增「使用指南」（新标签打开）；设置·关于新增「使用指南」行；`EmptyState` 增可选 `guide` 属性（统一空态指南链接），启用至 项目 / 习惯 / 踪迹 / 课表 的首启空态。
+- 辅助：`getInboxTotalCount()`（`src/lib/data.ts`，含已澄清 / 已丢弃的条目总数）。
+
+- **修改**：`src/components/{StartHereCard（新）,EmptyState,CommandPalette,ClassGrid}.tsx`、`src/views/{Overview,Settings,Projects,Habits,Traces}.tsx`、`src/lib/data.ts`、`src/styles/views.css`
+- **验证**：`npx tsc --noEmit` 0 error；`npm run build` 退出 0（Overview chunk 23.13 kB）；**浏览器 QA**（Playwright：空 / 部分 / 真实三态，`.qa/v78/qa-firstrun.py`）**27/27 PASS**——空工作区：卡三步全待完成、工作台/项目推进隐藏、AI 与状态条保留、指南链接 `/guide.html`、无横溢、console 0；部分完成（学期 + 收件箱 1 条）：前两步 ✓、面板恢复；真实数据：无卡、常规版式；命令面板 / 项目空态 / 设置·关于 三处指南入口；步骤按钮跳转 `/timetable`；390 移动端卡可见零横溢；截图 `.qa/v78/{blank-1440,partial-1440,blank-390}.png`。
+
+### 工程 · 安装版实时同步（sync-install.mjs）（已完成 · 2026-10-05）
+
+答「实时将代码改动同步到 D:\KERNEL」——新增 `scripts/sync-install.mjs`：把工作区**代码白名单**（`src/ server/ public/ scripts/` + `index.html / vite.config.ts / tsconfig.json / tsconfig.app.json / tsconfig.node.json / package.json`）镜像到安装目录（默认 `D:/KERNEL`；参数或 `KERNEL_SYNC_DEST` 覆盖；`--once` 单次），以 `fs.watch`（递归 + 300ms 去抖）实时跟进，安装版自带 Vite dev 即时热更新；**绝不触碰** `data/ logs/ runtime/ node_modules/ opencode.json/ 启动器与卸载器`（用户数据与本地配置零风险）。
+
+- **修改**：`scripts/sync-install.mjs`（新）、`docs/05-FILE-TREE.md`（scripts 目录职责增补）
+- **验证**：首轮同步 12 个变更文件（含导航四文件）；`D:\KERNEL\src` 就位（`StartHereCard.tsx` 等新文件存在）；安装版 `localhost:5173` 实例经 HMR 即时呈现新导航（`NAV_GROUP_LABELS` 出现、旧 `secondary` 消失）；运行日志 `.qa/logs/sync-kernel.log`。
+
+### 分层导航 · 轨道按功能分层（已完成 · 2026-10-05）
+
+答 owner「整体页面过多，用户初次使用体验凌乱，该如何解决」+「按照功能将导航栏页面按钮进行层级划分」——先全库只读审查（导航注册表 / 视图清单 / 首启空态三层诊断 + Oracle 方案复核），随后落地 **ADR-0041**（信息架构受控修订）：
+
+- **导航注册表**（`src/lib/nav.ts`）：`NavItem` 增必填 `group: NavGroup`（`home/action/time/record/system`）与 `mobile?: boolean`（取代仅移动端生效的 `secondary`）；12 项重排为 **总览置顶 + 四组**——行动（收件箱 / 任务 / 项目 / 回顾）· 时间（日程 / 课表）· 记录（资料 / 习惯 / 踪迹）· 系统（设置 / 回收站）；新增 `NAV_GROUP_LABELS`（cn / en）与 `navGrouped()`；`EXTRA_PAGES`（`/profile`）仅补类型字段、行为不变。
+- **三处同源**：① 桌面轨道 `RailNav`——组间 hairline + 双行安静组标签（cn / en），折叠态（≤1279px 或手动）只留分隔、文字隐藏；② 命令面板——总览单项 + 四个组标题（与轨道同源）；③ 移动端底栏——**8 项 + 更多 → 5 项（总览 / 收件箱 / 任务 / 项目 / 日程）+ 「更多」**。
+- **实测修复（QA 阶段发现并闭环）**：① 单行组标签「行动 · ACTION」等 94–97px 超 96px 轨道内容宽 79px、被 `overflow:hidden` 横向裁切 → 改**双行** cn / en；② 组标签是列表内唯一 `overflow:hidden` 子项，`min-height` 失效后独自承担全部 flex 收缩、被压扁至 13px（自然高 43.6px）→ `.k-rail__list > li { flex-shrink: 0 }`（超高由列表滚动承载）；③ 移动端 `li` 未参与弹性分配（内容宽 28–38px、与「更多」间 177px 空隙）→ 移动端 `li { flex: 1 1 0 }` 均分（5 × 65.6px、零缝隙）。
+- **边界**：**路由与全部深链冻结**（12 条路由 / `?task=` `?note=` `?resource=` `?event=` `?project=` `?trace=` `?habit=` `?section=` 不变）；**不合并任何页面**；不改数据模型 / 服务端 / localStorage 键；准入规则入 ADR（新功能默认进组 / hub，新增组须 ADR）；首启引导与页面合并留作后续阶段。
+- **文档**：`docs/decisions/0041-layered-navigation-ia.md`（新）+ `docs/00-DESIGN-BRIEF.md` §3 / §4 受控修订 + `docs/README.md` ADR 索引。
+
+- **修改**：`src/lib/nav.ts`、`src/components/shell/RailNav.tsx`、`src/components/CommandPalette.tsx`、`src/styles/shell.css`、`docs/decisions/0041-layered-navigation-ia.md`（新）、`docs/00-DESIGN-BRIEF.md`、`docs/README.md`
+- **验证**：`npx tsc --noEmit` 0 error；`npm run build` 退出 0；**浏览器 QA**（Playwright · 全新建 dev 实例 + 真实数据服务，`.qa/v77/qa-nav.py` + `qa-nav-detail.py` + `qa-head.py`）**19/19 PASS**——四组标签齐全且**零裁切**（`scrollW = clientW = 79`、`liOverflowY=false`）；12 项新顺序；活跃态；折叠态文字隐藏 · 分隔保留；命令面板四组 + 总览单项；1440 与 390 零横溢、console 0 error；移动端 5 项均分 65.6px × 5、与「更多」零缝隙；几何核验 `cnInside/enInside = true`；截图证据 `rail-2x-top/bottom.png`、`head-0..3.png`、`mobile-2x.png`、`palette-1440.png`。
+- **已知特征（记录在案）**：1440×900 视口下轨道列表滚动量 300px（平铺基线约 72px，组头另行 +4 行高；低于一屏的项可滚动到达，如需全量一屏可后续压缩组标签 / 项间距）。
+
 ### 踪迹体验完善 · 全面审查修复（已完成 · 2026-10-05）
 
 答 owner「对踪迹页面进行全方位检查以及审查，从 UI 设计、产品经理的角度出发检查有什么地方需要全面优化 → 全部处理」——先只读审查（隔离栈 + `/api/**` 夹具拦截 + 计算样式探针，报告 `.qa/traces-review/REVIEW.md`），再逐项落地：

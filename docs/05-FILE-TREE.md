@@ -68,7 +68,7 @@ kernel/
 │  ├─ main.tsx                  # 挂载入口（样式导入、字体自托管）
 │  ├─ App.tsx                   # 应用壳与路由
 │  ├─ views/                    # 视图（Overview/Inbox/Tasks/Calendar/Timetable/Projects/Habits/Library/Review/Settings/Trash/Profile；NotFound）
-│  ├─ components/               # 通用组件（Panel / Modal / Toast / EntityEditForm / CommandPalette / TaskDetail / TaskDetailModal / ProjectDetail / ProjectDetailModal / OverviewChat / AiSuggestionForm / TaskDraftModal / OrganizeProposalCard（项目 AI 整理建议卡）/ HabitHeatmap（习惯热力图）/ ActivityCalendar（活跃贡献日历）…）
+│  ├─ components/               # 通用组件（Panel / Modal / Toast / EntityEditForm / CommandPalette / TaskDetail / TaskDetailModal / ProjectDetail / ProjectDetailModal / OverviewChat / StartHereCard（首启「开始使用」清单卡）/ AiSuggestionForm / TaskDraftModal / OrganizeProposalCard（项目 AI 整理建议卡）/ HabitHeatmap（习惯热力图）/ ActivityCalendar（活跃贡献日历）…）
 │  │  ├─ shell/                 # 应用壳（RailNav / TopBar / StatusBar / AppLayout）
 │  │  └─ charts/                # 图表（TrendLine / EnergyBars）
 │  ├─ context/                  # React Context（Theme / Toast / Palette）
@@ -81,6 +81,7 @@ kernel/
 ├─ scripts/                     # 脚本
 │  ├─ dev.mjs                   # 开发启动器（数据服务 + Vite 一体启动；--preview 走 preview）
 │  ├─ spawn-bg.mjs              # 后台安全启动器（detached spawn + 日志重定向；防工具调用挂起）
+│  ├─ sync-install.mjs          # 安装版实时同步（把工作区源码白名单镜像到 D:\KERNEL，供其自带 Vite dev 热更新）
 │  ├─ build-installer.mjs       # Windows 安装包构建器（白名单组装载荷 + 内置 Inno Setup 编译器 → Setup.exe）
 │  ├─ make-icon.ps1             # 生成本机启动器图标 kernel.ico（System.Drawing，可重跑）
 │  ├─ assets/
@@ -104,7 +105,7 @@ kernel/
 | `data/` | 数据源，一记录一文件 JSON + 附件二进制 `data/files/` + 回收站 `data/trash/`；v0.4 起写入一律经 `server/` 数据服务（单写者） | 数据服务（唯一写者） |
 | `server/` | 数据服务：Zod 校验 + 原子写 + 审计日志；仅监听 127.0.0.1:4097 | 数据层实现方 |
 | `src/` | React + TypeScript 前端应用（只读数据经水合，写入经 API） | 前端实现方 |
-| `scripts/` | 开发启动器（`dev.mjs`）、后台安全启动器（`spawn-bg.mjs`）、启动页（`assets/welcome.html`）、Windows 安装包构建器（`build-installer.mjs`：白名单组装载荷 + 内置 Inno Setup 编译器）、启动器图标生成（`make-icon.ps1`）、种子数据生成（`seed.mjs`）、数据清零（`reset.mjs`） | 工程 |
+| `scripts/` | 开发启动器（`dev.mjs`）、后台安全启动器（`spawn-bg.mjs`）、安装版实时同步（`sync-install.mjs`：源码白名单镜像到安装目录，供其 Vite dev 热更新）、启动页（`assets/welcome.html`）、Windows 安装包构建器（`build-installer.mjs`：白名单组装载荷 + 内置 Inno Setup 编译器）、启动器图标生成（`make-icon.ps1`）、种子数据生成（`seed.mjs`）、数据清零（`reset.mjs`） | 工程 |
 | `installer/` | Windows 安装包脚本（`KERNEL.iss`：安装向导 / 空白数据骨架 `uninsneveruninstall` / 卸载保留数据）与启动页（`welcome.html`） | 工程 |
 | `public/` | 静态资源：自托管字体、图标、自包含使用指南 `guide.html`（`/guide.html`，亦可 file:// 双击打开） | 前端实现方 |
 | 根目录启动器 | 桌面启动器 `启动器.vbs`（入口）+ `启动器.ps1`（原生 WPF 窗口）+ `kernel.ico` 图标；控制台入口 `启动.cmd`（显示运行日志，不变） | 工程 |

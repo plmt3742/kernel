@@ -166,6 +166,7 @@ export function ClassGrid({ onCreateCourse, onOpenCourse, onOpenTerm }: ClassGri
         <EmptyState
           title="还没有课程"
           hint="点「新建课程」录入课表；设置学期后可按周查看。"
+          guide
           action={
             <button type="button" className="k-btn is-solid" onClick={() => onCreateCourse()}>
               新建课程

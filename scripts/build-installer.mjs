@@ -91,7 +91,8 @@ const ENTITY_DIRS = [
 ]
 const DATA_DIRS = [...ENTITY_DIRS, 'trash', 'files', 'meta']
 
-const SCRIPTS_EXCLUDE = new Set(['seed.mjs', 'package.mjs', 'build-installer.mjs', 'make-icon.ps1'])
+// seed.mjs 进包（ADR-0041 Phase 3：设置页「载入示例数据」经数据服务执行 scripts/seed.mjs）
+const SCRIPTS_EXCLUDE = new Set(['package.mjs', 'build-installer.mjs', 'make-icon.ps1'])
 const ROOT_FILES = ['index.html', 'vite.config.ts', 'README.md', '启动.cmd', '启动器.ps1', '启动器.vbs', 'kernel.ico']
 
 const RED = '\x1b[31m'
@@ -245,7 +246,7 @@ fs.writeFileSync(path.join(STAGE_DATA, 'data', 'meta', 'config.json'), JSON.stri
 fs.writeFileSync(path.join(STAGE_DATA, 'data', 'meta', 'tags.json'), JSON.stringify({ tags: [] }, null, 2) + '\n', 'utf8')
 
 // ---- 结构校验（防回归）----
-for (const bad of ['.git', '.qa', '.omo', 'docs', 'design-drafts', 'data', 'data/meta/secrets.json', 'data/activity.jsonl', 'scripts/seed.mjs', 'scripts/assets', 'public/showcase.html', '使用说明.md']) {
+for (const bad of ['.git', '.qa', '.omo', 'docs', 'design-drafts', 'data', 'data/meta/secrets.json', 'data/activity.jsonl', 'scripts/assets', 'public/showcase.html', '使用说明.md']) {
   if (fs.existsSync(path.join(STAGE, bad))) fatal(`禁用路径出现在载荷内：${bad}`)
 }
 if (fs.existsSync(path.join(STAGE, 'AGENTS.md'))) fatal('AGENTS.md 不应进载荷')

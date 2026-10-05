@@ -2,13 +2,15 @@
 // 只监听 127.0.0.1:4097（永不暴露局域网；浏览器经 Vite 代理访问）。
 // 路由：health / snapshot / activity / tasks(create·complete·reopen) / inbox(capture·clarify·revert)
 import http from 'node:http'
-import { spawn } from 'node:child_process'
+import { execFile as execFileCb, spawn } from 'node:child_process'
 import { createReadStream, createWriteStream, existsSync, promises as fs } from 'node:fs'
 import path from 'node:path'
+import { promisify } from 'node:util'
 // 配置原子写（个人资料切片）：config.json 非实体，store.commit 不适用；镜像 store 的 write-file-atomic 模式
 import writeFileAtomic from 'write-file-atomic'
 import { z } from 'zod'
 import {
+  audit,
   backfillTags,
   commit,
   DATA_DIR,
@@ -98,6 +100,11 @@ const SERVICE_VERSION = '0.5.0'
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 /** 长截图 AI 分片上限（RAW body；每片为前端切好的 JPEG） */
 const MAX_PREVIEW_BYTES = 4 * 1024 * 1024
+/** 仓库根（DATA_DIR = <ROOT>/data）；示例数据 / 清空维护脚本从此定位（ADR-0041 Phase 3） */
+const ROOT = path.dirname(DATA_DIR)
+/** 维护脚本执行（示例数据 / 清空）：promisify execFile；输出上限 16MB */
+const execFile = promisify(execFileCb)
+const MAINTENANCE_MAX_BUFFER = 16 * 1024 * 1024
 /** 附件二进制目录（不进 git；见 ADR-0008） */
 const FILES_DIR = path.join(DATA_DIR, 'files')
 /** 个人头像单文件上限（RAW body；超出即 413） */
@@ -233,6 +240,30 @@ function readBody(req) {
 async function recordAudit(entry) {
   const line = `${JSON.stringify({ ts: nowIso(), ...entry })}\n`
   await fs.appendFile(path.join(DATA_DIR, 'activity.jsonl'), line, 'utf8')
+}
+
+/**
+ * 执行仓库维护脚本（ADR-0041 Phase 3）：示例数据载入 / 清空。二者属 AGENTS §4 的维护脚本
+ * 例外（仅用 node:fs 直写，绕过 store.commit）；此处由数据服务以子进程执行，**不改脚本本身**。
+ * 脚本缺失 / 非零退出 / spawn 失败 → 抛 status 500，携带 stderr（可读）交由路由层直接回显。
+ * @param {string} scriptName scripts/ 下的文件名（如 'seed.mjs'）
+ * @param {string[]} [args] 附加参数（reset 传 ['--yes']）
+ */
+async function runMaintenanceScript(scriptName, args = []) {
+  const scriptPath = path.join(ROOT, 'scripts', scriptName)
+  if (!existsSync(scriptPath)) {
+    throw Object.assign(new Error(`维护脚本缺失：scripts/${scriptName}`), { status: 500 })
+  }
+  try {
+    await execFile(process.execPath, [scriptPath, ...args], {
+      cwd: ROOT,
+      maxBuffer: MAINTENANCE_MAX_BUFFER,
+    })
+  } catch (err) {
+    const stderr = typeof err?.stderr === 'string' ? err.stderr.trim() : ''
+    const detail = stderr !== '' ? stderr : err?.message ?? '脚本执行失败'
+    throw Object.assign(new Error(`执行 scripts/${scriptName} 失败：${detail}`), { status: 500 })
+  }
 }
 
 /** id 形状校验（防目录穿越；不匹配即 400） */
@@ -2944,6 +2975,45 @@ const server = http.createServer(async (req, res) => {
       const result = await applyConfigUpdate(await readBody(req))
       console.log('[data] config.update')
       send(res, 200, result)
+      return
+    }
+    // 示例数据载入（ADR-0041 Phase 3）：仅空工作区可载入 → 执行 scripts/seed.mjs（维护脚本例外）
+    if (method === 'POST' && pathname === '/api/demo/seed') {
+      const body = await readBody(req)
+      if (body.confirm !== true) return fail(res, 400, '需要确认')
+      // 护栏：任何实体已有记录即 409（脚本自身也会拒绝覆盖，此处提前给出可读原因）
+      const snap = await readSnapshot()
+      const recordCount = [
+        'inbox', 'tasks', 'projects', 'areas', 'goals', 'habits',
+        'events', 'traces', 'notes', 'resources', 'reviews', 'courses',
+      ].reduce((sum, kind) => sum + (Array.isArray(snap[kind]) ? snap[kind].length : 0), 0)
+      if (recordCount > 0) {
+        return fail(res, 409, '示例数据仅可载入空工作区（当前已有记录）')
+      }
+      try {
+        await runMaintenanceScript('seed.mjs')
+      } catch (err) {
+        console.error('[data] demo.seed 失败：', err?.message ?? err)
+        return fail(res, 500, err?.message ?? '示例数据载入失败')
+      }
+      await audit({ action: 'demo.seed', entity: 'demo', id: '-', detail: {} })
+      console.log('[data] demo.seed ok')
+      send(res, 200, { ok: true })
+      return
+    }
+    // 清空所有数据（ADR-0041 Phase 3）：执行 scripts/reset.mjs --yes（先自动备份到 .qa/backups/）
+    if (method === 'POST' && pathname === '/api/demo/reset') {
+      const body = await readBody(req)
+      if (body.confirm !== true) return fail(res, 400, '需要确认')
+      try {
+        await runMaintenanceScript('reset.mjs', ['--yes'])
+      } catch (err) {
+        console.error('[data] demo.reset 失败：', err?.message ?? err)
+        return fail(res, 500, err?.message ?? '清空数据失败')
+      }
+      await audit({ action: 'demo.reset', entity: 'demo', id: '-', detail: {} })
+      console.log('[data] demo.reset ok')
+      send(res, 200, { ok: true })
       return
     }
     // 学期信息更新（Slice H0）：startDate / totalWeeks 皆可选；审计 term.update

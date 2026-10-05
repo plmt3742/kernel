@@ -352,6 +352,7 @@ export function Habits() {
         <EmptyState
           title="还没有习惯"
           hint="从一个小习惯开始：每晚 23:30 前入睡、每天 20 个俯卧撑，或 15 分钟英语。"
+          guide
           action={
             <button type="button" className="k-btn is-solid" onClick={() => setCreating(true)}>
               新建习惯
