@@ -97,6 +97,18 @@ npm run installer            # 打 Windows 安装包（见下）
 
 Key 也可以不写环境变量，直接在应用里填：设置 → AI 集成。它存在本机 `data/meta/secrets.json`（已 gitignore，不进版本库）。
 
+## 开发环境（AI 协作）
+
+KERNEL 的代码主要是在 AI 编码代理的协作下写出来的——这套环境本身也是项目的一部分。
+
+- **编码代理**：[opencode](https://opencode.ai)（本机运行，端口 4096）。根目录的 [`AGENTS.md`](AGENTS.md) 就是给它的操作手册：速览、命令、数据纪律、文档义务都写在那里。
+- **模型**：DeepSeek Flash（`deepseek/deepseek-flash`），走 DeepSeek API；Key 只存本机（环境变量，或「设置 → AI 集成」）。
+- **插件**：`oh-my-openagent`（多智能体编排——`oracle` 复核、`librarian` 查文档与开源实现、`explore` 搜代码、`metis` 预规划、`momus` 计划评审、`sisyphus` 编排派发等）与 `ecc-universal`，另有一个本地守卫插件。
+- **MCP**：GitHub（GitHub Copilot MCP）；另接入 Context7 查库文档。
+- **技能**：按需加载的 60+ 个 skill（前端设计、调试、去 AI 味、图表、文档格式、端到端测试等）。
+- **运行时**：Node.js 22 · npm 10 · Python 3.13。
+- **协作留痕**：[`docs/ai-worklog/`](docs/ai-worklog/) 按时间记录核心协作（日期 / 提交 / Prompt / 结果），并附 [`COMMITS-MAP.md`](docs/ai-worklog/COMMITS-MAP.md) 提交对照。
+
 ## 文档
 
 - [docs/00-DESIGN-BRIEF.md](docs/00-DESIGN-BRIEF.md) — 项目宪法（事实源）
