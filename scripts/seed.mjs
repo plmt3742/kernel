@@ -865,6 +865,18 @@ const inbox = [
 ]
 
 /* ===========================================================================
+ * 踪迹（6，近 10 天）：「我刚刚做了什么」——朋友圈式活动留痕（tr-）
+ * ========================================================================= */
+const traces = [
+  { id: 'tr-0001', title: '跑完 5 公里', at: '2026-10-05T07:20:00+08:00', tags: ['topic:跑步'], areaId: 'a-0002' },
+  { id: 'tr-0002', title: '修好实验数据的散点图脚本', note: '把重复点去重之后，曲线终于顺眼了', at: '2026-10-04T22:10:00+08:00', tags: ['topic:Python'], areaId: 'a-0001' },
+  { id: 'tr-0003', title: '给学弟讲完 DP 背包', at: '2026-10-04T20:05:00+08:00', tags: ['topic:算法'], areaId: 'a-0004' },
+  { id: 'tr-0004', title: '把下周例会材料收尾', at: '2026-10-03T16:40:00+08:00', tags: ['role:competition-head'], areaId: 'a-0003' },
+  { id: 'tr-0005', title: '看完一节线代网课', at: '2026-10-02T21:30:00+08:00', tags: ['topic:数学'], areaId: 'a-0001' },
+  { id: 'tr-0006', title: '整理了书桌，扔了两袋废纸', at: '2026-09-29T18:10:00+08:00', tags: [], areaId: 'a-0002' },
+]
+
+/* ===========================================================================
  * 回顾（2：2026-W40 周回顾 + 2026-09 月回顾）
  * ========================================================================= */
 const reviews = [
@@ -1032,6 +1044,7 @@ for (const p of projects) writeRecord('projects', p.id, p)
 for (const g of goals) writeRecord('goals', g.id, g)
 for (const h of habits) writeRecord('habits', h.id, h)
 for (const e of events) writeRecord('events', e.id, e)
+for (const tr of traces) writeRecord('traces', tr.id, tr)
 for (const n of notes) writeRecord('notes', n.id, n)
 for (const r of resources) writeRecord('resources', r.id, r)
 for (const rev of reviews) writeRecord('reviews', rev.id, rev)
@@ -1058,6 +1071,7 @@ const counts = {
   goals: goals.length,
   habits: habits.length,
   events: events.length,
+  traces: traces.length,
   notes: notes.length,
   resources: resources.length,
   reviews: reviews.length,

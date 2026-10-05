@@ -1655,7 +1655,8 @@ summary 为必出项：用一句话概括本条内容（≤40 字，单行）。
     · 时间补全（系统认可的默认值，不算编造）：有日期（含今天 / 明天 / 后天 / 周X 等相对日）但只有模糊时段词时，按默认钟点补全——早上 08:00 · 上午 09:30 · 中午 12:00 · 下午 14:30 · 傍晚 17:30 · 晚上 / 今晚 19:30；用餐语境：早饭 07:30 · 午饭 12:00 · 晚饭 / 晚餐 18:00 · 夜宵 21:30。例：「今晚去某餐厅吃自助」→ 今天 18:00；「明晚开会」→ 明天 19:30；「周六下午打球」→ 本周六 14:30。
     · 明确给出起止时间才填 endAt（须 ≥ startAt）；只有日期没有时段词 → allDay:true（startAt 仍填当天 00:00）；连日期都无法推出 → 不产出 event（宁可 task + facts）。
     · 地点提取：内容含具体场所 / 店名 / 房间名（如「某餐厅」「某教室」）时填入该 event 的 location（≤50 字，只写场所名）；无法确定则省略。
-    · 「需要去做」的动作（准备 / 提交 / 监督 / 学习等）→ task；同一内容可以同时产出 event（发生的事）与 task（要做的准备），但不得重复拆条。`
+    · 「需要去做」的动作（准备 / 提交 / 监督 / 学习等）→ task；同一内容可以同时产出 event（发生的事）与 task（要做的准备），但不得重复拆条。
+13. 踪迹识别（已完成动作留痕）：当内容是在**陈述「我刚刚 / 今天做了什么」**（一件已经做完的事，如「我刚刚跑完 5 公里」「今天把实验报告写完了」「给学弟讲完课了」）时 → 产出 kind:"trace"：title 为一句「我做了什么」（≤40 字）；可附 note 补充一句细节 / 感受；at 填发生时间（有时间词就填，否则省略 = 现在，无需编造）。trace 仅用于「已发生的动作留痕」，不要与 task（待办）/ note（需成文的感想 / 知识）/ event（将来的安排）混用；纯情绪 / 思考 / 感悟（如「今天心情很好，觉得…」）属于 note，不是 trace。`
   const summaryHint = `- summary: 本条内容的一句话摘要（顶层字段，≤40 字，单行；多要点用「 · 」分隔；含关键时间 / 事项；不得引入原文没有的信息；不得整句照抄，也不得写「该内容主要讲述了…」式套话）\n`
   const factsHint = fileMode
     ? ''
@@ -1666,7 +1667,7 @@ summary 为必出项：用一句话概括本条内容（≤40 字，单行）。
   return `${head}
 
 每个 action 对象字段：
-${summaryHint}${factsHint}- kind: "task" | "note" | "resource" | "project" | "event"（必填）
+${summaryHint}${factsHint}- kind: "task" | "note" | "resource" | "project" | "event" | "trace"（必填）
 - title: 提炼后的标题（不超过 40 字，必填）
 - note: 仅 resource 用。1–3 句、不超过 ${AI_RESOURCE_NOTE_MAX_CHARS} 字的简约小结，作为资料详情页的「简介」（概括这是什么资料、讲了什么、有什么用）；附件条目必须给出此字段
 - url: 仅 resource 用；条目包含网页链接时原样填入
@@ -1680,6 +1681,7 @@ ${summaryHint}${factsHint}- kind: "task" | "note" | "resource" | "project" | "ev
 - endAt: 仅 event 用，可选；有明确结束时间才填（须 ≥ startAt）
 - allDay: 仅 event 用，true = 只有日期、无具体时间
 - location: 仅 event 用，可选（具体场所 / 店名 / 房间名，≤50 字；无法确定则省略）
+- at: 仅 trace 用，ISO8601 带时区（发生时间；有明确时间词才填，否则省略 = 现在）
 - projectId: 仅当有明确依据属于下方某个现有项目时填该项目 id；否则省略
 - areaId: 仅当明确属于下方某个区域时填该区域 id；否则省略
 - tags: 字符串数组。优先从下方【标签】中选已有标签名；仅当没有合适的已有标签、且该标签对日后检索明确有用时，才提出新标签名（写成 "topic:名称"，名称 ≤12 字）；每个动作最多 3 个，去重；无把握则空数组
@@ -1840,7 +1842,7 @@ export function postValidateActions(actions, snapshot, options = {}) {
   const cleaned = []
   for (const raw of (Array.isArray(actions) ? actions : []).slice(0, 6)) {
     const out = { ...raw }
-    for (const key of ['projectId', 'areaId', 'duplicateOf', 'outcome', 'dueAt', 'estimateMin', 'energy', 'importance', 'note', 'condition', 'url', 'startAt', 'endAt', 'allDay', 'location']) {
+    for (const key of ['projectId', 'areaId', 'duplicateOf', 'outcome', 'dueAt', 'estimateMin', 'energy', 'importance', 'note', 'condition', 'url', 'startAt', 'endAt', 'allDay', 'location', 'at']) {
       if (out[key] === null) delete out[key]
     }
     const title = Array.from(String(out.title ?? '').trim()).slice(0, 40).join('')
@@ -1857,11 +1859,19 @@ export function postValidateActions(actions, snapshot, options = {}) {
       if (outcome === '') delete out.outcome
       else out.outcome = outcome
     }
-    // note 仅 resource 有意义（Slice R2.5）：折叠空白 + 截断 ≤120，空则删除
+    // note 仅 resource（简介）/ trace（补充）有意义：resource 折叠 + 截断 ≤120；trace 截断 ≤500；其余删除
     if (out.kind === 'resource') {
       const note = normalizeResourceNote(out.note, '')
       if (note === '') delete out.note
       else out.note = note
+    } else if (out.kind === 'trace') {
+      if (typeof out.note === 'string') {
+        const note = out.note.trim()
+        if (note === '') delete out.note
+        else out.note = Array.from(note).slice(0, 500).join('')
+      } else {
+        delete out.note
+      }
     } else {
       delete out.note
     }
@@ -1912,6 +1922,18 @@ export function postValidateActions(actions, snapshot, options = {}) {
       delete out.endAt
       delete out.allDay
       delete out.location
+    }
+    // 「踪迹」清洗：at 可为空（缺省应用时刻）；给了但无效则删除（不因无效时间丢弃整条）
+    if (out.kind === 'trace') {
+      if (typeof out.at === 'string') {
+        const at = out.at.trim()
+        if (at === '' || !Number.isFinite(Date.parse(at))) delete out.at
+        else out.at = Array.from(at).slice(0, 40).join('')
+      } else {
+        delete out.at
+      }
+    } else {
+      delete out.at
     }
     cleaned.push(out)
   }
@@ -2451,6 +2473,7 @@ function buildChatSystem(digest) {
 - 需要外部事实才能回答准确时（最新政策 / 未来日期 / 公开资料等），**只输出一个 JSON**（不要任何其他文字）：{"searchQueries":["…","…"]}（≤2 条、中文关键词、含年份，如「2026年下半年 全国大学英语四级考试 时间」）。系统会先检索并把结果发给你，然后你再正式回答。**一次对话最多请求一次检索**。
 - 当用户想了解某条记录（任务 / 日程 / 资料 / 笔记 / 项目等）的详细内容，或想修改它，而摘要信息不足时，**只输出一个 JSON**（不要任何其他文字）：{"entityQueries":["关键词","…"]}（1–3 条、每条 ≤30 字）；系统会把匹配到的完整记录发给你，你再回答或提出修改。**一次对话最多请求一次实体调取**。
 - 当用户明确要求修改某条记录，且你已能确定唯一目标记录时，**只输出一个 JSON**（不要任何其他文字）：{"edit":{"kind":"task|event|note|resource|project|area|goal|habit|course","id":"…","fields":{"字段名":"新值"},"label":"一句话说明将做什么修改"}}。绝不在不确定时输出 edit（先向用户确认）；id 必须来自你已看到的记录，绝不编造；fields 只放需要修改的字段；修改需要用户确认后才会生效。
+- 当用户**在陈述「我刚刚 / 今天做了什么」这类已经做完的事**（如「我刚刚跑完 5 公里」「今天把实验报告写完了」「给学弟讲完课了」）时，**只输出一个 JSON**（不要任何其他文字）：{"trace":{"title":"≤40 字，一句话我做了什么","note":"可选补充（≤200 字，可为空串）","at":"可选 ISO8601 带时区（原文有时间词才填，否则省略）"}}。系统会把它作为一条「踪迹」记录交用户确认后入库。**待办（task）、将来的安排（event）、纯粹的思考 / 感悟（该记进笔记的）不要当作 trace**，后者仍按「整理进笔记」流程处理。
 - 若系统发来【实体记录】段落：只可据此回答 / 提出修改，不得编造；若用户要求修改，只输出上面的 edit JSON；否则正常用文字回答。
 - 正式回答用中文 markdown 组织（小标题 / 列表 / 加粗均可），简洁、直接、可执行；不要输出 markdown 代码块包裹整篇。
 - 当被问「最紧急」时，按「逾期 → 今日到期 → 即将开始的日程」排序给出判断与理由。
@@ -2682,6 +2705,30 @@ export function resolveEntities(snapshot, queries) {
   return { section: lines.join('\n'), titles: titles.slice(0, 6) }
 }
 
+/** 解析「踪迹提案」JSON：{"trace":{title,note?,at?}} → 清洗后的提案；非该形状返回 null（「踪迹」功能） */
+export function tryParseTraceRequest(reply) {
+  const cleaned = stripJsonFence(reply)
+  if (!cleaned.startsWith('{')) return null
+  let obj
+  try {
+    obj = JSON.parse(cleaned)
+  } catch {
+    return null
+  }
+  const raw = obj?.trace
+  if (raw === null || typeof raw !== 'object') return null
+  const title = Array.from(String(raw.title ?? '').trim()).slice(0, 40).join('')
+  if (title === '') return null
+  const trace = { title }
+  if (typeof raw.note === 'string' && raw.note.trim() !== '') {
+    trace.note = Array.from(raw.note.trim()).slice(0, 200).join('')
+  }
+  if (typeof raw.at === 'string' && Number.isFinite(Date.parse(raw.at))) {
+    trace.at = Array.from(raw.at.trim()).slice(0, 40).join('')
+  }
+  return trace
+}
+
 /**
  * 与 KERNEL 对话：读当前数据快照构造摘要，注入有界对话历史，返回自然语言回答。
  * Slice G.1：模型可请求联网检索（Sogou→360→Bing），服务端检索后回喂同一会话正式作答。
@@ -2753,14 +2800,20 @@ export async function chatWithKernel(messages) {
     }
     break
   }
-  const editRequest = tryParseEditRequest(lastReply)
-  const reply = editRequest !== null ? editRequest.label || '已生成修改建议，请确认后生效。' : lastReply
+  const traceRequest = tryParseTraceRequest(lastReply)
+  const editRequest = traceRequest === null ? tryParseEditRequest(lastReply) : null
+  const reply =
+    traceRequest !== null
+      ? `识别为一条踪迹：「${traceRequest.title}」。确认后记入踪迹。`
+      : editRequest !== null
+        ? editRequest.label || '已生成修改建议，请确认后生效。'
+        : lastReply
   const model = modelOf(outcome.res)
   const ms = Date.now() - t0
   console.log(
-    `[ai] chat 完成 ${ms}ms（${model ?? '未知模型'}${searched.length > 0 ? ` · 检索${searched.length}条` : ''}${focused.length > 0 ? ` · 调取${focused.length}条` : ''}${editRequest !== null ? ' · 修改建议' : ''}）`,
+    `[ai] chat 完成 ${ms}ms（${model ?? '未知模型'}${searched.length > 0 ? ` · 检索${searched.length}条` : ''}${focused.length > 0 ? ` · 调取${focused.length}条` : ''}${editRequest !== null ? ' · 修改建议' : ''}${traceRequest !== null ? ' · 踪迹提案' : ''}）`,
   )
-  return { reply, searched, focused, editRequest, model, ms }
+  return { reply, searched, focused, editRequest, traceRequest, model, ms }
 }
 
 /** 构造「把回答整理成笔记」系统提示词（Slice G.1；聚焦用户要求、事实数字不变、不得编造） */

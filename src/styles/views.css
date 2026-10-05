@@ -4674,3 +4674,417 @@ button.k-act__link:hover {
   background: var(--accent);
   opacity: 0.92;
 }
+
+/* ---------------------------------------------------------------------------
+ * 踪迹 TRACES：「我刚刚做了什么」的条目流（动态 / 时间线双风格）。
+ * 全部 token-only；动态流 = 左日期列 + 右内容 + 图片宫格（无卡片外壳，WeChat-Moments 感）；
+ * 时间线复用 .k-act__*。本块为唯一权威（v1 旧规则已删除，见 T3）。
+ * ------------------------------------------------------------------------- */
+
+.k-traces {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+.k-traces__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+/* 筛选条（T5）：标签分段槽 + 搜索框，位于工具条之下 */
+.k-traces__filters {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+.k-traces__tagfilter {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.k-traces__search {
+  flex: 1 1 200px;
+  min-width: 160px;
+}
+.k-traces__search .k-input {
+  width: 100%;
+}
+.k-traces__empty {
+  margin: 0;
+  padding: var(--space-7) 0;
+  text-align: center;
+  color: var(--muted);
+  font-size: var(--text-body-sm);
+}
+
+/* 发布器：一句话 + 可附图片；回车 / 点「记录」写入 */
+.k-trace-composer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--surface);
+  border: var(--hairline) solid var(--outline);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card), var(--shadow-highlight);
+}
+.k-trace-composer__input {
+  width: 100%;
+  min-height: 44px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--ink);
+  font-size: var(--text-body);
+  line-height: 1.6;
+  resize: none;
+  outline: none;
+}
+.k-trace-composer__input::placeholder {
+  color: var(--muted);
+}
+.k-trace-composer__previews {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+  gap: var(--space-2);
+}
+.k-trace-composer__thumb {
+  position: relative;
+  aspect-ratio: 1;
+  border-radius: var(--radius-inner);
+  overflow: hidden;
+  background: var(--fill-subtle);
+}
+.k-trace-composer__thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.k-trace-composer__thumb-del {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--scrim);
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1;
+}
+.k-trace-composer__foot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.k-trace-composer__attach {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border-radius: var(--radius-inner);
+  color: var(--muted);
+  font-size: var(--text-caption);
+  transition: background var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard);
+}
+button.k-trace-composer__attach:hover {
+  background: var(--fill-tag);
+  color: var(--ink-2);
+}
+.k-trace-composer__spacer {
+  flex: 1 1 auto;
+}
+.k-trace-composer .k-btn.is-solid {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+.k-trace-composer__file {
+  display: none;
+}
+
+/* 总览「踪迹」小组件：最近几条，一行一条 */
+.k-traces-mini {
+  display: flex;
+  flex-direction: column;
+}
+.k-traces-mini__row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  text-align: left;
+  border-top: var(--hairline) solid var(--rule-soft);
+  transition: background var(--dur-fast) var(--ease-standard);
+}
+.k-traces-mini__row:first-child {
+  border-top: none;
+}
+.k-traces-mini__row:hover {
+  background: var(--hover-veil);
+}
+.k-traces-mini__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0.7;
+}
+.k-traces-mini__title {
+  min-width: 0;
+  color: var(--ink-2);
+  font-size: var(--text-body-sm);
+  overflow-wrap: anywhere;
+}
+.k-traces-mini__time {
+  color: var(--muted);
+}
+
+/* 动态流：按天分组（一天日期只出现一次）——左日期标记 + 右条目列，无卡片外壳 */
+.k-traces__feed {
+  display: flex;
+  flex-direction: column;
+}
+.k-traces__day {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: var(--space-4);
+  padding: var(--space-4) 0;
+}
+.k-traces__day + .k-traces__day {
+  border-top: var(--hairline) solid var(--outline);
+}
+.k-traces__daymark {
+  margin: 0;
+  padding-top: 2px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  font-size: inherit;
+  font-weight: 600;
+  line-height: 1.1;
+  color: var(--ink);
+}
+.k-traces__daymark-main {
+  font-size: var(--text-h2);
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.k-traces__daymark-main.is-word {
+  font-size: var(--text-h4);
+}
+.k-traces__daymark-sub {
+  color: var(--muted);
+  margin-top: 2px;
+}
+.k-traces__dayitems {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.k-trace {
+  position: relative;
+  display: block;
+  padding: var(--space-4) 0;
+  border-top: var(--hairline) solid var(--rule-soft);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-standard);
+}
+/* 每日第一条：与日期标记顶对齐、无分隔线 */
+.k-traces__dayitems > .k-trace:first-child {
+  padding-top: 0;
+  border-top: none;
+}
+.k-trace:hover {
+  background: var(--hover-veil);
+}
+.k-trace.is-target {
+  background: var(--hover-veil);
+  border-radius: var(--radius-card);
+}
+.k-trace__main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.k-trace__title {
+  margin: 0;
+  color: var(--ink);
+  font-size: var(--text-body);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+/* 标题是真实按钮（键盘 / 读屏可达）；::after 拉伸覆盖整行 → 鼠标点整行开详情。
+   行内其它可交互元素（图片 / 删除 / 芯片）z-index 置顶，不受遮罩影响。 */
+.k-trace__open {
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  line-height: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.k-trace__open::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+.k-trace__note {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: var(--text-body-sm);
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.k-trace__imgs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  max-width: 420px;
+}
+.k-trace__imgs.is-n1 {
+  grid-template-columns: 1fr;
+  max-width: 260px;
+}
+.k-trace__imgs.is-n2,
+.k-trace__imgs.is-n4 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  max-width: 300px;
+}
+/* 图片作为可点按钮（灯箱入口）；重置 UA 按钮外观 */
+.k-trace__imgbtn {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: var(--radius-inner);
+  overflow: hidden;
+}
+.k-trace__imgs img {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  display: block;
+  border-radius: var(--radius-inner);
+  background: var(--fill-subtle);
+}
+.k-trace__imgs.is-n1 img {
+  aspect-ratio: 4 / 3;
+}
+.k-trace__foot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.k-trace__foot .k-pill {
+  color: var(--muted);
+}
+/* 区域 / 项目引用芯片：安静 chip 包一层深链，点击不触发行弹窗 */
+.k-trace__ref {
+  position: relative;
+  z-index: 1;
+  color: inherit;
+}
+.k-trace__ref:hover {
+  text-decoration: none;
+}
+.k-trace__del {
+  position: relative;
+  z-index: 1;
+  margin-left: auto;
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-pill);
+  color: var(--muted);
+  font-size: var(--text-caption);
+  transition: background var(--dur-fast) var(--ease-standard);
+}
+button.k-trace__del:hover {
+  background: var(--fill-tag);
+  color: var(--danger-text);
+}
+.k-trace__thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  object-fit: cover;
+  vertical-align: -4px;
+  margin-right: var(--space-2);
+}
+
+/* 时间线高亮 + 吸顶日标签（页面底色，修粘连接缝）；行相对定位承载标题拉伸遮罩 */
+.k-act__row.is-target {
+  box-shadow: var(--shadow-hover);
+  border-color: var(--outline-strong);
+  border-top-color: var(--outline-strong);
+}
+.k-traces .k-act__row {
+  position: relative;
+}
+.k-traces .k-act__daylabel {
+  background: var(--bg);
+}
+
+/* 详情弹窗（T6）与灯箱（T7） */
+.k-trace-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.k-trace-detail__meta {
+  margin: 0;
+}
+.k-trace-detail__note {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: var(--text-body);
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.k-trace-detail__tags {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.k-trace__lightbox img {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+}
+
+@media (max-width: 640px) {
+  .k-trace-composer {
+    flex-wrap: wrap;
+  }
+  /* 窄屏：日期标记改为整行标题（横排），条目占满宽度——避免窄列换行 / 图片挤压 */
+  .k-traces__day {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-2);
+  }
+  .k-traces__daymark {
+    flex-direction: row;
+    align-items: baseline;
+    gap: var(--space-2);
+    padding-top: 0;
+  }
+  .k-traces__daymark-main {
+    font-size: var(--text-h3);
+  }
+  .k-traces__daymark-sub {
+    margin-top: 0;
+  }
+}

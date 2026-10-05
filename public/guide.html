@@ -855,7 +855,7 @@ body.demo-locked { overflow: hidden; }
           <span class="loop__sep">→</span>
           <span class="loop__step"><span class="n">05</span>回顾</span>
         </div>
-        <p>侧栏的十一个页面，就是这条循环的展开——收件箱负责捕捉，任务与项目负责澄清和组织，总览、日程与习惯负责执行，回顾负责收口；右上角头像里是「个人」页，安放你的资料、活跃日历与动作时间线。</p>
+        <p>侧栏的十二个页面，就是这条循环的展开——收件箱负责捕捉，任务与项目负责澄清和组织，总览、日程与习惯负责执行，踪迹负责留痕，回顾负责收口；右上角头像里是「个人」页，安放你的资料、活跃日历与动作时间线。</p>
         <p>所有数据都在本地的 <code class="inl">data/</code> 目录里，一条记录一个 JSON 文件，可读、可 diff、可备份。网页只是驾驶舱，不是数据的所有者；AI 也只是协作者，永远不越过你直接改数据。</p>
       </section>
 
@@ -1080,6 +1080,19 @@ body.demo-locked { overflow: hidden; }
               <li>点「展开热力图 · 近 16 周」查看贡献式打卡网格；与个人页的活跃日历共用同一套图示</li>
               <li class="signal">「+ 新建习惯」「编辑」「删除」都在这一页（习惯的增删改已从设置页迁来）；删除进回收站、可撤销</li>
               <li>深链 <code class="inl">/habits?habit=…</code> 可直达某个习惯的编辑弹窗</li>
+            </ul>
+          </article>
+
+          <article class="card">
+            <div class="card__top"><h3>踪迹</h3><span class="card__tag">TRACES</span></div>
+            <p class="card__desc">我自己记下的留痕：我刚刚做了什么。</p>
+            <ul>
+              <li>发布器写一句「我刚刚做了什么」，<strong>回车即记录</strong>（Shift + 回车换行）；可附最多 9 张图片（回形针选择或直接粘贴截图），记录成功的 toast 可撤销</li>
+              <li><strong>动态 / 时间线</strong>两种版式一键切换：动态<strong>按天分组</strong>（一天只显示一个日期标记，下面是当天的条目 + 图片宫格）；时间线是紧凑列表（带首图缩略）。选择会被记住</li>
+              <li>按<strong>标签筛选</strong> + <strong>关键词搜索</strong>（标题 / 补充 / 标签）可叠加使用；计数显示「N / M 条踪迹」</li>
+              <li>点任意一条打开<strong>详情弹窗</strong>：可编辑标题 / 补充 / 时间 / 标签 / 区域 / 项目，可删除（进回收站、可撤销）；图片点开看大图</li>
+              <li class="signal">收件箱里「我刚刚 / 今天做了 X」会给出踪迹建议；与总览 AI 对话时说「记入踪迹」也能落盘（确认后写入，可撤销）</li>
+              <li>深链 <code class="inl">/traces?trace=…</code> 可直达某条并短暂高亮；<code class="inl">Ctrl+K</code> 命令面板搜索能直接搜到踪迹条目</li>
             </ul>
           </article>
 

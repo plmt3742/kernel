@@ -122,12 +122,16 @@ const AVATAR_EXT_MIME = {
 }
 /** 头像文件名前缀（新上传清理旧文件 / 读取路径受管校验） */
 const AVATAR_PREFIX = 'profile-avatar-'
+/** 踪迹图片前缀 / 单文件上限 / 受管文件名（GET 读取路径校验） */
+const TRACE_IMAGE_PREFIX = 'trace-'
+const MAX_TRACE_IMAGE_BYTES = 8 * 1024 * 1024
+const TRACE_IMAGE_RE = /^trace-[A-Za-z0-9._-]+\.(png|jpe?g|webp|gif)$/
 
 /** 澄清目标 → 实体 kind */
 const CLARIFY_KINDS = { task: 'tasks', project: 'projects', note: 'notes', resource: 'resources' }
 
 /** 可编辑 / 可回收的实体 kind 白名单（通用 /update · /trash 路由；areas/goals/habits 走专属路由；Slice H0 增 courses） */
-const EDITABLE_KINDS = ['tasks', 'projects', 'notes', 'resources', 'events', 'courses']
+const EDITABLE_KINDS = ['tasks', 'projects', 'notes', 'resources', 'events', 'traces', 'courses']
 /** 可回收实体 kind（Slice X：areas / goals / habits 亦可恢复 / 彻底删除；回收站路由组） */
 const TRASHABLE_KINDS = [...EDITABLE_KINDS, 'areas', 'goals', 'habits']
 /** kind → 审计用单数名 */
@@ -137,13 +141,14 @@ const SINGULAR = {
   notes: 'note',
   resources: 'resource',
   events: 'event',
+  traces: 'trace',
   areas: 'area',
   goals: 'goal',
   habits: 'habit',
   courses: 'course',
 }
 /** 无 createdAt / updatedAt 的实体（对齐既有形状；编辑时不 bump updatedAt） */
-const NO_TIMESTAMP_KINDS = new Set(['events', 'areas', 'goals', 'habits'])
+const NO_TIMESTAMP_KINDS = new Set(['events', 'traces', 'areas', 'goals', 'habits'])
 /** 任务创建可携带的可选字段顺序（Slice O；用于审计 detail.fields） */
 const CREATE_FIELD_KEYS = [
   'contexts', 'energy', 'importance', 'estimateMin', 'dueAt', 'deferUntil', 'projectId', 'areaId', 'parentTaskId', 'tags',
@@ -159,6 +164,8 @@ const EDITABLE_FIELDS = {
   resources: ['title', 'kind', 'status', 'url', 'path', 'areaId', 'tags', 'note'],
   // 日程（Slice W）：repeatRule 仅展示保留，不开放编辑（见 ADR-0018）
   events: ['title', 'startAt', 'endAt', 'allDay', 'location', 'status', 'projectId', 'areaId', 'tags', 'notes'],
+  // 踪迹（「踪迹」新功能）：title 必填；at 可编辑（发生时间）；note / tags / 关联可选
+  traces: ['title', 'note', 'at', 'tags', 'areaId', 'projectId'],
   // 区域 / 目标 / 习惯（Slice X，见 ADR-0019）：字段白名单；keyResults 不开放编辑（写入延后）
   areas: ['title', 'standard', 'cadence', 'status'],
   goals: ['title', 'horizon', 'areaId', 'status', 'targetDate'],
@@ -480,6 +487,57 @@ async function deleteAvatarFiles(keepName) {
     if (keepName !== undefined && name === keepName) continue
     await fs.unlink(path.join(FILES_DIR, name)).catch(() => {})
   }
+}
+
+/**
+ * 上传踪迹图片（「踪迹」· RAW body）：Content-Type 须命中 png / jpeg / webp / gif（否则 400）；
+ * 落盘 data/files/trace-<ts>-<rand>.<ext>（超 8MB → 413；空文件 → 400）。返回 { name }。
+ */
+async function uploadTraceImage(req) {
+  const contentType = String(req.headers['content-type'] ?? '').split(';')[0].trim().toLowerCase()
+  const ext = AVATAR_MIME_EXT[contentType]
+  if (ext === undefined) {
+    throw Object.assign(new Error('图片仅支持 PNG / JPEG / WebP / GIF'), { status: 400 })
+  }
+  await fs.mkdir(FILES_DIR, { recursive: true })
+  const rand = Math.random().toString(36).slice(2, 8)
+  const name = `${TRACE_IMAGE_PREFIX}${avatarTimestamp()}-${rand}.${ext}`
+  const dest = path.join(FILES_DIR, name)
+  let size
+  try {
+    size = await saveUpload(req, dest, MAX_TRACE_IMAGE_BYTES, '图片过大（上限 8MB）')
+  } catch (err) {
+    await fs.unlink(dest).catch(() => {})
+    throw err
+  }
+  if (size === 0) {
+    await fs.unlink(dest).catch(() => {})
+    throw Object.assign(new Error('图片文件为空'), { status: 400 })
+  }
+  return { name }
+}
+
+/** 读取踪迹图片（GET /api/traces/images/<name>）：受管文件名 + 目录校验；no-store + nosniff */
+function serveTraceImage(res, rawName) {
+  const name = path.basename(String(rawName ?? ''))
+  if (!TRACE_IMAGE_RE.test(name)) return fail(res, 400, '图片文件名不合法')
+  const full = path.join(FILES_DIR, name)
+  if (!existsSync(full)) return fail(res, 404, '图片不存在')
+  const ext = name.split('.').pop().toLowerCase()
+  res.writeHead(200, {
+    'Content-Type': AVATAR_EXT_MIME[ext] ?? 'application/octet-stream',
+    'Cache-Control': 'no-store',
+    'X-Content-Type-Options': 'nosniff',
+  })
+  createReadStream(full)
+    .on('error', () => {
+      try {
+        res.destroy()
+      } catch {
+        /* 忽略 */
+      }
+    })
+    .pipe(res)
 }
 
 /**
@@ -825,6 +883,67 @@ async function createEvent(body) {
   })
   if (tags.length > 0) await ensureTags(tags, { origin: 'manual', firstUsedIn: saved.id })
   return { event: saved }
+}
+
+/**
+ * 新建踪迹（「踪迹」新功能）：title 必填（trim 后非空且 ≤80，400）；at 缺省 = 当前时刻；
+ * note ≤500；关联 projectId / areaId 须真实存在（同 createEvent 口径）；标签规格化并登记（origin manual）。
+ * 审计 trace.create（detail.fields 记录携带的可选字段）；不写 createdAt / updatedAt。
+ */
+async function createTrace(body) {
+  const title = typeof body.title === 'string' ? body.title.trim() : ''
+  if (title === '') throw Object.assign(new Error('内容不能为空'), { status: 400 })
+  if (title.length > 80) throw Object.assign(new Error('内容过长（≤80 字）'), { status: 400 })
+  const rawAt = typeof body.at === 'string' ? body.at.trim() : ''
+  const at = rawAt === '' ? nowIso() : rawAt
+  if (Number.isNaN(new Date(at).getTime())) {
+    throw Object.assign(new Error('发生时间无效'), { status: 400 })
+  }
+  const tags = normalizeTagList(body.tags)
+  const trace = { id: await nextId('traces'), title, at, tags }
+  const fields = []
+  if (rawAt !== '') fields.push('at')
+  // 「踪迹」图片：仅接受受管文件名（trace-…，≤9，去重）；非受管名一律丢弃
+  const rawImages = Array.isArray(body.images) ? body.images : []
+  const images = []
+  for (const raw of rawImages) {
+    if (typeof raw !== 'string') continue
+    const name = path.basename(raw.trim())
+    if (TRACE_IMAGE_RE.test(name) && !images.includes(name)) images.push(name)
+    if (images.length >= 9) break
+  }
+  if (images.length > 0) {
+    trace.images = images
+    fields.push('images')
+  }
+  const rawNote = typeof body.note === 'string' ? body.note.trim() : ''
+  if (rawNote !== '') {
+    trace.note = rawNote
+    fields.push('note')
+  }
+  if (typeof body.projectId === 'string' && body.projectId !== '') {
+    if (!validId('projects', body.projectId) || (await readEntity('projects', body.projectId)) === null) {
+      throw Object.assign(new Error('项目不存在'), { status: 400 })
+    }
+    trace.projectId = body.projectId
+    fields.push('projectId')
+  }
+  if (typeof body.areaId === 'string' && body.areaId !== '') {
+    if (!validId('areas', body.areaId) || (await readEntity('areas', body.areaId)) === null) {
+      throw Object.assign(new Error('区域不存在'), { status: 400 })
+    }
+    trace.areaId = body.areaId
+    fields.push('areaId')
+  }
+  if (tags.length > 0) fields.push('tags')
+  const saved = await commit('traces', trace, {
+    action: 'trace.create',
+    entity: 'trace',
+    id: trace.id,
+    detail: { title, fields },
+  })
+  if (tags.length > 0) await ensureTags(tags, { origin: 'manual', firstUsedIn: saved.id })
+  return { trace: saved }
 }
 
 /* ---------------------------------------------------------------------------
@@ -1782,6 +1901,7 @@ function kindOfId(id) {
   if (id.startsWith('r-')) return 'resources'
   if (id.startsWith('p-')) return 'projects'
   if (id.startsWith('e-')) return 'events' // Slice N10：事件产物撤销定位
+  if (id.startsWith('tr-')) return 'traces' // 「踪迹」产物撤销定位
   return null
 }
 
@@ -1814,7 +1934,7 @@ async function applyInboxActions(id, body) {
   // 客户端的显式 null（"无关联"）统一移除，避免被当成臆造 id 拒绝
   let actions = parsed.actions.map((action) => {
     const out = { ...action }
-    for (const key of ['projectId', 'areaId', 'dueAt', 'outcome', 'duplicateOf', 'note', 'startAt', 'endAt', 'allDay', 'location']) {
+    for (const key of ['projectId', 'areaId', 'dueAt', 'outcome', 'duplicateOf', 'note', 'startAt', 'endAt', 'allDay', 'location', 'at']) {
       if (out[key] === null) delete out[key]
     }
     return out
@@ -1965,6 +2085,24 @@ async function applyInboxActions(id, body) {
         detail: { title: record.title, via: 'inbox.apply' },
       })
       created.push({ kind: 'events', record: saved })
+    } else if (action.kind === 'trace') {
+      // 「踪迹」：已完成动作留痕（对齐 POST /api/traces：无 createdAt/updatedAt）
+      const rawAt = typeof action.at === 'string' ? action.at.trim() : ''
+      const at = rawAt !== '' && Number.isFinite(Date.parse(rawAt)) ? rawAt : now
+      const record = { id: await nextId('traces'), title: action.title, at, tags }
+      if (typeof action.note === 'string' && action.note.trim() !== '') {
+        record.note = action.note.trim()
+      }
+      const projectId = resolveProjectForAction(action, newProject)
+      if (projectId !== undefined) record.projectId = projectId
+      if (action.areaId !== undefined) record.areaId = action.areaId
+      saved = await commit('traces', record, {
+        action: 'trace.create',
+        entity: 'trace',
+        id: record.id,
+        detail: { title: record.title, via: 'inbox.apply' },
+      })
+      created.push({ kind: 'traces', record: saved })
     } else {
       const isFile = item.file !== undefined && item.file !== null
       const record = {
@@ -2509,6 +2647,11 @@ const server = http.createServer(async (req, res) => {
       await serveAvatar(res)
       return
     }
+    // 「踪迹」图片读取：/api/traces/images/<name>
+    if (method === 'GET' && pathname.startsWith('/api/traces/images/')) {
+      serveTraceImage(res, decodeURIComponent(pathname.slice('/api/traces/images/'.length)))
+      return
+    }
     if (method === 'GET' && pathname === '/api/trash') {
       send(res, 200, { items: await readTrash() })
       return
@@ -2693,12 +2836,15 @@ const server = http.createServer(async (req, res) => {
           reply = '我没能确认这条记录的修改（找不到记录或字段不合法），请换一种说法再试。'
         }
       }
+      // 「踪迹」提案（只读校验）：title 形状已由 tryParseTraceRequest 清洗；原样下发由前端确认后经 /api/traces 落盘
+      const trace = result.traceRequest ?? null
       console.log(`[ai] chat ok ${result.ms}ms`)
       send(res, 200, {
         reply,
         searched: result.searched,
         focused: result.focused,
         edits,
+        trace,
         model: result.model,
         ms: result.ms,
       })
@@ -3115,6 +3261,20 @@ const server = http.createServer(async (req, res) => {
     if (method === 'POST' && pathname === '/api/events') {
       const result = await createEvent(await readBody(req))
       console.log(`[data] event.create ${result.event.id}`)
+      send(res, 201, result)
+      return
+    }
+    // 踪迹图片上传（「踪迹」）：RAW body（媒体，随踪迹落盘；不单独审计）
+    if (method === 'POST' && pathname === '/api/traces/images') {
+      const result = await uploadTraceImage(req)
+      console.log(`[data] trace.image ${result.name}`)
+      send(res, 201, result)
+      return
+    }
+    // 新建踪迹（「踪迹」新功能）：title 必填；at 缺省 = 服务端当前时刻
+    if (method === 'POST' && pathname === '/api/traces') {
+      const result = await createTrace(await readBody(req))
+      console.log(`[data] trace.create ${result.trace.id}`)
       send(res, 201, result)
       return
     }

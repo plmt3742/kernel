@@ -25,6 +25,7 @@
 | `g-` | goal | `g-0001` |
 | `h-` | habit | `h-0001` |
 | `e-` | event | `e-0001` |
+| `tr-` | trace | `tr-0001` |
 | `c-` | course | `c-0001` |
 | `n-` | note | `n-0001` |
 | `r-` | resource | `r-0001` |
@@ -179,6 +180,22 @@
 | repeatRule? | string | 重复规则，**仅展示保留**（展开 / 编辑延后，见 ADR-0018） |
 
 > **事件可写（v0.5 · Slice W，见 ADR-0018）**：事件是第五类可写 / 可回收实体。创建 `POST /api/events`（`title` + `startAt` 必填；`endAt` 可选且须 ≥ `startAt`，否则 400）；编辑 `POST /api/events/:id/update`（白名单：`title/startAt/endAt/allDay/location/status/projectId/areaId/tags/notes`；`endAt` 置空 = 清除）；删除 `POST /api/events/:id/remove`（审计 `event.remove`，进回收站，可 `restore` / `purge`）；审计 `event.create` / `event.update` / `event.remove`。事件**无 `createdAt` / `updatedAt`**（对齐既有形状，更新不 bump 时间戳）。标签同样 `ensureTags` 登记。写入全程经单写者 + Zod + 原子写 + 审计。
+
+### 4.7b trace（`tr-`）
+
+> 「踪迹」（新功能）：记录「我刚刚做了什么」的时间戳条目——既非笔记（不成文）、也非资源 / 日程 / 任务，只是活动留痕。
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| id | `tr-NNNN` | 稳定 ID |
+| title | string | 必填；一句话「我做了什么」（1..80 字） |
+| note? | string | 可选补充 / 感受（≤500 字） |
+| at | ISO | 发生时间（ISO 8601 带偏移；缺省 = 服务端记录时刻） |
+| tags | string[] | ≤8；登记进标签注册表（`origin` manual / ai） |
+| areaId? | string | 可选关联区域（须真实存在） |
+| projectId? | string | 可选关联项目（须真实存在） |
+
+无 `createdAt` / `updatedAt`（对齐 event 形状；`at` 即发生时间）。写入经单写者 + Zod + 原子写 + 审计：创建 `POST /api/traces`（`trace.create`）、编辑 `POST /api/traces/:id/update`（白名单 `title/note/at/tags/areaId/projectId`，`trace.update`）、删除走通用软删除 `POST /api/traces/:id/trash`（`trace.trash`；`/api/trash/traces/:id/(restore|purge)` 恢复 / 彻底删除）。标签同样 `ensureTags` 登记。
 
 ### 4.8 note（`n-`）
 
@@ -419,7 +436,7 @@ unread ──> reading ──> read ──> reference ──> archived
                                         └──彻底删除──> 不可恢复
 ```
 
-九种可写 / 可回收实体（task / project / note / resource / event / area / goal / habit / course）的删除均为**软删除**：先写回收站副本再删正册文件（原子、串行）。恢复写回正册并删副本；彻底删除仅删副本。`nextId` 同时扫描正册与回收站，避免回收后 id 复用导致恢复冲突。回收站不出现在 `/api/snapshot` 中，单独经 `GET /api/trash` 读取（见 ADR-0009；事件并入见 ADR-0018；区域 / 目标 / 习惯并入见 ADR-0019，其删除前另有引用护栏，见 §4.4–4.6；课程并入见 ADR-0024）。
+十种可写 / 可回收实体（task / project / note / resource / event / trace / area / goal / habit / course）的删除均为**软删除**：先写回收站副本再删正册文件（原子、串行）。恢复写回正册并删副本；彻底删除仅删副本。`nextId` 同时扫描正册与回收站，避免回收后 id 复用导致恢复冲突。回收站不出现在 `/api/snapshot` 中，单独经 `GET /api/trash` 读取（见 ADR-0009；事件并入见 ADR-0018；区域 / 目标 / 习惯并入见 ADR-0019，其删除前另有引用护栏，见 §4.4–4.6；课程并入见 ADR-0024）。
 
 ### 5.5 event
 

@@ -4,6 +4,33 @@
 
 ## [Unreleased]
 
+### 踪迹体验完善 · 全面审查修复（已完成 · 2026-10-05）
+
+答 owner「对踪迹页面进行全方位检查以及审查，从 UI 设计、产品经理的角度出发检查有什么地方需要全面优化 → 全部处理」——先只读审查（隔离栈 + `/api/**` 夹具拦截 + 计算样式探针，报告 `.qa/traces-review/REVIEW.md`），再逐项落地：
+
+- **修复（P0）**：① **「回车记录」名不副实**——`<textarea>` 无键处理，回车只换行（实测 `ENTER_RECORDS=false`，与占位符 / ADR 承诺不符）；现 Enter 提交、Shift+Enter 换行，并加 IME `isComposing` 守卫（中文输入法确认候选词不误提交）。② **动态卡 CSS 半覆盖**——v1 与 v2 两段同名规则并存，v2 只重写 `display/grid/padding/border-top`，v1 的 `background/border/border-radius/box-shadow` 仍生效且水平内边距为 0（探针实测：surface 底 + 1px 边框 + 16px 圆角 + 阴影，内容贴卡边）；现整段重写为**唯一权威块**并显式重置旧卡 chrome，动态流成真**无壳流水**（左日期列 + 内容 + 图片宫格 + hairline 分隔），删除约 90 行死样式（avatar / body / head / time / meta 等）。③ **全局搜索搜不到踪迹**——`searchSnapshot` 增扫 `traces`（title / note / tags），`SearchResult.kind` 增 `trace`，命令面板补「踪迹」标签 + `Footprints` 图标，`tr-` 深链可直达。
+- **能力补齐（P1）**：④ 新增**详情 / 编辑弹窗** `TraceDetailModal`（镜像 `TaskDetailModal`：阅读视图 + `EntityEditForm` 编辑 title / note（textarea）/ at（datetime）/ tags / areaId / projectId，保存经 `updateEntity('traces', …)` + `undoPatchOf` 撤销；删除经回收站可撤销）；⑤ 图片点击开**灯箱**（`TraceLightbox`，复用 Modal）；⑥ **整行可点**开详情——标题为真实按钮 + `::after` 拉伸遮罩覆盖整行（鼠标点整行 / 键盘 Tab 到标题回车，删除 / 图片 / 芯片 z-index 置顶；避免 `role="button"` 包裹内层按钮的嵌套交互）；⑦ 标签改 `tagLabel()` + `TagPill`（不再显示 `topic:` 前缀），区域 / 项目渲染可点安静 chip（`TraceRefChip`，深链设置 / 项目页）；⑧ 新增**标签筛选 + 搜索**（`.k-lib__seg` 分段槽 + `k-input`，持久化 `kernel.ui.traces.v1` 的 `tag`/`query`，计数显示 `N / M 条踪迹`，空态「没有匹配的踪迹」）；⑨ 创建 toast 补「撤销」（= 入回收站），与删除对称。
+- **体验 / 一致性（P2）**：⑩ 风格切换套 `.k-lib__seg` 轨道（与资料 / 日程 / 项目同款分段控件）；⑪ 时间线删除改用安静 `.k-trace__del`（不再借用强调色 `.k-act__link`）；⑫ 时间线吸顶日标签背景修 `--bg`（消除与页面底色的接缝，与个人页同款处理）；⑬ 发布器类名 `k-composer*` → `k-trace-composer*`（避免通用名冲突）；⑭ 图片上传改受限并发（`mapLimit` ≤3，保序）；⑮ 深链平滑滚动尊重 `prefers-reduced-motion`；⑯ 日期列补 `u-sr-only` 完整日期（`base.css` 新增工具类）；⑰ 页首加 `k-view__intro` 说明「我记的留痕 vs 系统动作时间线」。
+- **同日迭代 · 动态流按天分组**：动态流此前**每条重复日期列**（同一天的「今天」反复出现）；现按自然日分组——**一天只出现一个日期标记**（左日期标记 + 右条目列，日内条目以 hairline 分隔、日间以 border 分隔），日期标记顶对齐当天首条内容；跨年补年份（如「31 / 2025年12月」）；窄屏（≤640px）日期标记改整行标题、条目占满宽度（避免窄列换行与图片挤压）；筛选后重新分组。`dayLabelOf` / `dateParts` 增跨年与无效日期兜底。
+
+- **修改**：`src/views/Traces.tsx`、`src/components/TraceDetailModal.tsx`（新）、`src/components/CommandPalette.tsx`、`src/lib/data.ts`、`src/styles/{views,base}.css`、`public/guide.html`、`README.md`、`AGENTS.md`、`docs/decisions/0040-traces-feature.md`（§修订）
+- **验证**：`npx tsc --noEmit` 0 error；`npm run build` 退出 0（`Traces` 懒加载 chunk 13.06 kB / gzip 4.80）；**隔离 QA**（Playwright + `/api/**` 拦截注入夹具，真实数据零触达）`.qa/traces-review/qa-traces.py` **31/31 PASS**——无壳卡片计算样式 / 分段轨道 / 标签 label / 区域项目 chip / **按天分组（3 个日期标记、日标记顶对齐首条、日内 3 条归组、跨年 `2025年12月31日`、筛选后重分组）** / Enter 记录 / Shift+Enter 换行 / 创建 toast + 撤销 / 标签筛选 / 搜索 / 无匹配空态 / 详情弹窗 / 整行点击（拉伸遮罩）/ 编辑保存 / 删除 / 灯箱 / 时间线接缝 / 时间线行弹窗 / 1440 与 390 零横溢 / console 0 error；视觉复核截图 `.qa/traces-review/qa-*.png`。
+
+### 新功能「踪迹」· 独立页 + 收件箱 / 对话识别 + 总览组件（已完成 · 2026-10-05）
+
+答 owner「添加功能名为踪迹，单独成为一个页面……记录我做了什么事情，比如我在收信箱说『我刚刚做了叉叉叉』，它就识别为记录……也同步显示在总览页面作为一个小组件……总览 AI 窗口优化（识别我做了什么 → 收进踪迹；输入感悟思考 → 去到笔记）」：
+
+- **新实体 `trace`（`tr-`）**：记录「我刚刚做了什么」的时间戳条目——既非笔记 / 资料 / 日程 / 任务，只是活动留痕。字段 `{ id, title(≤80), note?(≤500), at(发生时间 ISO 带偏移), tags, areaId?, projectId? }`，无 `createdAt/updatedAt`（对齐 event）。服务端：`POST /api/traces` / `…/:id/update` / 通用 `/trash`（回收站可恢复）+ 审计 `trace.create|update|trash` + 快照 `traces[]` + 标签级联；`nextId` 出 `tr-`。**绝不落盘派生值**。
+- **独立页 `/traces`（一级导航 08 踪迹）**：**动态（朋友圈卡片）⇄ 时间线（紧凑列表）**一键切换（偏好持久化 `kernel.ui.traces.v1`）；顶部速记框「我刚刚做了…（回车记录）」；按天分组（今天 / 昨天 / M月D日）；删除 → 回收站可撤销；`?trace=<id>` 深链定位高亮；≤640px 适配。
+- **收件箱 AI 识别**：AI 动作新增第 6 类 `kind:"trace"`（提示词规则 13）——「我刚刚 / 今天做了 X」→ 踪迹建议卡（可编辑 title / note / at），确认后经 `inbox.apply` 落盘；`postValidateActions` 清洗（非 trace 剥离 `at`；trace 的 `note` 截断 ≤500；无效 `at` 丢弃；`at` 缺省 = 应用时刻）。撤销经 `kindOfId` 新增 `tr-` 映射回回收站。
+- **总览升级**：新增「踪迹」小组件（最近 4 条 + 「查看全部 →」跳 `/traces`）；AI 对话新增 **`traceRequest` 意图**——输入「我刚刚做了 X」→ 对话内「记入踪迹」确认卡，点「记录」经 `POST /api/traces` 落盘（toast 可撤销）；思考 / 感悟仍走既有「整理进笔记」路径（不误判为 trace）。
+- **其余**：`docs/04-DATA-MODEL.md` 补 §4.7b + ID 约定（`tr-`）+ 可回收实体十种；回收站分组 / 深链 `tr-` / 动作记录中文标签「踪迹」；seed 加 6 条演示踪迹。
+
+- **版式重做 + 图片（同日迭代）**：`/traces` 动态流改「我的朋友圈」式版式（**左日期列**（今天 / 昨天 / 月+日）+ 右内容 + **图片宫格**）；顶部发布器（一句话 + 可附图片，支持选择与粘贴、缩略图可移除）；修复「记录」按钮被压成竖排（`white-space: nowrap` + `flex: 0 0 auto`）；新增 **`trace.images`（≤9）** 图片支持：`POST /api/traces/images`（RAW ≤8MB，png / jpeg / webp / gif，落 `data/files/trace-…`）+ `GET /api/traces/images/<name>`（受管文件名校验 + `nosniff` + `no-store`）；卡片按 1 / 2 / 4 / 多张自适应宫格；时间线行内嵌首图缩略；字段登记 `docs/04` §4.7b。
+
+- **修改**：`server/{schemas,store,index,ai}.mjs`、`src/types.ts`、`src/App.tsx`、`src/lib/{nav,data,mutations,relations,activity,aiForm}.ts`、`src/views/{Traces（新）,Overview,Trash}.tsx`、`src/components/{AiActionsCard,AiSuggestionForm,OverviewChat}.tsx`、`src/styles/views.css`、`scripts/seed.mjs`、`docs/04-DATA-MODEL.md`、`docs/decisions/0040-traces-feature.md`（新）
+- **验证**：`npm run build`（`tsc -b` strict + vite）退出 0（`Traces` 懒加载 chunk 4.23 kB / `Overview` 21.4 kB）；只读服务端冒烟——实体 `trace`（schema 解析 / 拒绝空标题与坏 id / 快照含 `traces[]` / `nextId` 前缀）**8/8 PASS**；AI 动作清洗（`trace` 保留 `at`+`note`、非 trace 剥离 `at`、无效 `at` 丢弃、schema 接受 `trace`）**5/5 PASS**；对话 `tryParseTraceRequest`（解析 / 空标题拒绝 / 非该形状拒绝 / 去代码围栏）**4/4 PASS**。
+
 ### 个人页排版重做 · 「名片台 PROFILE DESK」（已完成 · 2026-10-05）
 
 答 owner「重新设计个人页面，大幅调整排版以及组件设计」——先出 4 版自包含排版草案（`design-drafts/v2/profile-{a,b,c,d}.html`：A 名片台 / B 编年史 / C 仪表盘 / D 杂志专栏；复用真实应用壳与 token，逐版 Playwright 实测 0 error / 0 横溢），owner 选定 **A「名片台」** 落地：

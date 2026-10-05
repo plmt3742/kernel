@@ -64,6 +64,8 @@ export function titleOfId(id: string): string | null {
       return s.resources.find((x) => x.id === id)?.title ?? null
     case 'e':
       return s.events.find((x) => x.id === id)?.title ?? null
+    case 'tr':
+      return s.traces.find((x) => x.id === id)?.title ?? null
     case 'c':
       return s.courses.find((x) => x.id === id)?.title ?? null
     case 'a':
@@ -232,6 +234,8 @@ export function deepLinkOfId(id: string): string | null {
       return `/library?resource=${id}`
     case 'e':
       return `/calendar?event=${id}`
+    case 'tr':
+      return `/traces?trace=${id}`
     case 'a':
       // 区域深链到设置页「区域」分区并打开编辑（Slice X · F8）
       return `/settings?section=areas&area=${id}`

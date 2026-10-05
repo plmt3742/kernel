@@ -20,9 +20,12 @@ import {
   chatNoteFromChat,
   chatWithAi,
   createNote,
+  createTrace,
+  trashEntity,
   updateEntity,
   type AiChatMessage,
   type ChatEditProposal,
+  type ChatTraceProposal,
 } from '@/lib/mutations'
 
 interface ChatTurn extends AiChatMessage {
@@ -37,6 +40,9 @@ interface ChatTurn extends AiChatMessage {
   edits?: ChatEditProposal[]
   /** 修改提案的本地状态：待确认 / 已应用 / 已忽略（缺省按待确认处理） */
   editState?: 'pending' | 'applied' | 'dismissed'
+  /** 「踪迹」提案（AI 识别「我做了 X」；确认前零写入） */
+  trace?: ChatTraceProposal
+  traceState?: 'pending' | 'applied' | 'dismissed'
 }
 
 /** 修改卡片字段名 → 中文标签（缺失时回退原键名） */
@@ -237,6 +243,10 @@ function requestChat(history: ChatTurn[]): void {
         reply.edits = result.edits
         reply.editState = 'pending'
       }
+      if (result.trace !== undefined && result.trace !== null) {
+        reply.trace = result.trace
+        reply.traceState = 'pending'
+      }
       patchChat({ turns: [...history, reply], busy: false, error: '' })
     } catch (err) {
       if (chatToken !== token) return
@@ -372,6 +382,31 @@ export function OverviewChat() {
     })()
   }
 
+  // 应用「踪迹」提案（「踪迹」功能）：经 /api/traces 落盘；成功后标记已应用并提供撤销（回收站）。
+  const applyTrace = (turn: ChatTurn): void => {
+    const trace = turn.trace
+    if (trace === undefined || applying) return
+    setApplying(true)
+    void (async () => {
+      try {
+        const created = await createTrace({ title: trace.title, note: trace.note, at: trace.at })
+        patchTurn(turn.id, { traceState: 'applied' })
+        toast('已记入踪迹', {
+          action: {
+            label: '撤销',
+            onClick: () => {
+              void trashEntity('traces', created.id).catch(() => undefined)
+            },
+          },
+        })
+      } catch (err) {
+        toast(`记录失败：${errorText(err)}`, { tone: 'error' })
+      } finally {
+        setApplying(false)
+      }
+    })()
+  }
+
   const send = (): void => {
     const text = draft.trim()
     if (text === '' || busy) return
@@ -470,6 +505,40 @@ export function OverviewChat() {
                               type="button"
                               className="k-btn k-btn--sm"
                               onClick={() => patchTurn(turn.id, { editState: 'dismissed' })}
+                              disabled={applying}
+                            >
+                              忽略
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
+                  {turn.trace !== undefined && turn.traceState !== 'dismissed' && (
+                    <div className="k-chat__edit">
+                      {turn.traceState === 'applied' ? (
+                        <span className="k-chat__searched u-label k-muted">已记入踪迹</span>
+                      ) : (
+                        <>
+                          <div className="k-chat__edit-item">
+                            <span className="k-chat__edit-title">记入踪迹：「{turn.trace.title}」</span>
+                            {turn.trace.note !== undefined && turn.trace.note !== '' && (
+                              <div className="k-chat__edit-diff">{turn.trace.note}</div>
+                            )}
+                          </div>
+                          <div className="k-chat__edit-actions">
+                            <button
+                              type="button"
+                              className="k-btn k-btn--sm is-solid"
+                              onClick={() => applyTrace(turn)}
+                              disabled={applying}
+                            >
+                              记录
+                            </button>
+                            <button
+                              type="button"
+                              className="k-btn k-btn--sm"
+                              onClick={() => patchTurn(turn.id, { traceState: 'dismissed' })}
                               disabled={applying}
                             >
                               忽略

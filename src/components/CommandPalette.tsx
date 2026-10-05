@@ -8,6 +8,7 @@ import {
   CornerDownLeft,
   FileText,
   FolderKanban,
+  Footprints,
   Library,
   ListChecks,
   MoonStar,
@@ -31,6 +32,7 @@ const SEARCH_KIND_LABEL: Record<SearchResult['kind'], string> = {
   resource: '资料',
   event: '日程',
   project: '项目',
+  trace: '踪迹',
 }
 
 /** 搜索结果的前置图标（与导航口径一致） */
@@ -40,6 +42,7 @@ const SEARCH_KIND_ICON: Record<SearchResult['kind'], LucideIcon> = {
   resource: Library,
   event: CalendarDays,
   project: FolderKanban,
+  trace: Footprints,
 }
 
 export function CommandPalette() {

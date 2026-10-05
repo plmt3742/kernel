@@ -19,9 +19,9 @@ const CONFIG_FILE = path.join(DATA_DIR, 'meta', 'config.json')
 /** 学期信息（v0.5 · Slice H0）：data/meta/term.json（缺失 = 未设置学期） */
 const TERM_FILE = path.join(DATA_DIR, 'meta', 'term.json')
 /** 带 tags 数组、参与标签级联 / 计数 / 登记的实体目录（events 只读但同样级联，见 ADR-0014） */
-const TAG_ENTITY_KINDS = ['tasks', 'projects', 'notes', 'resources', 'events']
-/** 可回收实体类型（与 index.mjs 路由白名单一致；Slice X 增 areas / goals / habits；Slice H0 增 courses） */
-const TRASH_KINDS = ['tasks', 'projects', 'notes', 'resources', 'events', 'areas', 'goals', 'habits', 'courses']
+const TAG_ENTITY_KINDS = ['tasks', 'projects', 'notes', 'resources', 'events', 'traces']
+/** 可回收实体类型（与 index.mjs 路由白名单一致；Slice X 增 areas / goals / habits；Slice H0 增 courses；「踪迹」增 traces） */
+const TRASH_KINDS = ['tasks', 'projects', 'notes', 'resources', 'events', 'traces', 'areas', 'goals', 'habits', 'courses']
 
 /* ---------------------------------------------------------------------------
  * 时间戳：本地时区 ISO 8601 带偏移（对齐 docs/04 §1.2）
@@ -41,7 +41,7 @@ export function nowIso() {
  * 读
  * ------------------------------------------------------------------------- */
 
-const KINDS = ['tasks', 'inbox', 'projects', 'areas', 'goals', 'habits', 'events', 'notes', 'resources', 'reviews', 'courses']
+const KINDS = ['tasks', 'inbox', 'projects', 'areas', 'goals', 'habits', 'events', 'traces', 'notes', 'resources', 'reviews', 'courses']
 
 async function readJson(file) {
   const raw = await fs.readFile(file, 'utf8')
@@ -124,6 +124,7 @@ export async function readSnapshot() {
     goals: byKind.goals,
     habits: byKind.habits,
     events: byKind.events,
+    traces: byKind.traces,
     notes: byKind.notes,
     resources: byKind.resources,
     reviews: byKind.reviews,
@@ -804,6 +805,7 @@ export async function nextId(kind) {
     habits: 'h',
     reviews: 'rev',
     events: 'e',
+    traces: 'tr',
     courses: 'c',
   }[kind]
   if (!prefix) throw new Error(`未知实体类型：${kind}`)

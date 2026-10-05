@@ -20,6 +20,7 @@ import type {
   TagItem,
   Task,
   TermInfo,
+  Trace,
 } from '@/types'
 import { daysFromToday, isPast, isSameDay, toDate } from '@/lib/date'
 import { condenseContent, deepLinkOfId } from '@/lib/relations'
@@ -61,6 +62,7 @@ const DEFAULT_CONFIG: AppConfig = {
 const seedSnapshot: KernelSnapshot = {
   tasks: readKind<Task>('tasks'),
   events: readKind<CalendarEvent>('events'),
+  traces: readKind<Trace>('traces'),
   projects: readKind<Project>('projects'),
   areas: readKind<Area>('areas'),
   goals: readKind<Goal>('goals'),
@@ -88,6 +90,7 @@ export type EntityKind =
   | 'goals'
   | 'habits'
   | 'events'
+  | 'traces'
   | 'notes'
   | 'resources'
   | 'reviews'
@@ -164,6 +167,14 @@ export function getTasks(): Task[] {
 }
 export function getEvents(): CalendarEvent[] {
   return state.events
+}
+/** 踪迹（按 id 升序；页面自行按 `at` 倒序展示） */
+export function getTraces(): Trace[] {
+  return state.traces
+}
+/** 踪迹图片展示 URL（受管文件名 → /api/traces/images/<name>） */
+export function traceImageUrl(name: string): string {
+  return `/api/traces/images/${encodeURIComponent(name)}`
 }
 export function getProjects(): Project[] {
   return state.projects
@@ -420,7 +431,7 @@ export function getTagUsage(): Array<{ tag: string; count: number }> {
 
 /** 全文搜索命中结果（kind 与关系模型同口径） */
 export interface SearchResult {
-  kind: 'task' | 'note' | 'resource' | 'event' | 'project'
+  kind: 'task' | 'note' | 'resource' | 'event' | 'project' | 'trace'
   id: string
   title: string
   /** 折叠为单行、截断后的首个命中字段摘要 */
@@ -441,10 +452,10 @@ function firstMatchSnippet(fields: string[], needle: string): string | null {
 }
 
 /**
- * 客户端全文搜索（Slice FS）：对当前数据快照的任务 / 笔记 / 资料 / 日程 / 项目做
+ * 客户端全文搜索（Slice FS）：对当前数据快照的任务 / 笔记 / 资料 / 日程 / 项目 / 踪迹做
  * 大小写不敏感的子串匹配。扫描字段——
  *   任务 title/notes/tags · 笔记 title/body/tags · 资料 title/note/url/tags ·
- *   日程 title/location/notes/tags · 项目 title/outcome/tags。
+ *   日程 title/location/notes/tags · 项目 title/outcome/tags · 踪迹 title/note/tags。
  * 排序：标题命中（rank 0）先于正文命中（rank 1）；同档保持扫描顺序
  * （kind 固定序 + 各表 id 升序）——`Array.prototype.sort` 稳定排序（ES2019+）即可。
  * 空标题跳过，空查询返回 []（不触碰快照），最多返回 limit 条。
@@ -494,6 +505,9 @@ export function searchSnapshot(query: string, limit = 8): SearchResult[] {
   }
   for (const project of state.projects) {
     collect('project', project.id, project.title, [project.outcome, ...project.tags])
+  }
+  for (const trace of state.traces) {
+    collect('trace', trace.id, trace.title, [trace.note ?? '', ...trace.tags])
   }
 
   ranked.sort((a, b) => a.rank - b.rank)

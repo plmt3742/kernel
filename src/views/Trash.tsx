@@ -23,6 +23,7 @@ const GROUPS: TrashGroupSpec[] = [
   { kind: 'notes', cn: '笔记', en: 'NOTES' },
   { kind: 'resources', cn: '资料', en: 'RESOURCES' },
   { kind: 'events', cn: '日程', en: 'EVENTS' },
+  { kind: 'traces', cn: '踪迹', en: 'TRACES' },
   { kind: 'areas', cn: '区域', en: 'AREAS' },
   { kind: 'goals', cn: '目标', en: 'GOALS' },
   { kind: 'habits', cn: '习惯', en: 'HABITS' },

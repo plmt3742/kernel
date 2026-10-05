@@ -21,6 +21,7 @@ const KIND_LABEL: Record<AiActionKind, string> = {
   resource: '资料',
   project: '新建项目',
   event: '日程',
+  trace: '踪迹',
 }
 
 interface AiActionsCardProps {

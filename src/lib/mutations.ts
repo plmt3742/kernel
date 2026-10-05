@@ -25,6 +25,7 @@ import type {
   TagItem,
   Task,
   TermInfo,
+  Trace,
   TrashItem,
   TrashKind,
 } from '@/types'
@@ -172,6 +173,59 @@ export async function createEvent(input: EventCreateInput): Promise<CalendarEven
 export async function removeEvent(id: string): Promise<void> {
   await api.post<{ trashed: { kind: 'events'; id: string } }>(`/api/events/${id}/remove`)
   removeEntity('events', id)
+}
+
+/* ---------------------------------------------------------------------------
+ * 踪迹（「踪迹」新功能）：记录「我刚刚做了什么」的时间戳条目。
+ * 创建 = 先确认后写入；删除走回收站（撤销 = restoreEntity('traces', id)）。
+ * ------------------------------------------------------------------------- */
+
+/** 踪迹创建入参：title 必填；at 缺省由服务端填当前时刻 */
+export interface TraceCreateInput {
+  title: string
+  note?: string
+  at?: string
+  tags?: string[]
+  images?: string[]
+  areaId?: string
+  projectId?: string
+}
+
+/** 新建踪迹（成功后 upsert 本地快照） */
+export async function createTrace(input: TraceCreateInput): Promise<Trace> {
+  const { trace } = await api.post<{ trace: Trace }>('/api/traces', input)
+  upsertEntity('traces', trace)
+  return trace
+}
+
+/**
+ * 上传踪迹图片（`POST /api/traces/images` RAW body）：png / jpeg / webp / gif，≤8MB。
+ * 返回受管文件名（供 createTrace 的 images 引用）。失败抛错由调用方提示。
+ */
+export async function uploadTraceImage(file: File): Promise<string> {
+  let response: Response
+  try {
+    response = await fetch('/api/traces/images', {
+      method: 'POST',
+      headers: { 'Content-Type': file.type !== '' ? file.type : 'application/octet-stream' },
+      body: file,
+    })
+  } catch {
+    throw new Error('数据服务离线 · 无法上传图片')
+  }
+  if (!response.ok) {
+    let message = `上传失败（${response.status}）`
+    try {
+      const data = (await response.json()) as { error?: string }
+      if (typeof data.error === 'string' && data.error !== '') message = data.error
+    } catch {
+      /* 用默认文案 */
+    }
+    throw new Error(message)
+  }
+  const data = (await response.json()) as { name?: string }
+  if (typeof data.name !== 'string' || data.name === '') throw new Error('上传响应缺少文件名')
+  return data.name
 }
 
 /* ---------------------------------------------------------------------------
@@ -630,7 +684,7 @@ export async function revertInbox(id: string): Promise<RevertResult> {
  * AI 动作（对应服务端 aiActionSchema）：kind 决定字段子集；
  * project = 本批次要新建的项目；task / note 可用 linkToNewProject 挂接它。
  */
-export type AiActionKind = 'task' | 'note' | 'resource' | 'project' | 'event'
+export type AiActionKind = 'task' | 'note' | 'resource' | 'project' | 'event' | 'trace'
 
 export interface AiAction {
   kind: AiActionKind
@@ -649,6 +703,8 @@ export interface AiAction {
   allDay?: boolean
   /** event 专属：地点 */
   location?: string
+  /** trace 专属（「踪迹」）：发生时间 ISO8601 带时区；缺省 = 应用时刻 */
+  at?: string
   /** 归属（task / note / resource / project） */
   projectId?: string
   areaId?: string
@@ -1366,6 +1422,7 @@ export type EditableRecord =
   | Note
   | Resource
   | CalendarEvent
+  | Trace
   | Area
   | Goal
   | Habit
@@ -1460,6 +1517,13 @@ export interface ChatEditProposal {
   label?: string
 }
 
+/** 踪迹提案（「踪迹」功能）：AI 从「我刚刚做了 X」识别出的一条记录；确认后才经 /api/traces 落盘 */
+export interface ChatTraceProposal {
+  title: string
+  note?: string
+  at?: string
+}
+
 export interface AiChatResult {
   reply: string
   /** Slice G.1：本轮为作答实际执行的联网检索问题（空 / 缺省 = 未检索） */
@@ -1468,6 +1532,8 @@ export interface AiChatResult {
   focused?: string[]
   /** 本切片：实体修改提案（服务端校验后；仅命中修改意图时存在） */
   edits?: ChatEditProposal[]
+  /** 「踪迹」提案（服务端校验后；仅命中「我做了 X」意图时存在） */
+  trace?: ChatTraceProposal
   model: string | null
   ms: number
 }

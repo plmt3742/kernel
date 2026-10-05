@@ -20,6 +20,7 @@ import {
   getProjectProgress,
   getReviews,
   getTodayEvents,
+  getTraces,
 } from '@/lib/data'
 import {
   getDueLoadSeries,
@@ -97,6 +98,8 @@ export function Overview() {
   const overdueOpen = getOverdueOpen(now).length
 
   const nextEvent = getNextEvent(now)
+  // 「踪迹」小组件：最近 4 条（按发生时间倒序）
+  const recentTraces = [...getTraces()].sort((a, b) => b.at.localeCompare(a.at)).slice(0, 4)
   const todayEvents = getTodayEvents(now)
   // 本切片：用 eventEndOf 判定（全天日程到当日 23:59 才算结束，避免当天零点即被当成「已结束」）；
   // 未结束的今日日程在「现在」分界线下展示（此前工作台只显示已结束日程）
@@ -194,6 +197,39 @@ export function Overview() {
 
       {/* AI 对话盒（Slice G）：状态条之下、工作台之上 */}
       <OverviewChat />
+
+      {/* 踪迹小组件（「踪迹」功能）：最近几条 + 跳转独立页 */}
+      {recentTraces.length > 0 && (
+        <Panel
+          title="踪迹"
+          en="TRACES"
+          actions={
+            <button
+              type="button"
+              className="u-label k-muted r3c-w40"
+              onClick={() => navigate('/traces', { viewTransition: true })}
+              aria-label="查看全部踪迹"
+            >
+              查看全部 →
+            </button>
+          }
+        >
+          <div className="k-traces-mini">
+            {recentTraces.map((trace) => (
+              <button
+                key={trace.id}
+                type="button"
+                className="k-traces-mini__row"
+                onClick={() => navigate(`/traces?trace=${trace.id}`, { viewTransition: true })}
+              >
+                <span className="k-traces-mini__dot" aria-hidden />
+                <span className="k-traces-mini__title">{trace.title}</span>
+                <span className="k-traces-mini__time k-mono">{formatTime(trace.at)}</span>
+              </button>
+            ))}
+          </div>
+        </Panel>
+      )}
 
       <div className="r3c-body">
         {/* 左 2/3：工作台（已结束日程 + 现在分界 + 行动） */}

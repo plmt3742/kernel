@@ -17,6 +17,7 @@ const Timetable = lazy(() => import('@/views/Timetable').then((m) => ({ default:
 const Projects = lazy(() => import('@/views/Projects').then((m) => ({ default: m.Projects })))
 // 习惯页（独立一级页）与个人页（顶栏头像进入）
 const Habits = lazy(() => import('@/views/Habits').then((m) => ({ default: m.Habits })))
+const Traces = lazy(() => import('@/views/Traces').then((m) => ({ default: m.Traces })))
 const Profile = lazy(() => import('@/views/Profile').then((m) => ({ default: m.Profile })))
 // 资料页依赖 react-markdown，单独分包以压缩其它路由的载入
 const Library = lazy(() => import('@/views/Library').then((m) => ({ default: m.Library })))
@@ -41,6 +42,7 @@ export default function App() {
                   <Route path="timetable" element={<Timetable />} />
                   <Route path="projects" element={<Projects />} />
                   <Route path="habits" element={<Habits />} />
+                  <Route path="traces" element={<Traces />} />
                   <Route path="profile" element={<Profile />} />
                   <Route path="library" element={<Library />} />
                   <Route path="review" element={<Review />} />

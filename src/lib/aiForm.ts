@@ -36,6 +36,8 @@ export interface AiSuggestionFormValues {
   endAt: string
   /** 仅 event 用：地点（Slice N10；'' = 未设置） */
   location: string
+  /** 仅 trace 用：发生时间 datetime-local（「踪迹」；'' = 未设置） */
+  at: string
   /** '' = 未关联 */
   projectId: string
   /** '' = 未归入 */
@@ -61,6 +63,7 @@ export type ClarifyFieldKey =
   | 'startAt'
   | 'endAt'
   | 'location'
+  | 'at'
   | 'projectId'
   | 'areaId'
   | 'note'
@@ -106,6 +109,7 @@ export const EMPTY_AI_FORM: AiSuggestionFormValues = {
   startAt: '',
   endAt: '',
   location: '',
+  at: '',
   projectId: '',
   areaId: '',
   tags: '',
@@ -127,6 +131,7 @@ export const ACTION_FIELD_MATRIX: Record<AiActionKind, readonly ClarifyFieldKey[
   resource: ['title', 'note', 'url', 'tags', 'areaId'],
   project: ['title', 'outcome', 'tags', 'areaId'],
   event: ['title', 'startAt', 'endAt', 'location', 'projectId', 'areaId', 'tags'],
+  trace: ['title', 'note', 'at', 'tags', 'projectId', 'areaId'],
 }
 
 /** 逗号列表 → 去空去重后的字符串数组 */
@@ -164,6 +169,7 @@ export function suggestionToForm(suggestion: AiSuggestion): AiSuggestionFormValu
     startAt: '',
     endAt: '',
     location: '',
+    at: '',
     projectId: suggestion.projectId ?? '',
     areaId: suggestion.areaId ?? '',
     tags: listToText(suggestion.tags),
@@ -186,6 +192,7 @@ export function draftToForm(title: string, draft: TaskDraftSuggestion): AiSugges
     startAt: '',
     endAt: '',
     location: '',
+    at: '',
     projectId: draft.projectId ?? '',
     areaId: draft.areaId ?? '',
     tags: listToText(draft.tags),
@@ -259,6 +266,7 @@ export function actionToForm(action: AiAction): AiSuggestionFormValues {
     startAt: toLocalInput(action.startAt),
     endAt: toLocalInput(action.endAt),
     location: action.location ?? '',
+    at: toLocalInput(action.at),
     projectId: action.projectId ?? '',
     areaId: action.areaId ?? '',
     tags: listToText(action.tags),
@@ -296,6 +304,9 @@ export function formToAction(action: AiAction, values: AiSuggestionFormValues): 
   const location = values.location.trim()
   if (location === '') delete next.location
   else next.location = location
+  // trace 专属（「踪迹」）：at 空则删除，否则转 ISO
+  if (values.at === '') delete next.at
+  else next.at = toISODateTime(new Date(values.at))
   if (values.projectId === '') delete next.projectId
   else next.projectId = values.projectId
   if (values.areaId === '') delete next.areaId

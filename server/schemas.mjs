@@ -143,6 +143,36 @@ export const eventSchema = z
   .catchall(z.unknown())
 
 /**
+ * 踪迹 · tr-（「踪迹」新功能）：记录「我刚刚做了什么」的时间戳条目——
+ * 既非笔记（不成文）、也非资源 / 日程 / 任务，只是活动留痕。形状对齐 event 的克制风格；
+ * 无 createdAt / updatedAt（`at` 即发生时间，缺省 = 服务端记录时刻）。
+ */
+export const traceSchema = z
+  .object({
+    id: z.string().regex(/^tr-\d{4}$/),
+    title: z.string().min(1),
+    note: z.string().optional(),
+    at: iso,
+    tags: z.array(z.string()),
+    // 「踪迹」图片（data/files 下的受管文件名 trace-…；≤9；前端经 GET /api/traces/images/<name> 展示）
+    images: z.array(z.string()).optional(),
+    areaId: z.string().optional(),
+    projectId: z.string().optional(),
+  })
+  .catchall(z.unknown())
+
+/** 踪迹创建入参（title 必填 ≤80；at 缺省 = 服务端当前时刻；tags ≤8，登记走 ensureTags） */
+export const traceCreateSchema = z.object({
+  title: z.string().min(1).max(80),
+  note: z.string().max(500).optional(),
+  at: iso.optional(),
+  tags: z.array(z.string().min(1)).max(8).optional(),
+  images: z.array(z.string().min(1)).max(9).optional(),
+  areaId: z.string().min(1).optional(),
+  projectId: z.string().min(1).optional(),
+})
+
+/**
  * 区域 · a-（v0.5 · Slice X，见 ADR-0019）：标准式领域，此前种子只读，现转为可管理。
  * 字段对齐既有 data/areas/*.json（title / standard / cadence / status）；无 createdAt/updatedAt。
  */
@@ -366,6 +396,7 @@ export const SCHEMAS = {
   projects: projectSchema,
   reviews: reviewSchema,
   events: eventSchema,
+  traces: traceSchema,
   areas: areaSchema,
   goals: goalSchema,
   habits: habitSchema,
@@ -385,6 +416,7 @@ export const ID_PATTERNS = {
   reviews: /^rev-\d{4}$/,
   tags: /^tag-\d{3,}$/,
   events: /^e-\d{4}$/,
+  traces: /^tr-\d{4}$/,
   courses: /^c-\d{4}$/,
 }
 
@@ -495,7 +527,7 @@ export const aiSuggestionSchema = z.object({
  * ------------------------------------------------------------------------- */
 
 /** 动作类型：project 表示「本批次要新建的项目」，task/note/event 可用 linkToNewProject 挂接它 */
-export const aiActionKind = z.enum(['task', 'note', 'resource', 'project', 'event'])
+export const aiActionKind = z.enum(['task', 'note', 'resource', 'project', 'event', 'trace'])
 
 /**
  * 单个 AI 动作（不完全对应持久化实体，仅作预览 / 批量应用入参）。
@@ -518,6 +550,8 @@ export const aiActionSchema = z.object({
   endAt: z.union([z.string().max(40), z.null()]).optional(),
   allDay: z.boolean().optional(),
   location: z.union([z.string().max(100), z.null()]).optional(),
+  // trace 专属（「踪迹」）：发生时间 ISO8601 带时区；缺省 = 应用时刻（postValidateActions 清洗）
+  at: z.union([z.string().max(40), z.null()]).optional(),
   // 归属（note / resource / project；task 亦可用）
   projectId: z.union([z.string(), z.null()]).optional(),
   areaId: z.union([z.string(), z.null()]).optional(),

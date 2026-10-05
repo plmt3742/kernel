@@ -84,6 +84,7 @@ KERNEL 的完整文档集。本文件是导航中心，说明每份文档的职�
 | `decisions/0037-native-launcher.md` | ADR | 原生桌面启动器（Slice N7.2）：`启动器.vbs`（ASCII 入口，`wscript` 隐藏拉起，零黑窗）→ `启动器.ps1`（PowerShell 5.1 + .NET Framework WPF 原生窗口，零安装；无边框圆角卡片 + 自绘标题栏 + 品牌 K + `kernel.ico`）；行为对齐旧 HTA + 单实例互斥锁 + `KERNEL_LAUNCHER_SELFTEST` / `KERNEL_LAUNCHER_SMOKE_MS` / `KERNEL_LAUNCHER_PROBE_URL` 钩子；`scripts/make-icon.ps1` 从 `public/favicon.svg` 生成图标；打包同步收录 ps1 / vbs / ico；删除 `启动器.hta`；证据 `.qa/v75/` |
 | `decisions/0038-review-automation.md` | ADR | 回顾自动化：周期调度自动生成 + 迁移建议持久化——`useReviewScheduler`（周一 12:00 后 / 每月 1 日 12:00 后，周期已归档 / 未水合 / 会话已试 / 跨标签锁 / AI 离线均跳过；成功 toast + 水合，失败静默；**绝不自动应用建议**）；`reviewSchema` 增可选 `staleAdvice`（draft 归档随报告持久化、手工保存可透传清洗、update 白名单不变），归档报告阅读视图「迁移建议」块；证据 `.qa/v76/`（WS5 25/25 + 前端回归 40/40） |
 | `decisions/0039-profile-and-habits-pages.md` | ADR | 个人页 + 习惯页：热力图迁往个人页、习惯独立成页、总览降级入口卡——`/habits` 一级页（打卡 + 热力图 + CRUD，设置页移除习惯区，`h-` 深链改 `/habits?habit=`）；`/profile`（顶栏头像进入：资料 `config.owner/bio/avatarPath` + 头像本地文件端点 + 活跃日历 `GET /api/activity/summary` 本地日聚合含习惯打卡 + 复用动作时间线）；总览习惯块 → `今日 N/M` + 常用习惯 chips 整卡跳转；config 写入在 index.mjs 镜像 store 模式（store.mjs 未改，记录为收敛项）；证据 `.qa/v76/`（服务端 10/10 + 浏览器 28/28） |
+| `decisions/0040-traces-feature.md` | ADR | 新功能「踪迹」：新一等实体 `trace`（`tr-`：`title`/`note?`/`at`/`tags`/`area·project`，无 `createdAt`）+ 独立页 `/traces`（动态朋友圈卡 ⇄ 时间线，持久化 `kernel.ui.traces.v1`，速记框 / `?trace=` 深链 / 回收站可撤销）+ 收件箱 AI 第 6 类动作 `trace` + 总览小组件与对话 `traceRequest` 意图；`tr-` 深链 / 回收站 / 动作记录标签；`docs/04` §4.7b；修订（2026-10-05）：回车提交修复 / 无壳流水 CSS / 全局搜索 / 详情·编辑弹窗 / 标签·搜索筛选 |
 
 ## 根目录文档（不在本目录）
 

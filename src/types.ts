@@ -78,6 +78,7 @@ export type TrashKind =
   | 'notes'
   | 'resources'
   | 'events'
+  | 'traces'
   | 'areas'
   | 'goals'
   | 'habits'
@@ -90,6 +91,7 @@ export type TrashRecord = (
   | Note
   | Resource
   | CalendarEvent
+  | Trace
   | Area
   | Goal
   | Habit
@@ -407,6 +409,26 @@ export interface AppConfig {
 /** 事件实体别名（避免与 DOM 全局 Event 混淆） */
 export type KernelEvent = CalendarEvent
 
+/**
+ * 踪迹 · tr-（「踪迹」新功能）：记录「我刚刚做了什么」的时间戳条目。
+ * 既非笔记、也非资源 / 日程 / 任务——只是活动留痕；`at` 为发生时间（ISO 8601 带偏移）。
+ * 无 createdAt / updatedAt（与 event 同形状约定）。
+ */
+export interface Trace {
+  id: string
+  /** 一句话：我做了什么（1..80 字） */
+  title: string
+  /** 补充 / 感受（可选，≤500 字） */
+  note?: string
+  /** 发生时间（ISO 8601 带偏移） */
+  at: string
+  tags: string[]
+  /** 图片（data/files 下的受管文件名 trace-…；≤9；经 GET /api/traces/images/<name> 展示） */
+  images?: string[]
+  areaId?: string
+  projectId?: string
+}
+
 /** 任一实体 */
 export type KernelEntity =
   | InboxItem
@@ -416,6 +438,7 @@ export type KernelEntity =
   | Goal
   | Habit
   | CalendarEvent
+  | Trace
   | Course
   | Note
   | Resource
@@ -430,6 +453,8 @@ export interface KernelSnapshot {
   goals: Goal[]
   habits: Habit[]
   events: CalendarEvent[]
+  /** 踪迹（「踪迹」新功能） */
+  traces: Trace[]
   notes: Note[]
   resources: Resource[]
   reviews: Review[]

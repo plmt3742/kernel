@@ -4,6 +4,7 @@ import type { LucideIcon } from 'lucide-react'
 import {
   CalendarDays,
   FolderKanban,
+  Footprints,
   LayoutGrid,
   Library,
   ListChecks,
@@ -37,10 +38,11 @@ export const NAV_ITEMS: NavItem[] = [
   { index: '05', path: '/timetable', en: 'TIMETABLE', cn: '课表', icon: Table2 },
   { index: '06', path: '/projects', en: 'PROJECTS', cn: '项目', icon: FolderKanban },
   { index: '07', path: '/habits', en: 'HABITS', cn: '习惯', icon: Repeat },
-  { index: '08', path: '/library', en: 'LIBRARY', cn: '资料', icon: Library, secondary: true },
-  { index: '09', path: '/review', en: 'REVIEW', cn: '回顾', icon: RefreshCw, secondary: true },
-  { index: '10', path: '/settings', en: 'SETTINGS', cn: '设置', icon: Settings, secondary: true },
-  { index: '11', path: '/trash', en: 'TRASH', cn: '回收站', icon: Trash2, secondary: true },
+  { index: '08', path: '/traces', en: 'TRACES', cn: '踪迹', icon: Footprints },
+  { index: '09', path: '/library', en: 'LIBRARY', cn: '资料', icon: Library, secondary: true },
+  { index: '10', path: '/review', en: 'REVIEW', cn: '回顾', icon: RefreshCw, secondary: true },
+  { index: '11', path: '/settings', en: 'SETTINGS', cn: '设置', icon: Settings, secondary: true },
+  { index: '12', path: '/trash', en: 'TRASH', cn: '回收站', icon: Trash2, secondary: true },
 ]
 
 /**

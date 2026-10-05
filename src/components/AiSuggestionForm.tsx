@@ -290,6 +290,22 @@ export function AiSuggestionForm({
         </div>
       )}
 
+      {show('at') && (
+        <div className="k-field">
+          <label className="k-field__label u-label" htmlFor={fieldId('at')}>
+            发生时间
+          </label>
+          <input
+            id={fieldId('at')}
+            className="k-input"
+            type="datetime-local"
+            value={values.at}
+            disabled={disabled}
+            onChange={(event) => onChange({ at: event.target.value })}
+          />
+        </div>
+      )}
+
       {show('projectId') && (
         <div className="k-field">
           <label className="k-field__label u-label" htmlFor={fieldId('projectId')}>
