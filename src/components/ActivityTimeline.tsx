@@ -59,7 +59,12 @@ const activityUiStore = createUiStore<ReviewActivityUiState>(
 
 type LoadPhase = 'loading' | 'ready' | 'error'
 
-export function ActivityTimeline(): ReactNode {
+interface ActivityTimelineProps {
+  /** 精简模式：不套 Panel（供个人页嵌入自有分节）；默认 false */
+  plain?: boolean
+}
+
+export function ActivityTimeline({ plain = false }: ActivityTimelineProps = {}): ReactNode {
   const navigate = useNavigate()
   const revision = useDataRevision()
   const ui = useUiStore(activityUiStore)
@@ -97,72 +102,96 @@ export function ActivityTimeline(): ReactNode {
     setReloadToken((token) => token + 1)
   }
 
+  const chips = (
+    <div className="k-act__chips" role="group" aria-label="动作记录筛选">
+      {ACTIVITY_FILTERS.map((key) => (
+        <button
+          key={key}
+          type="button"
+          className={key === filter ? 'k-pill is-selected' : 'k-pill'}
+          aria-pressed={key === filter}
+          onClick={() => {
+            activityUiStore.set((prev) => ({ ...prev, activityFilter: key }))
+          }}
+        >
+          {FILTER_LABEL[key]}
+        </button>
+      ))}
+    </div>
+  )
+
+  const listBlock =
+    phase === 'loading' && items.length === 0 ? (
+      <p className="k-act__empty">正在读取动作记录…</p>
+    ) : phase === 'error' ? (
+      <p className="k-act__empty">
+        数据服务离线 ·{' '}
+        <button type="button" className="k-act__retry" onClick={retry}>
+          重试
+        </button>
+      </p>
+    ) : filtered.length === 0 ? (
+      <p className="k-act__empty">暂无记录 · 从今天开始，你的每一步都会写在这里</p>
+    ) : (
+      <div className="k-act__list">
+        {groups.map((group) => (
+          <div className="k-act__day" key={group.dayLabel}>
+            <div className="k-act__daylabel u-label">{group.dayLabel}</div>
+            {group.items.map((entry, index) => {
+              const { label } = describeActivity(entry)
+              const link = deepLinkOfId(entry.id)
+              return (
+                // 审计条目无唯一 id，且同一秒可能有多条同动作记录：以索引兜底保证 key 唯一
+                <div className="k-act__row" key={`${entry.ts}-${entry.action}-${entry.id}-${index}`}>
+                  <span className="k-act__time k-mono">{formatTime(entry.ts)}</span>
+                  <span className="k-act__label">{label}</span>
+                  {link !== null ? (
+                    <button
+                      type="button"
+                      className="k-act__link"
+                      onClick={() => navigate(link, { viewTransition: true })}
+                      title="跳转查看该实体"
+                    >
+                      查看
+                    </button>
+                  ) : (
+                    // 保持网格第三列占位，令无深链行与有深链行对齐
+                    <span className="k-act__link k-act__link--ghost" aria-hidden="true" />
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        ))}
+      </div>
+    )
+
+  const body = (
+    <>
+      {chips}
+      {listBlock}
+    </>
+  )
+
+  if (plain) {
+    return (
+      <>
+        <div className="k-act__bar">
+          {chips}
+          <span className="u-label k-muted">{countNote}</span>
+        </div>
+        {listBlock}
+      </>
+    )
+  }
+
   return (
     <Panel
       title="动作记录"
       en="ACTIVITY"
       actions={<span className="u-label k-muted">{countNote}</span>}
     >
-      <div className="k-act__chips" role="group" aria-label="动作记录筛选">
-        {ACTIVITY_FILTERS.map((key) => (
-          <button
-            key={key}
-            type="button"
-            className={key === filter ? 'k-pill is-selected' : 'k-pill'}
-            aria-pressed={key === filter}
-            onClick={() => {
-              activityUiStore.set((prev) => ({ ...prev, activityFilter: key }))
-            }}
-          >
-            {FILTER_LABEL[key]}
-          </button>
-        ))}
-      </div>
-
-      {phase === 'loading' && items.length === 0 ? (
-        <p className="k-act__empty">正在读取动作记录…</p>
-      ) : phase === 'error' ? (
-        <p className="k-act__empty">
-          数据服务离线 ·{' '}
-          <button type="button" className="k-act__retry" onClick={retry}>
-            重试
-          </button>
-        </p>
-      ) : filtered.length === 0 ? (
-        <p className="k-act__empty">暂无记录 · 从今天开始，你的每一步都会写在这里</p>
-      ) : (
-        <div className="k-act__list">
-          {groups.map((group) => (
-            <div className="k-act__day" key={group.dayLabel}>
-              <div className="k-act__daylabel u-label">{group.dayLabel}</div>
-              {group.items.map((entry, index) => {
-                const { label } = describeActivity(entry)
-                const link = deepLinkOfId(entry.id)
-                return (
-                  // 审计条目无唯一 id，且同一秒可能有多条同动作记录：以索引兜底保证 key 唯一
-                  <div className="k-act__row" key={`${entry.ts}-${entry.action}-${entry.id}-${index}`}>
-                    <span className="k-act__time k-mono">{formatTime(entry.ts)}</span>
-                    <span className="k-act__label">{label}</span>
-                    {link !== null ? (
-                      <button
-                        type="button"
-                        className="k-act__link"
-                        onClick={() => navigate(link, { viewTransition: true })}
-                        title="跳转查看该实体"
-                      >
-                        查看
-                      </button>
-                    ) : (
-                      // 保持网格第三列占位，令无深链行与有深链行对齐
-                      <span className="k-act__link k-act__link--ghost" aria-hidden="true" />
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-          ))}
-        </div>
-      )}
+      {body}
     </Panel>
   )
 }

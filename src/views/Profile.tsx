@@ -8,8 +8,11 @@ import { Panel } from '@/components/Panel'
 import { ActivityCalendar, type ActivityDay } from '@/components/ActivityCalendar'
 import { ActivityTimeline } from '@/components/ActivityTimeline'
 import { api, errorText } from '@/lib/api'
-import { getConfig, profileAvatarUrl, profileMonogram } from '@/lib/data'
+import { getConfig, getSnapshot, profileAvatarUrl, profileMonogram } from '@/lib/data'
 import { useDataRevision } from '@/lib/hooks'
+import { computeActivityStats } from '@/lib/activity'
+import { getDataRecordCount } from '@/lib/derive'
+import { formatMonthDay } from '@/lib/date'
 import { useToast } from '@/context/ToastContext'
 import {
   removeProfileAvatar,
@@ -74,6 +77,11 @@ export function Profile(): ReactNode {
   const displayBio = config.bio?.trim() ?? ''
   const avatarUrl = profileAvatarUrl(config.avatarPath)
   const hasAvatar = config.avatarPath !== undefined && config.avatarPath.trim() !== ''
+
+  // 活跃统计（运行时派生）：由活动日历逐日计数计算，绝不落盘。
+  const stats = computeActivityStats(activity)
+  const recordCount = getDataRecordCount(getSnapshot())
+  const lastActiveText = stats.lastActive !== null ? formatMonthDay(stats.lastActive) : '暂无'
 
   const openEdit = (): void => {
     setName(config.owner ?? '')
@@ -164,142 +172,182 @@ export function Profile(): ReactNode {
 
   return (
     <div className="k-view">
-      {/* 资料卡 */}
-      <section className="k-profile__card" aria-label="个人资料">
-        <div className="k-profile__avatar">
-          {avatarUrl !== null ? (
-            <img className="k-profile__avatar-img" src={avatarUrl} alt="" />
-          ) : (
-            <span className="k-profile__avatar-mono" aria-hidden>
-              {profileMonogram(owner)}
-            </span>
-          )}
-        </div>
-        <div className="k-profile__body">
-          <h2 className="k-profile__name">{displayName}</h2>
-          <p className={displayBio === '' ? 'k-profile__bio is-empty' : 'k-profile__bio'}>
-            {displayBio === '' ? '还没有简介 · 点「编辑资料」写一句' : displayBio}
-          </p>
-        </div>
-        {!editing && (
-          <div className="k-profile__actions">
-            <button type="button" className="k-btn k-btn--sm" onClick={openEdit}>
-              编辑资料
-            </button>
-          </div>
-        )}
-      </section>
-
-      {/* 内联编辑表单（ESC / 取消丢弃） */}
-      {editing && (
-        <form
-          className="k-profile__edit"
-          onSubmit={(event) => {
-            event.preventDefault()
-            onSave()
-          }}
-          onKeyDown={onFormKeyDown}
-        >
-          <div className="k-field">
-            <label className="k-field__label u-label" htmlFor="profile-name">
-              显示名称 · NAME
-            </label>
-            <input
-              id="profile-name"
-              className="k-input"
-              type="text"
-              maxLength={NAME_MAX}
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              placeholder="怎么称呼你"
-            />
-          </div>
-
-          <div className="k-field">
-            <label className="k-field__label u-label" htmlFor="profile-bio">
-              简介 · BIO（≤160 字）
-            </label>
-            <textarea
-              id="profile-bio"
-              className="k-textarea"
-              rows={3}
-              maxLength={BIO_MAX}
-              value={bio}
-              onChange={(event) => setBio(event.target.value)}
-              placeholder="一句话介绍自己"
-            />
-            <span className="k-field__hint">
-              {bio.length}/{BIO_MAX}
-            </span>
-          </div>
-
-          <div className="k-field">
-            <span className="k-field__label u-label">头像 · AVATAR</span>
-            <div className="k-profile__avatar-row">
-              <input
-                ref={fileRef}
-                className="k-profile__file"
-                type="file"
-                accept="image/*"
-                onChange={onAvatarChange}
-              />
-              <button
-                type="button"
-                className="k-btn k-btn--sm"
-                onClick={onPickAvatar}
-                disabled={avatarBusy}
-              >
-                {avatarBusy ? '上传中…' : '更换头像'}
-              </button>
-              {hasAvatar && (
-                <button
-                  type="button"
-                  className="k-btn k-btn--sm is-danger"
-                  onClick={onRemoveAvatar}
-                  disabled={avatarBusy}
-                >
-                  移除头像
-                </button>
+      <div className="k-profile__desk">
+        {/* ============ 左栏 · 身份列（≥1024px 吸顶） ============ */}
+        <aside className="k-profile__ident">
+          {/* 身份卡 */}
+          <section className="k-profile__card" aria-label="个人资料">
+            <div className="k-profile__avatar">
+              {avatarUrl !== null ? (
+                <img className="k-profile__avatar-img" src={avatarUrl} alt="" />
+              ) : (
+                <span className="k-profile__avatar-mono" aria-hidden>
+                  {profileMonogram(owner)}
+                </span>
               )}
+            </div>
+            <div className="k-profile__body">
+              <h2 className="k-profile__name">{displayName}</h2>
+              <p className={displayBio === '' ? 'k-profile__bio is-empty' : 'k-profile__bio'}>
+                {displayBio === '' ? '还没有简介 · 点「编辑资料」写一句' : displayBio}
+              </p>
+            </div>
+            <div className="k-profile__meta">
+              <div className="k-profile__meta-row">
+                <span className="u-label">本机记录</span>
+                <span className="k-profile__meta-v k-mono">{recordCount} 条</span>
+              </div>
+              <div className="k-profile__meta-row">
+                <span className="u-label">最近活动</span>
+                <span className="k-profile__meta-v">{lastActiveText}</span>
+              </div>
+            </div>
+            {!editing && (
+              <div className="k-profile__actions">
+                <button type="button" className="k-btn k-btn--sm" onClick={openEdit}>
+                  编辑资料
+                </button>
+              </div>
+            )}
+          </section>
+
+          {/* 3 瓦片统计条 */}
+          <div className="k-profile__stats" aria-label="活跃统计">
+            <div className="k-profile__stat">
+              <span className="k-profile__stat-value k-mono">
+                {activityPhase === 'ready' ? stats.activeDays : '—'}
+              </span>
+              <span className="k-profile__stat-label u-label">活跃天数</span>
+            </div>
+            <div className="k-profile__stat">
+              <span className="k-profile__stat-value k-mono">
+                {activityPhase === 'ready' ? stats.total : '—'}
+              </span>
+              <span className="k-profile__stat-label u-label">总计次数</span>
+            </div>
+            <div className="k-profile__stat">
+              <span className="k-profile__stat-value k-mono">
+                {activityPhase === 'ready' ? stats.streak : '—'}
+              </span>
+              <span className="k-profile__stat-label u-label">当前连续</span>
             </div>
           </div>
 
-          {error !== '' && (
-            <p className="k-profile__error" role="alert">
-              {error}
-            </p>
+          {/* 内联编辑表单（ESC / 取消丢弃） */}
+          {editing && (
+            <form
+              className="k-profile__edit"
+              onSubmit={(event) => {
+                event.preventDefault()
+                onSave()
+              }}
+              onKeyDown={onFormKeyDown}
+            >
+              <div className="k-field">
+                <label className="k-field__label u-label" htmlFor="profile-name">
+                  显示名称 · NAME
+                </label>
+                <input
+                  id="profile-name"
+                  className="k-input"
+                  type="text"
+                  maxLength={NAME_MAX}
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                  placeholder="怎么称呼你"
+                />
+              </div>
+
+              <div className="k-field">
+                <label className="k-field__label u-label" htmlFor="profile-bio">
+                  简介 · BIO（≤160 字）
+                </label>
+                <textarea
+                  id="profile-bio"
+                  className="k-textarea"
+                  rows={3}
+                  maxLength={BIO_MAX}
+                  value={bio}
+                  onChange={(event) => setBio(event.target.value)}
+                  placeholder="一句话介绍自己"
+                />
+                <span className="k-field__hint">
+                  {bio.length}/{BIO_MAX}
+                </span>
+              </div>
+
+              <div className="k-field">
+                <span className="k-field__label u-label">头像 · AVATAR</span>
+                <div className="k-profile__avatar-row">
+                  <input
+                    ref={fileRef}
+                    className="k-profile__file"
+                    type="file"
+                    accept="image/*"
+                    onChange={onAvatarChange}
+                  />
+                  <button
+                    type="button"
+                    className="k-btn k-btn--sm"
+                    onClick={onPickAvatar}
+                    disabled={avatarBusy}
+                  >
+                    {avatarBusy ? '上传中…' : '更换头像'}
+                  </button>
+                  {hasAvatar && (
+                    <button
+                      type="button"
+                      className="k-btn k-btn--sm is-danger"
+                      onClick={onRemoveAvatar}
+                      disabled={avatarBusy}
+                    >
+                      移除头像
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {error !== '' && (
+                <p className="k-profile__error" role="alert">
+                  {error}
+                </p>
+              )}
+
+              <div className="k-form__actions">
+                <button type="submit" className="k-btn is-solid" disabled={saving}>
+                  {saving ? '保存中…' : '保存'}
+                </button>
+                <button type="button" className="k-btn" onClick={cancelEdit} disabled={saving}>
+                  取消
+                </button>
+              </div>
+            </form>
           )}
+        </aside>
 
-          <div className="k-form__actions">
-            <button type="submit" className="k-btn is-solid" disabled={saving}>
-              {saving ? '保存中…' : '保存'}
-            </button>
-            <button type="button" className="k-btn" onClick={cancelEdit} disabled={saving}>
-              取消
-            </button>
-          </div>
-        </form>
-      )}
+        {/* ============ 右栏 · 活动流 ============ */}
+        <div className="k-profile__stream">
+          {/* 活跃贡献日历（异步） */}
+          <Panel title="活跃日历" en={`ACTIVITY · 近 ${ACTIVITY_WEEKS} 周`}>
+            {activityPhase === 'loading' && (
+              <p className="k-contrib__note">正在读取活动记录…</p>
+            )}
+            {activityPhase === 'error' && (
+              <p className="k-contrib__note">数据服务离线 · 暂时无法读取活动统计，稍后自动重试。</p>
+            )}
+            <ActivityCalendar days={activity} weeks={ACTIVITY_WEEKS} />
+          </Panel>
 
-      {/* 活跃贡献日历（异步） */}
-      <Panel title="活跃日历" en={`ACTIVITY · 近 ${ACTIVITY_WEEKS} 周`}>
-        {activityPhase === 'loading' && (
-          <p className="k-contrib__note">正在读取活动记录…</p>
-        )}
-        {activityPhase === 'error' && (
-          <p className="k-contrib__note">数据服务离线 · 暂时无法读取活动统计，稍后自动重试。</p>
-        )}
-        <ActivityCalendar days={activity} weeks={ACTIVITY_WEEKS} />
-      </Panel>
-
-      {/* 动作时间线（复用既有只读审计时间线） */}
-      <section className="k-profile__section" aria-label="动作时间线">
-        <header className="k-profile__sechead">
-          <h2 className="k-profile__sechead-cn">动作时间线</h2>
-          <span className="u-label">ACTIVITY · 只读审计</span>
-        </header>
-        <ActivityTimeline />
-      </section>
+          {/* 动作时间线（复用既有只读审计时间线，plain 模式自带分节头） */}
+          <section className="k-profile__section" aria-label="动作时间线">
+            <header className="k-profile__sechead">
+              <h2 className="k-profile__sechead-cn">动作时间线</h2>
+              <span className="u-label">ACTIVITY · 只读审计</span>
+            </header>
+            <ActivityTimeline plain />
+          </section>
+        </div>
+      </div>
     </div>
   )
 }

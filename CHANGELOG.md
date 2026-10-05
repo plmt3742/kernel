@@ -4,6 +4,18 @@
 
 ## [Unreleased]
 
+### 个人页排版重做 · 「名片台 PROFILE DESK」（已完成 · 2026-10-05）
+
+答 owner「重新设计个人页面，大幅调整排版以及组件设计」——先出 4 版自包含排版草案（`design-drafts/v2/profile-{a,b,c,d}.html`：A 名片台 / B 编年史 / C 仪表盘 / D 杂志专栏；复用真实应用壳与 token，逐版 Playwright 实测 0 error / 0 横溢），owner 选定 **A「名片台」** 落地：
+
+- **两栏骨架**：`.k-profile__desk` = `360px + minmax(0,1fr)` 网格（≥1025px）；左栏 `.k-profile__ident` 身份列**吸顶**（`top: calc(var(--topbar-h) + var(--space-4))`），右栏 `.k-profile__stream` 活动流；≤1024px 折单列并取消吸顶，≤640px 统计瓦片竖排。
+- **身份卡**：横排改**竖排 + 104px 头像**（monogram 升至 `--text-h1`）；新增两行安静元信息——「本机记录 N 条」（`getDataRecordCount` 运行时派生）与「最近活动 M月D日」（活跃窗口内最近一日，无则「暂无」）；「编辑资料」按钮移入卡内，内联编辑表单迁入左栏（编辑 / 保存 / ESC / 头像上传移除行为逐字保留）。草案中「加入于」为虚构项，未采纳——只落真实派生数据。
+- **3 瓦片统计条**：活跃天数 / 总计次数 / 当前连续——全部**运行时派生**（`src/lib/activity.ts` 新增纯函数 `computeActivityStats(days, now)`：活跃天数、总计、当前连续（截至最近活跃日、不早于昨天）、最近活跃日；`now` 可注入、**绝不落盘**），加载 / 离线显 `—`。
+- **动作时间线 plain 模式**：`ActivityTimeline` 增可选 `plain` 属性（默认 `false`）——个人页用其消除「分节头 + 组件 Panel 头」**双重标题**，过滤 chips 与计数改由 `.k-act__bar` 一行呈现、列表贴页面底色（吸顶日标签背景改 `--bg`）；回顾页保持 Panel 渲染**逐字不变**。
+
+- **修改**：`src/views/Profile.tsx`、`src/components/ActivityTimeline.tsx`、`src/lib/activity.ts`、`src/styles/views.css`
+- **验证**：`npm run build`（`tsc -b` strict + vite）退出 0（Profile 懒加载 chunk 8.48 kB，无 chunk > 500 kB）；**浏览器实测**（Playwright，隔离 dev 栈 + `npm run seed` 演示数据，真实数据零触达）全过——1600×1000：两栏 `360px 832px`、身份列 `sticky`、3 瓦片、`.k-act__bar`=1、仅「活跃日历」一个 Panel（无重复「动作记录」头）；390×844：单栏、`static`；两视口 console **0 error**、横溢 **0px**、无重叠 / 裁切；`/review` 回归「动作记录」Panel 照常渲染；证据 `.qa/qa-profile/`。
+
 ### 个人页 + 习惯页：热力图迁移 + 习惯独立成页 + 总览降级入口卡（已完成 · 2026-10-05）
 
 答 owner「如果有多个习惯，它只显示第一个习惯，设计不合理」→ 升级为信息架构调整（ADR-0039）：新增**习惯页**与**个人页**，热力图迁往个人页，总览习惯块降级为入口卡。

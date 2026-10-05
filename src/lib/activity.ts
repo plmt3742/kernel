@@ -4,7 +4,7 @@
 // 语义分桶（完成 / 新增 / 打卡 / 其他）、按天分组，供「动作记录」时间线消费。
 // 纪律：本模块只读、不缓存、不落盘；审计条目类型复用 `mutations.ts`（单一事实源）。
 import type { ActivityEntry } from '@/lib/mutations'
-import { daysFromToday, formatMonthDay, toISODateString } from '@/lib/date'
+import { addDays, daysFromToday, formatMonthDay, toDate, toISODateString } from '@/lib/date'
 
 export type { ActivityEntry }
 
@@ -222,4 +222,55 @@ export function groupByDay(entries: ActivityEntry[]): ActivityDayGroup[] {
     groups[groups.length - 1].items.push(entry)
   }
   return groups
+}
+
+/* ---------------------------------------------------------------------------
+ * 活跃统计（个人页 · 运行时派生，绝不落盘）
+ * ------------------------------------------------------------------------- */
+
+/** 活跃统计：活跃天数 / 总计次数 / 当前连续 / 最近活跃日 */
+export interface ActivityStats {
+  activeDays: number
+  total: number
+  /** 当前连续：截至最近活跃日、且该日不早于昨天，则连续计数；否则 0 */
+  streak: number
+  /** 最近一次活跃日 YYYY-MM-DD；无则 null */
+  lastActive: string | null
+}
+
+/**
+ * 由 `GET /api/activity/summary` 的逐日计数派生活跃统计。
+ * 纯函数：不读时钟以外的外部状态、不落盘；`now` 可注入以便测试。
+ */
+export function computeActivityStats(
+  days: ReadonlyArray<{ date: string; count: number }>,
+  now: Date = new Date(),
+): ActivityStats {
+  const byDate = new Map(days.map((d) => [d.date, d.count]))
+  let activeDays = 0
+  let total = 0
+  let lastActive: string | null = null
+  for (const day of days) {
+    if (day.count > 0) {
+      activeDays += 1
+      total += day.count
+      if (lastActive === null || day.date > lastActive) lastActive = day.date
+    }
+  }
+  let streak = 0
+  if (lastActive !== null) {
+    const todayKey = toISODateString(now)
+    const yesterdayKey = toISODateString(addDays(now, -1))
+    if (lastActive === todayKey || lastActive === yesterdayKey) {
+      let cursor = lastActive
+      // 逐日回溯（日期助手，避开时区/DST）；最多回溯到 days 长度
+      for (let guard = 0; guard <= days.length; guard += 1) {
+        const count = byDate.get(cursor)
+        if (count === undefined || count <= 0) break
+        streak += 1
+        cursor = toISODateString(addDays(toDate(cursor), -1))
+      }
+    }
+  }
+  return { activeDays, total, streak, lastActive }
 }
