@@ -557,22 +557,47 @@ button.k-pill.is-selected:hover {
   box-shadow: inset 0 0 0 1px var(--outline-strong);
 }
 
-/* 打卡操作行（Slice X）：quiet 按钮 + 缺口说明；点阵下方一行 */
-.k-streak__actions {
+/* 打卡脚注（重设计）：一行统计（连续/最长/累计）+ 紧凑 pill 开关。
+   统计在左、按钮在右；窄容器 flex-wrap 让按钮落到下一行，绝不横向溢出。
+   （旧的「近 14 天…缺口…」文案行已随热力图 + 统计上线而删除，消除冗余与三行折行。） */
+.k-streak__foot {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-3);
+  flex-wrap: wrap;
+  margin-top: var(--space-1);
 }
-/* 布局硬化（修复）：按钮不收缩、不换行；缺口文案侧可自由换行。
-   此前按钮默认可收缩，窄容器（如 390px）下「今日打卡」被长缺口文本挤成竖排单字。 */
-.k-streak__actions > .k-btn {
-  flex-shrink: 0;
+.k-streak__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-3);
+  border: var(--hairline) solid var(--outline-strong);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--ink-2);
+  font: inherit;
+  font-size: var(--text-caption);
+  line-height: 1;
   white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--dur-instant) var(--ease-standard),
+    color var(--dur-instant) var(--ease-standard),
+    border-color var(--dur-instant) var(--ease-standard);
 }
-.k-streak__actions .k-meter__foot {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow-wrap: anywhere;
+.k-streak__toggle:not(.is-done):hover:not(:disabled) {
+  background: var(--hover-veil);
+  color: var(--ink);
+}
+.k-streak__toggle:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.k-streak__toggle.is-done {
+  background: var(--accent-veil);
+  border-color: transparent;
+  color: var(--accent-text);
 }
 
 /* 零习惯空态（修复）：系统无任何习惯时的安静引导；不渲染按钮 / 点阵 / 缺口。 */
@@ -593,6 +618,101 @@ button.k-pill.is-selected:hover {
 }
 .k-streak__link:hover {
   text-decoration: underline;
+}
+
+/* ---------------------------------------------------------------------------
+ * 习惯热力图（v0.5 · 切片 → 视觉重设计）——近 16 周贡献式日历
+ * 命中=柔强调色（打卡是真信号，允许用 accent）· 未命中=安静面 · 未来=留空。
+ * 左侧一/三/五星期轴给出行结构；顶部月份标签由 derive 按最小列距抑制碰撞。
+ * 网格 1fr 方格铺满可用宽度（不再固定 8px + 右侧空白）；纯展示、不可聚焦；
+ * token-only，暗/亮双主题可用；窄栏（300px / 390px）零横向溢出。
+ * ------------------------------------------------------------------------- */
+
+.k-heat {
+  /* 3px 由 token 派生，避免魔法值；gap 与圆角同取小方格的柔度 */
+  --heat-gap: calc(var(--space-1) * 0.75);
+  --heat-radius: calc(var(--space-1) * 0.75);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  column-gap: var(--space-2);
+  row-gap: var(--space-1);
+  min-width: 0;
+  overflow: hidden;
+}
+/* 月份行与网格同处右列、共用 minmax(0,1fr) 列宽 → 标签与列精确对齐；
+   minmax(0,…) 使 nowrap 标签不撑宽轨道（碰撞已由 derive 抑制） */
+.k-heat__months {
+  grid-column: 2;
+  grid-row: 1;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: var(--heat-gap);
+}
+.k-heat__month {
+  justify-self: start;
+  white-space: nowrap;
+  font-size: var(--text-caption);
+  line-height: 1;
+  color: var(--muted);
+}
+/* 末列月份标签靠右锚定：其列恰在容器右缘，start 对齐会让 nowrap 文本溢出被 overflow:hidden 裁切 */
+.k-heat__month.is-tail {
+  justify-self: end;
+  text-align: right;
+}
+/* 星期轴：7 行 1fr 且与网格同 gap → 行高与方格逐行对齐 */
+.k-heat__axis {
+  grid-column: 1;
+  grid-row: 2;
+  display: grid;
+  grid-template-rows: repeat(7, 1fr);
+  gap: var(--heat-gap);
+}
+.k-heat__axis-label {
+  align-self: center;
+  justify-self: end;
+  font-size: var(--text-micro);
+  line-height: 1;
+  color: var(--muted);
+}
+.k-heat__grid {
+  grid-column: 2;
+  grid-row: 2;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: var(--heat-gap);
+}
+.k-heat__col {
+  display: grid;
+  grid-auto-flow: row;
+  grid-template-rows: repeat(7, auto);
+  gap: var(--heat-gap);
+}
+.k-heat__cell {
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: var(--heat-radius);
+  background: var(--fill-subtle);
+}
+.k-heat__cell.is-hit {
+  background: var(--accent);
+  opacity: 0.72;
+}
+.k-heat__cell.is-future {
+  background: transparent;
+}
+.k-heat__stats {
+  min-width: 0;
+  font-size: var(--text-caption);
+  color: var(--muted);
+  line-height: 1.4;
+}
+.k-heat__stats-n {
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
 }
 
 .k-energy {
@@ -1042,4 +1162,136 @@ button.k-pill.is-selected:hover {
   border-left: 3px solid var(--accent);
   padding-left: var(--space-4);
   color: var(--muted);
+}
+
+/* ---------------------------------------------------------------------------
+ * 习惯独立页（/habits）——每个习惯一张卡：标题 + 连续天数 + 今日打卡 + 可折叠热力图 + 编辑/删除
+ * token-only；暗/亮双主题；300px 窄栏 / 390px 视口零横向溢出。
+ * ------------------------------------------------------------------------- */
+
+.k-habits__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-4);
+}
+.k-habits__toolbar .k-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+/* 习惯卡网格：窄容器单列，宽容器按 320px 最小宽自动铺列 */
+.k-habits {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
+  gap: var(--space-4);
+}
+
+.k-habit {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--pad-card);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  box-shadow: var(--shadow-card), var(--shadow-highlight);
+}
+.k-habit__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-1) var(--space-3);
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.k-habit__titleline {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  flex-wrap: wrap;
+}
+.k-habit__title {
+  margin: 0;
+  font-size: var(--text-h4);
+  line-height: var(--text-h4-leading);
+  letter-spacing: var(--text-h4-tracking);
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.k-habit__streak {
+  font-size: var(--text-caption);
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+.k-habit__meta {
+  min-width: 0;
+  font-size: var(--text-caption);
+  overflow-wrap: anywhere;
+}
+.k-habit__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-3);
+  flex-wrap: wrap;
+}
+.k-habit__expand {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  font-size: var(--text-caption);
+  color: var(--muted);
+  cursor: pointer;
+  transition: color var(--dur-instant) var(--ease-standard);
+}
+.k-habit__expand:hover {
+  color: var(--ink-2);
+  text-decoration: underline;
+}
+.k-habit__heat {
+  min-width: 0;
+}
+.k-habit__ops {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: var(--hairline) solid var(--rule-soft);
+}
+
+/* 总览「习惯」入口卡：今日 N/M + 常用习惯 chips（chips 为非交互 span） */
+.k-ov-habits {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.k-ov-habit {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  max-width: 100%;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--fill-subtle);
+  color: var(--ink-2);
+  font-size: var(--text-caption);
+  line-height: 1.2;
+}
+.k-ov-habit__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.k-ov-habit.is-hit {
+  background: var(--accent-veil);
+  color: var(--accent-text);
 }

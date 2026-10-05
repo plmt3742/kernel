@@ -3,7 +3,9 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react'
@@ -33,9 +35,24 @@ const ACTION_DURATION_MS = 5000
 
 export function ToastProvider({ children }: { children: ReactNode }): ReactNode {
   const [items, setItems] = useState<ToastItem[]>([])
+  // 每条 toast 的自动消失计时器：手动关闭时一并清理，Provider 卸载时清空，避免定时器悬浮
+  const timersRef = useRef(new Map<string, number>())
 
   const dismiss = useCallback((id: string) => {
+    const timer = timersRef.current.get(id)
+    if (timer !== undefined) {
+      window.clearTimeout(timer)
+      timersRef.current.delete(id)
+    }
     setItems((prev) => prev.filter((item) => item.id !== id))
+  }, [])
+
+  useEffect(() => {
+    const timers = timersRef.current
+    return () => {
+      for (const timer of timers.values()) window.clearTimeout(timer)
+      timers.clear()
+    }
   }, [])
 
   const toast = useCallback(
@@ -47,7 +64,8 @@ export function ToastProvider({ children }: { children: ReactNode }): ReactNode 
         (options?.action !== undefined ? ACTION_DURATION_MS : DEFAULT_DURATION_MS)
       const tag = options?.tag ?? (tone === 'error' ? '错误' : undefined)
       setItems((prev) => [...prev.slice(-2), { id, message, action: options?.action, tag, tone }])
-      window.setTimeout(() => dismiss(id), duration)
+      const timer = window.setTimeout(() => dismiss(id), duration)
+      timersRef.current.set(id, timer)
     },
     [dismiss],
   )

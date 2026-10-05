@@ -69,6 +69,8 @@ interface LibraryUiState {
   resourceKind: ResourceKind | ''
   resourceStatus: ResourceStatus | ''
   tag: string
+  /** Slice FS：客户端搜索查询串（笔记 + 资料） */
+  q: string
 }
 
 const LIBRARY_UI_KEY = 'kernel.ui.library.v1'
@@ -78,6 +80,7 @@ const LIBRARY_UI_DEFAULT: LibraryUiState = {
   resourceKind: '',
   resourceStatus: '',
   tag: '',
+  q: '',
 }
 
 function parseLibraryUi(raw: unknown): LibraryUiState | null {
@@ -89,6 +92,7 @@ function parseLibraryUi(raw: unknown): LibraryUiState | null {
     resourceKind: oneOfOrEmpty(v.resourceKind, RESOURCE_KINDS),
     resourceStatus: oneOfOrEmpty(v.resourceStatus, RESOURCE_STATUSES),
     tag: str(v.tag),
+    q: str(v.q),
   }
 }
 
@@ -106,7 +110,7 @@ export function Library() {
   const [searchParams, setSearchParams] = useSearchParams()
   // 界面状态（Slice Z · F28）：来自模块级 store（跨路由 + 刷新保留）
   const libraryUi = useUiStore(libraryUiStore)
-  const { tab, noteType, resourceKind, resourceStatus, tag } = libraryUi
+  const { tab, noteType, resourceKind, resourceStatus, tag, q } = libraryUi
   const setTab = (value: Tab): void => {
     libraryUiStore.set((state) => ({ ...state, tab: value }))
   }
@@ -121,6 +125,9 @@ export function Library() {
   }
   const setTag = (value: string): void => {
     libraryUiStore.set((state) => ({ ...state, tag: value }))
+  }
+  const setQ = (value: string): void => {
+    libraryUiStore.set((state) => ({ ...state, q: value }))
   }
   const [target, setTarget] = useState<DrawerTarget | null>(null)
   const { toast } = useToast()
@@ -182,16 +189,33 @@ export function Library() {
       )
   }, [revision])
 
+  // Slice FS：客户端搜索谓词（标题 / 正文 / 标签，大小写不敏感）。
+  // 空查询短路为 true —— 与旧行为逐字节等价（不改变任何既有筛选结果）。
+  const searchNeedle = q.trim().toLowerCase()
+  const noteMatches = (note: Note): boolean =>
+    searchNeedle === '' ||
+    note.title.toLowerCase().includes(searchNeedle) ||
+    note.body.toLowerCase().includes(searchNeedle) ||
+    note.tags.some((item) => item.toLowerCase().includes(searchNeedle))
+  const resourceMatches = (resource: Resource): boolean =>
+    searchNeedle === '' ||
+    resource.title.toLowerCase().includes(searchNeedle) ||
+    (resource.note ?? '').toLowerCase().includes(searchNeedle) ||
+    (resource.url ?? '').toLowerCase().includes(searchNeedle) ||
+    resource.tags.some((item) => item.toLowerCase().includes(searchNeedle))
+
   const filteredNotes = notes.filter(
     (note) =>
       (noteType === '' || note.type === noteType) &&
-      (tag === '' || note.tags.includes(tag)),
+      (tag === '' || note.tags.includes(tag)) &&
+      noteMatches(note),
   )
   const filteredResources = resources.filter(
     (resource) =>
       (resourceKind === '' || resource.kind === resourceKind) &&
       (resourceStatus === '' || resource.status === resourceStatus) &&
-      (tag === '' || resource.tags.includes(tag)),
+      (tag === '' || resource.tags.includes(tag)) &&
+      resourceMatches(resource),
   )
 
   const showNotes = tab !== 'resources'
@@ -537,6 +561,17 @@ export function Library() {
       </div>
 
       <div className="k-lib__filters">
+        <div className="k-lib__fgroup k-lib__search" role="search">
+          <span className="k-lib__flabel u-label">搜索</span>
+          <input
+            className="k-input"
+            type="search"
+            value={q}
+            aria-label="搜索笔记与资料"
+            placeholder="标题 / 正文 / 标签"
+            onChange={(event) => setQ(event.target.value)}
+          />
+        </div>
         {showNotes && (
           <div className="k-lib__fgroup" role="group" aria-label="笔记类型">
             <span className="k-lib__flabel u-label">笔记类型</span>
@@ -632,7 +667,15 @@ export function Library() {
           }
         >
           {filteredNotes.length === 0 ? (
-            <EmptyState index="01" title="没有匹配的笔记" hint="调整类型或标签筛选。" />
+            <EmptyState
+              index="01"
+              title="没有匹配的笔记"
+              hint={
+                searchNeedle !== ''
+                  ? `没有匹配「${q.trim()}」的记录`
+                  : '调整类型或标签筛选。'
+              }
+            />
           ) : (
             filteredNotes.map((note) => (
               <button
@@ -683,7 +726,15 @@ export function Library() {
           }
         >
           {filteredResources.length === 0 ? (
-            <EmptyState index="02" title="没有匹配的资料" hint="调整类型、状态或标签筛选。" />
+            <EmptyState
+              index="02"
+              title="没有匹配的资料"
+              hint={
+                searchNeedle !== ''
+                  ? `没有匹配「${q.trim()}」的记录`
+                  : '调整类型、状态或标签筛选。'
+              }
+            />
           ) : (
             filteredResources.map((resource) => {
               const area = resource.areaId !== undefined ? getAreaById(resource.areaId) : undefined

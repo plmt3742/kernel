@@ -1,5 +1,5 @@
 // KERNEL · AppLayout（布局路由：RailNav + TopBar + 内容 + StatusBar + 命令面板）
-import { Suspense, useEffect, useState } from 'react'
+import { Suspense, useEffect, useRef, useState } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { motion, useReducedMotion } from 'motion/react'
 import { Skeleton } from '@/components/Skeleton'
@@ -11,6 +11,7 @@ import { usePalette } from '@/context/PaletteContext'
 import { navByPath } from '@/lib/nav'
 import { hydrateFromServer } from '@/lib/mutations'
 import { useOrganizeScheduler } from '@/lib/organize'
+import { useReviewScheduler } from '@/lib/review'
 import { useRouteScrollMemory } from '@/lib/scroll'
 import { DUR, EASE_ENTER } from '@/lib/motion'
 
@@ -28,12 +29,18 @@ export function AppLayout() {
   const { toggle: togglePalette } = usePalette()
   const [collapsed, setCollapsed] = useState(readCollapsed)
   const reduce = useReducedMotion()
+  // 延迟派发「聚焦捕捉」的一次性计时器：卸载时清理，避免定时器悬浮
+  const captureTimerRef = useRef<number | null>(null)
 
   // 路由滚动记忆：各页面独立位置（回访恢复 / 首次回顶）
   useRouteScrollMemory()
 
   // 每日 12:00 AI 整理自动出草稿（打开补跑 + 30s 轮询 + 聚焦/可见补检；只出建议，绝不自动应用）
   useOrganizeScheduler()
+
+  // 回顾自动化：每周一 12:00 后 / 每月 1 日 12:00 后自动生成一次周 / 月回顾草稿并归档
+  // （同一周期每个会话最多一次，AI 离线静默跳过；失败不打扰）
+  useReviewScheduler()
 
   // 全局快捷键：Ctrl/Cmd+K 命令面板；c 捕捉（跳转收件箱并聚焦）
   useEffect(() => {
@@ -48,13 +55,33 @@ export function AppLayout() {
         togglePalette()
         return
       }
-      if (!typing && !event.metaKey && !event.ctrlKey && !event.altKey && event.key.toLowerCase() === 'c') {
+      if (
+        !typing &&
+        !event.metaKey &&
+        !event.ctrlKey &&
+        !event.altKey &&
+        !event.repeat &&
+        event.key.toLowerCase() === 'c'
+      ) {
+        // 弹窗 / 命令面板打开时不触发全局捕捉：焦点可能落在弹窗内的按钮上（非输入元素），
+        // 此时按 c 会误跳收件箱，打断当前操作。
+        if (document.querySelector('[role="dialog"][aria-modal="true"]') !== null) return
         navigate('/inbox', { viewTransition: true })
-        window.setTimeout(() => window.dispatchEvent(new Event('kernel:focus-capture')), 90)
+        if (captureTimerRef.current !== null) window.clearTimeout(captureTimerRef.current)
+        captureTimerRef.current = window.setTimeout(() => {
+          captureTimerRef.current = null
+          window.dispatchEvent(new Event('kernel:focus-capture'))
+        }, 90)
       }
     }
     window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      if (captureTimerRef.current !== null) {
+        window.clearTimeout(captureTimerRef.current)
+        captureTimerRef.current = null
+      }
+    }
   }, [togglePalette, navigate])
 
   // 轨道折叠持久化 + 同步到 <html>（供 .k-app 之外的浮层如 Toast 跟随轨道宽度）

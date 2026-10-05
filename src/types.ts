@@ -332,6 +332,13 @@ export interface ReviewMetrics {
 /** 回顾来源（Slice L）：'ai' = 生成即自动归档；'manual' = 手工保存 */
 export type ReviewSource = 'ai' | 'manual'
 
+/** 停滞项目处置建议（回顾自动化）：随报告归档，历史报告可回看 AI 的迁移 / 归档 / 重启建议 */
+export interface ReviewStaleAdvice {
+  projectId: string
+  action: 'archive' | 'migrate' | 'reactivate'
+  reason: string
+}
+
 /** 回顾 · rev- */
 export interface Review {
   id: string
@@ -344,6 +351,8 @@ export interface Review {
   decisions: string[]
   summary: string
   staleProjectIds?: string[]
+  /** 迁移建议（回顾自动化）：AI 生成时随报告归档；旧记录缺省 */
+  staleAdvice?: ReviewStaleAdvice[]
   /** 来源（Slice L 自动归档；旧记录缺省） */
   source?: ReviewSource
   /** 最近编辑时间（review.update 时 bump；旧记录缺省） */
@@ -385,6 +394,10 @@ export interface AppConfig {
   createdAt: string
   /** AI 自动化档位（Slice R2；旧配置缺省，UI 视作 'confirm'） */
   aiAutomation?: AiAutomation
+  /** 个人页简介（≤160 字；旧配置缺省） */
+  bio?: string
+  /** 头像文件名（服务端 `GET /api/profile/avatar` 提供字节；旧配置缺省） */
+  avatarPath?: string
 }
 
 /* ---------------------------------------------------------------------------

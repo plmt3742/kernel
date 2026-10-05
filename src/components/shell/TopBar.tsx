@@ -1,9 +1,11 @@
-// KERNEL · TopBar（章节索引 + 大标题，瑞士式；右侧命令入口 + 主题切换）
+// KERNEL · TopBar（章节索引 + 大标题，瑞士式；右侧命令入口 + 主题切换 + 个人页入口）
 import { useState } from 'react'
-import { useLocation } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { Command, Moon, Sun } from 'lucide-react'
 import { navByPath } from '@/lib/nav'
 import { useTheme } from '@/context/ThemeContext'
+import { getConfig, profileAvatarUrl, profileMonogram } from '@/lib/data'
+import { useDataRevision } from '@/lib/hooks'
 
 interface TopBarProps {
   onOpenPalette: () => void
@@ -19,6 +21,10 @@ export function TopBar({ onOpenPalette }: TopBarProps) {
   const { theme, toggle } = useTheme()
   const [isMac] = useState(isMacPlatform)
   const nav = navByPath(location.pathname)
+  // 订阅数据版本：头像 / 显示名更新（水合）后即时刷新入口
+  useDataRevision()
+  const config = getConfig()
+  const avatarUrl = profileAvatarUrl(config.avatarPath)
 
   return (
     <header className="k-topbar">
@@ -46,6 +52,15 @@ export function TopBar({ onOpenPalette }: TopBarProps) {
               <Moon size={16} strokeWidth={1.5} aria-hidden />
             )}
           </button>
+          <Link to="/profile" className="k-iconbtn k-avatar" aria-label="个人页" title="个人页">
+            {avatarUrl !== null ? (
+              <img className="k-avatar__img" src={avatarUrl} alt="" />
+            ) : (
+              <span className="k-avatar__mono" aria-hidden>
+                {profileMonogram(config.owner)}
+              </span>
+            )}
+          </Link>
         </div>
       </div>
     </header>

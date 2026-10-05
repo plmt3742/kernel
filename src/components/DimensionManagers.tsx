@@ -8,20 +8,17 @@ import { Modal } from '@/components/Modal'
 import { EntityEditForm, type EditFieldSpec } from '@/components/EntityEditForm'
 import { useToast } from '@/context/ToastContext'
 import { useDataRevision } from '@/lib/hooks'
-import { getHabitStreak, getSnapshot } from '@/lib/data'
+import { getSnapshot } from '@/lib/data'
 import {
   createArea,
   createGoal,
-  createHabit,
   removeArea,
   removeGoal,
-  removeHabit,
   updateArea,
   updateGoal,
-  updateHabit,
 } from '@/lib/mutations'
 import { errorText } from '@/lib/api'
-import type { Area, Goal, Habit } from '@/types'
+import type { Area, Goal } from '@/types'
 
 const AREA_CADENCE_LABEL: Record<NonNullable<Area['cadence']>, string> = {
   weekly: '每周',
@@ -43,24 +40,13 @@ const GOAL_STATUS_LABEL: Record<NonNullable<Goal['status']>, string> = {
   dropped: '已放弃',
   someday: '将来',
 }
-const HABIT_CADENCE_LABEL: Record<NonNullable<Habit['cadence']>, string> = {
-  daily: '每日',
-  weekly: '每周',
-  monthly: '每月',
-}
-const HABIT_METRIC_LABEL: Record<NonNullable<Habit['metric']>, string> = {
-  count: '次数',
-  minutes: '分钟',
-  bool: '是否',
-}
-
 /** 选项构造（label 中文 + value） */
-function opts(pairs: Array<[string, string]>): EditFieldSpec['options'] {
+export function opts(pairs: Array<[string, string]>): EditFieldSpec['options'] {
   return pairs.map(([value, label]) => ({ value, label }))
 }
 
 /** 创建提交：剔除空串 / null（服务端补缺省；编辑则保留 null 语义 = 清除） */
-function cleanPatch(patch: Record<string, unknown>): Record<string, unknown> {
+export function cleanPatch(patch: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {}
   for (const [key, value] of Object.entries(patch)) {
     if (value === null || value === '') continue
@@ -550,111 +536,4 @@ export function GoalManager({ focusId }: { focusId?: string }): ReactNode {
   )
 }
 
-/* ---------------------------------------------------------------------------
- * 习惯
- * ------------------------------------------------------------------------- */
 
-const HABIT_FIELDS: EditFieldSpec[] = [
-  { key: 'title', label: '习惯名', type: 'text', placeholder: '如：23:30 前入睡' },
-  {
-    key: 'cadence',
-    label: '节奏',
-    type: 'select',
-    options: opts([
-      ['daily', '每日'],
-      ['weekly', '每周'],
-      ['monthly', '每月'],
-    ]),
-  },
-  {
-    key: 'metric',
-    label: '度量方式',
-    type: 'select',
-    options: opts([
-      ['count', '次数'],
-      ['minutes', '分钟'],
-      ['bool', '是否'],
-    ]),
-  },
-  { key: 'target', label: '目标值', type: 'number', placeholder: '如：1 / 20 / 3' },
-  {
-    key: 'trigger',
-    label: '触发条件（实施意图）',
-    type: 'text',
-    clearable: true,
-    placeholder: '如：洗漱后立刻关灯上床',
-  },
-  { key: 'areaId', label: '所属区域', type: 'select', clearable: true, options: [] },
-]
-
-export function HabitManager({ focusId }: { focusId?: string }): ReactNode {
-  const habits = getSnapshot().habits
-  const areas = getSnapshot().areas
-  const areaOptions = opts(areas.map((area) => [area.id, area.title]))
-  const fields = HABIT_FIELDS.map((field) =>
-    field.key === 'areaId' ? { ...field, options: areaOptions } : field,
-  )
-  return (
-    <DimensionManager<Habit>
-      title="习惯"
-      en="HABITS"
-      focusId={focusId}
-      intro={
-        <p className="k-view__intro">
-          习惯按「节奏 + 度量 + 目标值」定义；每日打卡在总览监视柱内完成。此处管理定义，打卡记录（log）不在本表编辑。
-        </p>
-      }
-      items={habits}
-      fields={fields}
-      createInitial={{ title: '', cadence: 'daily', metric: 'count', target: '1', trigger: '', areaId: '' }}
-      editInitial={(habit) => ({
-        title: habit.title,
-        cadence: habit.cadence ?? 'daily',
-        metric: habit.metric ?? 'count',
-        target: String(habit.target ?? 1),
-        trigger: habit.trigger ?? '',
-        areaId: habit.areaId ?? '',
-      })}
-      renderMeta={(habit) => {
-        const area = areas.find((item) => item.id === habit.areaId)
-        const streak = getHabitStreak(habit.id)
-        return (
-          <>
-            <span className="k-pill">{HABIT_CADENCE_LABEL[habit.cadence ?? 'daily']}</span>
-            <span className="k-pill">
-              {HABIT_METRIC_LABEL[habit.metric ?? 'count']} · {habit.target ?? 1}
-            </span>
-            {area !== undefined && <span className="k-pill is-ghost">{area.title}</span>}
-            <span className="k-mono k-muted" title="当前连续天数">
-              连续 {streak}
-            </span>
-            <span className="k-mono k-muted" title="累计打卡天数">
-              记 {(habit.log ?? []).length}
-            </span>
-          </>
-        )
-      }}
-      onCreate={async (patch) => {
-        const title = typeof patch.title === 'string' ? patch.title : ''
-        if (title.trim() === '') throw new Error('习惯名不能为空')
-        await createHabit({
-          title,
-          cadence: patch.cadence as Habit['cadence'] | undefined,
-          metric: patch.metric as Habit['metric'] | undefined,
-          target: typeof patch.target === 'number' ? patch.target : undefined,
-          trigger: typeof patch.trigger === 'string' ? patch.trigger : undefined,
-          areaId: typeof patch.areaId === 'string' ? patch.areaId : undefined,
-        })
-      }}
-      onUpdate={async (habit, patch) => {
-        await updateHabit(habit.id, patch)
-      }}
-      onRemove={async (habit) => {
-        await removeHabit(habit.id)
-      }}
-      toastCreated="已创建习惯"
-      toastUpdated="已保存习惯"
-      toastRemoved="习惯已移入回收站"
-    />
-  )
-}

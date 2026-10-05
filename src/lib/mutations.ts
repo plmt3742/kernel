@@ -20,6 +20,7 @@ import type {
   Resource,
   Review,
   ReviewMetrics,
+  ReviewStaleAdvice,
   ReviewType,
   TagItem,
   Task,
@@ -95,6 +96,8 @@ export interface TaskCreateInput {
   importance?: number
   estimateMin?: number
   dueAt?: string
+  /** 软推迟（v0.5）：未来时刻前不出现在活跃工作列表；ISO 8601 带偏移 */
+  deferUntil?: string
   projectId?: string
   areaId?: string
   /** Slice R3：父任务（生成子任务）；服务端校验存在且不成环 */
@@ -1177,6 +1180,77 @@ export async function updateAiAutomation(level: AppConfig['aiAutomation']): Prom
   await hydrateFromServer()
 }
 
+/* ---------------------------------------------------------------------------
+ * 个人页（Profile）：显示名称 / 简介（POST /api/config）+ 头像（RAW 上传 / 移除）
+ * 数据落 meta/config.json 与头像文件；成功后整体水合，使卡片 / 顶栏即时刷新。
+ * ------------------------------------------------------------------------- */
+
+/** 个人资料更新入参：仅提交提供的白名单字段（owner 显示名称 / bio 简介） */
+export interface ProfileUpdateInput {
+  owner?: string
+  bio?: string
+}
+
+/** 更新显示名称 / 简介（`POST /api/config`）；成功后整体水合使 UI 即时刷新 */
+export async function updateProfile(patch: ProfileUpdateInput): Promise<void> {
+  await api.post<{ config: unknown }>('/api/config', patch)
+  await hydrateFromServer()
+}
+
+/**
+ * 上传头像（`POST /api/profile/avatar` RAW body）：png / jpeg / webp / gif，≤2MB。
+ * 成功后整体水合，返回服务端最终 avatarPath（旧服务端缺省时回退空串）。
+ */
+export async function uploadProfileAvatar(file: File): Promise<string> {
+  let response: Response
+  try {
+    response = await fetch('/api/profile/avatar', {
+      method: 'POST',
+      headers: { 'Content-Type': file.type !== '' ? file.type : 'application/octet-stream' },
+      body: file,
+    })
+  } catch {
+    throw new Error('数据服务不可用（确认 npm run dev 已启动数据服务）')
+  }
+  const text = await response.text()
+  let data: unknown = null
+  if (text !== '') {
+    try {
+      data = JSON.parse(text)
+    } catch {
+      data = null
+    }
+  }
+  if (!response.ok) {
+    if (response.status >= 500 && data === null) {
+      throw new Error('数据服务不可用（确认 npm run dev 已启动数据服务）')
+    }
+    const message =
+      data !== null &&
+      typeof data === 'object' &&
+      'error' in data &&
+      typeof (data as { error: unknown }).error === 'string'
+        ? (data as { error: string }).error
+        : `上传失败（HTTP ${response.status}）`
+    throw new Error(message)
+  }
+  const avatarPath =
+    data !== null &&
+    typeof data === 'object' &&
+    'avatarPath' in data &&
+    typeof (data as { avatarPath: unknown }).avatarPath === 'string'
+      ? (data as { avatarPath: string }).avatarPath
+      : ''
+  await hydrateFromServer()
+  return avatarPath
+}
+
+/** 移除头像（`POST /api/profile/avatar/remove`）；成功后整体水合 */
+export async function removeProfileAvatar(): Promise<void> {
+  await api.post<{ ok: true }>('/api/profile/avatar/remove')
+  await hydrateFromServer()
+}
+
 /** 审计日志条目（GET /api/activity；detail 供「AI 动态」筛选） */
 export interface ActivityEntry {
   ts: string
@@ -1208,12 +1282,8 @@ export async function setAiKey(apiKey: string): Promise<boolean> {
  * 周回顾（v0.5 · Slice C：AI 只出草稿；确认后经 /api/reviews 落盘；撤销即删除）
  * ------------------------------------------------------------------------- */
 
-/** 停滞项目处置建议（对应服务端 staleAdviceSchema） */
-export interface StaleAdvice {
-  projectId: string
-  action: 'archive' | 'migrate' | 'reactivate'
-  reason: string
-}
+/** 停滞项目处置建议（对应服务端 staleAdviceSchema；历史别名，正名为 ReviewStaleAdvice） */
+export type StaleAdvice = ReviewStaleAdvice
 
 /** AI 周回顾草稿（对应服务端 /api/ai/review/draft 响应；Slice L 起含自动归档 id） */
 export interface ReviewDraft {
@@ -1244,16 +1314,19 @@ export async function generateReviewDraft(period: ReviewType = 'weekly'): Promis
   return api.post<ReviewDraft>('/api/ai/review/draft', { period })
 }
 
-/** 保存回顾（fallback）：服务端计算 id / 周期 / 指标 / 停滞项目；返回落盘记录 */
+/** 保存回顾（fallback）：服务端计算 id / 周期 / 指标 / 停滞项目；返回落盘记录。
+ *  `staleAdvice`（可选）由调用方透传（回顾自动化），服务端形状校验后归档；缺省不写该键。 */
 export async function saveReview(
   summary: string,
   decisions: string[],
   type: ReviewType = 'weekly',
+  staleAdvice?: StaleAdvice[],
 ): Promise<Review> {
   const { review } = await api.post<{ review: Review }>('/api/reviews', {
     summary,
     decisions,
     type,
+    ...(staleAdvice !== undefined ? { staleAdvice } : {}),
   })
   upsertEntity('reviews', review)
   return review

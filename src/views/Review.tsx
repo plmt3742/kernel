@@ -394,6 +394,39 @@ export function Review() {
     else migrateProject(project)
   }
 
+  /**
+   * 归档报告的「迁移建议」（回顾自动化）：随报告一并持久化，历史查阅时回看 AI 的处置建议。
+   * 项目仍在库中时可按建议处理（与上方会话草稿面板共用 `applyStaleAdvice`）；缺失则仅展示、按钮禁用。
+   */
+  const renderStaleAdviceBlock = (adviceList: StaleAdvice[], keyPrefix: string): ReactNode => {
+    if (adviceList.length === 0) return null
+    return (
+      <div className="k-review__field">
+        <span className="k-review__label">迁移建议</span>
+        <div className="k-review__advice">
+          {adviceList.map((advice, index) => (
+            <div className="k-review__advice-row" key={`${keyPrefix}-${advice.projectId}-${index}`}>
+              <span>{getProjectById(advice.projectId)?.title ?? advice.projectId}</span>
+              <span className="k-muted">建议{ADVICE_ACTION_LABEL[advice.action]}</span>
+              {advice.reason !== '' && <span className="k-muted">{advice.reason}</span>}
+              <span className="k-view__actions">
+                <button
+                  type="button"
+                  className="k-btn k-btn--sm"
+                  onClick={() => applyStaleAdvice(advice)}
+                  disabled={getProjectById(advice.projectId) === undefined}
+                  title="按 AI 建议处理该项目"
+                >
+                  {ADVICE_ACTION_LABEL[advice.action]}
+                </button>
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
   /* ------------------------------- 卡片 ------------------------------- */
 
   const renderCycle = (kind: ReviewType): ReactNode => {
@@ -525,6 +558,7 @@ export function Review() {
                 <span className="k-review__label">决策 · DECISIONS</span>
                 <DecisionsList decisions={review.decisions} />
               </div>
+              {renderStaleAdviceBlock(review.staleAdvice ?? [], `view-${review.id}`)}
             </>
           )}
         </Modal>
@@ -632,6 +666,9 @@ export function Review() {
                       .filter((line) => line !== '')}
                   />
                 </div>
+                {draft === null &&
+                  report !== null &&
+                  renderStaleAdviceBlock(report.staleAdvice ?? [], `edit-${kind}`)}
               </>
             )}
 

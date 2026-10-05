@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { clsx } from 'clsx'
+import { Check } from 'lucide-react'
 import { Panel } from '@/components/Panel'
 import { TaskRow } from '@/components/TaskRow'
 import { ScheduleList } from '@/components/ScheduleList'
@@ -13,6 +14,7 @@ import { OverviewChat } from '@/components/OverviewChat'
 import { TrendLine } from '@/components/charts/TrendLine'
 import {
   getActiveProjects,
+  getHabits,
   getInboxCount,
   getProjectById,
   getProjectProgress,
@@ -20,17 +22,16 @@ import {
   getTodayEvents,
 } from '@/lib/data'
 import {
-  getCodingStreakDetail,
   getDueLoadSeries,
+  getFrequentHabits,
   getNextEvent,
   getOverdueOpen,
   getTodayTaskScope,
   getUpcomingNextActions,
   getWeeklyCompletionSeries,
+  isHabitHitToday,
 } from '@/lib/derive'
-import { isTaskDone, checkinHabit, uncheckinHabit } from '@/lib/mutations'
-import { errorText } from '@/lib/api'
-import { useToast } from '@/context/ToastContext'
+import { isTaskDone } from '@/lib/mutations'
 import { useDataRevision, useNow, useUndoableToggle } from '@/lib/hooks'
 import { eventEndOf, formatTime, humanizeDay, isPast, toDate } from '@/lib/date'
 
@@ -83,9 +84,7 @@ export function Overview() {
   useDataRevision()
   const navigate = useNavigate()
   const toggleTask = useUndoableToggle()
-  const { toast } = useToast()
   const now = useNow()
-  const [habitBusy, setHabitBusy] = useState(false)
 
   // 就地详情弹窗（Slice G）：URL 保持在 "/"，不跳转（owner 反馈：跳转后无高亮、不知在哪）
   const [taskModalId, setTaskModalId] = useState<string | null>(null)
@@ -105,7 +104,10 @@ export function Overview() {
   const upcomingToday = todayEvents.filter((event) => !isPast(eventEndOf(event), now))
   // 行动列：即将到期的下一步行动（按截止升序，逾期已排除）
   const flow = getUpcomingNextActions(5, now)
-  const streak = getCodingStreakDetail(now)
+  // 习惯入口卡：今日命中数 / 总数 + 常用习惯（近 30 天打卡降序；打卡细节在独立习惯页）
+  const habits = getHabits()
+  const habitHitCount = habits.filter((habit) => isHabitHitToday(habit.id, now)).length
+  const frequentHabits = getFrequentHabits(3, now)
 
   const completionSeries = getWeeklyCompletionSeries(now)
   const dueLoadSeries = getDueLoadSeries(now)
@@ -120,41 +122,6 @@ export function Overview() {
   const wipMax = Math.max(WIP_LIMIT, wip)
   const wipOver = wip > WIP_LIMIT
   const wipFoot = wipOver ? `超出上限 ${wip - WIP_LIMIT} · 需收口` : `在限内 · 上限 ${WIP_LIMIT}`
-
-  const streakFoot =
-    streak.gaps.length === 0
-      ? `近 14 天命中 ${streak.hits} · 无缺口`
-      : `近 14 天命中 ${streak.hits} · 缺口 ${streak.gaps.join(' / ')}`
-
-  // 今日打卡切换（Slice X）：point 态反映今天的 log；点击幂等打卡 / 取消打卡 + toast 撤销
-  const toggleHabitToday = (): void => {
-    const habitId = streak.habitId
-    if (habitId === null || habitBusy) return
-    const wasHit = streak.todayHit
-    const label =
-      streak.habitTitle.length > 12 ? `${streak.habitTitle.slice(0, 12)}…` : streak.habitTitle
-    setHabitBusy(true)
-    void (async () => {
-      try {
-        if (wasHit) await uncheckinHabit(habitId)
-        else await checkinHabit(habitId)
-        toast(wasHit ? `已取消今日打卡 · ${label}` : `今日已打卡 · ${label}`, {
-          action: {
-            label: '撤销',
-            onClick: () => {
-              void (wasHit ? checkinHabit(habitId) : uncheckinHabit(habitId)).catch((err) => {
-                toast(`撤销失败：${errorText(err)}`, { tone: 'error' })
-              })
-            },
-          },
-        })
-      } catch (err) {
-        toast(`打卡失败：${errorText(err)}`, { tone: 'error' })
-      } finally {
-        setHabitBusy(false)
-      }
-    })()
-  }
 
   const completionSum = completionSeries.reduce((sum, day) => sum + day.value, 0)
   // 周起点为周一：索引 5、6 即周六、周日
@@ -337,53 +304,41 @@ export function Overview() {
               />
             </button>
 
-            {streak.habitId === null ? (
-              /* 零习惯空态（修复）：系统尚无任何习惯——不渲染打卡按钮 / 点阵 / 缺口列表，
-                 改安静引导到设置页创建；避免长缺口文案在窄容器把内容挤成竖排单字。 */
-              <div className="r3c-block">
-                <div className="r3c-head">
-                  <span className="r3c-head__t">习惯打卡</span>
-                  <span className="r3c-head__v k-mono">—</span>
-                </div>
-                <p className="k-streak__empty">
-                  还没有习惯 ·{' '}
-                  <button
-                    type="button"
-                    className="k-streak__link"
-                    onClick={() => navigate('/settings?section=habits', { viewTransition: true })}
-                  >
-                    去设置创建
-                  </button>
-                </p>
+            {/* 习惯入口卡（独立习惯页 /habits 的紧凑入口）：今日 N/M + 常用习惯 chips（非交互 span）；
+                整卡可点 → 查看 /habits（打卡、热力图、定义管理都在该页）。 */}
+            <button
+              type="button"
+              className="r3c-block r3c-block--link"
+              onClick={() => navigate('/habits', { viewTransition: true })}
+              aria-label="查看习惯"
+            >
+              <div className="r3c-head">
+                <span className="r3c-head__t">习惯</span>
+                <span className="r3c-head__v k-mono">
+                  今日 {habitHitCount}/{habits.length}
+                </span>
               </div>
-            ) : (
-              <div className="r3c-block">
-                <div className="r3c-head">
-                  <span className="r3c-head__t">{streak.habitTitle}</span>
-                  <span className="r3c-head__v k-mono">{streak.current} 天</span>
+              {habits.length === 0 ? (
+                /* 零习惯空态：卡片整体已可点，不再嵌按钮（避免 button 嵌套）；点卡片去习惯页创建 */
+                <p className="k-streak__empty">还没有习惯 · 点击前往习惯页创建</p>
+              ) : (
+                <div className="k-ov-habits">
+                  {frequentHabits.map((habit) => {
+                    const hit = isHabitHitToday(habit.id, now)
+                    return (
+                      <span
+                        key={habit.id}
+                        className={clsx('k-ov-habit', hit && 'is-hit')}
+                        title={`${habit.title} · ${hit ? '今日已打卡' : '今日未打卡'}`}
+                      >
+                        <span className="k-ov-habit__name">{habit.title}</span>
+                        {hit && <Check size={11} strokeWidth={2} aria-hidden />}
+                      </span>
+                    )
+                  })}
                 </div>
-                <div className="k-streak" role="img" aria-label="近 14 天打卡点阵">
-                  {streak.window.map((cell) => (
-                    <div
-                      key={cell.key}
-                      className={clsx('k-streak__cell', !cell.hit && 'is-miss')}
-                    />
-                  ))}
-                </div>
-                <div className="k-streak__actions">
-                  <button
-                    type="button"
-                    className={streak.todayHit ? 'k-btn k-btn--sm is-solid' : 'k-btn k-btn--sm'}
-                    aria-pressed={streak.todayHit}
-                    disabled={habitBusy}
-                    onClick={toggleHabitToday}
-                  >
-                    {streak.todayHit ? '今日已打卡' : '今日打卡'}
-                  </button>
-                  <span className="k-meter__foot">{streakFoot}</span>
-                </div>
-              </div>
-            )}
+              )}
+            </button>
 
             <div className="r3c-block">
               <div className="r3c-head">

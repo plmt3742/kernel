@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Panel } from '@/components/Panel'
 import { TagManager } from '@/components/TagManager'
-import { AreaManager, GoalManager, HabitManager } from '@/components/DimensionManagers'
+import { AreaManager, GoalManager } from '@/components/DimensionManagers'
 import { AiActivityFeed } from '@/components/AiActivityFeed'
 import { useTheme } from '@/context/ThemeContext'
 import { useToast } from '@/context/ToastContext'
@@ -31,7 +31,6 @@ type SectionId =
   | 'tags'
   | 'areas'
   | 'goals'
-  | 'habits'
   | 'data'
   | 'service'
   | 'about'
@@ -43,7 +42,6 @@ const SECTIONS: Array<{ id: SectionId; cn: string; en: string }> = [
   { id: 'tags', cn: '标签管理', en: 'TAGS' },
   { id: 'areas', cn: '区域', en: 'AREAS' },
   { id: 'goals', cn: '目标', en: 'GOALS' },
-  { id: 'habits', cn: '习惯', en: 'HABITS' },
   { id: 'data', cn: '数据统计', en: 'DATA' },
   { id: 'service', cn: '数据服务', en: 'SERVICE' },
   { id: 'about', cn: '关于', en: 'ABOUT' },
@@ -62,7 +60,8 @@ export function Settings() {
   const source = useDataSource()
   const ai = useAiHealth()
   const { toast } = useToast()
-  // 深链（Slice X）：?section=areas|goals|habits 直达分区；?area=/?goal=/?habit= 打开对应编辑弹窗
+  // 深链（Slice X）：?section=areas|goals 直达分区；?area=/?goal= 打开对应编辑弹窗
+  // （习惯已迁出为独立页 /habits，?section=habits / ?habit= 不再由设置页处理）
   const [searchParams] = useSearchParams()
   const [section, setSection] = useState<SectionId>(() => {
     const raw = searchParams.get('section')
@@ -70,7 +69,6 @@ export function Settings() {
   })
   const focusArea = searchParams.get('area') ?? undefined
   const focusGoal = searchParams.get('goal') ?? undefined
-  const focusHabit = searchParams.get('habit') ?? undefined
   const [activity, setActivity] = useState<ActivityEntry[]>([])
   const config = getConfig()
   // AI 自动化档位（Slice R2）：旧配置缺省视作确认模式（先确认后写入）
@@ -170,7 +168,7 @@ export function Settings() {
   return (
     <div className="k-view">
       <p className="k-view__intro">
-        按分类浏览设置：外观、AI 集成、AI 自动化、标签管理、区域、目标、习惯、数据统计、数据服务、关于。左侧选中分类决定右侧面板内容。
+        按分类浏览设置：外观、AI 集成、AI 自动化、标签管理、区域、目标、数据统计、数据服务、关于。左侧选中分类决定右侧面板内容。
       </p>
 
       <div className="k-settings__grid">
@@ -365,8 +363,6 @@ export function Settings() {
           {section === 'areas' && <AreaManager focusId={focusArea} />}
 
           {section === 'goals' && <GoalManager focusId={focusGoal} />}
-
-          {section === 'habits' && <HabitManager focusId={focusHabit} />}
 
           {section === 'data' && (
             <Panel

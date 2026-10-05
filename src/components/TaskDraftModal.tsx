@@ -2,7 +2,7 @@
 // 流程：回车 → 本弹窗（居中）→ 打开即请求 AI 补全 → 全部字段可编辑 → 用户点「创建任务」才写入。
 // 纪律（owner 强制）：确认前绝不落盘；AI 失败 / 离线时表单仍可用，创建不被阻断；
 //   AI 补全绝不覆盖用户已改动的字段，也绝不改写标题。
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { Sparkles } from 'lucide-react'
 import { Modal } from '@/components/Modal'
 import { AiSuggestionForm } from '@/components/AiSuggestionForm'
@@ -58,6 +58,7 @@ export function TaskDraftModal({
   const touchedRef = useRef<Set<keyof AiSuggestionFormValues>>(new Set())
   // 请求令牌：关闭 / 重开 / 重新补全时忽略过期响应
   const runRef = useRef(0)
+  const deferId = useId()
 
   const runAi = (rawTitle: string): void => {
     const value = rawTitle.trim()
@@ -175,6 +176,22 @@ export function TaskDraftModal({
         autoFocusTitle
         disabled={submitting}
       />
+      {/* 软推迟（v0.5）：AI 不参与（不在 AI_FIELD_KEYS 内）；留空 = 不携带该字段（服务端不落键） */}
+      <div className="k-ai-form">
+        <div className="k-field">
+          <label className="k-field__label u-label" htmlFor={deferId}>
+            推迟至
+          </label>
+          <input
+            id={deferId}
+            className="k-input"
+            type="datetime-local"
+            value={fields.deferUntil}
+            disabled={submitting}
+            onChange={(event) => patchFields({ deferUntil: event.target.value })}
+          />
+        </div>
+      </div>
       {submitError !== '' && (
         <p className="k-ai-form__error" role="alert">
           {submitError}

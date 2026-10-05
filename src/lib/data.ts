@@ -22,6 +22,7 @@ import type {
   TermInfo,
 } from '@/types'
 import { daysFromToday, isPast, isSameDay, toDate } from '@/lib/date'
+import { condenseContent, deepLinkOfId } from '@/lib/relations'
 
 /* ---------------------------------------------------------------------------
  * 原始模块收集（seed 首帧）
@@ -199,6 +200,35 @@ export function getConfig(): AppConfig {
 }
 export function getTags(): TagItem[] {
   return state.tags
+}
+
+/* ---------------------------------------------------------------------------
+ * 个人页展示助手（纯函数；Profile 卡与顶栏头像共用）
+ * ------------------------------------------------------------------------- */
+
+/**
+ * 头像展示 URL：`/api/profile/avatar`，以文件名尾部作 `?v=` 查询串
+ * （服务端头像文件名带时间戳，天然缓存失效；显式 `?v` 再兜一层）。
+ * 无头像（空 / 缺省）返回 null。
+ */
+export function profileAvatarUrl(avatarPath?: string): string | null {
+  if (avatarPath === undefined || avatarPath.trim() === '') return null
+  const tail = avatarPath.split(/[\\/]/).pop() ?? ''
+  const version = encodeURIComponent(tail !== '' ? tail : avatarPath)
+  return `/api/profile/avatar?v=${version}`
+}
+
+/** 头像字母标记：拉丁取前两词首字母，CJK 取首字；空名回退 'K'（服务端无头像时的占位） */
+export function profileMonogram(name: string): string {
+  const trimmed = name.trim()
+  if (trimmed === '') return 'K'
+  const parts = trimmed.split(/\s+/).filter((part) => part !== '')
+  if (parts.length >= 2) {
+    const first = Array.from(parts[0])[0] ?? ''
+    const second = Array.from(parts[1])[0] ?? ''
+    return (first + second).toUpperCase()
+  }
+  return (Array.from(trimmed)[0] ?? 'K').toUpperCase()
 }
 
 /** 完整快照（供上层一次性消费） */
@@ -382,4 +412,90 @@ export function getTagUsage(): Array<{ tag: string; count: number }> {
   return [...counts.entries()]
     .map(([tag, count]) => ({ tag, count }))
     .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag))
+}
+
+/* ---------------------------------------------------------------------------
+ * 客户端全文搜索（Slice FS）：在内存快照上线性扫描，绝不落盘 / 不外发。
+ * ------------------------------------------------------------------------- */
+
+/** 全文搜索命中结果（kind 与关系模型同口径） */
+export interface SearchResult {
+  kind: 'task' | 'note' | 'resource' | 'event' | 'project'
+  id: string
+  title: string
+  /** 折叠为单行、截断后的首个命中字段摘要 */
+  snippet: string
+  /** 详情深链（复用 relations.deepLinkOfId 口径） */
+  deepLink: string
+}
+
+/** 搜索摘要单行截断长度（~80 字） */
+const SEARCH_SNIPPET_MAX = 80
+
+/** 在字段序列中取首个命中的折叠单行摘要（大小写不敏感；均未命中返回 null） */
+function firstMatchSnippet(fields: string[], needle: string): string | null {
+  for (const field of fields) {
+    if (field.toLowerCase().includes(needle)) return condenseContent(field, SEARCH_SNIPPET_MAX)
+  }
+  return null
+}
+
+/**
+ * 客户端全文搜索（Slice FS）：对当前数据快照的任务 / 笔记 / 资料 / 日程 / 项目做
+ * 大小写不敏感的子串匹配。扫描字段——
+ *   任务 title/notes/tags · 笔记 title/body/tags · 资料 title/note/url/tags ·
+ *   日程 title/location/notes/tags · 项目 title/outcome/tags。
+ * 排序：标题命中（rank 0）先于正文命中（rank 1）；同档保持扫描顺序
+ * （kind 固定序 + 各表 id 升序）——`Array.prototype.sort` 稳定排序（ES2019+）即可。
+ * 空标题跳过，空查询返回 []（不触碰快照），最多返回 limit 条。
+ * deepLink 由 relations.deepLinkOfId 派生（t→/tasks?task= · e→/calendar?event= …）。
+ */
+export function searchSnapshot(query: string, limit = 8): SearchResult[] {
+  const needle = query.trim().toLowerCase()
+  if (needle === '') return []
+
+  const ranked: Array<{ rank: number; result: SearchResult }> = []
+
+  const collect = (
+    kind: SearchResult['kind'],
+    id: string,
+    title: string,
+    bodyFields: string[],
+  ): void => {
+    if (title.trim() === '') return
+    const titleHit = firstMatchSnippet([title], needle)
+    const rank = titleHit !== null ? 0 : 1
+    const snippet = titleHit ?? firstMatchSnippet(bodyFields, needle)
+    if (snippet === null) return
+    const deepLink = deepLinkOfId(id)
+    if (deepLink === null) return
+    ranked.push({ rank, result: { kind, id, title, snippet, deepLink } })
+  }
+
+  for (const task of state.tasks) {
+    collect('task', task.id, task.title, [task.notes ?? '', ...task.tags])
+  }
+  for (const note of state.notes) {
+    collect('note', note.id, note.title, [note.body, ...note.tags])
+  }
+  for (const resource of state.resources) {
+    collect('resource', resource.id, resource.title, [
+      resource.note ?? '',
+      resource.url ?? '',
+      ...resource.tags,
+    ])
+  }
+  for (const event of state.events) {
+    collect('event', event.id, event.title, [
+      event.location ?? '',
+      event.notes ?? '',
+      ...event.tags,
+    ])
+  }
+  for (const project of state.projects) {
+    collect('project', project.id, project.title, [project.outcome, ...project.tags])
+  }
+
+  ranked.sort((a, b) => a.rank - b.rank)
+  return ranked.slice(0, limit).map((item) => item.result)
 }

@@ -1,7 +1,7 @@
 // KERNEL · EntityEditForm（抽屉内联编辑表单 · Slice E2）
 // 由字段规格驱动：文本 / 多行 / 数字 / 下拉 / 日期时间 / 逗号列表；提交时按类型归一化为 API patch。
 // 字段为空时的语义：日期时间 / 数字 → null（清除）；可清除文本/下拉 → null；其余文本/下拉跳过（不覆盖）。
-import { useId, useState, type FormEvent } from 'react'
+import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react'
 import { toDate, toISODateTime } from '@/lib/date'
 import { getTags } from '@/lib/data'
 import { useDataRevision } from '@/lib/hooks'
@@ -62,6 +62,13 @@ function initialFieldValue(field: EditFieldSpec, source: Record<string, unknown>
   return String(value)
 }
 
+/** 依据字段规格与初值构造表单值（挂载初值 + 初值变化重置共用同一函数，保证口径一致） */
+function buildValues(fields: EditFieldSpec[], source: Record<string, unknown>): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const field of fields) out[field.key] = initialFieldValue(field, source)
+  return out
+}
+
 export function EntityEditForm({
   fields,
   initial,
@@ -74,11 +81,21 @@ export function EntityEditForm({
   // 标签补全（Slice Y · F13）：订阅数据版本，注册表变化时刷新 datalist
   useDataRevision()
   const tagNames = getTags().map((tag) => tag.name)
-  const [values, setValues] = useState<Record<string, string>>(() => {
-    const out: Record<string, string> = {}
-    for (const field of fields) out[field.key] = initialFieldValue(field, initial)
-    return out
-  })
+  const [values, setValues] = useState<Record<string, string>>(() => buildValues(fields, initial))
+
+  // 初值签名：仅由「字段键 + 对应初值」决定（与无关重渲染、对象身份无关）。
+  // 复用同一实例切换编辑对象、或保存后父组件回传新记录时，签名变化即重置表单，
+  // 避免表单停留在上一条记录的陈旧值。
+  const signature = useMemo(
+    () => fields.map((field) => `${field.key}\u0001${JSON.stringify(initial[field.key] ?? null)}`).join('\u0002'),
+    [fields, initial],
+  )
+  const signatureRef = useRef(signature)
+  useEffect(() => {
+    if (signatureRef.current === signature) return
+    signatureRef.current = signature
+    setValues(buildValues(fields, initial))
+  }, [signature, fields, initial])
 
   const setValue = (key: string, value: string): void => {
     setValues((prev) => ({ ...prev, [key]: value }))

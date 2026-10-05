@@ -16,7 +16,13 @@ KERNEL 的任务台账与迭代记录。记录当前迭代目标、未来待办�
 
 > **运维（2026-10-03）**：数据清零——新增 `scripts/reset.mjs`（预演 / `--yes` 自动备份后清空；保留 `config.json`）；owner 数据已清零（备份 `.qa/backups/data-20261003-133539`）；零状态空态巡检 9 路由 × 2 视口全绿；证据 `.qa/v48/`。
 
-> **最新（文档审计对齐 · 2026-10-05）**：本会话交付与文档对齐——**Windows 安装包**（`installer/KERNEL.iss` + `installer/welcome.html` + `scripts/build-installer.mjs`，内置 Inno Setup 编译器；数据位于 `<安装目录>\data` 并以 `uninsneveruninstall` 标记——覆盖安装不清空、卸载保留；两处修复：启动改 `wscript` 解析 `.vbs`、主载荷去除 `Excludes` 误删 `node_modules` 内嵌套 data 目录；build-installer 去机器路径）；**README 重写**（门面 + 界面截图 + 团队信息占位）；**仓库卫生**（删除旧分支 + `gc` 至 3.24 MiB、`.gitignore` 固化、`.gitattributes`、MIT LICENSE）；**本地服务加固**（dev / preview 默认仅本机 `server.host:false`、Origin 同源校验、`/api/files` attachment/nosniff、`/api/open` 注入防护、SSRF 加固、500 收敛、xlsx 列上限、`toDate` 兜底）；**文档审计对齐**（新建 ADR-0031、修正 `docs/00`·`05`·`07`·`README` 一致性 + 0031 引用、清理已移除产物的过期引用）。
+> **最新（个人页 + 习惯页 · 2026-10-05）**：答 owner「如果有多个习惯，它只显示第一个习惯，设计不合理」+ 其提出的重构方向 → 信息架构调整（ADR-0039）——① **习惯页 `/habits`**（一级导航 07：每习惯一卡——打卡 + 连续/最长/累计 + 可折叠 16 周热力图 + 编辑/删除/新建；设置页习惯区迁出；`h-` 深链改 `/habits?habit=`）；② **个人页 `/profile`**（顶栏头像进入：资料卡 = `config.owner`/`bio`/本地头像（可上传）+ **活跃日历** `GET /api/activity/summary` 本地日聚合零填充（含习惯打卡与全部真实写入、排除设置噪音）+ **动作时间线**（复用 `ActivityTimeline`））；③ **总览习惯块 → 入口卡**（`今日 N/M` + 常用习惯 chips，整卡跳 `/habits`，热力图自总览移除）；④ 服务端 `config` 扩可选 `bio`/`avatarPath` + 头像端点（`POST /api/profile/avatar(|/remove)`、`GET /api/profile/avatar`，审计 `profile.avatar`）；config 写入在 `index.mjs` 镜像 store 模式（**store.mjs 未改**，记录为收敛项）。`npm run build` 退出 0；隔离 QA **服务端 10/10 + 浏览器 28/28**（真实数据零触达）；截图 `.qa/v76/page-{profile,habits,overview-card}.png`。
+
+> **上一个（功能完善 · B 组 · 2026-10-05）**：答交接 §5 B 组六项——① **全局全文搜索**（`searchSnapshot` 本地快照扫描 + 命令面板「搜索 · SEARCH」组 + 资料页搜索框，点结果深链）；② **习惯热力图**（`HabitHeatmap` 近 16 周贡献式网格 + 连续 / 最长 / 累计统计）；③ **`deferUntil` 真正启用**（创建链路补全 + 默认隐藏 + 「含已推迟」开关 + 行标记，日历截止任务同步跳过）；④ **日历翻周**（周游标 + 周视图逐日 + 回到本周 + 迷你月历同步）；⑤ **回顾自动化**（周一 12:00 后 / 每月 1 日 12:00 后自动生成，周期去重 + 跨标签锁 + AI 离线静默，**绝不自动应用建议**；ADR-0038）+ 迁移建议持久化与归档回看。`npm run build` 退出 0；隔离 QA **40/40 + 25/25 + schema 4/4**；证据 `.qa/v76/`。
+
+> **上一个（体验 / 无障碍清扫 · Slice C · 2026-10-05）**：答会话交接 §5 C 组（外部审计 P5 低危项），五项修复——① 全局 `c` 快捷键在弹窗 / 命令面板打开时不再误触（误跳收件箱）；② toast / 命令面板的延迟计时器改为持有 + 卸载清理；③ 总览 AI 批量代改任一条失败即回滚已写入条目（不再半套修改）；④ `EntityEditForm` 引入初值签名，切换编辑对象 / 保存回传时重置表单；⑤ 路由级懒加载 + vendor 分包（入口包 **857.5 → 378.1 kB**，gzip 266.9 → 120.5 kB，无 chunk > 500 kB）。`npm run build` 退出 0；Playwright 冒烟 **12/12 PASS**；证据 `.qa/v76/`。
+
+> **上一个（文档审计对齐 · 2026-10-05）**：本会话交付与文档对齐——**Windows 安装包**（`installer/KERNEL.iss` + `installer/welcome.html` + `scripts/build-installer.mjs`，内置 Inno Setup 编译器；数据位于 `<安装目录>\data` 并以 `uninsneveruninstall` 标记——覆盖安装不清空、卸载保留；两处修复：启动改 `wscript` 解析 `.vbs`、主载荷去除 `Excludes` 误删 `node_modules` 内嵌套 data 目录；build-installer 去机器路径）；**README 重写**（门面 + 界面截图 + 团队信息占位）；**仓库卫生**（删除旧分支 + `gc` 至 3.24 MiB、`.gitignore` 固化、`.gitattributes`、MIT LICENSE）；**本地服务加固**（dev / preview 默认仅本机 `server.host:false`、Origin 同源校验、`/api/files` attachment/nosniff、`/api/open` 注入防护、SSRF 加固、500 收敛、xlsx 列上限、`toDate` 兜底）；**文档审计对齐**（新建 ADR-0031、修正 `docs/00`·`05`·`07`·`README` 一致性 + 0031 引用、清理已移除产物的过期引用）。
 
 > **上一个（Windows 安装包 · 2026-10-05）**：Windows 安装包（Setup.exe）——新增 `installer/KERNEL.iss`（安装向导 / 可选安装目录 / 开始菜单与可选桌面快捷方式 / 卸载程序；每用户安装、无需管理员）+ `installer/welcome.html`（启动页）；`scripts/build-installer.mjs` 按白名单组装干净载荷并调用仓库内置 Inno Setup 编译器（`node_modules\innosetup-compiler\bin\ISCC.exe`，无需系统安装）+ `package.json` script `installer`；数据位于 `<安装目录>\data`，空白骨架标记 `uninsneveruninstall`，**卸载保留用户数据**；`启动.cmd` 未检测到 Node 的提示文案中性化。验证：静默安装退出码 0、`curl` 5173 与 `/api/snapshot` 均 200、`POST /api/tasks` 201 且写入安装目录 `data\`、静默卸载退出码 0 且数据保留。
 
@@ -115,6 +121,48 @@ KERNEL 的任务台账与迭代记录。记录当前迭代目标、未来待办�
 - [ ] `design-drafts/`（三份设计稿 + 选型页）保留作方向参考；`.qa/` 证据归档保留（体积小）。
 
 ---
+
+## 个人页 + 习惯页：热力图迁移 + 习惯独立成页 + 总览降级入口卡（已完成 · 2026-10-05）
+
+答 owner「如果有多个习惯，它只显示第一个习惯，设计不合理，你觉得能怎么优化」——owner 给出更完整方向（个人页：头像/姓名 + GitHub 式贡献日历 + 时间线；习惯独立成页；总览习惯改为入口卡），采纳为信息架构调整（ADR-0039），四个并行工作流交付：
+
+1. **习惯页 `/habits`**（新 `src/views/Habits.tsx`，一级导航 07）：全部习惯卡片——今日打卡（紧凑 `k-streak__toggle`，toast + 撤销 + busy 守卫，语义与原总览一致）、`getHabitStats` 连续/最长/累计、可折叠 `HabitHeatmap`、编辑/删除（入回收站 + 撤销）/「新建习惯」（`EntityEditForm` + Modal，字段规格自 `DimensionManagers` 迁出）；`?habit=` 深链打开编辑；零习惯空态 + 创建 CTA。**设置页移除习惯区**（`DimensionManagers` 只留区域/目标，`Settings` 去掉 habits 分区与深链）。
+2. **个人页 `/profile`**（新 `src/views/Profile.tsx` + `src/components/ActivityCalendar.tsx`；顶栏头像进入）：资料卡（头像 = `config.avatarPath` 图片或姓名首字母 monogram；显示名 / 简介内联编辑；头像上传 ≤2MB、png/jpeg/webp/gif）+ **活跃日历**（`GET /api/activity/summary?days=140`，复用 `.k-heat*` 网格 + `.is-l1..is-l4` 强度 + 月份/星期轴 + 图例 + 汇总）+ **动作时间线**（直接复用 `ActivityTimeline`）。`TopBar` 增右端头像入口（`Link` → `/profile`）；`lib/data.ts` 增 `profileAvatarUrl()`；`types.ts` `AppConfig` 扩 `bio?`/`avatarPath?`；`mutations.ts` 增 `updateProfile`/`uploadProfileAvatar`/`removeProfileAvatar`。
+3. **总览习惯块 → 入口卡**（`Overview.tsx`）：`习惯 · 今日 N/M` + `getFrequentHabits`（近 30 天打卡降序、并列看连续）chips（非交互）——**整卡 button 跳 `/habits`**；`getCodingStreakDetail`/热力图/打卡切换自总览移除；`derive.ts` 增 `getFrequentHabits` + `isHabitHitToday`；`relations.ts` `h-` 深链改 `/habits?habit=`。
+4. **服务端 + 导航**（`server/{schemas,index}.mjs`、`src/lib/nav.ts`、`src/App.tsx`、`CommandPalette`）：`appConfigSchema`（bio ≤160 / avatarPath，catchall）；`POST /api/config` 白名单扩 `owner`/`bio`（至少一键，空 400）；头像三端点（RAW 流式 + 2MB + 413/400，替换清旧，`GET` 流式 + nosniff + no-store + 404（路径限于 `data/files` 且前缀 `profile-avatar-`））；`GET /api/activity/summary`（默认 140 / clamp 7..400 / 零填充 / 排除 `config.update` 与 `ai.key.update` / 容错坏行与缺文件）；config 写入经 `index.mjs` 内串行链 + `write-file-atomic` + 审计（**store.mjs 未改**——原 `updateConfig` 仅支持 `aiAutomation`，ADR-0039 §2.4 记录为后续收敛项）。导航：`/habits` 一级项（索引 01–11 顺延）；`nav.ts` 增 `EXTRA_PAGES`（`/profile` 标题解析，不进轨道/面板导航组）+ 命令面板「个人页」动作。
+
+- [x] 修改：`server/{schemas,index}.mjs`、`src/{types.ts,App.tsx}`、`src/lib/{nav,relations,derive,data,mutations}.ts`、`src/components/{shell/TopBar,DimensionManagers,ActivityCalendar（新）,CommandPalette}.tsx`、`src/views/{Habits（新）,Profile（新）,Overview,Settings}.tsx`、`src/styles/{components,views}.css`、`public/guide.html`、`docs/{00,02,04,05,README}`、`docs/decisions/0039-profile-and-habits-pages.md`。
+- [x] 验证：`npx tsc --noEmit` 0 error；`npm run build` 退出 0（入口 389.9 kB）；隔离 QA——服务端副本 `.qa/v76/server-qa/`（端口 4197、独立 data、脚本 `server-profile-check.mjs`）**10/10 PASS**；浏览器 `qa-pages.py`（拦截 `/api/**` 注入夹具，真实数据零触达、零写真实库）**28/28 PASS**；视觉复核 `.qa/v76/page-profile.png` / `page-habits.png` / `page-overview-card.png`。
+- [x] 记录：ADR-0039；`docs/{00,02,04,05,README}`；`CHANGELOG.md`、`TASK_BOOK.md`、`AGENTS.md`、`public/guide.html`。
+
+## 功能完善 · B 组（已完成 · 2026-10-05）
+
+答会话交接 `.qa/SESSION-HANDOFF.md` §5 B 组（Roadmap v0.6 + 缺口）。六项：
+
+1. **全局全文搜索**：`src/lib/data.ts` 新增 `searchSnapshot(query, limit = 8)`（`SearchResult = {kind, id, title, snippet, deepLink}`）——本地快照扫描任务 / 笔记 / 资料 / 日程 / 项目，大小写不敏感、标题命中（rank 0）优先于正文命中（rank 1），片段 ≤80 字（复用 `condenseContent`），深链复用 `relations.deepLinkOfId`；命令面板新增受控查询 + 「搜索 · SEARCH」分组（item value 含原始查询串防 cmdk 过滤，`run()` 契约不变）；资料页 `.k-lib__filters` 首位新增搜索框（查询持久化 `kernel.ui.library.v1` 的 `q`，与既有筛选叠加，空态文案适配）。
+2. **习惯热力图 + 连续打卡统计**：新组件 `src/components/HabitHeatmap.tsx`（16 周 × 7 天、周一对齐、实心 / 空心 / 未来占位、月份标签、逐格 tooltip、`role="img"` + aria-hidden 内层、不可聚焦、零动画）；`src/lib/derive.ts` 新增 `getHabitStats(habitId, now?)`（`current` 复用 `getHabitStreak` 同口径、`longest` 日期步进连续段、`total` 命中计数）与 `getHabitHeatWeeks`；`Overview.tsx` 用热力图替换 14 天点阵并加统计行；`components.css` 新增 `.k-heat*` token-only（cell / gap / radius 均由 `--space-*` 派生）。
+3. **`deferUntil` 真正启用**：创建链路——`server/schemas.mjs` `taskCreateFieldsSchema` + `server/index.mjs` `CREATE_FIELD_KEYS` / `createTask` 补 `deferUntil`，`TaskCreateInput` + `TaskDraftModal`「推迟至」输入补全；行为——`Tasks.tsx` `isDeferred`（有效未来 + 未完成 / 未丢弃）默认隐藏，「含已推迟」开关（`kernel.ui.tasks.v1` `showDeferred`）打开后列出并显示「推迟至 …」标记（推迟行越过状态 / 时间筛选，开关是唯一闸门），计数始终排除，页脚「N 项已推迟」提示；`Calendar.tsx` 截止任务同步跳过未来推迟项。全部运行时派生，绝不落盘。
+4. **日历翻周**：`Calendar.tsx` `CalendarUiState` 增 `weekCursorMs`（持久化；null = 实况）；`shiftWeek(±7)`（保持星期几 + 同步月历）+ `resetToThisWeek`；游标激活时主区为周一至周日逐日视图（范围头 + 可点日头滚动 + 事件 / 截止任务 / 课程，`mergeDayRuns` 复用、`含已结束` 沿用、空周 EmptyState），「今天 / 回到现在」在周视图禁用；迷你月历点日跳周、手翻月退出游标；默认实况视图零回归。
+5. **回顾自动化**（ADR-0038）：新 `src/lib/review.ts` `useReviewScheduler`（`AppLayout` 挂载）——周一 12:00 后（当前 ISO 周）/ 每月 1 日 12:00 后（当前自然月）各触发一次，门闸：`periodKey` 已归档（任意来源）/ 数据未水合 / 会话已尝试 / 跨标签锁（`kernel.ui.review.lock.v1` TTL 120s）/ AI 离线（探活前置守卫）均跳过；取得锁后**先重新水合再复查**（防他标签窗口）；成功 → 水合 + toast「已自动生成本周 / 本月回顾 · 查看」，失败静默；**绝不自动应用建议**。
+6. **迁移建议持久化 + 归档回看**：`reviewSchema` 增可选 `staleAdvice`（`staleAdviceSchema` 前移避免 TDZ）；draft 归档随报告写入 + `createReview` 经 `sanitizeStaleAdvice` 透传（非法静默丢弃）；`src/types.ts` `ReviewStaleAdvice` + `Review.staleAdvice`，`mutations.ts` `StaleAdvice` 别名 + `saveReview` 透传；`Review.tsx` 归档阅读视图「迁移建议」块（复用既有处置动作），草稿面板不变。
+
+- [x] 修改：`server/{schemas,index}.mjs`、`src/{types.ts,lib/{data,derive,mutations,aiForm,review}.ts}`、`src/components/{CommandPalette,TaskDraftModal,HabitHeatmap}.tsx`、`src/components/shell/AppLayout.tsx`、`src/views/{Tasks,Calendar,Library,Overview,Review}.tsx`、`src/styles/{components,views}.css`、`public/guide.html`、`docs/{02,04,05,README}`、`docs/decisions/0038-review-automation.md`。
+- [x] 验证：`npx tsc --noEmit` 0 error；`npm run build` 退出 0（入口 386.9 kB，无 chunk 告警）；隔离 QA（Playwright + `/api/**` 拦截，真实数据零触达）——`qa-b.py` **40/40 PASS**（10 路由 / 搜索 / 资料搜索 / 推迟 / 翻周 / 热力图，0 写请求）、`qa-ws5.py` 假时钟 **25/25 PASS**（周 / 月候选 + 同周期一次 + 既有归档零动作 + 09:10·11:29 静默·过 12:00 触发 + 离线不风暴 + 迁移建议展示）、`server-schema-check.mjs` **4/4 PASS**。
+- [x] 记录：ADR-0038；`docs/{02,04,05,README}`；`CHANGELOG.md`、`TASK_BOOK.md`、`AGENTS.md`、`public/guide.html`。
+
+## 体验 / 无障碍清扫 · Slice C（已完成 · 2026-10-05）
+
+答会话交接 `.qa/SESSION-HANDOFF.md` §5 C 组（外部审计 P5 低危项）。五项修复：
+
+1. **全局 `c` 快捷键误触**（`src/components/shell/AppLayout.tsx`）：全局捕捉此前仅以「焦点是否在输入元素」判定，忽略弹窗。当焦点落在弹窗内的按钮（如「应用 / 关闭」）时按 `c`，会误跳收件箱并打断操作。修复：命中 `c` 且存在 `[role="dialog"][aria-modal="true"]`（详情 `Modal` / 命令面板）时直接忽略；另补 `event.repeat` 过滤；延迟派发 `kernel:focus-capture` 的计时器改为 `ref` 持有 + 卸载清理。`Ctrl/Cmd+K` 行为不变。
+2. **计时器清理**（`src/context/ToastContext.tsx`、`src/components/CommandPalette.tsx`）：toast 自动消失计时器按 id 存入 `Map`，手动关闭（`dismiss`）与 Provider 卸载时 `clearTimeout`；命令面板 `run()` 的 20ms 延迟动作计时器同样持有并在卸载时清理。（`inboxAi` / `organize` / `hooks` / `StatusBar` / `Trash` / 各弹窗焦点计时器审计后确认均已正确清理。）
+3. **总览 AI 批量代改原子性**（`src/components/OverviewChat.tsx`）：`applyEdits` 逐条 `updateEntity`；此前第 N 条失败会留下前 N-1 条已写入的「半套修改」且仍可重试。修复：维护 `applied` 列表，异常时经新增模块级 `restoreEdits` **逆序写回 `before`** 回滚；回滚本身失败则如实 toast 剩余失败数。撤销路径复用 `restoreEdits` 并报告失败数。
+4. **编辑表单初值重置**（`src/components/EntityEditForm.tsx`）：`useState` 初始化只在挂载生效，复用同一实例切换编辑对象 / 保存后回传新记录时表单显示陈旧值。修复：以 `useMemo` 计算「字段键 → `JSON.stringify` 初值」签名，变化时重置表单值；签名与无关重渲染、`fields`/`initial` 对象身份无关，故不会误清用户输入。顺带抽出 `buildValues()` 统一挂载初值与重置口径。
+5. **主包分包**（`src/App.tsx`、`vite.config.ts`）：10 个视图全部改为路由级 `React.lazy`（`AppLayout` 内 `Suspense` 兜底，原仅 `Library` 懒加载）；`build.rollupOptions.output.manualChunks` 拆出 `react-vendor` / `motion-vendor` / `markdown-vendor`。入口包 **857.5 kB → 378.1 kB**（gzip **266.9 → 120.5 kB**）；`markdown-vendor`（119.4 kB）仅资料页按需载入；构建不再出现「chunk > 500 kB」告警。
+
+- [x] 修改：`src/App.tsx`、`src/components/shell/AppLayout.tsx`、`src/components/CommandPalette.tsx`、`src/components/OverviewChat.tsx`、`src/components/EntityEditForm.tsx`、`src/context/ToastContext.tsx`、`vite.config.ts`。
+- [x] 验证：`npm run build` 退出 0（`tsc -b` 通过）；Playwright 冒烟 `.qa/v76/smoke-cleanup.py`（对 `vite preview` 生产构建）**12/12 PASS**——10 条路由懒加载均渲染且 `.k-route` 有子节点、控制台 0 error；`c` 无弹窗跳 `/inbox`、命令面板（`aria-modal`）打开时停留 `/tasks`。
+- [x] 记录：`CHANGELOG.md`、`TASK_BOOK.md`、`AGENTS.md`。（无数据模型 / 目录结构 / 端点变化，未开新 ADR。）
 
 ## 总览 AI 查阅/代改 + 解析默认 + 长图分片 + 体验修复批 · QA v73（已完成 · 2026-10-04）
 

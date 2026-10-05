@@ -8,10 +8,12 @@ import {
   Library,
   ListChecks,
   RefreshCw,
+  Repeat,
   Settings,
   SlidersHorizontal,
   Table2,
   Trash2,
+  UserRound,
 } from 'lucide-react'
 
 export interface NavItem {
@@ -34,13 +36,25 @@ export const NAV_ITEMS: NavItem[] = [
   { index: '04', path: '/calendar', en: 'CALENDAR', cn: '日程', icon: CalendarDays },
   { index: '05', path: '/timetable', en: 'TIMETABLE', cn: '课表', icon: Table2 },
   { index: '06', path: '/projects', en: 'PROJECTS', cn: '项目', icon: FolderKanban },
-  { index: '07', path: '/library', en: 'LIBRARY', cn: '资料', icon: Library, secondary: true },
-  { index: '08', path: '/review', en: 'REVIEW', cn: '回顾', icon: RefreshCw, secondary: true },
-  { index: '09', path: '/settings', en: 'SETTINGS', cn: '设置', icon: Settings, secondary: true },
-  { index: '10', path: '/trash', en: 'TRASH', cn: '回收站', icon: Trash2, secondary: true },
+  { index: '07', path: '/habits', en: 'HABITS', cn: '习惯', icon: Repeat },
+  { index: '08', path: '/library', en: 'LIBRARY', cn: '资料', icon: Library, secondary: true },
+  { index: '09', path: '/review', en: 'REVIEW', cn: '回顾', icon: RefreshCw, secondary: true },
+  { index: '10', path: '/settings', en: 'SETTINGS', cn: '设置', icon: Settings, secondary: true },
+  { index: '11', path: '/trash', en: 'TRASH', cn: '回收站', icon: Trash2, secondary: true },
 ]
 
-/** 按路径匹配导航项（精确匹配；未知路径返回 undefined） */
+/**
+ * 次级页面（不进侧栏轨道 / 命令面板导航组，但需顶栏标题与文档标题）：
+ * 个人页从顶栏头像进入（类 GitHub），不占一级导航。
+ */
+const EXTRA_PAGES: NavItem[] = [
+  { index: '—', path: '/profile', en: 'PROFILE', cn: '个人', icon: UserRound },
+]
+
+/** 按路径匹配导航项（主导航优先；含不进轨道但需标题的次级页面） */
 export function navByPath(pathname: string): NavItem | undefined {
-  return NAV_ITEMS.find((item) => item.path === pathname)
+  return (
+    NAV_ITEMS.find((item) => item.path === pathname) ??
+    EXTRA_PAGES.find((item) => item.path === pathname)
+  )
 }

@@ -305,6 +305,13 @@ export const projectStatus = z.enum(['active', 'onHold', 'someday', 'done', 'arc
 /** 回顾类型（周 / 月） */
 export const reviewType = z.enum(['weekly', 'monthly'])
 
+/** 停滞项目处置建议（AI 周回顾草稿产出；action 决定处置方式；reviewSchema / reviewDraftSchema 共用） */
+export const staleAdviceSchema = z.object({
+  projectId: z.string().min(1),
+  action: z.enum(['archive', 'migrate', 'reactivate']),
+  reason: z.string().max(200).default(''),
+})
+
 /** 回顾指标（对齐 docs/04 §4.10；`migrated` 可缺省——生成流程暂不产出，编辑追踪落地后补） */
 export const reviewMetricsSchema = z.object({
   captured: z.number().int().min(0),
@@ -325,6 +332,8 @@ export const reviewSchema = z
     // 报告 v2（Slice L/N6）：7 段结构正文（这周怎么样 / 这个月怎么样 → … → 需要留意的），≤800 汉字；上限保持 2000
     summary: z.string().min(1).max(2000),
     staleProjectIds: z.array(z.string()).optional(),
+    // 迁移建议（v0.5 · 回顾自动化）：AI 生成时随报告一并归档，供历史报告回看处置建议；旧记录缺省
+    staleAdvice: z.array(staleAdviceSchema).optional(),
     // 自动归档（Slice L）：source='ai' 表示由 AI 生成后系统自动归档；旧记录缺省
     source: z.enum(['ai', 'manual']).optional(),
     // 用户编辑归档报告时 bump（review.update）；旧记录缺省
@@ -602,13 +611,6 @@ export const noteDistillRequestSchema = z.object({
   targetLevel: z.number().int().min(1).max(3).optional(),
 })
 
-/** 停滞项目处置建议（AI 周回顾草稿产出；action 决定处置方式） */
-export const staleAdviceSchema = z.object({
-  projectId: z.string().min(1),
-  action: z.enum(['archive', 'migrate', 'reactivate']),
-  reason: z.string().max(200).default(''),
-})
-
 /** AI 周回顾草稿（只作前端预览；用户确认后经 /api/reviews 落盘） */
 export const reviewDraftSchema = z.object({
   summary: z.string().min(1).max(2000),
@@ -634,6 +636,8 @@ export const taskCreateFieldsSchema = z.object({
   importance: z.number().int().min(0).max(3).optional(),
   estimateMin: z.number().int().min(1).max(600).optional(),
   dueAt: iso.optional(),
+  // 软推迟（v0.5）：未来时刻前不出现在活跃工作列表；缺省无推迟（与 dueAt 同 ISO 校验口径）
+  deferUntil: iso.optional(),
   tags: z.array(z.string().min(1)).max(8).optional(),
   projectId: z.string().min(1).optional(),
   areaId: z.string().min(1).optional(),
@@ -666,9 +670,33 @@ export const clarifyDetailsSchema = z.object({
 
 export const aiAutomationSchema = z.enum(['confirm', 'auto'])
 
-/** 配置更新入参（当前仅 aiAutomation；白名单外字段被 zod 剥离，不落盘） */
+/**
+ * 应用配置存储形状（data/meta/config.json）：
+ * - 复用 `owner` 作**显示名**；`bio`（≤160 字）与 `avatarPath`（头像文件绝对路径）为新增可选字段；
+ * - catchall + 全可选：旧配置（缺 bio / avatarPath / aiAutomation）仍可解析，未知键保留（前向兼容）。
+ */
+export const appConfigSchema = z
+  .object({
+    name: z.string().optional(),
+    owner: z.string().max(40).optional(),
+    version: z.string().optional(),
+    locale: z.string().optional(),
+    weekStart: z.string().optional(),
+    createdAt: z.string().optional(),
+    aiAutomation: aiAutomationSchema.optional(),
+    bio: z.string().max(160).optional(),
+    avatarPath: z.string().optional(),
+  })
+  .catchall(z.unknown())
+
+/**
+ * 配置更新入参（个人资料切片）：白名单扩展为 aiAutomation / owner / bio（至少一项）；
+ * 白名单外字段被 zod 剥离，不落盘。缺省键不参与更新（由调用方 index.mjs 判断）。
+ */
 export const configUpdateSchema = z.object({
-  aiAutomation: aiAutomationSchema,
+  aiAutomation: aiAutomationSchema.optional(),
+  owner: z.string().max(40).optional(),
+  bio: z.string().max(160).optional(),
 })
 
 /* ---------------------------------------------------------------------------

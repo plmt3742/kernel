@@ -1192,6 +1192,52 @@ button.k-pill.is-danger:hover {
   text-align: right;
 }
 
+/* —— 周视图（本切片）：周范围头 + 可点日头 + 空日 —— */
+.k-cal-c__weekhd {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+.k-cal-c__weekhd h2 {
+  font-size: var(--text-h2);
+  font-weight: 600;
+  letter-spacing: var(--text-h2-tracking);
+}
+/* 日头按钮：置于 h3 内保留标题语义，重置为无边框可点文本 */
+.k-cal-c__dayhd {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+.k-cal-c__dayhd:hover,
+.k-cal-c__dayhd[aria-pressed='true'] {
+  color: var(--accent-text);
+}
+.k-cal-c__daytag {
+  color: var(--muted);
+  font-size: var(--text-caption);
+  font-weight: 500;
+}
+.k-cal-c__dayempty {
+  padding: var(--space-2) 0;
+  color: var(--muted);
+  font-size: var(--text-body-sm);
+}
+/* 顶部周导航组：两枚 icon 按钮同行 */
+.k-cal__weeknav {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
 /* —— 迷你月历 —— */
 .k-minical {
   display: grid;
@@ -1501,6 +1547,15 @@ button.k-pill.is-danger:hover {
 .k-lib__flabel {
   flex: 0 0 auto;
   white-space: nowrap;
+}
+/* Slice FS：资料页客户端搜索框 —— 过滤条首个元素，安静内联输入（与标签管理同款 .k-input） */
+.k-lib__search {
+  flex: 1 1 220px;
+  min-width: 180px;
+}
+.k-lib__search .k-input {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 /* 分段槽：胶囊嵌入浅底轨道；未选项透明、选中项 ink 填充（压过全局悬停抬升）。
    Slice E2.6：允许换行，避免窄屏在组内横向溢出。 */
@@ -4318,4 +4373,197 @@ button.k-act__link:hover {
     grid-row: 1 / span 2;
     align-self: center;
   }
+}
+
+/* ---------------------------------------------------------------------------
+ * 个人页 PROFILE：资料卡（头像 / 名称 / 简介 + 内联编辑）+ 活跃贡献日历脚注。
+ * 说明：贡献网格结构复用 `.k-heat*`（与习惯热力图同款），此处仅新增
+ *       `.k-heat__cell.is-l1..is-l4` 强度修饰与 `.k-contrib*` 脚注，
+ *       **不改动** components.css 中的 `.k-heat` 基础规则（habits workstream 所有）。
+ * 全部 token-only；暗 / 亮双主题可用；无动画（reduced-motion 天然安全）。
+ * ------------------------------------------------------------------------- */
+
+.k-profile__card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  flex-wrap: wrap;
+  padding: var(--pad-card);
+  background: var(--surface);
+  border: var(--hairline) solid var(--outline);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card), var(--shadow-highlight);
+}
+.k-profile__avatar {
+  flex: 0 0 auto;
+  width: 88px;
+  height: 88px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 50%;
+  background: var(--accent-veil);
+  color: var(--accent-text);
+  box-shadow: var(--shadow-soft), var(--shadow-highlight);
+}
+.k-profile__avatar-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.k-profile__avatar-mono {
+  font-size: var(--text-h2);
+  line-height: 1;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+.k-profile__body {
+  flex: 1 1 240px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.k-profile__name {
+  font-size: var(--text-h2);
+  line-height: var(--text-h2-leading);
+  letter-spacing: var(--text-h2-tracking);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.k-profile__bio {
+  margin: 0;
+  max-width: var(--measure);
+  color: var(--ink-2);
+  font-size: var(--text-body);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.k-profile__bio.is-empty {
+  color: var(--muted);
+}
+.k-profile__actions {
+  margin-left: auto;
+  align-self: flex-start;
+}
+.k-profile__edit {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  padding: var(--pad-card);
+  background: var(--surface);
+  border: var(--hairline) solid var(--outline);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card), var(--shadow-highlight);
+}
+.k-profile__avatar-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+.k-profile__file {
+  display: none;
+}
+.k-profile__error {
+  margin: 0;
+  max-width: var(--measure);
+  color: var(--danger-text);
+  font-size: var(--text-caption);
+  line-height: var(--text-caption-leading);
+  overflow-wrap: anywhere;
+}
+
+/* 区块头（时间线）：与 .k-panel__head 同语言（Chinese 主 + u-label 辅） */
+.k-profile__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--rhythm-element);
+}
+.k-profile__sechead {
+  display: flex;
+  align-items: baseline;
+  gap: var(--rhythm-inner);
+}
+.k-profile__sechead-cn {
+  font-size: var(--text-h4);
+  line-height: var(--text-h4-leading);
+  letter-spacing: var(--text-h4-tracking);
+  font-weight: 600;
+}
+
+/* 顶栏头像入口：与 .k-iconbtn 同尺寸；图片铺满圆，字母标记安静退后 */
+.k-avatar {
+  overflow: hidden;
+  padding: 0;
+}
+.k-avatar__img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.k-avatar__mono {
+  font-size: var(--text-body-sm);
+  line-height: 1;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+/* 活跃贡献日历：网格复用 .k-heat*；以下仅为强度修饰与脚注 */
+.k-contrib {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+.k-contrib__note {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-caption);
+  line-height: var(--text-caption-leading);
+}
+.k-contrib__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+.k-contrib__summary {
+  color: var(--muted);
+}
+.k-contrib__legend {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--muted);
+}
+.k-contrib__swatch {
+  width: 11px;
+  height: 11px;
+  border-radius: 3px;
+  background: var(--fill-subtle);
+}
+/* 强度 5 级：0 = 空（基础 fill-subtle）；1–4 = 递增强调色透明度 */
+.k-heat__cell.is-l1,
+.k-contrib__swatch.is-l1 {
+  background: var(--accent);
+  opacity: 0.26;
+}
+.k-heat__cell.is-l2,
+.k-contrib__swatch.is-l2 {
+  background: var(--accent);
+  opacity: 0.46;
+}
+.k-heat__cell.is-l3,
+.k-contrib__swatch.is-l3 {
+  background: var(--accent);
+  opacity: 0.68;
+}
+.k-heat__cell.is-l4,
+.k-contrib__swatch.is-l4 {
+  background: var(--accent);
+  opacity: 0.92;
 }

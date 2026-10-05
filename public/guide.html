@@ -826,7 +826,7 @@ body.demo-locked { overflow: hidden; }
         <li><a href="#sec-30"><span class="n">01</span><span>30 秒理解</span></a></li>
         <li><a href="#sec-start"><span class="n">02</span><span>五分钟上手</span></a></li>
         <li><a href="#sec-life"><span class="n">03</span><span>一条内容的一生</span></a></li>
-        <li><a href="#sec-pages"><span class="n">04</span><span>九个页面速览</span></a></li>
+        <li><a href="#sec-pages"><span class="n">04</span><span>十一个页面速览</span></a></li>
         <li><a href="#sec-ai"><span class="n">05</span><span>AI 怎么帮你</span></a></li>
         <li><a href="#sec-links"><span class="n">06</span><span>系统是连起来的</span></a></li>
         <li><a href="#sec-mind"><span class="n">07</span><span>用好它的心法</span></a></li>
@@ -855,7 +855,7 @@ body.demo-locked { overflow: hidden; }
           <span class="loop__sep">→</span>
           <span class="loop__step"><span class="n">05</span>回顾</span>
         </div>
-        <p>侧栏的九个页面，就是这条循环的展开——收件箱负责捕捉，任务与项目负责澄清和组织，总览与日程负责执行，回顾负责收口。</p>
+        <p>侧栏的十一个页面，就是这条循环的展开——收件箱负责捕捉，任务与项目负责澄清和组织，总览、日程与习惯负责执行，回顾负责收口；右上角头像里是「个人」页，安放你的资料、活跃日历与动作时间线。</p>
         <p>所有数据都在本地的 <code class="inl">data/</code> 目录里，一条记录一个 JSON 文件，可读、可 diff、可备份。网页只是驾驶舱，不是数据的所有者；AI 也只是协作者，永远不越过你直接改数据。</p>
       </section>
 
@@ -952,14 +952,14 @@ body.demo-locked { overflow: hidden; }
               </tr>
               <tr>
                 <td>执行</td>
-                <td>总览 · 日程</td>
-                <td>工作台看下一步、议程流按时段推进、勾选完成</td>
-                <td>完成状态落盘，进度推进</td>
+                <td>总览 · 日程 · 习惯</td>
+                <td>工作台看下一步、议程流按时段推进、勾选完成；需要每天坚持的事去「习惯」页打卡</td>
+                <td>完成状态与打卡记录落盘，进度推进</td>
               </tr>
               <tr>
                 <td>回顾</td>
                 <td>回顾</td>
-                <td>周 / 月卡点「AI 解析」→ 弹窗查阅 → 编辑并保存</td>
+                <td>周 / 月卡点「AI 解析」→ 弹窗查阅 → 编辑并保存（每周一 / 每月 1 日 12:00 后首次打开也会自动生成一次）</td>
                 <td>本周期指标与决策归档，拖后腿的项目被重新决策</td>
               </tr>
             </tbody>
@@ -967,12 +967,12 @@ body.demo-locked { overflow: hidden; }
         </div>
       </section>
 
-      <!-- ============ 04 九个页面速览 ============ -->
+      <!-- ============ 04 十一个页面速览 ============ -->
       <section id="sec-pages" aria-labelledby="h-pages">
         <div class="sec__head">
           <span class="sec__kicker">04 — 地图</span>
-          <h2 id="h-pages">九个页面速览</h2>
-          <p>每个页面各司其职，对应循环里的一段。先记住一句话，细节用久了自然熟。</p>
+          <h2 id="h-pages">十一个页面速览</h2>
+          <p>每个页面各司其职，对应循环里的一段。先记住一句话，细节用久了自然熟；「个人」页从右上角头像进入，不占侧栏。</p>
         </div>
 
         <div class="cards">
@@ -983,7 +983,8 @@ body.demo-locked { overflow: hidden; }
               <li>工作台：已结束日程 →「现在 · HH:mm」分界 → <strong>今日剩余日程</strong> → 下一步行动 TOP5（今天还没结束的安排都排在分界线下方）</li>
               <li>状态条：下一项 / 收件箱 / 逾期 三段等宽，点哪段就去哪页</li>
               <li><strong>AI 对话盒</strong>：直接问「我今天有什么特别紧急需要做的事」，它读库作答；回复按 <strong>Markdown</strong> 排版，需要外部信息时<strong>自动联网查证</strong>、其余<strong>自由回答</strong>；觉得回答好，说「把这条整理进笔记」即可生成<strong>独立笔记</strong>（或点回答下的「存为笔记」）；还能替你<strong>查阅</strong>库里的记录，或针对某条记录给出一张<strong>「修改卡」</strong>（逐字段「旧值 → 新值」，点「应用」才写入、写入可撤销）</li>
-              <li>监视柱：收件箱水位、WIP 上限 3、习惯打卡（条目标题为首个习惯，可点「今日打卡」记录当天，点阵与连击即时更新、可撤销）、完成趋势、到期负载</li>
+              <li>监视柱：收件箱水位、WIP 上限 3、完成趋势、到期负载</li>
+              <li class="signal">「习惯」改为一整块<strong>入口卡</strong>：显示「今日 N/M」与近 30 天最常打卡的几个习惯的今日状态；点整张卡进入「习惯」页。热力图不再出现在总览</li>
               <li class="signal">工作台的任务 / 项目 / 日程条点开都是就地弹详情，不跳页、不丢位置（日程也不再跳去日历页）</li>
             </ul>
           </article>
@@ -1019,6 +1020,7 @@ body.demo-locked { overflow: hidden; }
               <li>计数：未完成 / 逾期 / 今日</li>
               <li>筛选：状态 / 时间 / 更多（上下文 · 能量 · 区域 · 身份）；分组：平铺 / 按项目 / 按上下文</li>
               <li>快速新建：只填标题回车 → 弹窗预览 AI 补全，全部字段可编辑，点「创建任务」才写入</li>
+              <li><strong>推迟至</strong>：快速新建弹窗与编辑表单都能给任务设一个「推迟至」时间；推到未来的任务默认从列表隐藏（头部提示「N 项已推迟」），打开「含已推迟」开关才显示，行上标「推迟至 9月30日 09:00」</li>
               <li class="signal">详情弹窗与总览就地弹窗共用同一份详情；可标记完成 / 查看项目 / 编辑 / 删除（撤销进回收站）</li>
               <li>子任务：详情弹窗「子任务」区块列出直接子任务，点击就地打开；输入标题回车即建（继承父任务的项目）</li>
             </ul>
@@ -1030,13 +1032,14 @@ body.demo-locked { overflow: hidden; }
             <p class="card__desc">时间维度上的安排与场次。</p>
             <ul>
               <li>今天 / 明天 / 本周 / 下周 / 更远 议程流</li>
+              <li><strong>翻周</strong>：「上一周 / 下一周 / 回到本周」导航；查看其它周时主区切换为周一至周日逐日视图（事件 + 截止任务 + 当天课程），迷你月历跟随同步；「回到本周」回到今日锚定的实况视图</li>
               <li>「下一项」倒计时卡</li>
               <li>「新建日程」先确认后写入（标题 / 开始 / 结束可选 / 全天 / 地点 / 状态 / 项目 / 区域 / 标签）</li>
               <li>点日程看详情：编辑 / 删除（可撤销）· 状态快捷切换（已确认 / 待定 / 已取消）</li>
               <li>迷你月历可点：选中某天并滚动议程到该日；标注今日与有安排的日期</li>
               <li>「今天」「回到现在」两个定位按钮</li>
               <li><strong>「含已结束」开关</strong>：默认隐藏已结束的日程；打开后出现「已结束」分组，可点开查看详情，开关选择会被记住</li>
-              <li class="signal">聚合视图：<strong>今日课程</strong>（按节次）+ <strong>任务截止</strong> + 事件 一起排进议程流；点课程 / 任务行直接打开对应详情；月历圆点与月统计也涵盖三类</li>
+              <li class="signal">聚合视图：<strong>今日课程</strong>（按节次）+ <strong>任务截止</strong> + 事件 一起排进议程流；点课程 / 任务行直接打开对应详情；月历圆点与月统计也涵盖三类；截止任务同样跳过推迟到未来的项</li>
             </ul>
           </article>
 
@@ -1069,10 +1072,23 @@ body.demo-locked { overflow: hidden; }
           </article>
 
           <article class="card">
+            <div class="card__top"><h3>习惯</h3><span class="card__tag">HABITS</span></div>
+            <p class="card__desc">每天一件小事，攒成节奏。</p>
+            <ul>
+              <li>每个习惯一张卡，点<strong>「今日打卡」</strong>记录当天（已打卡显示「✓ 今日已打卡」，可撤销）</li>
+              <li>卡上给出<strong>连续 / 最长 / 累计</strong>统计，以及「每日 · 是否 / 分钟 · 目标值」的规格</li>
+              <li>点「展开热力图 · 近 16 周」查看贡献式打卡网格；与个人页的活跃日历共用同一套图示</li>
+              <li class="signal">「+ 新建习惯」「编辑」「删除」都在这一页（习惯的增删改已从设置页迁来）；删除进回收站、可撤销</li>
+              <li>深链 <code class="inl">/habits?habit=…</code> 可直达某个习惯的编辑弹窗</li>
+            </ul>
+          </article>
+
+          <article class="card">
             <div class="card__top"><h3>资料</h3><span class="card__tag">LIBRARY</span></div>
             <p class="card__desc">知识的内存：笔记与资料。</p>
             <ul>
               <li>全部 / 笔记 / 资料；类型 / 状态 / 标签筛选（标签条按使用多少排序，全部列出、不再截断）</li>
+              <li><strong>搜索框</strong>：按标题 / 正文 / 链接 / 标签即时过滤笔记与资料，与类型 / 状态 / 标签筛选叠加使用</li>
               <li>资料状态五档（未读 / 在读 / 读完 / 参考 / 归档）弹窗内快捷设置，每档附判断标准</li>
               <li>沉浸阅读 / 撰写：点开笔记是加宽弹窗，正文约 68 字宽、行高 1.8；「编辑」切换为标题 + 正文优先的撰写面</li>
               <li>笔记区头部「新建笔记」→ 标题 + Markdown 正文撰写弹窗，创建后自动打开，toast 可撤销（移入回收站）</li>
@@ -1091,8 +1107,9 @@ body.demo-locked { overflow: hidden; }
               <li>指标瓦片：捕获 / 新增 / 完成 / 逾期</li>
               <li>点「AI 解析」生成七段报告（默认<strong>阅读视图</strong>分节呈现，「编辑」可切换编辑）：结论速览 → 数据解读 → 趋势对比 → 问题诊断 → 值得保留 → 下期行动 → 风险预警</li>
               <li>报告历史按时间倒序自动归档，点开即可阅读、可删除</li>
+              <li class="signal">每周一 12:00 后、每月 1 日 12:00 后，首次打开应用会自动生成一次对应周期的回顾草稿并归档（AI 离线时静默跳过，同一周期只生成一次）；仍可随时手动「AI 解析」重新生成</li>
 <li>「动作记录」时间线：按天记录每一次动作（完成 / 新增 / 打卡 / 其他可过滤），每条可跳转对应实体</li>
-              <li class="signal">停滞项目独立一栏，可迁移或归档（真实落盘，可撤销）；报告弹窗内的停滞建议行也带一键处理按钮（归档 / 迁移 / 重启）</li>
+              <li class="signal">停滞项目独立一栏，可迁移或归档（真实落盘，可撤销）；报告弹窗内的停滞建议行也带一键处理按钮（归档 / 迁移 / 重启）；<strong>迁移建议随报告一起保存在报告历史里</strong>，打开归档报告即可回看并一键处置</li>
             </ul>
           </article>
 
@@ -1103,9 +1120,20 @@ body.demo-locked { overflow: hidden; }
               <li>外观（亮 / 暗）</li>
               <li>AI 集成：显示 opencode 在线状态，并可填入你自己的 <strong>DeepSeek API Key</strong>（密码型、不回显，可保存 / 清除）；Key 只存在本机、<strong>不会进入仓库</strong>，填好后<strong>重启启动器后生效</strong></li>
               <li>标签管理：列出全部标签（来源 / 使用计数 / 登记时间），可重命名（级联）、合并、删除（使用中会拦下并给出计数）；可一键「扫描并登记」历史未注册标签</li>
-              <li>区域 / 目标 / 习惯：三张管理表，可新建、编辑、删除（进回收站可恢复）。区域与目标被任务 / 项目 / 笔记 / 资料 / 日程 / 目标 / 习惯引用时，删除会被拦下并给出「被几条记录引用」的计数；习惯的今日打卡在总览监视柱完成</li>
+              <li>区域 / 目标：两张管理表，可新建、编辑、删除（进回收站可恢复）。被任务 / 项目 / 笔记 / 资料 / 日程 / 目标 / 习惯引用时，删除会被拦下并给出「被几条记录引用」的计数（<strong>习惯已迁到「习惯」页管理，不再在这里</strong>）</li>
               <li>数据统计</li>
               <li>数据服务（最近活动）；关于</li>
+            </ul>
+          </article>
+
+          <article class="card">
+            <div class="card__top"><h3>个人</h3><span class="card__tag">PROFILE</span></div>
+            <p class="card__desc">从右上角头像进入，不占侧栏。</p>
+            <ul>
+              <li>资料卡：头像（可上传本地图片，无图时用姓名首字母）、显示名、一句简介，点「编辑资料」修改</li>
+              <li><strong>活跃日历</strong>：近 20 周的贡献式日历，按天统计你在程序里的动作次数（新建日程 / 完成任务 / 习惯打卡等都算，颜色越深越多）；与习惯打卡共用一张图</li>
+              <li class="signal"><strong>动作时间线</strong>：按天记录每一次动作，可按 完成 / 新增 / 打卡 / 其他 筛选，每条可「查看」跳转对应实体（与回顾页「动作记录」同款）</li>
+              <li>命令面板输入「个人页」也能直达</li>
             </ul>
           </article>
         </div>
@@ -1144,6 +1172,8 @@ body.demo-locked { overflow: hidden; }
           <figcaption>对话盒的示例。清空时，这段记录会先归档为一条「AI 对话归档」笔记。</figcaption>
         </figure>
 
+        <p><strong>搜索都在本地：</strong>命令面板（<kbd class="k">Ctrl / ⌘ + K</kbd>）的「搜索」分组与资料页搜索框，都在本地快照上完成，不联网、不把内容发出去；命中标题优先，正文里有也算。</p>
+
         <h3>快速新建：先确认，再写入</h3>
         <p>在任务页只写一个标题回车，会先弹出确认窗口；AI 在窗口里安静地补全字段（上下文、能量、重要性、预估、截止、项目、区域、标签），你可以任意修改。只有点「创建任务」，数据才会写入。按 ESC、点遮罩或「取消」则什么都不写；AI 迟到或失败也不影响你继续填写与创建。项目页的快速新建同样如此：回车后弹窗让 AI 补全<strong>完成定义 / 区域 / 标签</strong>，确认后才写入。</p>
         <p><strong>标签是「录入即生成」的。</strong>你在任务 / 项目 / 笔记 / 资料里写下的新标签，会在落盘时自动登记进标签表（来源、首次使用、登记时间都留痕）；AI 在确实找不到合适已有标签时，也可以提议一个新的主题标签（最多 3 个、每个不超过 12 字），你应用后才登记。注册表里已有的标签，AI 会优先复用。</p>
@@ -1155,6 +1185,7 @@ body.demo-locked { overflow: hidden; }
         <h3>回顾报告（周 / 月）</h3>
         <p>回顾页的周、月两张卡各有「AI 解析」。点一下，AI 读整个系统生成一份<strong>七段结构报告</strong>：这周怎么样、干了些什么、和上周比、哪里卡住了、值得保持的、接下来、需要留意的（月回顾对应「这个月怎么样」「和上个月比」等）——每个判断都带具体数字或对象，叙述优先用对象标题、绝对值一律带对比基准，行动写成「如果…，那么…」并注明何时完成、完成标准是什么。报告以<strong>朋友口吻</strong>写成——说人话、有判断（「开了个好头」「这周有点卡」这类），不再堆「基准 / 环比 / WIP」这种专业术语，但判断都落在真实数据上。打开报告默认是<strong>阅读视图</strong>（七段分节、舒适行距），点「编辑」才切到文本框修改，点「完成」回到阅读；「下期行动」段只留一句指针（「见决策区（N 条）」），完整行动都在下方「决策」里，不重复。</p>
         <p>进行中的周期按<strong>同期等长窗口</strong>对照：月是「本月 1..N 日 ↔ 上月 1..N 日」、周是「本周至今 ↔ 上周同期」（短月自动截断），月末 / 周初不会拿几天去比一整个上期；窗口未走完时报告会自然说明。每次生成都会<strong>按时间自动归档</strong>到「报告历史」：随时点开阅读（同样分节呈现）、可删除；编辑后点「保存回顾」更新同一条，不会重复堆记录。</p>
+        <p><strong>回顾会自己起头：</strong>每周一 12:00 后、每月 1 日 12:00 后，你首次打开应用时，系统会自动生成一次对应周期的回顾草稿并归档（AI 离线时静默跳过；同一周期只生成一次）。AI 给出的「迁移建议」（停滞项目该归档 / 迁移 / 重启）会随报告一起保存在<strong>报告历史</strong>里，打开归档报告即可回看并一键处置。你仍可随时点「AI 解析」手动重新生成。</p>
 
         <div class="callout">
           <p class="callout__label">三条红线</p>
@@ -1217,7 +1248,7 @@ body.demo-locked { overflow: hidden; }
 
         <div class="keys">
           <div class="keyrow"><kbd class="k">c</kbd><span class="what">随时捕捉</span></div>
-          <div class="keyrow"><kbd class="k">Ctrl / ⌘ + K</kbd><span class="what">命令面板（导航 / 新建任务 / 新建项目 / 收件箱捕捉 / 切换主题 / AI 解析）</span></div>
+          <div class="keyrow"><kbd class="k">Ctrl / ⌘ + K</kbd><span class="what">命令面板：搜索 · SEARCH（输入词即搜任务 / 笔记 / 资料 / 日程 / 项目，点结果直达详情）+ 导航 / 动作 / AI，均在本地完成</span></div>
           <div class="keyrow"><kbd class="k">ESC</kbd><span class="what">关闭详情弹窗、就地弹窗或报告弹窗</span></div>
           <div class="keyrow"><kbd class="k">Enter</kbd><span class="what">对话盒发送（<kbd class="k">Shift + Enter</kbd> 换行）</span></div>
           <div class="keyrow"><kbd class="k">npm run dev -- --host</kbd><span class="what">手机经局域网访问，打开 <code class="inl">http://电脑IP:5173</code></span></div>
@@ -1315,7 +1346,7 @@ body.demo-locked { overflow: hidden; }
 
 <!-- ===================== 页脚 ===================== -->
 <footer class="foot">
-  <p class="mono">KERNEL v0.5.0（切片） · 2026-10-04 · 数据与界面均为本地运行</p>
+  <p class="mono">KERNEL v0.5.0（切片） · 2026-10-05 · 数据与界面均为本地运行</p>
 </footer>
 
 <!-- ===================== 任务详情面板 · 交互演示（居中弹窗） ===================== -->

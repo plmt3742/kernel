@@ -8,6 +8,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { RefObject } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { useReducedMotion } from 'motion/react'
 import { Panel } from '@/components/Panel'
 import { EventDetailModal } from '@/components/EventDetailModal'
 import { EventDraftModal } from '@/components/EventDraftModal'
@@ -18,7 +19,7 @@ import { TagPill } from '@/components/TagPill'
 import { useToast } from '@/context/ToastContext'
 import { getCourses, getEvents, getProjectById, getTasks, getTerm } from '@/lib/data'
 import { isTaskDone, removeEvent } from '@/lib/mutations'
-import { formatPeriods, mergeDayRuns, weekOfTerm } from '@/lib/schedule'
+import { formatPeriods, mergeDayRuns, weekdayLabel, weekOfTerm } from '@/lib/schedule'
 import { errorText } from '@/lib/api'
 import { EVENT_STATUS_LABEL } from '@/lib/format'
 import {
@@ -30,7 +31,9 @@ import {
   formatMonthDay,
   formatTime,
   formatWeekdayShort,
+  isFuture,
   isSameDay,
+  isToday,
   startOfWeek,
   toDate,
   toISODateTime,
@@ -171,6 +174,11 @@ interface MiniCell {
 interface CalendarUiState {
   selectedDayMs: number | null
   monthCursorMs: number
+  /**
+   * 周游标（本切片）：`null` = 实况 / 今天锚定默认视图；有限数 = 该时刻所在周，
+   * 主议程切换为周一–周日周视图。旧 localStorage 缺此键 → 自然回退 `null`（向后兼容）。
+   */
+  weekCursorMs: number | null
   /** 「含已结束」开关（本切片）：默认 false，仅进行中事件；true 时在议程流首组追加已结束事件 */
   showPast: boolean
 }
@@ -188,12 +196,16 @@ function parseCalendarUi(raw: unknown): CalendarUiState | null {
     typeof v.monthCursorMs === 'number' && Number.isFinite(v.monthCursorMs)
       ? v.monthCursorMs
       : Date.now()
-  return { selectedDayMs, monthCursorMs, showPast: v.showPast === true }
+  const weekCursorMs =
+    typeof v.weekCursorMs === 'number' && Number.isFinite(v.weekCursorMs)
+      ? v.weekCursorMs
+      : null
+  return { selectedDayMs, monthCursorMs, weekCursorMs, showPast: v.showPast === true }
 }
 
 const calendarUiStore = createUiStore<CalendarUiState>(
   CALENDAR_UI_KEY,
-  { selectedDayMs: null, monthCursorMs: Date.now(), showPast: false },
+  { selectedDayMs: null, monthCursorMs: Date.now(), weekCursorMs: null, showPast: false },
   { parse: parseCalendarUi },
 )
 
@@ -201,6 +213,8 @@ export function Calendar() {
   const now = useNow()
   const revision = useDataRevision()
   const { toast } = useToast()
+  // 无障碍：跟随系统「减少动态效果」，滚动定位到日为 auto（本切片周视图复用）
+  const reduce = useReducedMotion() === true
   const [searchParams, setSearchParams] = useSearchParams()
   const [drawerId, setDrawerId] = useState<string | null>(null)
   // 新建弹窗：null = 关闭；否则为预填开始时刻（ISO）
@@ -208,6 +222,8 @@ export function Calendar() {
   // 课程 / 任务详情弹窗（聚合自「今日课程」与任务截止行）：null = 关闭
   const [courseId, setCourseId] = useState<string | null>(null)
   const [taskId, setTaskId] = useState<string | null>(null)
+  // 周视图日区块滚动目标（本切片 · 0–6）：跨周定位需等新的一周挂载后再滚动
+  const [weekScrollTarget, setWeekScrollTarget] = useState<number | null>(null)
   // 迷你月历选中日 / 显示月（Slice Z · F29）：来自模块级 store（跨路由 + 刷新保留）
   const calendarUi = useUiStore(calendarUiStore)
   const selectedDay = useMemo(
@@ -215,21 +231,29 @@ export function Calendar() {
     [calendarUi.selectedDayMs],
   )
   const monthCursor = useMemo(() => new Date(calendarUi.monthCursorMs), [calendarUi.monthCursorMs])
+  /** 周游标（本切片）：null = 今天锚定实况视图；否则主议程显示该时刻所在周 */
+  const weekCursor = useMemo(
+    () => (calendarUi.weekCursorMs !== null ? new Date(calendarUi.weekCursorMs) : null),
+    [calendarUi.weekCursorMs],
+  )
   const setSelectedDay = (date: Date | null): void => {
     calendarUiStore.set((state) => ({
       ...state,
       selectedDayMs: date === null ? null : date.getTime(),
     }))
   }
-  const setMonthCursor = (next: Date | ((prev: Date) => Date)): void => {
-    calendarUiStore.set((state) => {
-      const prev = new Date(state.monthCursorMs)
-      const value = typeof next === 'function' ? next(prev) : next
-      return { ...state, monthCursorMs: value.getTime() }
-    })
+  /** 设置 / 清除周游标（本切片）：设置时同步迷你月历到游标所在月（保持「游标即所见」） */
+  const setWeekCursor = (date: Date | null): void => {
+    calendarUiStore.set((state) => ({
+      ...state,
+      weekCursorMs: date === null ? null : date.getTime(),
+      monthCursorMs: date === null ? state.monthCursorMs : date.getTime(),
+    }))
   }
   const heroRef = useRef<HTMLElement>(null)
   const todayRef = useRef<HTMLElement>(null)
+  // 周视图日区块 DOM 引用（按星期索引 0–6）：点日头 / 迷你月历后滚动定位
+  const weekDayRefs = useRef<Map<number, HTMLElement>>(new Map())
   // 事件行 DOM 引用（按事件 id）：迷你月历点击后滚动到该日首个事件
   const eventRefs = useRef<Map<string, HTMLButtonElement>>(new Map())
   // 任务行 DOM 引用（按任务 id）：该日无事件时，迷你月历点击回退滚动到首个截止任务
@@ -253,7 +277,6 @@ export function Calendar() {
   const scrollToRef = (ref: RefObject<HTMLElement | null>): void => {
     const el = ref.current
     if (el === null) return
-    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
     el.scrollIntoView({ block: 'start', behavior: reduce ? 'auto' : 'smooth' })
   }
 
@@ -281,13 +304,22 @@ export function Calendar() {
   /** 已结束开关打开且有内容——用于渲染「已结束」组与放宽空态门槛 */
   const hasPastShown = calendarUi.showPast && pastEvents.length > 0
 
-  /** 有截止的未完成任务（未完成 / 未丢弃），按截止升序——无 dueAt 的任务永不进入日程 */
+  /**
+   * 有截止的未完成任务（未完成 / 未丢弃 / 未推迟到未来），按截止升序——无 dueAt 的任务永不进入日程。
+   * 推迟：`deferUntil` 为有效未来时刻时从日程隐藏（`isFuture` 对无效输入保守返回 false，不会误伤）。
+   */
   const dueTasks = useMemo(
     () =>
       getTasks()
-        .filter((task) => task.dueAt !== undefined && !isTaskDone(task) && task.status !== 'dropped')
+        .filter(
+          (task) =>
+            task.dueAt !== undefined &&
+            !isTaskDone(task) &&
+            task.status !== 'dropped' &&
+            !(task.deferUntil !== undefined && isFuture(task.deferUntil, now)),
+        )
         .sort((a, b) => toDate(a.dueAt as string).getTime() - toDate(b.dueAt as string).getTime()),
-    [revision],
+    [revision, now],
   )
 
   /**
@@ -300,6 +332,52 @@ export function Calendar() {
     const week = weekOfTerm(getTerm(), now)
     return mergeDayRuns(getCourses(), dow, week)
   }, [now, revision])
+
+  /**
+   * 周视图（本切片）：游标所在周一–周日的逐日聚合。
+   * 每天含：该日事件（未取消；`showPast` 关闭时剔除已结束，按开始升序）、
+   * 该日截止任务（复用 `dueTasks`，已含推迟过滤）、该日课程（`mergeDayRuns` + 学期周过滤）。
+   * 仅当周游标激活时计算；默认实况视图不产生任何额外开销。
+   */
+  const weekDays = useMemo(() => {
+    if (weekCursor === null) return []
+    const start = startOfWeek(weekCursor)
+    const term = getTerm()
+    const courses = getCourses()
+    const allEvents = getEvents()
+    return Array.from({ length: 7 }, (_, index) => {
+      const date = addDays(start, index)
+      const dow = ((date.getDay() + 6) % 7) + 1
+      const events = allEvents
+        .filter((event) => event.status !== 'cancelled' && isSameDay(event.startAt, date))
+        .filter((event) => calendarUi.showPast || eventEndOf(event).getTime() >= now.getTime())
+        .sort((a, b) => toDate(a.startAt).getTime() - toDate(b.startAt).getTime())
+      const tasks = dueTasks.filter((task) => isSameDay(task.dueAt as string, date))
+      const runs = mergeDayRuns(courses, dow, weekOfTerm(term, date))
+      return { date, dow, events, tasks, runs }
+    })
+  }, [weekCursor, dueTasks, now, revision, calendarUi.showPast])
+
+  /** 周视图是否有任何内容——决定整周空态 */
+  const weekHasContent = useMemo(
+    () =>
+      weekDays.some((day) => day.events.length > 0 || day.tasks.length > 0 || day.runs.length > 0),
+    [weekDays],
+  )
+
+  /** 周视图统计（范围头右侧安静摘要）：事件 + 截止 + 课次 */
+  const weekTotals = useMemo(
+    () =>
+      weekDays.reduce(
+        (acc, day) => ({
+          events: acc.events + day.events.length,
+          tasks: acc.tasks + day.tasks.length,
+          runs: acc.runs + day.runs.length,
+        }),
+        { events: 0, tasks: 0, runs: 0 },
+      ),
+    [weekDays],
+  )
 
   const buckets = useMemo(() => {
     const map: Record<BucketKey, { events: CalendarEvent[]; tasks: Task[] }> = {
@@ -415,9 +493,34 @@ export function Calendar() {
       ? '本月暂无安排'
       : `事件 ${monthEvents.length} · 截止 ${monthTasks.length} · 课程 ${monthCourse.count}`
 
+  // 迷你月历换月：清选中日与周游标（换月即离开当前周视图，monthCursor 落新月份）
   const shiftMonth = (delta: number): void => {
     setSelectedDay(null)
-    setMonthCursor((prev) => new Date(prev.getFullYear(), prev.getMonth() + delta, 1))
+    calendarUiStore.set((state) => {
+      const prev = new Date(state.monthCursorMs)
+      return {
+        ...state,
+        weekCursorMs: null,
+        monthCursorMs: new Date(prev.getFullYear(), prev.getMonth() + delta, 1).getTime(),
+      }
+    })
+  }
+
+  /** 周导航（本切片）：上一周 / 下一周——未设游标时以「今天」为锚，保持星期几，月历随游标同步 */
+  const shiftWeek = (delta: number): void => {
+    const anchor = weekCursor !== null ? weekCursor : now
+    setSelectedDay(null)
+    setWeekCursor(addDays(anchor, delta * 7))
+  }
+
+  /** 回到本周（本切片）：清周游标 + 选中日，月历回当月，恢复今天锚定实况视图 */
+  const resetToThisWeek = (): void => {
+    calendarUiStore.set((state) => ({
+      ...state,
+      weekCursorMs: null,
+      selectedDayMs: null,
+      monthCursorMs: now.getTime(),
+    }))
   }
 
   // 「今天」= 滚到今天分组，无今天分组则回到顶部（下一项卡）
@@ -425,11 +528,35 @@ export function Calendar() {
   // 「回到现在」= 滚到下一项卡（顶部锚点）
   const goNow = (): void => scrollToRef(heroRef)
 
-  /** 迷你月历日格点击（F10）：选中该日 + 滚动议程到该日首个未结束事件；无事件则回退首个截止任务 */
+  // 周视图日区块延迟滚动：跨周切换需等新的一周挂载（ref 就绪）后再滚动，reduced-motion 感知
+  useEffect(() => {
+    if (weekScrollTarget === null) return
+    const el = weekDayRefs.current.get(weekScrollTarget)
+    if (el !== undefined) {
+      el.scrollIntoView({ block: 'start', behavior: reduce ? 'auto' : 'smooth' })
+    }
+    setWeekScrollTarget(null)
+  }, [weekScrollTarget, reduce])
+
+  /** 周视图日头点击（本切片）：选中该日并把日区块滚入视野 */
+  const handleWeekDayClick = (index: number, date: Date): void => {
+    setSelectedDay(date)
+    setWeekScrollTarget(index)
+  }
+
+  /**
+   * 迷你月历日格点击（F10）：选中该日。
+   * 周游标激活时——把游标移到该日所在周并滚到对应日区块；
+   * 实况视图下——沿用原语义：滚到该日首个未结束事件，无事件则回退首个截止任务。
+   */
   const handleDayClick = (day: number): void => {
     const date = new Date(year, month, day)
     setSelectedDay(date)
-    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    if (weekCursor !== null) {
+      setWeekCursor(date)
+      setWeekScrollTarget((date.getDay() + 6) % 7)
+      return
+    }
     const scrollRow = (el: HTMLElement): void => {
       el.scrollIntoView({ block: 'center', behavior: reduce ? 'auto' : 'smooth' })
     }
@@ -487,16 +614,31 @@ export function Calendar() {
           </span>
         </div>
         <div className="k-cal__nav">
+          {/* 本切片：周导航——上一周 / 下一周 + 回到本周（游标激活时才出现） */}
+          <div className="k-cal__weeknav" role="group" aria-label="周导航">
+            <button type="button" className="k-iconbtn" onClick={() => shiftWeek(-1)} aria-label="上一周">
+              <ChevronLeft size={15} strokeWidth={1.5} aria-hidden />
+            </button>
+            <button type="button" className="k-iconbtn" onClick={() => shiftWeek(1)} aria-label="下一周">
+              <ChevronRight size={15} strokeWidth={1.5} aria-hidden />
+            </button>
+          </div>
+          {weekCursor !== null && (
+            <button type="button" className="k-btn" onClick={resetToThisWeek}>
+              回到本周
+            </button>
+          )}
           <button type="button" className="k-btn" onClick={handleCreate}>
             新建日程
           </button>
           {/* Slice N0.6 · 交互反馈修复：无未来事件时锚点 ref 为 null，滚动点击会静默 no-op；
-              故空议程下置禁用态（可见反馈）。Slice H3：存在「今日课程 / 任务截止」时同样可滚动。 */}
+              故空议程下置禁用态（可见反馈）。Slice H3：存在「今日课程 / 任务截止」时同样可滚动。
+              本切片：周视图下「今天 / 回到现在」无对应锚点，一并禁用（用「回到本周」退出）。 */}
           <button
             type="button"
             className="k-btn"
             onClick={goToday}
-            disabled={!hasStream && todayRuns.length === 0}
+            disabled={weekCursor !== null || (!hasStream && todayRuns.length === 0)}
           >
             今天
           </button>
@@ -504,7 +646,7 @@ export function Calendar() {
             type="button"
             className="k-btn"
             onClick={goNow}
-            disabled={!hasStream && todayRuns.length === 0}
+            disabled={weekCursor !== null || (!hasStream && todayRuns.length === 0)}
           >
             回到现在
           </button>
@@ -559,7 +701,117 @@ export function Calendar() {
 
       <div className="k-cal-c__layout">
         <div className="k-cal-c__stream">
-          {!hasStream && todayRuns.length === 0 && !hasPastShown ? (
+          {weekCursor !== null ? (
+            weekHasContent ? (
+              <>
+                <div className="k-cal-c__weekhd">
+                  <h2>
+                    {formatMonthDay(weekDays[0].date)} – {formatMonthDay(weekDays[6].date)}
+                  </h2>
+                  <span className="k-mono">
+                    {weekTotals.events} 场
+                    {weekTotals.tasks > 0 ? ` · ${weekTotals.tasks} 项截止` : ''}
+                    {weekTotals.runs > 0 ? ` · ${weekTotals.runs} 节课` : ''}
+                  </span>
+                </div>
+                {weekDays.map((day, index) => {
+                  const dayHasContent =
+                    day.events.length > 0 || day.tasks.length > 0 || day.runs.length > 0
+                  const dayIsToday = isToday(day.date)
+                  return (
+                    <section
+                      key={day.date.toISOString()}
+                      ref={(el) => {
+                        if (el !== null) weekDayRefs.current.set(index, el)
+                        else weekDayRefs.current.delete(index)
+                      }}
+                      className="k-cal-c__group"
+                    >
+                      <div className="k-cal-c__grouphd">
+                        <h3>
+                          <button
+                            type="button"
+                            className="k-cal-c__dayhd"
+                            onClick={() => handleWeekDayClick(index, day.date)}
+                            aria-label={`${formatFullDate(day.date)}，定位到当日`}
+                            aria-pressed={selectedDay !== null && isSameDay(day.date, selectedDay)}
+                          >
+                            {weekdayLabel(day.dow)} {formatMonthDay(day.date)}
+                            {dayIsToday && <span className="k-cal-c__daytag">今天</span>}
+                          </button>
+                        </h3>
+                        <span className="k-mono">
+                          {day.events.length} 场
+                          {day.tasks.length > 0 ? ` · ${day.tasks.length} 截止` : ''}
+                          {day.runs.length > 0 ? ` · ${day.runs.length} 节` : ''}
+                        </span>
+                      </div>
+                      {dayHasContent ? (
+                        <>
+                          {/* 事件（按开始升序；已结束仅在「含已结束」开启时出现） */}
+                          {day.events.map((event) => (
+                            <button
+                              type="button"
+                              key={event.id}
+                              className="k-lib-row"
+                              onClick={() => setDrawerId(event.id)}
+                            >
+                              <span className="k-lib-row__kind k-mono">{rowTime(event, now)}</span>
+                              <span className="k-lib-row__title">{event.title}</span>
+                              <span className="k-lib-row__meta">
+                                {event.location !== undefined
+                                  ? event.location
+                                  : EVENT_STATUS_LABEL[event.status]}
+                              </span>
+                            </button>
+                          ))}
+                          {/* 该日截止任务（已排除完成 / 丢弃 / 推迟到未来） */}
+                          {day.tasks.map((task) => (
+                            <button
+                              type="button"
+                              key={task.id}
+                              className="k-lib-row"
+                              onClick={() => setTaskId(task.id)}
+                            >
+                              <span className="k-lib-row__kind k-mono">{taskDueLabel(task, now)}</span>
+                              <span className="k-lib-row__title">{task.title}</span>
+                              <span className="k-lib-row__meta">
+                                {task.projectId !== undefined
+                                  ? (getProjectById(task.projectId)?.title ?? '')
+                                  : ''}
+                              </span>
+                            </button>
+                          ))}
+                          {/* 该日课程（连堂合并 + 学期周过滤） */}
+                          {day.runs.map((run) => (
+                            <button
+                              type="button"
+                              key={`${run.course.id}-${run.startPeriod}`}
+                              className="k-lib-row"
+                              onClick={() => setCourseId(run.course.id)}
+                            >
+                              <span className="k-lib-row__kind k-mono">{formatPeriods(run)}</span>
+                              <span className="k-lib-row__title">{run.course.title}</span>
+                              <span className="k-lib-row__meta">
+                                {run.location ?? run.course.teacher ?? ''}
+                              </span>
+                            </button>
+                          ))}
+                        </>
+                      ) : (
+                        <p className="k-cal-c__dayempty">无安排</p>
+                      )}
+                    </section>
+                  )
+                })}
+              </>
+            ) : (
+              <EmptyState
+                title="这一周没有安排"
+                hint="空档适合安排深工作或休息。用上方箭头浏览其它周，或点「回到本周」。"
+              />
+            )
+          ) : !hasStream && todayRuns.length === 0 && !hasPastShown ? (
             <EmptyState title="接下来没有安排" hint="空档适合安排深工作或休息。可点「新建日程」添加一场。" />
           ) : (
             <>

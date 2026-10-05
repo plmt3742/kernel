@@ -36,7 +36,7 @@ kernel/
 │  ├─ 06-ROADMAP.md             # 路线图
 │  ├─ 07-DEPLOYMENT.md          # 运行与部署
 │  ├─ 08-MATH-SYSTEM.md         # 数理自适应系统（流体公式 / 容器地图 / 复算方法）
-│  └─ decisions/                # 架构决策记录（ADR，0001–0037；完整清单见 docs/README.md）
+│  └─ decisions/                # 架构决策记录（ADR，0001–0039；完整清单见 docs/README.md）
 │
 ├─ data/                        # 数据源（一记录一文件；v0.4 起写入经数据服务）
 │  ├─ activity.jsonl            # 审计日志（每次变更追加；服务创建）
@@ -67,12 +67,12 @@ kernel/
 ├─ src/                         # 前端应用
 │  ├─ main.tsx                  # 挂载入口（样式导入、字体自托管）
 │  ├─ App.tsx                   # 应用壳与路由
-│  ├─ views/                    # 九个视图（Overview/Inbox/Tasks/Calendar/Timetable/Projects/Library/Review/Settings）
-│  ├─ components/               # 通用组件（Panel / Modal / Toast / EntityEditForm / CommandPalette / TaskDetail / TaskDetailModal / ProjectDetail / ProjectDetailModal / OverviewChat / AiSuggestionForm / TaskDraftModal / OrganizeProposalCard（项目 AI 整理建议卡）…）
+│  ├─ views/                    # 视图（Overview/Inbox/Tasks/Calendar/Timetable/Projects/Habits/Library/Review/Settings/Trash/Profile；NotFound）
+│  ├─ components/               # 通用组件（Panel / Modal / Toast / EntityEditForm / CommandPalette / TaskDetail / TaskDetailModal / ProjectDetail / ProjectDetailModal / OverviewChat / AiSuggestionForm / TaskDraftModal / OrganizeProposalCard（项目 AI 整理建议卡）/ HabitHeatmap（习惯热力图）/ ActivityCalendar（活跃贡献日历）…）
 │  │  ├─ shell/                 # 应用壳（RailNav / TopBar / StatusBar / AppLayout）
 │  │  └─ charts/                # 图表（TrendLine / EnergyBars）
 │  ├─ context/                  # React Context（Theme / Toast / Palette）
-│  ├─ lib/                      # 数据访问与工具（data 可变快照 / api 客户端 / mutations 写入动作 / inboxAi 收件箱 AI 解析状态 / organize 项目 AI 整理状态与每日调度 / imagePreview 长图 AI 分片（>400KB 大图切 ≤6 JPEG 供解析；失败回退单图） / aiForm AI 建议表单换算 / derive / relations 互链派生 / date / format / motion / focus / hooks）
+│  ├─ lib/                      # 数据访问与工具（data 可变快照 / api 客户端 / mutations 写入动作 / inboxAi 收件箱 AI 解析状态 / organize 项目 AI 整理状态与每日调度 / review 回顾自动化每日调度（周一 / 每月 1 日 12:00 后，周期去重 + 跨标签锁 + AI 离线静默） / imagePreview 长图 AI 分片（>400KB 大图切 ≤6 JPEG 供解析；失败回退单图） / aiForm AI 建议表单换算 / derive / relations 互链派生 / date / format / motion / focus / hooks）
 │  └─ styles/                   # 全局样式与 token（tokens / base / shell / components / views）
 │
 ├─ design-drafts/               # 设计选型稿（v1 视觉方向 a/b/c；v2 页面排版多版本 29 方案 + 选型页 index.html + 三版对比页 _sheets/）
@@ -138,7 +138,7 @@ kernel/
 |---|---|
 | `src/main.tsx` | 应用挂载入口，样式导入；主题 FOUC 防护在 `index.html` 内联脚本中先于其执行 |
 | `src/App.tsx` | 应用壳：Router + Provider 链 + 路由出口 |
-| `src/views/` | 九个视图页面，一一对应宪法 §4 的视图规格（`Calendar` 议程 · `Timetable` 课表，Slice H2 起课表独立成页） |
+| `src/views/` | 视图页面，一一对应宪法 §4 的视图规格（`Calendar` 议程 · `Timetable` 课表，Slice H2 起课表独立成页 · `Habits` 习惯，ADR-0039 起独立成页 · `Profile` 个人页，顶栏头像进入不走轨道） |
 | `src/components/` | 可复用组件（含 `shell/` 与 `charts/` 子目录），命名遵循设计系统签名词汇；`AiSuggestionForm`（AI 建议可编辑字段网格，任务弹窗 / 收件箱卡共用）、`TaskDraftModal`（先确认后写入的任务草稿弹窗） |
 | `src/context/` | React Context：主题、Toast、命令面板开关 |
 | `src/lib/` | 数据访问与写入动作（data 可变快照 / api 客户端 / mutations / inboxAi 收件箱 AI 解析模块级状态 / imagePreview 长图 AI 分片（客户端切图、失败回退单图）/ aiForm AI 建议表单值类型与换算 / derive / relations 实体互链）、日期、格式化、动效常量、焦点工具、共享 hooks |

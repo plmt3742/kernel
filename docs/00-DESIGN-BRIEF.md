@@ -199,7 +199,7 @@ CommandPalette / StatusBar / RailNav / TopBar / Panel（柔影卡片）/ StatTil
 - **Vite + React 19 + TypeScript（strict）+ 原生 CSS（CSS 变量 token 体系，不使用 UI 框架 / Tailwind）**
 - 依赖白名单：`react` `react-dom` `react-router-dom`（viewTransition）`motion` `cmdk` `date-fns` `clsx` `lucide-react` `react-markdown` `@fontsource-variable/inter` `@fontsource/jetbrains-mono`
 - 状态：React 内置（Context + hooks）；原型期用户操作写 localStorage（UI 标注"原型态"）
-- 路由：`/` 总览 · `/inbox` · `/tasks` · `/calendar` · `/timetable`（课表）· `/projects` · `/library` · `/review` · `/settings` · `/trash`（回收站）
+- 路由：`/` 总览 · `/inbox` · `/tasks` · `/calendar` · `/timetable`（课表）· `/projects` · `/habits`（习惯）· `/library` · `/review` · `/settings` · `/trash`（回收站）；`/profile`（个人，顶栏头像进入，不占一级导航）
 
 ### 6.2 数据层（v1：一记录一文件）
 

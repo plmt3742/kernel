@@ -238,6 +238,9 @@ export function deepLinkOfId(id: string): string | null {
     case 'g':
       // 目标深链到设置页「目标」分区并打开编辑（Slice X · F8）
       return `/settings?section=goals&goal=${id}`
+    case 'h':
+      // 习惯深链到独立习惯页并打开编辑（习惯页从设置迁出后）
+      return `/habits?habit=${id}`
     case 'i':
       return '/inbox'
     default:

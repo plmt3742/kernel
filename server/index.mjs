@@ -5,6 +5,8 @@ import http from 'node:http'
 import { spawn } from 'node:child_process'
 import { createReadStream, createWriteStream, existsSync, promises as fs } from 'node:fs'
 import path from 'node:path'
+// 配置原子写（个人资料切片）：config.json 非实体，store.commit 不适用；镜像 store 的 write-file-atomic 模式
+import writeFileAtomic from 'write-file-atomic'
 import { z } from 'zod'
 import {
   backfillTags,
@@ -20,6 +22,7 @@ import {
   pruneTags,
   purgeTrash,
   readActivity,
+  readConfig,
   readEntity,
   readSnapshot,
   readTerm,
@@ -28,10 +31,10 @@ import {
   removeTag,
   renameTag,
   restoreFromTrash,
-  updateConfig,
   updateTerm,
 } from './store.mjs'
 import {
+  appConfigSchema,
   areaCreateSchema,
   chatNoteRequestSchema,
   clarifyDetailsSchema,
@@ -97,6 +100,28 @@ const MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 const MAX_PREVIEW_BYTES = 4 * 1024 * 1024
 /** 附件二进制目录（不进 git；见 ADR-0008） */
 const FILES_DIR = path.join(DATA_DIR, 'files')
+/** 个人头像单文件上限（RAW body；超出即 413） */
+const MAX_AVATAR_BYTES = 2 * 1024 * 1024
+/** 应用配置路径（data/meta/config.json；store 内部同名常量未导出，此处镜像） */
+const CONFIG_FILE = path.join(DATA_DIR, 'meta', 'config.json')
+/** 头像 MIME → 落盘扩展名（POST /api/profile/avatar 白名单：png / jpeg / webp / gif） */
+const AVATAR_MIME_EXT = {
+  'image/png': 'png',
+  'image/jpeg': 'jpg',
+  'image/jpg': 'jpg',
+  'image/webp': 'webp',
+  'image/gif': 'gif',
+}
+/** 头像扩展名 → 读取 Content-Type（GET /api/profile/avatar） */
+const AVATAR_EXT_MIME = {
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  webp: 'image/webp',
+  gif: 'image/gif',
+}
+/** 头像文件名前缀（新上传清理旧文件 / 读取路径受管校验） */
+const AVATAR_PREFIX = 'profile-avatar-'
 
 /** 澄清目标 → 实体 kind */
 const CLARIFY_KINDS = { task: 'tasks', project: 'projects', note: 'notes', resource: 'resources' }
@@ -121,7 +146,7 @@ const SINGULAR = {
 const NO_TIMESTAMP_KINDS = new Set(['events', 'areas', 'goals', 'habits'])
 /** 任务创建可携带的可选字段顺序（Slice O；用于审计 detail.fields） */
 const CREATE_FIELD_KEYS = [
-  'contexts', 'energy', 'importance', 'estimateMin', 'dueAt', 'projectId', 'areaId', 'parentTaskId', 'tags',
+  'contexts', 'energy', 'importance', 'estimateMin', 'dueAt', 'deferUntil', 'projectId', 'areaId', 'parentTaskId', 'tags',
 ]
 /** 各 kind 允许编辑的字段白名单（其余一律忽略，见 ADR-0009） */
 const EDITABLE_FIELDS = {
@@ -300,9 +325,9 @@ function normalizeUploadMime(type) {
 
 /**
  * 流式写上传体到 dest；超过 maxBytes 立即暂停读取、拒绝 413 并销毁写流。
- * 返回写入字节数。上层负责删除残留文件。
+ * 返回写入字节数。上层负责删除残留文件。tooLargeMessage 供不同上限场景定制文案（缺省为 25MB 附件口径）。
  */
-function saveUpload(req, dest, maxBytes) {
+function saveUpload(req, dest, maxBytes, tooLargeMessage = '文件过大（上限 25MB）') {
   return new Promise((resolve, reject) => {
     const ws = createWriteStream(dest)
     let size = 0
@@ -318,7 +343,7 @@ function saveUpload(req, dest, maxBytes) {
       size += chunk.length
       if (size > maxBytes) {
         req.pause()
-        settle(reject, Object.assign(new Error('文件过大（上限 25MB）'), { status: 413 }))
+        settle(reject, Object.assign(new Error(tooLargeMessage), { status: 413 }))
         ws.destroy()
         return
       }
@@ -423,6 +448,182 @@ async function serveFile(res, id) {
   createReadStream(filePath).pipe(res)
 }
 
+/* ---------------------------------------------------------------------------
+ * 个人资料 · 头像（个人资料切片）：data/files/profile-avatar-<timestamp>.<ext>
+ * 纪律：RAW body 流式落盘 + 2MB 上限；config.avatarPath 记绝对路径；新上传 / 移除时清理旧头像；
+ *       审计 profile.avatar。读取流式返回（绝不 spawn）。
+ * ------------------------------------------------------------------------- */
+
+/** 头像时间戳 YYYYMMDDHHMMSS-mmm（本地时区；文件名唯一，供缓存击穿） */
+function avatarTimestamp() {
+  const d = new Date()
+  const pad = (n) => String(n).padStart(2, '0')
+  const ms = String(d.getMilliseconds()).padStart(3, '0')
+  return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}-${ms}`
+}
+
+/** 是否为受管头像路径（目录 = data/files 且文件名以 profile-avatar- 开头）——防篡改 config 读任意文件 */
+function isProfileAvatarPath(raw) {
+  if (typeof raw !== 'string' || raw.trim() === '') return false
+  const resolved = path.resolve(raw)
+  return (
+    path.basename(resolved).startsWith(AVATAR_PREFIX) &&
+    path.resolve(path.dirname(resolved)) === path.resolve(FILES_DIR)
+  )
+}
+
+/** 删除 data/files 下的头像文件（keepName 指定则保留该文件）；忽略错误（幂等） */
+async function deleteAvatarFiles(keepName) {
+  const entries = await fs.readdir(FILES_DIR).catch(() => [])
+  for (const name of entries) {
+    if (!name.startsWith(AVATAR_PREFIX)) continue
+    if (keepName !== undefined && name === keepName) continue
+    await fs.unlink(path.join(FILES_DIR, name)).catch(() => {})
+  }
+}
+
+/**
+ * 上传头像（RAW body）：Content-Type 须命中 png / jpeg / webp / gif（否则 400）；
+ * 落盘 data/files/profile-avatar-<ts>.<ext>（超 2MB → 413；空文件 → 400）；更新 config.avatarPath
+ * （绝对路径）→ 删除旧头像 → 审计 profile.avatar。响应 { avatarPath }。
+ */
+async function uploadAvatar(req) {
+  const contentType = String(req.headers['content-type'] ?? '').split(';')[0].trim().toLowerCase()
+  const ext = AVATAR_MIME_EXT[contentType]
+  if (ext === undefined) {
+    throw Object.assign(new Error('头像仅支持 PNG / JPEG / WebP / GIF'), { status: 400 })
+  }
+  await fs.mkdir(FILES_DIR, { recursive: true })
+  const filename = `${AVATAR_PREFIX}${avatarTimestamp()}.${ext}`
+  const dest = path.join(FILES_DIR, filename)
+  let size
+  try {
+    size = await saveUpload(req, dest, MAX_AVATAR_BYTES, '头像文件过大（上限 2MB）')
+  } catch (err) {
+    await fs.unlink(dest).catch(() => {})
+    throw err
+  }
+  if (size === 0) {
+    await fs.unlink(dest).catch(() => {})
+    throw Object.assign(new Error('头像文件为空'), { status: 400 })
+  }
+  try {
+    const current = (await readConfig()) ?? {}
+    await writeConfig({ ...current, avatarPath: dest }, null)
+  } catch (err) {
+    // 配置写入失败：清理新文件，避免孤儿头像
+    await fs.unlink(dest).catch(() => {})
+    throw err
+  }
+  await deleteAvatarFiles(filename)
+  await recordAudit({
+    action: 'profile.avatar',
+    entity: 'profile',
+    id: '-',
+    detail: { op: 'set', file: filename, size },
+  })
+  return { avatarPath: dest }
+}
+
+/** 移除头像：清空 config.avatarPath → 删除全部头像文件 → 审计 profile.avatar；幂等（响应 { ok: true }）。 */
+async function removeAvatar() {
+  const current = (await readConfig()) ?? {}
+  const next = { ...current }
+  delete next.avatarPath
+  await writeConfig(next, null)
+  await deleteAvatarFiles()
+  await recordAudit({ action: 'profile.avatar', entity: 'profile', id: '-', detail: { op: 'remove' } })
+  return { ok: true }
+}
+
+/**
+ * 读取头像：流式返回 config.avatarPath 指向的文件（Content-Type 按扩展名）；
+ * `X-Content-Type-Options: nosniff` + `Cache-Control: no-store`（文件名带时间戳，无需缓存）。
+ * 无头像 / 文件缺失 / 路径不受管 → 404。
+ */
+async function serveAvatar(res) {
+  const config = (await readConfig()) ?? {}
+  const raw = config.avatarPath
+  if (!isProfileAvatarPath(raw)) return fail(res, 404, '头像不存在')
+  const resolved = path.resolve(raw)
+  let stat
+  try {
+    stat = await fs.stat(resolved)
+  } catch {
+    return fail(res, 404, '头像不存在')
+  }
+  const ext = path.extname(resolved).slice(1).toLowerCase()
+  res.writeHead(200, {
+    'Content-Type': AVATAR_EXT_MIME[ext] ?? 'application/octet-stream',
+    'Content-Length': stat.size,
+    'X-Content-Type-Options': 'nosniff',
+    'Cache-Control': 'no-store',
+  })
+  createReadStream(resolved).pipe(res)
+}
+
+/* ---------------------------------------------------------------------------
+ * 活动聚合（个人资料切片）：GET /api/activity/summary?days=N
+ * 读 data/activity.jsonl，按本地日历日（审计时间戳 YYYY-MM-DD 前缀）分桶；排除噪声 action
+ * （config.update / ai.key.update），覆盖最近 N 个本地日（含零计数日）。稳健：坏行跳过、
+ * 文件缺失 → 全零、绝不抛。
+ * ------------------------------------------------------------------------- */
+
+/** 排除在活动聚合之外的噪声动作 */
+const ACTIVITY_NOISE_ACTIONS = new Set(['config.update', 'ai.key.update'])
+
+/** 本地日历 key（YYYY-MM-DD） */
+function localDateKey(date) {
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+}
+
+/**
+ * 活动日聚合：返回 { days: [{ date, count }], total, span }。
+ * days 覆盖最近 span 个本地日（升序，末位 = 今天，含零计数日）；span 为窗口天数（默认 140，clamp 7..400）。
+ * 审计时间戳取 `at ?? ts`（既有写入用 ts；契约记为 at，双兼容），无法解析的行跳过。
+ */
+async function activitySummary(rawDays) {
+  const trimmed = rawDays === null || rawDays === undefined ? '' : String(rawDays).trim()
+  const parsed = trimmed === '' ? NaN : Number(trimmed)
+  const span = Math.min(Math.max(Number.isFinite(parsed) ? Math.trunc(parsed) : 140, 7), 400)
+  const days = []
+  const indexByDate = new Map()
+  const today = new Date()
+  const base = new Date(today.getFullYear(), today.getMonth(), today.getDate())
+  for (let i = span - 1; i >= 0; i--) {
+    const d = new Date(base)
+    d.setDate(base.getDate() - i)
+    const key = localDateKey(d)
+    indexByDate.set(key, days.length)
+    days.push({ date: key, count: 0 })
+  }
+  let raw
+  try {
+    raw = await fs.readFile(path.join(DATA_DIR, 'activity.jsonl'), 'utf8')
+  } catch {
+    return { days, total: 0, span }
+  }
+  for (const line of raw.split('\n')) {
+    if (line.trim() === '') continue
+    let entry
+    try {
+      entry = JSON.parse(line)
+    } catch {
+      continue // 坏行跳过
+    }
+    if (entry === null || typeof entry !== 'object') continue
+    if (ACTIVITY_NOISE_ACTIONS.has(entry.action)) continue
+    const stamp = typeof entry.at === 'string' ? entry.at : typeof entry.ts === 'string' ? entry.ts : ''
+    if (!/^\d{4}-\d{2}-\d{2}/.test(stamp)) continue
+    const index = indexByDate.get(stamp.slice(0, 10))
+    if (index === undefined) continue
+    days[index].count += 1
+  }
+  const total = days.reduce((sum, day) => sum + day.count, 0)
+  return { days, total, span }
+}
+
 
 /* ---------------------------------------------------------------------------
  * 动作
@@ -486,6 +687,8 @@ async function createTask(body) {
   }
   if (fields.estimateMin !== undefined) task.estimateMin = fields.estimateMin
   if (fields.dueAt !== undefined) task.dueAt = fields.dueAt
+  // 软推迟（v0.5）：与 dueAt 同口径——仅当显式提供时写入（缺省不落该键）
+  if (fields.deferUntil !== undefined) task.deferUntil = fields.deferUntil
   if (fields.projectId !== undefined) {
     if (!validId('projects', fields.projectId) || (await readEntity('projects', fields.projectId)) === null) {
       throw Object.assign(new Error('项目不存在'), { status: 400 })
@@ -1217,10 +1420,76 @@ async function organizeUnapply(body) {
   return { trashed, restoredTaskIds, clearedTaskIds }
 }
 
-/** 更新配置（v0.5 · Slice R2）：白名单仅 aiAutomation；审计 config.update */
+/**
+ * 配置原子写串行链：与 store 的写队列同为「单写者」纪律，config 走本文件专用链
+ * （config.json 非实体，store.commit 不适用）。
+ */
+let configWriteChain = Promise.resolve()
+function serializeConfigWrite(task) {
+  const run = configWriteChain.then(task, task)
+  configWriteChain = run.then(
+    () => undefined,
+    () => undefined,
+  )
+  return run
+}
+
+/**
+ * 原子写应用配置（data/meta/config.json）：写前 appConfigSchema 校验 + write-file-atomic，
+ * 可选追加一条审计（action 由调用方指定，detail 绝不落敏感值）。
+ *
+ * 背景（判断说明）：store.updateConfig 当前白名单仅 aiAutomation，本切片需扩展 owner / bio /
+ * avatarPath；按任务约束不改动 store.mjs，故在此镜像其「原子写 + 审计」模式。所有 config 写入
+ * （含 aiAutomation）统一经本函数，避免双写路径。
+ */
+function writeConfig(next, audit) {
+  return serializeConfigWrite(async () => {
+    const parsed = appConfigSchema.parse(next)
+    await fs.mkdir(path.dirname(CONFIG_FILE), { recursive: true })
+    await writeFileAtomic(CONFIG_FILE, `${JSON.stringify(parsed, null, 2)}\n`, { encoding: 'utf8' })
+    if (audit) await recordAudit(audit)
+    return parsed
+  })
+}
+
+/**
+ * 更新配置（个人资料切片）：白名单 aiAutomation / owner / bio（至少一项，否则 400）。
+ * aiAutomation 须 confirm / auto（schema 已枚举）；owner（≤40）与 bio（≤160）trim 后写入，
+ * 空串表示清空。审计 config.update（detail.fields 仅记键名，**绝不落 owner / bio 明文**）。
+ */
 async function applyConfigUpdate(body) {
   const patch = configUpdateSchema.parse(body)
-  return { config: await updateConfig(patch) }
+  if (patch.aiAutomation === undefined && patch.owner === undefined && patch.bio === undefined) {
+    throw Object.assign(new Error('没有可更新的配置字段'), { status: 400 })
+  }
+  const current = (await readConfig()) ?? {}
+  const next = { ...current }
+  const fields = []
+  if (patch.aiAutomation !== undefined && next.aiAutomation !== patch.aiAutomation) {
+    next.aiAutomation = patch.aiAutomation
+    fields.push('aiAutomation')
+  }
+  if (patch.owner !== undefined) {
+    const owner = patch.owner.trim()
+    if (next.owner !== owner) {
+      next.owner = owner
+      fields.push('owner')
+    }
+  }
+  if (patch.bio !== undefined) {
+    const bio = patch.bio.trim()
+    if (next.bio !== bio) {
+      next.bio = bio
+      fields.push('bio')
+    }
+  }
+  const config = await writeConfig(next, {
+    action: 'config.update',
+    entity: 'config',
+    id: '-',
+    detail: { fields },
+  })
+  return { config }
 }
 
 /**
@@ -1835,6 +2104,7 @@ async function unapplyInbox(id) {
 /**
  * 创建回顾：服务端计算 id / 周期 / 指标 / 停滞项目（用户只提供摘要与决策）。
  * body.type='monthly' 时走月窗口（periodKey=YYYY-MM / computeMonthMetrics），缺省周（行为不变，Slice F）。
+ * body.staleAdvice（可选）为「回顾自动化」透传的迁移建议，形状非法时静默丢弃（不 500）。
  */
 async function createReview(body) {
   const summary = typeof body.summary === 'string' ? body.summary.trim() : ''
@@ -1858,6 +2128,9 @@ async function createReview(body) {
     staleProjectIds: staleProjects(snapshot, 14, now).map((project) => project.id),
     source: body.source === 'ai' ? 'ai' : 'manual',
   }
+  // 迁移建议（回顾自动化）：由调用方透传并原样归档；非法形状丢弃、空数组不写键
+  const staleAdvice = sanitizeStaleAdvice(body.staleAdvice)
+  if (staleAdvice !== undefined) review.staleAdvice = staleAdvice
   const saved = await commit('reviews', review, {
     action: 'review.create',
     entity: 'review',
@@ -1865,6 +2138,26 @@ async function createReview(body) {
     detail: { source: review.source },
   })
   return { review: saved }
+}
+
+const STALE_ADVICE_ACTIONS = new Set(['archive', 'migrate', 'reactivate'])
+
+/**
+ * 清洗可选的 staleAdvice（回顾自动化）：仅保留形状合法的建议项，非法项静默丢弃（绝不 500）；
+ * 无有效项时返回 undefined（记录不写该键，与旧归档的缺省口径一致）。
+ */
+function sanitizeStaleAdvice(raw) {
+  if (!Array.isArray(raw)) return undefined
+  const out = []
+  for (const item of raw) {
+    if (typeof item !== 'object' || item === null) continue
+    const projectId = typeof item.projectId === 'string' ? item.projectId.trim() : ''
+    const action = item.action
+    if (projectId === '' || !STALE_ADVICE_ACTIONS.has(action)) continue
+    const reason = typeof item.reason === 'string' ? item.reason.slice(0, 200) : ''
+    out.push({ projectId, action, reason })
+  }
+  return out.length > 0 ? out : undefined
 }
 
 /**
@@ -2206,6 +2499,16 @@ const server = http.createServer(async (req, res) => {
       send(res, 200, { items: await readActivity(limit) })
       return
     }
+    // 活动日聚合（个人资料切片）：最近 N 个本地日逐日计数（含零计数日；默认 140，clamp 7..400）
+    if (method === 'GET' && pathname === '/api/activity/summary') {
+      send(res, 200, await activitySummary(url.searchParams.get('days')))
+      return
+    }
+    // 个人头像读取（个人资料切片）：无头像 / 文件缺失 → 404；no-store + nosniff
+    if (method === 'GET' && pathname === '/api/profile/avatar') {
+      await serveAvatar(res)
+      return
+    }
     if (method === 'GET' && pathname === '/api/trash') {
       send(res, 200, { items: await readTrash() })
       return
@@ -2477,10 +2780,23 @@ const server = http.createServer(async (req, res) => {
       send(res, 200, result)
       return
     }
-    // 配置更新（Slice R2）：白名单 aiAutomation（confirm / auto）
+    // 个人资料 · 头像上传 / 移除（个人资料切片）：RAW body；审计 profile.avatar
+    if (method === 'POST' && pathname === '/api/profile/avatar') {
+      const result = await uploadAvatar(req)
+      console.log(`[data] profile.avatar set ${path.basename(result.avatarPath)}`)
+      send(res, 200, result)
+      return
+    }
+    if (method === 'POST' && pathname === '/api/profile/avatar/remove') {
+      const result = await removeAvatar()
+      console.log('[data] profile.avatar remove')
+      send(res, 200, result)
+      return
+    }
+    // 配置更新（个人资料切片）：白名单 aiAutomation / owner / bio；审计 config.update（不落明文）
     if (method === 'POST' && pathname === '/api/config') {
       const result = await applyConfigUpdate(await readBody(req))
-      console.log(`[data] config.update aiAutomation=${result.config.aiAutomation}`)
+      console.log('[data] config.update')
       send(res, 200, result)
       return
     }
@@ -2577,6 +2893,9 @@ const server = http.createServer(async (req, res) => {
         decisions: result.decisions,
         summary: result.summary,
         staleProjectIds: result.staleProjectIds,
+        // 迁移建议随报告归档（回顾自动化）：与 staleProjectIds 同口径——始终写入（可为空数组），
+        // schema 为 optional 以兼容旧归档；前端仅在非空时呈现
+        staleAdvice: result.staleAdvice,
         source: 'ai',
       }
       let saved

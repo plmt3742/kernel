@@ -90,7 +90,7 @@
 | estimateMin? | number | |
 | importance | 0 到 3 | 决策输入，非硬排名 |
 | dueAt? | ISO | |
-| deferUntil? | ISO | |
+| deferUntil? | ISO | 「推迟至」；未来值为软推迟（默认从活跃列表隐藏，见下注） |
 | projectId? | string | |
 | areaId? | string | |
 | parentTaskId? | string | |
@@ -103,7 +103,7 @@
 
 > **子任务 / `parentTaskId` 语义（v0.5 · Slice R3）**：`parentTaskId` 指向 `data/tasks/` 中另一任务，构成父子层级（一任务至多一个父、可有多个子）；派生展示不落盘。服务端写入护栏（`server/index.mjs` `assertValidParentTask`）：① 父任务必须真实存在（否则 400）；② 不得指向自身（400）；③ **不得成环**——沿 `parentTaskId` 祖先链上溯，命中自身即 400（`A→B→A` 被拒，且拒绝后不写半成品）。创建（`POST /api/tasks` 可选 `parentTaskId`）与编辑（`POST /api/tasks/:id/update`；`parentTaskId:null` 清除）均支持，审计 `task.create` / `task.update`（`detail.fields` 含 `parentTaskId`）。UI 路径：任务详情「子任务」区块列出直接子任务（点击就地打开其详情，可逐级返回）+ 安静 quick-add（回车即建，**继承父任务 `projectId`**，其余字段走默认，toast 可撤销）；项目详情的任务行可就地打开、并提供「添加任务到本项目」（草稿确认、`projectId` 预填）。系统**不自动生成子任务**——一律用户显式创建 / 编辑。
 
-> **「推迟至」展示（v0.5 · Slice Y，见 ADR-0021）**：任务详情字段网格在 `deferUntil` 设置时显示只读「推迟至」行（与「截止」并列）；编辑仍在 `TaskDetailModal` 编辑表单的「推迟至」字段（`EDITABLE_FIELDS.tasks` 已含 `deferUntil`）。创建期暂不写入（`CREATE_FIELD_KEYS` 未含），延后。
+> **「推迟至」软推迟（v0.5 · Slice Y 展示 → 回顾自动化批次启用「真正行为」）**：任务详情字段网格在 `deferUntil` 设置时显示只读「推迟至」行（与「截止」并列）；`TaskDetailModal` 编辑表单的「推迟至」字段（`EDITABLE_FIELDS.tasks`）可设 / 可清（空 = `null` 清除）。**创建期已支持写入**（`taskCreateFieldsSchema` + `CREATE_FIELD_KEYS` + `createTask` + `TaskDraftModal` 的「推迟至」输入，与 `dueAt` 同口径）。**运行时行为**（绝不落盘派生标记）：`deferUntil` 为有效未来时刻且任务未完成 / 未丢弃 = 已推迟——任务列表默认隐藏，页头「含已推迟」开关（`kernel.ui.tasks.v1` 界面态）打开后列出并显示「推迟至 …」标记；计数（未完成 / 逾期 / 今日）始终排除已推迟项；日历的截止任务同样跳过未来推迟项。到点后自然重新出现（运行时对 now 求值）。
 
 ### 4.3 project（`p-`）
 
@@ -237,6 +237,7 @@
 | decisions | string[] | 1–3 条 if-then 行动（服务端后校验截断至 3 条 × ≤200 字） |
 | summary | string | 七段结构正文（结论速览 → 数据解读 → 趋势对比 → 问题诊断 → 值得保留 → 下期行动 → 风险预警），≤800 字；schema 上限 2000（Slice L） |
 | staleProjectIds? | string[] | |
+| staleAdvice? | object[] | 迁移建议 `{projectId, action: archive\|migrate\|reactivate, reason}`；AI 生成时随报告归档、历史可回看（见下注，ADR-0038） |
 | source? | `ai` \| `manual` | 来源：`ai` = 生成即自动归档；`manual` = 手工保存（旧记录缺省，Slice L） |
 | updatedAt? | ISO | 最近编辑时间（`review.update` 时 bump；旧记录缺省，Slice L） |
 
@@ -245,6 +246,8 @@
 > **报告升级 + 自动归档（v0.5 · Slice L，见 ADR-0013）**：`summary` 升级为七段结构正文，摘要注入上一周期指标 + 环比 + 阈值 + 带 id 的清单；模型输出经「数字子集护栏」校验（越界单次纠正重试，仍越界保留并记录）。`POST /api/ai/review/draft` 成功后**自动归档**一条 `review`（`source:'ai'`、`date` = 归档时刻、审计 `review.create` · `detail.auto`），响应附 `reviewId`；前端「保存回顾」经新增的 `POST /api/reviews/:id/update` 更新**同一**记录（保留 id / type / periodKey / date / metrics / staleProjectIds，递增 `updatedAt`，审计 `review.update`），不重复建。**每次生成 = 新增一个归档版本**（时间序可查阅）；`/api/reviews/:id/remove` 删除（审计 `review.remove`）。
 
 > **可读性升级（v0.5 · Slice U，见 ADR-0013 §6）**：字段与归档语义**不变**，三点修订——① **同期口径**：进行中的周期对照上一周期**同等已走完长度**（月：本月 1..N 日 ↔ 上月 1..N 日，短月截断；周：本周至今 ↔ 上周同期），摘要以「上X同期」标注，窗口未满 7 天附【窗口说明】；② **去重**：第 6 段「下期行动」只留一行指针「见决策区（N 条）」，完整 if-then 仅在 `decisions`；③ **可读性**：清单「标题（id）」标题优先、百分比仅基准 ≥5、结论不以「窗口仅 N 天」开场。前端报告弹窗默认**阅读视图**（分节渲染，`src/lib/reviewReport.ts` 解析，「编辑」切换 textarea），报告历史只读复用同一视图。
+
+> **回顾自动化（v0.5 · 回顾自动化批次，见 ADR-0038）**：新增可选字段 `staleAdvice`（迁移建议，形状 `{projectId, action, reason}`，服务端 `staleAdviceSchema` 校验）——`/api/ai/review/draft` 自动归档时**随报告一并持久化**（此前仅在草稿响应中短暂存在），手工保存 `POST /api/reviews` 也可透传（非法形状静默丢弃，绝不 500）；`POST /api/reviews/:id/update` 白名单**不变**（建议随版本生成、不参与编辑）。前端新增每日调度 `src/lib/review.ts` `useReviewScheduler`（`AppLayout` 挂载）：**周一 12:00 后**自动生成周回顾、**每月 1 日 12:00 后**自动生成月回顾，同一 `periodKey` 已存在归档（任意来源）/ 数据未水合 / 本会话已尝试 / 他标签持锁 / AI 离线时均跳过；成功即 toast「已自动生成本周回顾 · 查看」并水合快照，失败静默；**只生成报告，绝不自动应用任何迁移建议**。归档报告阅读视图新增「迁移建议」块，可回看并复用既有处置动作（归档 / 迁移 / 重启）。
 
 > **「迁移」瓦片移除（v0.5 · Slice Y，见 ADR-0021）**：`migrated` 生成流程**刻意不产出**（`computeMetricsForWindow` 只返回 captured / created / completed / overdue），报告面板的「迁移」瓦片长期恒显示 `—`，已从 `Review.tsx` `METRIC_LABELS` **移除**。`ReviewMetrics.migrated` 字段**保留**以兼容旧归档（`rev-0001` / `rev-0002` 含该值）；总览 W40 行在缺省时渲染 `—`（修复字面 `undefined`）。若日后落地「编辑追踪」需要，可重新引入该瓦片。
 
@@ -286,8 +289,14 @@
 | weekStart | string |
 | createdAt | ISO |
 | aiAutomation | `'confirm'` \| `'auto'`（可选；Slice R2 起可写，缺省视作 `confirm`） |
+| bio | string ≤160（可选；个人页简介，v0.5 个人页切片） |
+| avatarPath | string（可选；头像文件绝对路径，见下注） |
 
 > **AI 自动化档位（v0.5 · Slice R2，见 ADR-0016）**：`aiAutomation` 经 `POST /api/config { aiAutomation }` 更新（白名单 + Zod + 原子写 + 审计 `config.update`）。`'confirm'`（默认）= 先确认后写入；`'auto'` = 自动解析完成后自动应用本次**创建类低风险动作**（`task`/`note`/`resource`/`project`），可一键撤销；**永不**删除 / 完成 / 归档 / 修改既有实体（能力边界见 ADR-0016 §2.3）。旧配置缺省时前端视作 `'confirm'`。
+
+> **个人资料（v0.5 · 个人页切片，见 ADR-0039）**：资料在 `config` 内扩展，不新增实体文件——`owner` 复用为**显示名**，新增可选 `bio`（≤160）与 `avatarPath`。更新经 `POST /api/config { owner?, bio?, aiAutomation? }`（白名单 + Zod；三键均可选、至少一键，非法 / 空补丁 400；原子写 + 审计 `config.update`）。头像为本地图片文件 `data/files/profile-avatar-<YYYYMMDDHHmmss-mmm>.<ext>`（`data/files/` 已 gitignore、不随安装包分发；png / jpeg / webp / gif，≤2 MB）：`POST /api/profile/avatar`（RAW body 流式落盘；超限 413、类型非法 / 空文件 400；写 `config.avatarPath`（绝对路径）并清理旧头像；审计 `profile.avatar`）、`POST /api/profile/avatar/remove`（清 `avatarPath` + 删文件，幂等）、`GET /api/profile/avatar`（按扩展名流式返回 + `nosniff` + `no-store`；无头像 / 文件缺失 404）。头像**不进快照字节**（快照只带 `avatarPath`），前端以 `/api/profile/avatar?v=<文件名>` 渲染。
+>
+> **活跃摘要（只读派生，不落盘）**：`GET /api/activity/summary?days=N`（默认 140、clamp 7..400）读取 `data/activity.jsonl`，按**本地日**聚合每个动作的条数并**零填充**缺失日（返回 `days / total / span`）；排除 `config.update`、`ai.key.update` 两类设置噪音，其余真实写入（含 `habit.checkin`）均计入。个人页「活跃日历」消费该端点；无对应存储字段。
 
 **`data/meta/term.json`**
 

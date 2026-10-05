@@ -28,6 +28,8 @@ export interface AiSuggestionFormValues {
   estimateMin: string
   /** datetime-local（'' = 未设置） */
   dueAt: string
+  /** 软推迟（v0.5）：datetime-local（'' = 未设置） */
+  deferUntil: string
   /** 仅 event 用：datetime-local（Slice N10；'' = 未设置） */
   startAt: string
   /** 仅 event 用：datetime-local（Slice N10；'' = 未设置） */
@@ -100,6 +102,7 @@ export const EMPTY_AI_FORM: AiSuggestionFormValues = {
   importance: '',
   estimateMin: '',
   dueAt: '',
+  deferUntil: '',
   startAt: '',
   endAt: '',
   location: '',
@@ -157,6 +160,7 @@ export function suggestionToForm(suggestion: AiSuggestion): AiSuggestionFormValu
     importance: String(suggestion.importance),
     estimateMin: suggestion.estimateMin === undefined ? '' : String(suggestion.estimateMin),
     dueAt: toLocalInput(suggestion.dueAt),
+    deferUntil: '',
     startAt: '',
     endAt: '',
     location: '',
@@ -178,6 +182,7 @@ export function draftToForm(title: string, draft: TaskDraftSuggestion): AiSugges
     importance: draft.importance === undefined ? '' : String(draft.importance),
     estimateMin: draft.estimateMin === undefined ? '' : String(draft.estimateMin),
     dueAt: toLocalInput(draft.dueAt),
+    deferUntil: '',
     startAt: '',
     endAt: '',
     location: '',
@@ -198,6 +203,8 @@ export function formToTaskCreate(values: AiSuggestionFormValues): TaskCreateInpu
   if (values.importance !== '') input.importance = Number(values.importance)
   if (values.estimateMin.trim() !== '') input.estimateMin = Number(values.estimateMin)
   if (values.dueAt !== '') input.dueAt = toISODateTime(new Date(values.dueAt))
+  // 软推迟（v0.5）：仅在填写（非空）时提交，空 = 省略（服务端不落该键）
+  if (values.deferUntil !== '') input.deferUntil = toISODateTime(new Date(values.deferUntil))
   if (values.projectId !== '') input.projectId = values.projectId
   if (values.areaId !== '') input.areaId = values.areaId
   const tags = splitList(values.tags)
@@ -248,6 +255,7 @@ export function actionToForm(action: AiAction): AiSuggestionFormValues {
     importance: action.importance === undefined ? '' : String(action.importance),
     estimateMin: action.estimateMin === undefined ? '' : String(action.estimateMin),
     dueAt: toLocalInput(action.dueAt),
+    deferUntil: '',
     startAt: toLocalInput(action.startAt),
     endAt: toLocalInput(action.endAt),
     location: action.location ?? '',

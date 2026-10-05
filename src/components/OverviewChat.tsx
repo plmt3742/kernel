@@ -127,6 +127,19 @@ function normalizeEdits(value: unknown): ChatEditProposal[] {
   return out
 }
 
+/** 逆序写回 before（撤销 / 部分失败回滚共用）；返回未能还原的条目数（0 = 全部还原成功） */
+async function restoreEdits(edits: ChatEditProposal[]): Promise<number> {
+  let failed = 0
+  for (const edit of [...edits].reverse()) {
+    try {
+      await updateEntity(edit.kind, edit.id, edit.before)
+    } catch {
+      failed += 1
+    }
+  }
+  return failed
+}
+
 interface ChatState {
   turns: ChatTurn[]
   draft: string
@@ -318,15 +331,18 @@ export function OverviewChat() {
     })()
   }
 
-  // 应用修改提案（本切片）：逐条经单写者更新；成功后标记「已应用」并提供撤销（逆序写回 before）
+  // 应用修改提案（本切片）：逐条经单写者更新；成功后标记「已应用」并提供撤销（逆序写回 before）。
+  // 批量原子性：任一条失败时，回滚此前已写入的条目（逆序写回 before），不留半套修改。
   const applyEdits = (turn: ChatTurn): void => {
     const edits = turn.edits
     if (edits === undefined || edits.length === 0 || applying) return
     setApplying(true)
     void (async () => {
+      const applied: ChatEditProposal[] = []
       try {
         for (const edit of edits) {
           await updateEntity(edit.kind, edit.id, edit.fields)
+          applied.push(edit)
         }
         patchTurn(turn.id, { editState: 'applied' })
         const only = edits.length === 1 ? edits[0] : undefined
@@ -336,19 +352,20 @@ export function OverviewChat() {
             label: '撤销',
             onClick: () => {
               void (async () => {
-                try {
-                  for (const edit of [...edits].reverse()) {
-                    await updateEntity(edit.kind, edit.id, edit.before)
-                  }
-                } catch (err) {
-                  toast(`撤销失败：${errorText(err)}`, { tone: 'error' })
-                }
+                const failed = await restoreEdits(edits)
+                if (failed > 0) toast(`撤销未完成：有 ${failed} 项未能还原`, { tone: 'error' })
               })()
             },
           },
         })
       } catch (err) {
-        toast(`修改失败：${errorText(err)}`, { tone: 'error' })
+        // 部分失败：回滚已写入的条目，避免留下半套修改；失败项保留「待确认」供重试
+        let note = ''
+        if (applied.length > 0) {
+          const failed = await restoreEdits(applied)
+          note = failed === 0 ? '，已回滚' : `；回滚未完全成功：有 ${failed} 项未还原`
+        }
+        toast(`修改失败${note}：${errorText(err)}`, { tone: 'error' })
       } finally {
         setApplying(false)
       }

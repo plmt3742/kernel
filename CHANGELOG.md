@@ -4,6 +4,46 @@
 
 ## [Unreleased]
 
+### 个人页 + 习惯页：热力图迁移 + 习惯独立成页 + 总览降级入口卡（已完成 · 2026-10-05）
+
+答 owner「如果有多个习惯，它只显示第一个习惯，设计不合理」→ 升级为信息架构调整（ADR-0039）：新增**习惯页**与**个人页**，热力图迁往个人页，总览习惯块降级为入口卡。
+
+- **习惯页 `/habits`（一级导航 07）**：全部习惯卡片——今日打卡（紧凑 pill + toast 撤销）、连续 / 最长 / 累计、可折叠 16 周热力图、编辑 / 删除（入回收站可撤销）/「新建习惯」；习惯的创建 / 编辑 / 删除**从设置页迁出**；`?habit=` 深链打开编辑（`relations` 的 `h-` 映射同步改 `/habits?habit=`）。
+- **个人页 `/profile`（顶栏头像进入，不占一级导航）**：资料卡（`config.owner` 显示名 + `bio` + 头像本地图片，可编辑 / 上传 / 移除；无图用姓名首字母 monogram）+ **活跃日历**（`GET /api/activity/summary`：审计按本地日聚合 + 零填充，5 级强度贡献图，含习惯打卡与全部真实写入，排除设置类噪音）+ **动作时间线**（复用 `ActivityTimeline`，只读、日分组、筛选、深链）。
+- **总览习惯块 → 入口卡**：`今日 N/M` + 常用习惯（近 30 天打卡降序）chips（非交互），**整卡按钮跳 `/habits`**；热力图 / 打卡切换自总览移除。
+- **服务端**：`config` 扩可选 `bio` / `avatarPath`（`appConfigSchema`，catchall 兼容旧配置）；`POST /api/config` 白名单扩 `owner` / `bio`；`POST /api/profile/avatar`（RAW ≤2 MB、png / jpeg / webp / gif、落 `data/files/profile-avatar-<ts>.<ext>`、替换清旧、审计 `profile.avatar`）/ `POST /api/profile/avatar/remove` / `GET /api/profile/avatar`（流式 + `nosniff` + `no-store`，缺失 404）；`GET /api/activity/summary?days=N`（默认 140、clamp 7..400、零填充、排除 `config.update` / `ai.key.update`）。config 写入因 `store.updateConfig` 仅支持 `aiAutomation`，按最小改动约束在 `server/index.mjs` 内以「串行链 + 原子写（write-file-atomic）+ 审计」镜像 store 模式（**store.mjs 未改**，ADR-0039 记录为后续收敛项）。
+- **导航**：`/habits` 为一级项（编号 01–11 顺延）；`/profile` 走顶栏头像 + 命令面板「个人页」动作；`nav.ts` 增 `EXTRA_PAGES` 保证 `navByPath` 标题解析。
+
+- **修改**：server/{schemas,index}.mjs、src/{types.ts,App.tsx,lib/{nav,relations,derive,data,mutations}.ts}、src/components/{shell/TopBar, DimensionManagers, ActivityCalendar（新）, CommandPalette}.tsx、src/views/{Habits（新）, Profile（新）, Overview, Settings}.tsx、src/styles/{components,views}.css、public/guide.html、docs/{00,02,04,05,README}、docs/decisions/0039-profile-and-habits-pages.md（新）
+- **验证**：`npx tsc --noEmit` 0 error；`npm run build` 退出 0（入口 389.9 kB，无告警）；**隔离 QA**——服务端副本（端口 4197、独立 data 目录）`server-profile-check.mjs` **10/10 PASS**（config owner/bio、头像上传/读取/替换清旧/非法类型 400/空文件 400/移除 404、summary 零填充与噪音排除）；浏览器（Playwright + `/api/**` 拦截，真实数据零触达）`qa-pages.py` **28/28 PASS**（资料卡与头像加载、活跃日历 5 级强度与汇总、时间线复用、顶栏头像 → `/profile`、习惯页双卡 / 打卡往返 / 热力图展开、总览入口卡 `今日 N/M` + 跳转、轨道与命令面板入口、1440 / 390 零横溢）；视觉复核截图 `.qa/v76/page-{profile,habits,overview-card}.png`。
+
+### 功能完善 · B 组：搜索 / 习惯热力图 / deferUntil / 日历翻周 / 回顾自动化（已完成 · 2026-10-05）
+
+答会话交接 `.qa/SESSION-HANDOFF.md` §5 B 组「Roadmap v0.6 + 缺口」六项：
+
+- **全局全文搜索**：`searchSnapshot(query, limit)`（`src/lib/data.ts`，本地快照线性扫描任务 / 笔记 / 资料 / 日程 / 项目；大小写不敏感，标题命中优先于正文，片段 ≤80 字，经 `deepLinkOfId` 生成深链）接入**命令面板**新「搜索 · SEARCH」分组（受控输入，结果项 value 含原始查询串以免被 cmdk 过滤；点结果直达详情）与**资料页搜索框**（`type=search`，查询持久化 `kernel.ui.library.v1`，与类型 / 状态 / 标签筛选叠加，空态文案适配）。纯客户端，不联网、不外发。
+- **习惯热力图 + 连续打卡统计**：新组件 `src/components/HabitHeatmap.tsx`（近 16 周、周一对齐列 × 7 天，实心 = 命中 / 空心 = 缺口 / 未来日淡化占位，月份标签 + 逐格 `title` tooltip，`role="img"` + aria-label、不可聚焦、无动画）；`src/lib/derive.ts` 新增 `getHabitStats`（`current` 与既有 `getHabitStreak` 同口径、`longest` 逐日连续性、`total` 命中计数）与 `getHabitHeatWeeks`；总览习惯块由 14 天点阵升级为热力图 + 「连续 N 天 · 最长 N 天 · 累计 N 次」统计行（今日打卡开关与零习惯空态保留）；新增 `.k-heat*` token-only 样式（暗 / 亮双主题）。
+- **`deferUntil` 真正启用**：创建链路补全——`taskCreateFieldsSchema` + `CREATE_FIELD_KEYS` + `createTask`（`server/`）+ `TaskCreateInput` + `TaskDraftModal`「推迟至」datetime 输入（空 = 不写）；运行时**软推迟**——`deferUntil` 为有效未来且未完成 / 未丢弃的任务默认从任务列表隐藏（「含已推迟」开关持久化 `kernel.ui.tasks.v1`，推迟行显示「推迟至 …」标记，未完成 / 逾期 / 今日计数始终排除，页脚「N 项已推迟」提示），日历的截止任务同步跳过；判定全部运行时派生，绝不落盘标记。
+- **日历翻周**：`weekCursorMs`（持久化 `kernel.ui.calendar.v1`，null = 实况）+ 上一周 / 下一周 / 回到本周（游标激活才出现）导航；游标激活时主区切换**周一至周日逐日视图**（事件 + 当日截止任务 + 当日课程，`mergeDayRuns` 复用、`「含已结束」` 开关沿用），周范围头 + 可点日头（滚动定位 + 选中日）；迷你月历随游标同步、点日跳周、手翻月退出游标；默认实况视图零回归。
+- **回顾自动化**（ADR-0038，`src/lib/review.ts` + `AppLayout` 挂载）：「周一 12:00 后」自动生成周回顾、「每月 1 日 12:00 后」自动生成月回顾（复用 `POST /api/ai/review/draft`，服务端生成即归档）——周期 `periodKey` 已归档（任意来源）/ 数据未水合 / 本会话已尝试 / 跨标签锁（`kernel.ui.review.lock.v1` TTL 120s）未取得 / AI 离线（探活前置守卫）均静默跳过；成功 → 水合快照 + toast「已自动生成本周 / 本月回顾 · 查看」；**只生成报告、绝不自动应用任何迁移建议**。
+- **迁移建议持久化 + 回看**：`reviewSchema` 增可选 `staleAdvice`（`staleAdviceSchema`；draft 自动归档时随报告写入，手工 `POST /api/reviews` 经 `sanitizeStaleAdvice` 透传、非法静默丢弃，`update` 白名单不变）；归档报告阅读视图新增「迁移建议」块（复用既有归档 / 迁移 / 重启动作）。
+
+- **修改**：`server/{schemas,index}.mjs`、`src/types.ts`、`src/lib/{data,derive,mutations,aiForm}.ts`、`src/lib/review.ts`（新）、`src/components/{CommandPalette,TaskDraftModal}.tsx`、`src/components/HabitHeatmap.tsx`（新）、`src/components/shell/AppLayout.tsx`、`src/views/{Tasks,Calendar,Library,Overview,Review}.tsx`、`src/styles/{components,views}.css`、`public/guide.html`、`docs/{02,04,05,README}`、`docs/decisions/0038-review-automation.md`（新）
+- **验证**：`npx tsc --noEmit` 0 error；`npm run build` 退出 0（入口 386.9 kB / gzip 122.8，无 chunk 告警）；**隔离 QA**（Playwright + `/api/**` 拦截注入夹具，真实数据零触达、0 写请求）——功能回归 `.qa/v76/qa-b.py` **40/40 PASS**（10 路由懒加载 + 面板搜索分组 / 命中 / 深链 + 资料页字段匹配与清除 + 推迟默认隐藏 / 开关 / 标记 / 页脚 + 翻周 / 回到本周 / 下周日程可见 + 热力图与统计），回顾调度 `.qa/v76/qa-ws5.py`（假时钟）**25/25 PASS**（周 / 月候选、同周期一次、既有归档零动作、09:10 / 11:29 静默且过 12:00 触发、离线不生成且探活不风暴、「迁移建议」展示），服务端 schema 单测 `.qa/v76/server-schema-check.mjs` **4/4 PASS**。
+
+### 体验 / 无障碍清扫 · Slice C（已完成 · 2026-10-05）
+
+答会话交接 `.qa/SESSION-HANDOFF.md` §5 C 组（外部审计 P5 低危项），五项修复：
+
+- **全局 `c` 快捷键误触**：`AppLayout` 的全局捕捉在弹窗 / 命令面板（`[role="dialog"][aria-modal="true"]`）打开时不再触发——此前焦点落在弹窗内按钮（非输入元素）时按 `c` 会误跳收件箱、打断当前操作；顺带补 `event.repeat` 过滤，并把延迟派发「聚焦捕捉」的 `setTimeout` 改为持有 + 卸载清理。
+- **定时器清理**：`ToastContext` 每条 toast 的自动消失计时器改为按 id 持有（`Map`），手动关闭 / Provider 卸载时一并清理；`CommandPalette` 的 `run()` 延迟执行动作计时器同样持有并在卸载时清理。
+- **总览 AI 批量代改原子性**：`OverviewChat.applyEdits` 任一条失败时回滚此前已写入的条目（逆序写回 `before`），不再留下半套修改；撤销改为逐条统计失败数并如实提示（`restoreEdits` 共用）。
+- **编辑表单初值重置**：`EntityEditForm` 引入「初值签名」（字段键 + 对应初值），复用同一实例切换编辑对象、或保存后父组件回传新记录时重置表单值，避免停留在上一条记录的陈旧值；签名与无关重渲染 / 对象身份无关，不会误清用户正在编辑的内容。
+- **主包分包**：路由级懒加载（10 个视图全部 `React.lazy`，`AppLayout` 内 `Suspense` 兜底）+ `vite.config.ts` `manualChunks`（react / motion / markdown vendor）。入口包 **857.5 kB → 378.1 kB**（gzip 266.9 → 120.5 kB），无 chunk 超过 500 kB（消除构建告警）；`react-markdown`（119 kB）仅在资料页按需载入。
+
+- **修改**：`src/App.tsx`、`src/components/shell/AppLayout.tsx`、`src/components/CommandPalette.tsx`、`src/components/OverviewChat.tsx`、`src/components/EntityEditForm.tsx`、`src/context/ToastContext.tsx`、`vite.config.ts`
+- **验证**：`npm run build` 退出 0（`tsc -b` 类型检查通过）；Playwright 冒烟 `.qa/v76/smoke-cleanup.py`（对生产构建 `vite preview`）**12/12 PASS**——10 条路由懒加载均渲染且控制台 0 error；`c` 快捷键无弹窗时跳收件箱、命令面板打开时停留原地。
+
 ### 文档审计对齐 + 会话交付记录（已完成 · 2026-10-05）
 
 本会话余下的交付与文档审计对齐：

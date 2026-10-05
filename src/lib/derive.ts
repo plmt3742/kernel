@@ -1,16 +1,18 @@
 // KERNEL · 派生查询（运行时计算，禁止落库）
 // 组合 src/lib/data.ts 的 getter，产出各视图所需的口径与几何布局。
 import type { CalendarEvent, Energy, Habit, KernelSnapshot, Task } from '@/types'
-import { getHabitStreak, getSnapshot } from '@/lib/data'
+import { getHabitStreak, getHabits, getSnapshot } from '@/lib/data'
 import {
   addDays,
   endOfDay,
   formatWeekdayShort,
   isPast,
   isSameDay,
+  monthLabel,
   startOfWeek,
   toDate,
   toISODateString,
+  toMonthKey,
   upcomingDays,
 } from '@/lib/date'
 
@@ -167,6 +169,136 @@ export function getCodingStreakDetail(now: Date = new Date()): CodingStreakDetai
     hits: window.filter((cell) => cell.hit).length,
     gaps,
   }
+}
+
+/* ---------------------------------------------------------------------------
+ * 习惯：统计与热力图窗口（v0.5 · 切片）
+ * 只读派生（禁止落库）；habit.log 可能缺省（?? []）；日期为本地 YYYY-MM-DD。
+ * ------------------------------------------------------------------------- */
+
+export interface HabitStats {
+  /** 当前连续天数（与 getHabitStreak 同口径：今天尚未打卡不中断） */
+  current: number
+  /** 全 log 内最长连续命中天数 */
+  longest: number
+  /** 命中累计（value > 0 的条目数） */
+  total: number
+}
+
+/** 习惯统计：连续 / 最长 / 累计（读取 getHabits()，只读派生） */
+export function getHabitStats(habitId: string, now: Date = new Date()): HabitStats {
+  const habit = getHabits().find((item) => item.id === habitId)
+  const hits = (habit?.log ?? []).filter((entry) => entry.value > 0)
+  const total = hits.length
+  const current = getHabitStreak(habitId, now)
+
+  // 最长连续：按日期去重升序，逐日以「前一日 + 1 天」判定连续（date 助手，避开时区/DST 误差）
+  const dates = Array.from(new Set(hits.map((entry) => entry.date))).sort()
+  let longest = 0
+  let run = 0
+  let previous: string | null = null
+  for (const date of dates) {
+    run = previous !== null && toISODateString(addDays(toDate(previous), 1)) === date ? run + 1 : 1
+    if (run > longest) longest = run
+    previous = date
+  }
+
+  return { current, longest, total }
+}
+
+export interface HabitHeatDay {
+  /** YYYY-MM-DD（本地） */
+  date: string
+  /** 当日有 value > 0 的打卡记录 */
+  hit: boolean
+  /** 晚于今天（窗口末周的未来占位） */
+  future: boolean
+}
+
+export interface HabitHeatWeek {
+  /** 该列周一 YYYY-MM-DD */
+  start: string
+  /** 月份标签（仅在新月份首列且与上一标签间隔 ≥ MONTH_LABEL_MIN_GAP 时给出，如「8月」） */
+  monthLabel?: string
+  /** 周一 → 周日的 7 天 */
+  days: HabitHeatDay[]
+}
+
+/** 月份标签最小列距：与上一个已发出标签至少隔 3 列，避免「6月7月」相邻拥挤 */
+const MONTH_LABEL_MIN_GAP = 3
+
+/**
+ * 习惯热力图窗口：近 `weeks` 周（默认 16），周一为列首、末列为本周（含今天）。
+ * 未来日置 future=true（占位）；habit.log 缺省按空处理。只读派生。
+ *
+ * 月份标签防碰撞：窗口首个不完整月（周一非 1 号）直接省略（残月，信息量低且最易与
+ * 下月标签相邻）；其余新月份仅在与上一已发标签的列距 ≥ MONTH_LABEL_MIN_GAP 时才给出。
+ */
+export function getHabitHeatWeeks(
+  habitId: string,
+  weeks = 16,
+  now: Date = new Date(),
+): HabitHeatWeek[] {
+  const habit = getHabits().find((item) => item.id === habitId)
+  const byDate = new Map((habit?.log ?? []).map((entry) => [entry.date, entry.value]))
+  const todayKey = toISODateString(now)
+  const firstMonday = addDays(startOfWeek(now), -7 * (weeks - 1))
+  let previousMonth = ''
+  let lastLabelIndex = Number.NEGATIVE_INFINITY
+  return Array.from({ length: weeks }, (_, weekIndex) => {
+    const monday = addDays(firstMonday, 7 * weekIndex)
+    const month = toMonthKey(monday)
+    let label: string | undefined
+    if (month !== previousMonth) {
+      const leadingPartial = weekIndex === 0 && monday.getDate() !== 1
+      const farEnough = weekIndex - lastLabelIndex >= MONTH_LABEL_MIN_GAP
+      if (!leadingPartial && farEnough) {
+        label = monthLabel(monday)
+        lastLabelIndex = weekIndex
+      }
+    }
+    previousMonth = month
+    const days = Array.from({ length: 7 }, (_, dayIndex) => {
+      const date = toISODateString(addDays(monday, dayIndex))
+      const value = byDate.get(date)
+      return { date, hit: value !== undefined && value > 0, future: date > todayKey }
+    })
+    return { start: toISODateString(monday), monthLabel: label, days }
+  })
+}
+
+/* ---------------------------------------------------------------------------
+ * 习惯：常用排序与「今日是否打卡」（v0.5 · 习惯独立页）
+ * 只读派生，禁止落盘。供总览入口卡挑选常用习惯，及习惯页判定今日态。
+ * ------------------------------------------------------------------------- */
+
+/**
+ * 常用习惯：按「近 30 天打卡次数」降序 → 「当前连续天数」降序 → id 升序 取前 limit 个。
+ * 30 天窗口为含今天的滚动窗口（今天与 29 天前均含）；value > 0 才计为一次命中。
+ */
+export function getFrequentHabits(limit = 3, now: Date = new Date()): Habit[] {
+  const todayKey = toISODateString(now)
+  const lowerKey = toISODateString(addDays(now, -29))
+  const recentHits = (habit: Habit): number =>
+    (habit.log ?? []).filter(
+      (entry) => entry.value > 0 && entry.date >= lowerKey && entry.date <= todayKey,
+    ).length
+  return [...getHabits()]
+    .sort((a, b) => {
+      const byRecent = recentHits(b) - recentHits(a)
+      if (byRecent !== 0) return byRecent
+      const byStreak = getHabitStreak(b.id, now) - getHabitStreak(a.id, now)
+      if (byStreak !== 0) return byStreak
+      return a.id.localeCompare(b.id)
+    })
+    .slice(0, limit)
+}
+
+/** 今日是否已打卡（habit.log 中今天存在 value > 0 的条目） */
+export function isHabitHitToday(habitId: string, now: Date = new Date()): boolean {
+  const habit = getHabits().find((item) => item.id === habitId)
+  const todayKey = toISODateString(now)
+  return (habit?.log ?? []).some((entry) => entry.date === todayKey && entry.value > 0)
 }
 
 /** 数据记录总数：10 类实体记录 + 配置 + 标签注册表（共 146 = 144 + 2） */

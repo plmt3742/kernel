@@ -1,14 +1,46 @@
 // KERNEL · CommandPalette（cmdk：导航 / 动作 / 原型标注；墨底纸字反选行）
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { Command } from 'cmdk'
-import { CornerDownLeft, MoonStar, Plus, Search, Sparkles } from 'lucide-react'
+import {
+  CalendarDays,
+  CornerDownLeft,
+  FileText,
+  FolderKanban,
+  Library,
+  ListChecks,
+  MoonStar,
+  Plus,
+  Search,
+  Sparkles,
+  UserRound,
+  type LucideIcon,
+} from 'lucide-react'
 import { usePalette } from '@/context/PaletteContext'
 import { useTheme } from '@/context/ThemeContext'
 import { NAV_ITEMS } from '@/lib/nav'
+import { searchSnapshot, type SearchResult } from '@/lib/data'
 import { DUR, EASE_ENTER } from '@/lib/motion'
 import { trapTab } from '@/lib/focus'
+
+/** 搜索结果的中文类型标签 */
+const SEARCH_KIND_LABEL: Record<SearchResult['kind'], string> = {
+  task: '任务',
+  note: '笔记',
+  resource: '资料',
+  event: '日程',
+  project: '项目',
+}
+
+/** 搜索结果的前置图标（与导航口径一致） */
+const SEARCH_KIND_ICON: Record<SearchResult['kind'], LucideIcon> = {
+  task: ListChecks,
+  note: FileText,
+  resource: Library,
+  event: CalendarDays,
+  project: FolderKanban,
+}
 
 export function CommandPalette() {
   const { open, setOpen } = usePalette()
@@ -18,8 +50,26 @@ export function CommandPalette() {
   const dialogRef = useRef<HTMLDivElement>(null)
   const setOpenRef = useRef(setOpen)
   setOpenRef.current = setOpen
+  // 搜索输入受控：查询串驱动「搜索 · SEARCH」结果组（快照为模块态，渲染时现算即可）
+  const [query, setQuery] = useState('')
+  // run() 延迟执行动作的一次性计时器：卸载时清理，避免定时器悬浮
+  const runTimerRef = useRef<number | null>(null)
   // 打开前最后聚焦的元素——面板自动聚焦会抢走焦点，须在打开前持续记录（M5a 验收修复）
   const prevFocusRef = useRef<HTMLElement | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (runTimerRef.current !== null) {
+        window.clearTimeout(runTimerRef.current)
+        runTimerRef.current = null
+      }
+    }
+  }, [])
+
+  // 关闭时清空查询：下次打开回到全新空白面板（与旧版非受控输入行为一致）
+  useEffect(() => {
+    if (!open) setQuery('')
+  }, [open])
 
   useEffect(() => {
     if (open) return
@@ -54,8 +104,15 @@ export function CommandPalette() {
 
   const run = (action: () => void): void => {
     setOpen(false)
-    window.setTimeout(action, 20)
+    if (runTimerRef.current !== null) window.clearTimeout(runTimerRef.current)
+    runTimerRef.current = window.setTimeout(() => {
+      runTimerRef.current = null
+      action()
+    }, 20)
   }
+
+  // 空查询不搜索（结果组整体不渲染）；快照为模块态，渲染期调用即可，无需额外订阅
+  const searchResults: SearchResult[] = query.trim() === '' ? [] : searchSnapshot(query)
 
   return (
     <AnimatePresence>
@@ -88,6 +145,8 @@ export function CommandPalette() {
                   autoFocus
                   className="k-palette__input u-tnum"
                   placeholder="搜索视图、动作…"
+                  value={query}
+                  onValueChange={setQuery}
                 />
                 <span className="k-palette__esc u-label">ESC</span>
               </div>
@@ -136,6 +195,15 @@ export function CommandPalette() {
                   </Command.Item>
                   <Command.Item
                     className="k-palette__item"
+                    value="个人页 个人资料 profile me avatar"
+                    onSelect={() => run(() => navigate('/profile', { viewTransition: true }))}
+                  >
+                    <UserRound size={16} strokeWidth={1.5} aria-hidden />
+                    <span>个人页</span>
+                    <span className="k-palette__hint u-label">PROFILE</span>
+                  </Command.Item>
+                  <Command.Item
+                    className="k-palette__item"
                     value="切换主题 theme toggle dark light"
                     onSelect={() =>
                       run(() => setTheme(theme === 'dark' ? 'light' : 'dark'))
@@ -160,6 +228,32 @@ export function CommandPalette() {
                     <span className="k-palette__hint u-label">INBOX</span>
                   </Command.Item>
                 </Command.Group>
+
+                {query.trim() !== '' && searchResults.length > 0 && (
+                  <Command.Group heading="搜索 · SEARCH" className="k-palette__group">
+                    {searchResults.map((result) => {
+                      const Icon = SEARCH_KIND_ICON[result.kind]
+                      return (
+                        <Command.Item
+                          key={`${result.kind}-${result.id}`}
+                          className="k-palette__item"
+                          // value 含原始查询串：正文命中（标题不含关键词）也不会被 cmdk 过滤掉
+                          value={`${query} ${result.title} ${result.kind}`}
+                          title={result.snippet}
+                          onSelect={() =>
+                            run(() => navigate(result.deepLink, { viewTransition: true }))
+                          }
+                        >
+                          <Icon size={16} strokeWidth={1.5} aria-hidden />
+                          <span>{result.title}</span>
+                          <span className="k-palette__hint u-label">
+                            {SEARCH_KIND_LABEL[result.kind]}
+                          </span>
+                        </Command.Item>
+                      )
+                    })}
+                  </Command.Group>
+                )}
               </Command.List>
 
               <div className="k-palette__foot u-label">

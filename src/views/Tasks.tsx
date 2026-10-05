@@ -17,7 +17,9 @@ import { errorText } from '@/lib/api'
 import { ENERGY_LABEL, ENERGY_OPTIONS, TASK_STATUS_LABEL, tagLabel } from '@/lib/format'
 import {
   endOfWeek,
+  formatDateTime,
   humanizeDay,
+  isFuture,
   isPast,
   isSameDay,
   isWithinRange,
@@ -46,6 +48,8 @@ interface TaskUiState {
   filters: Record<string, string>
   groupMode: GroupMode
   showMore: boolean
+  /** 软推迟（v0.5）：是否在列表中显示已推迟任务（默认隐藏） */
+  showDeferred: boolean
   quick: string
 }
 
@@ -54,6 +58,7 @@ const TASK_UI_DEFAULT: TaskUiState = {
   filters: { status: 'open' },
   groupMode: 'flat',
   showMore: false,
+  showDeferred: false,
   quick: '',
 }
 
@@ -70,6 +75,7 @@ function parseTaskUi(raw: unknown): TaskUiState | null {
     filters: Object.keys(filters).length > 0 ? filters : TASK_UI_DEFAULT.filters,
     groupMode: oneOf(v.groupMode, ['flat', 'project', 'context'] as const, 'flat'),
     showMore: bool(v.showMore),
+    showDeferred: bool(v.showDeferred),
     quick: str(v.quick),
   }
 }
@@ -102,7 +108,7 @@ export function Tasks() {
 
   // 界面状态（Slice Z · F26）：来自模块级 store（跨路由 + 刷新保留）
   const ui = useUiStore(taskUiStore)
-  const { filters, groupMode, showMore, quick } = ui
+  const { filters, groupMode, showMore, showDeferred, quick } = ui
   const setFilters = (
     next: Record<string, string> | ((prev: Record<string, string>) => Record<string, string>),
   ): void => {
@@ -118,6 +124,12 @@ export function Tasks() {
     taskUiStore.set((state) => ({
       ...state,
       showMore: typeof next === 'function' ? next(state.showMore) : next,
+    }))
+  }
+  const setShowDeferred = (next: boolean | ((prev: boolean) => boolean)): void => {
+    taskUiStore.set((state) => ({
+      ...state,
+      showDeferred: typeof next === 'function' ? next(state.showDeferred) : next,
     }))
   }
   const setQuick = (value: string): void => {
@@ -164,22 +176,36 @@ export function Tasks() {
     return isWithinRange(task.dueAt, startOfWeek(now), endOfWeek(now))
   }
 
+  // 软推迟（v0.5）：deferUntil 为有效未来时刻且未完成 / 未丢弃 = 已推迟（运行时计算，绝不落盘标记）。
+  // 推迟默认从活跃工作列表隐藏；仅由 `showDeferred` 一个闸门控制（不写入状态 / 时间维度筛选）。
+  const isDeferred = (task: Task): boolean =>
+    task.deferUntil !== undefined &&
+    isFuture(task.deferUntil, now) &&
+    !isTaskDone(task) &&
+    task.status !== 'dropped'
+
+  // 基础筛选（上下文 / 能量 / 区域 / 身份）：时间维度下移到状态筛选之后，
+  // 使「含已推迟」打开时推迟行可越过状态 / 时间筛选展示（推迟开关是唯一闸门）。
   const base = allTasks.filter((task) => {
     if (filters.context !== undefined && !task.contexts.includes(filters.context)) return false
     if (filters.energy !== undefined && task.energy !== filters.energy) return false
     if (filters.area !== undefined && task.areaId !== filters.area) return false
     if (filters.role !== undefined && !task.tags.includes(filters.role)) return false
-    if (!inTime(task)) return false
     return true
   })
 
+  const matchesStatus = (task: Task): boolean => {
+    const done = isTaskDone(task)
+    if (statusValue === 'open') return (!done && task.status !== 'dropped') || pendingDone.includes(task.id)
+    if (statusValue === 'done') return done
+    if (statusValue === '') return true
+    return task.status === statusValue
+  }
+
   const visible = base
     .filter((task) => {
-      const done = isTaskDone(task)
-      if (statusValue === 'open') return (!done && task.status !== 'dropped') || pendingDone.includes(task.id)
-      if (statusValue === 'done') return done
-      if (statusValue === '') return true
-      return task.status === statusValue
+      if (isDeferred(task)) return showDeferred
+      return inTime(task) && matchesStatus(task)
     })
     .sort(byDueTask)
 
@@ -206,19 +232,26 @@ export function Tasks() {
     }))
   }, [groupMode, visible])
 
+  // 计数一律排除已推迟任务（无论「含已推迟」是否打开）——代表活跃工作量。
   const openCount = allTasks.filter(
-    (task) => task.status !== 'dropped' && !isTaskDone(task),
+    (task) => task.status !== 'dropped' && !isTaskDone(task) && !isDeferred(task),
   ).length
   const overdueCount = allTasks.filter(
     (task) =>
       task.dueAt !== undefined &&
       task.status !== 'dropped' &&
       !isTaskDone(task) &&
+      !isDeferred(task) &&
       isPast(task.dueAt),
   ).length
   const todayCount = allTasks.filter(
-    (task) => task.dueAt !== undefined && !isTaskDone(task) && isSameDay(task.dueAt, new Date()),
+    (task) =>
+      task.dueAt !== undefined &&
+      !isTaskDone(task) &&
+      !isDeferred(task) &&
+      isSameDay(task.dueAt, new Date()),
   ).length
+  const deferredCount = allTasks.filter(isDeferred).length
 
   // 上下文筛选候选（Slice Y · F24）：已用情境 ∪ 注册表情境——
   // 使「已登记但暂无任务」的情境仍可选，避免注册表情境在 UI 中不可达。
@@ -395,6 +428,10 @@ export function Tasks() {
             </button>
           ))}
         </div>
+        {/* 软推迟（v0.5）：默认隐藏已推迟任务；打开后列出（推迟行越过状态 / 时间筛选） */}
+        <TagPill selected={showDeferred} onClick={() => setShowDeferred((prev) => !prev)}>
+          含已推迟{deferredCount > 0 ? ` · ${deferredCount}` : ''}
+        </TagPill>
       </div>
 
       {showMore && (
@@ -450,6 +487,7 @@ export function Tasks() {
                     {group.tasks.map((task, index) => {
                       const done = isTaskDone(task)
                       const overdue = task.dueAt !== undefined && !done && isPast(task.dueAt)
+                      const deferred = isDeferred(task)
                       const project =
                         task.projectId !== undefined
                           ? getProjectById(task.projectId)?.title
@@ -485,6 +523,11 @@ export function Tasks() {
                                 <span className="k-task__strike" aria-hidden />
                               </span>
                             </button>
+                            {deferred && task.deferUntil !== undefined && (
+                              <span className="u-label k-muted">
+                                推迟至 {formatDateTime(task.deferUntil)}
+                              </span>
+                            )}
                           </td>
                           <td className="k-tasks__col--ctx">
                             <span className="k-tasks__ctx">
@@ -535,6 +578,11 @@ export function Tasks() {
 
           <div className="k-tasks__foot u-label">
             <span>显示 {visible.length} 项 · 按截止升序</span>
+            {deferredCount > 0 && (
+              <TagPill ghost onClick={() => setShowDeferred((prev) => !prev)}>
+                {deferredCount} 项已推迟
+              </TagPill>
+            )}
             <span>
               逾期 {overdueCount} · 今日 {todayCount}
             </span>
