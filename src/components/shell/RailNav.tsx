@@ -71,6 +71,7 @@ export function RailNav({ collapsed, onToggle, onMore }: RailNavProps) {
                     className="k-rail__grouphead-btn"
                     aria-expanded={!isCollapsed}
                     aria-label={`${headLabel.cn} ${headLabel.en}（${isCollapsed ? '已折叠' : '已展开'}）`}
+                    title={`${headLabel.cn} · ${headLabel.en}`}
                     onClick={() => toggleGroup(item.group)}
                   >
                     <span className="k-rail__grouphead-line">

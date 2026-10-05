@@ -125,11 +125,26 @@
   display: none;
 }
 .k-app[data-rail='collapsed'] .k-rail__grouphead {
+  border-top-color: var(--outline-strong);
   padding: var(--space-1) 0;
 }
 .k-app[data-rail='collapsed'] .k-rail__grouphead-cn,
 .k-app[data-rail='collapsed'] .k-rail__grouphead-en {
   display: none;
+}
+/* 图标态：折叠控件收为「居中紧凑按钮」（悬停浮起），避免孤立箭头 */
+.k-app[data-rail='collapsed'] .k-rail__grouphead-btn {
+  width: 26px;
+  margin: 0 auto;
+  padding: var(--space-1) 0;
+  border-radius: var(--radius-inner);
+}
+.k-app[data-rail='collapsed'] .k-rail__grouphead-btn:hover,
+.k-app[data-rail='collapsed'] .k-rail__grouphead-btn:focus-visible {
+  background: var(--hover-veil);
+}
+.k-app[data-rail='collapsed'] .k-rail__grouphead-line {
+  gap: 0;
 }
 .k-rail__item:hover {
   background: var(--hover-veil);
@@ -726,11 +741,26 @@
     display: none;
   }
   .k-app .k-rail__grouphead {
+    border-top-color: var(--outline-strong);
     padding: var(--space-1) 0;
   }
   .k-app .k-rail__grouphead-cn,
   .k-app .k-rail__grouphead-en {
     display: none;
+  }
+  /* 图标态（窄窗）：折叠控件收为居中紧凑按钮，避免孤立箭头 */
+  .k-app .k-rail__grouphead-btn {
+    width: 26px;
+    margin: 0 auto;
+    padding: var(--space-1) 0;
+    border-radius: var(--radius-inner);
+  }
+  .k-app .k-rail__grouphead-btn:hover,
+  .k-app .k-rail__grouphead-btn:focus-visible {
+    background: var(--hover-veil);
+  }
+  .k-app .k-rail__grouphead-line {
+    gap: 0;
   }
   .k-app .k-main {
     margin-left: var(--rail-w-collapsed);
