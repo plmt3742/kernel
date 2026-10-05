@@ -148,10 +148,6 @@
   margin-top: var(--space-2);
   padding: var(--space-2) 0 var(--space-1);
   border-top: var(--hairline) solid var(--outline);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
   white-space: nowrap;
   overflow: hidden;
 }
@@ -166,6 +162,47 @@
   line-height: 1.3;
   letter-spacing: 0.08em;
   color: var(--muted);
+}
+/* 组头交互按钮（折叠/展开；具名 button 保证键盘可达 + aria-expanded） */
+.k-rail__grouphead-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-align: center;
+}
+.k-rail__grouphead-btn:hover {
+  color: var(--ink);
+}
+.k-rail__grouphead-btn:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-inner);
+}
+.k-rail__grouphead-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.k-rail__grouphead-chev {
+  flex: 0 0 auto;
+  transition: transform var(--dur-fast) var(--ease-standard);
+}
+.k-rail__grouphead-chev.is-collapsed {
+  transform: rotate(-90deg);
+}
+/* 折叠隐藏仅限桌面（≥768px）；移动端底栏组头本就隐藏，行为不变 */
+@media (min-width: 768px) {
+  .k-rail__list > li[data-collapsed='true'] {
+    display: none;
+  }
 }
 
 .k-rail__foot {

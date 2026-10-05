@@ -4,6 +4,18 @@
 
 ## [Unreleased]
 
+### 导航分组可折叠（ADR-0041 §6 修订）（已完成 · 2026-10-05）
+
+答 owner「目前分了四个功能区间，我希望这些功能区间能够被折叠」——桌面轨道四个功能组（行动 / 时间 / 记录 / 系统）组头改为**可折叠控件**：
+
+- 组头是真实 `<button>`（`aria-expanded` + 中文 `aria-label`「已折叠 / 已展开」+ 指示箭头，折叠时旋转 -90°）；键盘 Enter / Space 可切换，焦点环可见。
+- 折叠状态存界面 store `kernel.ui.nav.v1`（`createUiStore`，**跨刷新记忆**；只存界面状态，见 ADR-0022）。
+- **进入某组内页面时该组自动展开**——当前所在页永不被折叠隐藏；总览不归组、始终可见。
+- **仅桌面生效**（≥768px 才隐藏折叠项）；移动端底栏（5 项 + 更多）与折叠状态无关、保持常显；图标态轨道（≤1279px / 手动折叠）组名隐藏但箭头保留，仍可折叠。
+
+- **修改**：`src/components/shell/RailNav.tsx`、`src/styles/shell.css`、`docs/decisions/0041-layered-navigation-ia.md`（§6）、`docs/00-DESIGN-BRIEF.md`（§4）
+- **验证**：`npx tsc --noEmit` 0 error；`npm run build` 退出 0；**隔离 QA**（Playwright，快照夹具，`.qa/v80/qa-collapse.py`）**23/23 PASS**——四组按钮 / 初始 11 项 / 点击折叠（行动 11→7）/ 箭头旋转 / **刷新后仍折叠（持久化）** / 进入 `/tasks` 自动展开 / 键盘 Enter 折叠 / 图标态仍可折叠（11→7）/ **移动端全组折叠时底栏仍 5 项 + 更多** / console 0 error；截图 `.qa/v80/{rail-collapse-action,mobile-390}.png`。
+
 ### 设置内数据管理 · 回收站并入 + 示例数据载入 / 清空（ADR-0042 · ADR-0041 Phase 3）（已完成 · 2026-10-05）
 
 答 owner「继续」并拍板 Phase 3 范围「示例数据载入器 + 回收站并入设置」：
