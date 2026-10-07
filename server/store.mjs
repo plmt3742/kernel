@@ -5,7 +5,9 @@ import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import writeFileAtomic from 'write-file-atomic'
-import { SCHEMAS, tagRegistrySchema } from './schemas.mjs'
+import { SCHEMAS, tagRegistrySchema, ID_PATTERNS } from './schemas.mjs'
+// 外键引用生命周期唯一事实源（ADR-0043）：声明式边表 + 查询助手
+import { detachEdgesFor, edgesForSource, isDetachEdge, REF_EDGES, REF_TARGET_LABELS } from './refs.mjs'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 export const DATA_DIR = path.join(ROOT, 'data')
@@ -777,6 +779,184 @@ export async function readTrash() {
     .sort((a, b) =>
       String(b.record.trashedAt ?? '').localeCompare(String(a.record.trashedAt ?? '')),
     )
+}
+
+/* ---------------------------------------------------------------------------
+ * 外键引用生命周期（ADR-0043）：软删只隐藏 · 彻底删除才断链
+ * 单一事实源见 server/refs.mjs 的 REF_EDGES。全部写入经 serialize 串行队列 +
+ * 直接 writeFileAtomic（镜像 rewriteTagsAcrossEntities）；**绝不调用 commit()**——
+ * commit 会再次进入 serialize，造成重入死锁。
+ * ------------------------------------------------------------------------- */
+
+/**
+ * 引用目标是否存在（宽松口径）：实时（DATA_DIR/kind）或回收站（TRASH_DIR/kind）任一命中即 true。
+ * 编辑校验用此口径，使「项目已入回收站」的任务仍可编辑（ADR-0043 §2.5）。
+ */
+export async function refExistsLoose(kind, id) {
+  if (typeof id !== 'string' || id === '') return false
+  // id 格式白名单（防目录穿越；替代此前 updateEntity 内联的 validId 校验）
+  const pattern = ID_PATTERNS[kind]
+  if (!pattern || !pattern.test(id)) return false
+  if ((await readEntity(kind, id)) !== null) return true
+  const trashed = await readDirRecords(path.join(TRASH_DIR, kind))
+  return trashed.some((record) => record.id === id)
+}
+
+/**
+ * 彻底删除目标后清扫全部 detach 入引用：标量字段删键、数组字段过滤掉该 id；
+ * 实时与回收站来源记录都清；每条被改动记录写前经 SCHEMAS[source] 校验。
+ * 单次 serialize + 原子写；确有清除时追加一条审计 ref.detach。
+ * @param {string} kind 被彻底删除的目标 kind
+ * @param {string} id 目标 id
+ * @returns {Promise<{ cleared: number, byKind: Record<string, number> }>}
+ */
+export function detachRefsTo(kind, id) {
+  return serialize(async () => {
+    const edges = detachEdgesFor(kind)
+    const byKind = {}
+    let cleared = 0
+    for (const [, source, field, array] of edges) {
+      for (const baseDir of [DATA_DIR, TRASH_DIR]) {
+        const dir = path.join(baseDir, source)
+        let names
+        try {
+          names = await fs.readdir(dir)
+        } catch {
+          continue
+        }
+        for (const file of names) {
+          if (!file.endsWith('.json')) continue
+          const filePath = path.join(dir, file)
+          let record
+          try {
+            record = JSON.parse(await fs.readFile(filePath, 'utf8'))
+          } catch {
+            continue
+          }
+          if (array) {
+            if (!Array.isArray(record[field])) continue
+            const next = record[field].filter((value) => value !== id)
+            if (next.length === record[field].length) continue
+            record[field] = next
+          } else {
+            if (record[field] !== id) continue
+            delete record[field]
+          }
+          const parsed = SCHEMAS[source].parse(record)
+          await writeFileAtomic(filePath, `${JSON.stringify(parsed, null, 2)}\n`, { encoding: 'utf8' })
+          cleared += 1
+          byKind[source] = (byKind[source] ?? 0) + 1
+        }
+      }
+    }
+    if (cleared > 0) {
+      await appendActivity({
+        action: 'ref.detach',
+        entity: kind,
+        id,
+        detail: { target: kind, targetId: id, cleared, byKind },
+      })
+    }
+    return { cleared, byKind }
+  })
+}
+
+/**
+ * 存量悬空引用修复：扫描全部 detach 边（实时 + 回收站来源）——字段值为非空字符串 id
+ * 且 refExistsLoose(target, value) 为 false 即悬空（数组则逐项过滤）。dryRun 只返回 findings
+ * 不落盘；否则经 SCHEMAS[source] 校验后原子写，确有清除时追加一条审计 ref.repair。
+ * @param {{ dryRun?: boolean }} [opts]
+ * @returns {Promise<{ findings: Array<{kind:string,id:string,field:string,missingTarget:string,trashed:boolean}>, cleared: number }>}
+ */
+export function pruneDanglingRefs({ dryRun = false } = {}) {
+  return serialize(async () => {
+    const findings = []
+    let cleared = 0
+    for (const edge of REF_EDGES) {
+      if (!isDetachEdge(edge)) continue
+      const [target, source, field, array] = edge
+      for (const baseDir of [DATA_DIR, TRASH_DIR]) {
+        const dir = path.join(baseDir, source)
+        let names
+        try {
+          names = await fs.readdir(dir)
+        } catch {
+          continue
+        }
+        for (const file of names) {
+          if (!file.endsWith('.json')) continue
+          const filePath = path.join(dir, file)
+          let record
+          try {
+            record = JSON.parse(await fs.readFile(filePath, 'utf8'))
+          } catch {
+            continue
+          }
+          const trashed = baseDir === TRASH_DIR
+          if (array) {
+            if (!Array.isArray(record[field])) continue
+            const dangling = []
+            const seen = new Set()
+            for (const value of record[field]) {
+              if (typeof value !== 'string' || value === '' || seen.has(value)) continue
+              if (await refExistsLoose(target, value)) continue
+              seen.add(value)
+              dangling.push(value)
+            }
+            if (dangling.length === 0) continue
+            for (const value of dangling) {
+              findings.push({ kind: source, id: record.id, field, missingTarget: value, trashed })
+            }
+            if (dryRun) continue
+            const danglingSet = new Set(dangling)
+            record[field] = record[field].filter((value) => !danglingSet.has(value))
+          } else {
+            const value = record[field]
+            if (typeof value !== 'string' || value === '') continue
+            if (await refExistsLoose(target, value)) continue
+            findings.push({ kind: source, id: record.id, field, missingTarget: value, trashed })
+            if (dryRun) continue
+            delete record[field]
+          }
+          const parsed = SCHEMAS[source].parse(record)
+          await writeFileAtomic(filePath, `${JSON.stringify(parsed, null, 2)}\n`, { encoding: 'utf8' })
+          cleared += 1
+        }
+      }
+    }
+    if (!dryRun && cleared > 0) {
+      await appendActivity({
+        action: 'ref.repair',
+        entity: 'ref',
+        id: '-',
+        detail: { cleared, findings: findings.length },
+      })
+    }
+    return { findings, cleared }
+  })
+}
+
+/**
+ * 编辑校验统一（ADR-0043 §2.5）：按表校验来源为 kind 的全部 **detach** 标量引用边——
+ * patch[field] 存在且非 null 时要求 refExistsLoose(target, value)（实时 ∪ 回收站）；
+ * 不存在抛 400 中文可读。keep 边（溯源，允许悬空）/ 数组边 / 通配 target 不校验；
+ * parentTaskId 的存在 + 自引用 + 成环另由调用方护栏。
+ * @param {string} kind 被编辑记录的 kind
+ * @param {object} patch 请求体（原始编辑字段）
+ */
+export async function assertRefsExist(kind, patch) {
+  for (const edge of edgesForSource(kind)) {
+    const [target, source, field, array] = edge
+    if (!isDetachEdge(edge)) continue // keep 边：溯源允许悬空，永不校验 / 改写
+    if (source !== kind) continue // '*' 通配边不校验
+    if (array === true || target === '*') continue
+    if (!Object.prototype.hasOwnProperty.call(patch, field)) continue
+    const value = patch[field]
+    if (value === null || value === undefined || typeof value !== 'string') continue
+    if (await refExistsLoose(target, value)) continue
+    const label = REF_TARGET_LABELS[target] ?? target
+    throw Object.assign(new Error(`「${label}」不存在`), { status: 400 })
+  }
 }
 
 async function appendActivity(entry) {

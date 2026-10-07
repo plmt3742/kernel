@@ -191,13 +191,13 @@ export function EventDetailModal({ eventId, onClose }: EventDetailModalProps) {
               <dt>区域</dt>
               <dd>
                 {event.areaId !== undefined
-                  ? (getAreaById(event.areaId)?.title ?? event.areaId)
+                  ? (getAreaById(event.areaId)?.title ?? '—')
                   : '—'}
               </dd>
               <dt>项目</dt>
               <dd>
                 {event.projectId !== undefined
-                  ? (getProjectById(event.projectId)?.title ?? event.projectId)
+                  ? (getProjectById(event.projectId)?.title ?? '—')
                   : '—'}
               </dd>
             </dl>

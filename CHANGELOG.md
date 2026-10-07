@@ -4,6 +4,36 @@
 
 ## [Unreleased]
 
+### 外键引用生命周期统一 · 软删只隐藏 / 彻底删除才断链（ADR-0043 · 2026-10-07）
+
+答 owner 实机反馈「把原项目（`p-0003`）删除后……我删除后应该把子任务归为无项目，但是这里没有，说明我的删除并没有真正删除到原数据」——**根因**：引用处理只有两处零散机制且都不在删除主路径（区域 / 目标 409 护栏；AI unapply 硬编码清 `task.projectId`），项目等删除走通用 `/trash` → `moveToTrash` **完全不看引用** → `tasks t-0003.projectId → p-0003`、5 个项目 `areaId → a-0001`、`inbox.linkedIds → 已彻底删除产物` 等悬空。
+
+**修复（一张声明式引用表取代四处零散逻辑）**：
+
+- **`server/refs.mjs`（新）**：`REF_EDGES` 唯一事实源（`[target, source, field, array, mode]`，mode `detach` / `keep`）+ `detachEdgesFor` / `edgesForSource` / `isDetachEdge`。
+- **规则「软删只隐藏，彻底删除才断链」**：`moveToTrash` 不触碰任何引用（恢复无损）；`purgeTrash` 后 `detachRefsTo` 按表清扫全部 `detach` 入引用（实时 + 回收站、标量删键 / 数组过滤、单次 `serialize` + 原子写 + 一条 `ref.detach` 审计，响应回带 `detached` 计数）；`keep` 溯源引用（`sourceInboxId`、`inbox.linkedId(s)`、`appliedTagIds`、`reviews.stale*`）永不改写。
+- **编辑校验统一**：`updateEntity` 由「仅校验任务」改为 `assertRefsExist(kind, patch)`（存在性 = 实时 ∪ 回收站），补齐 projects / events / notes / resources / traces 缺口；`parentTaskId` 存在 + 自引用 + 成环护栏保留。
+- **区域 / 目标 409 护栏退役**：删除不再被引用阻断（计数仅由前端信息展示）；`countAreaRefs` / `countGoalRefs` / `AREA_REF_KINDS` 删除。
+- **顺带收敛**：`unapplyProjectCore` 复用 `detachRefsTo`（归入撤销仍按批次 `taskIds` 范围，不误伤既有归属）；`applyClusterCore` / `createProject` / 收件箱两处去掉 `a-0001` 区域兜底（空区域 = 无区域）；聚类 / 整理候选「未归属」口径 = 无实时项目（`liveProjectIds`）。
+- **前端降级**：任务分组把缺失项目折叠为「无项目」（不再打印原始 id）；任务 / 日程详情、回顾迁移建议、收件箱产物深链的缺失引用一律降级（`—` / `已删除项目` / 隐藏链接）；`Project.areaId` 改可选。
+- **存量修复**：新增 `scripts/refs-repair.mjs`（默认预演，`--apply` 落盘；服务停用时运行）。
+
+- **修改**：`server/{refs（新）,store,index,ai,schemas}.mjs`、`scripts/refs-repair.mjs`（新）、`src/{types.ts,views/{Tasks,Projects,Review,Inbox}.tsx,components/{TaskDetail,TaskDetailModal,EventDetailModal,DimensionManagers,ProjectDetail}.tsx}`、`docs/decisions/0043-unified-reference-lifecycle.md`（新）、`docs/README.md`
+- **验证**：`node --check` 0；`tsc` 0；`build` 0；**存量修复实机**（安装版真实数据）6 处悬空 → 清除后复扫 0（`t-0003.projectId` 因目标在回收站**刻意保留**，保「恢复即重挂」）；**端到端 16/16 PASS**（软删保留引用 / 彻底删除断链 / 区域删除不再 409；临时实体全量清理）；证据 `.qa/{probe-refs-e2e.mjs,probe-dangling.mjs}`。
+
+### 总览 AI 对话 · 新建任务与日程（2026-10-07）
+
+答 owner 实机反馈「让 AI 记一条任务，它说『已记下，为你建立这条任务』，但任务根本没建」——**根因**：总览 AI 对话此前只支持「查阅 + 修改已有记录 + 踪迹 + 笔记」四条链路，**没有任何新建能力**（提示词无 create 意图、`/api/ai/chat` 响应无 create 字段、前端未接 `createTask` / `createEvent`）。用户要求建待办时，模型无结构化出口，遂以自然语言谎称「已建立」，服务端原样透传该文字、前端只当普通回复渲染，故**零写入**。
+
+**修复（A 补能力 + B 堵幻觉）**：
+
+- **A · 对话内新建任务**：`buildChatSystem` 新增 `{"task":{title,dueAt?,importance?}}` 提案规则；新增 `tryParseTaskRequest`（title ≤80 必填；`dueAt` 仅接受 ISO8601 带时区、否则丢弃；`importance` 仅 0–3）；`chatWithKernel` 返回 `taskRequest`；`/api/ai/chat` 只读清洗后下发 `task`；前端新增「建立任务卡」（复用 `.k-chat__edit*` 样式），点「建立」经**既有** `POST /api/tasks` 落盘（`ai:true` → 新标签 `origin:'ai'`）+ toast「已建立任务 · 撤销」（回收站）。
+- **A2 · 对话内新建日程**（同日追加）：答 owner「添加新建日程以及任务功能」——同构新增 `{"event":{title,startAt,endAt?,allDay?,location?}}` 提案 + `tryParseEventRequest`（title ≤80 必填；`startAt` 必填且须 ISO8601 带时区，**无法确定即不产 event**；`endAt` 须 ≥ startAt 否则丢弃；`location` ≤60）；**同一 JSON 可同时输出 event 与 task**（通知「10/9 19:30 初赛 + 10/7 17:00 报名」→ 日程 + 任务两张卡，各自确认）；点「建立」经**既有** `POST /api/events` 落盘 + toast 撤销（回收站）。
+- **B · 禁止谎报写入**：提示词新增硬纪律——只能输出 JSON 提案或文字回答，**严禁**「已记下 / 已建立 / 已创建 / 已保存」等声明，一律用「确认后建立 / 确认后生效」；并厘清分流（已做完 → 踪迹；会在某时刻发生的事（会议 / 面试 / 考试 / 活动）→ 日程；将来要做的待办 → 任务；纯想法 → 笔记）。
+
+- **修改**：`server/ai.mjs`、`server/index.mjs`、`src/lib/mutations.ts`、`src/components/OverviewChat.tsx`、`docs/decisions/0035-chat-lookup-edit.md`（§6）
+- **验证**：`tryParseTaskRequest` 单测 **6/6** + `tryParseEventRequest` 单测 **7/7**（含缺 startAt / 非 ISO / end<start 丢弃 / allDay / event+task 同 JSON）；`node --check server/{ai,index}.mjs` 0；`npx tsc --noEmit` 0；`npm run build` 退出 0。**实机端到端**（服务端重启后复现 `/api/ai/chat`）：① 原反馈对话（「打算做 Java 实验作业」→「截止今晚 23:59」）→ `task={"title":"完成 Java 实验作业","dueAt":"2026-10-07T23:59:00+08:00"}`；② 通知「10月9日 19:30 新生辩论赛初赛…报名 10月7日 17:00」→ `event={"title":"新生辩论赛初赛（观看，19:20前签到入场）","startAt":"2026-10-09T19:30:00+08:00","endAt":"2026-10-09T21:30:00+08:00","location":"某活动中心报告厅"}` **且** `task={"title":"报名新生辩论赛初赛观看…","dueAt":"2026-10-07T17:00:00+08:00"}`、reply「识别为 1 条日程…与 1 条任务…。确认后建立。」（**零写入**）。确认前零写入；无新端点、无数据模型变化、无新依赖。
+
 ### 导航分组折叠 · 图标态观感优化（已完成 · 2026-10-05）
 
 答 owner 截图反馈「优化这个显示」——图标态（收起 64px / ≤1279px）轨道里组头只剩一个**孤立的折叠箭头**，既无可指认的分组信息、也缺少控件感，混在图标列里像杂散标记。优化：

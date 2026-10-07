@@ -173,7 +173,8 @@ export interface Project {
   /** 完成定义（outcome） */
   outcome: string
   status: ProjectStatus
-  areaId: string
+  /** 所属区域（Slice：可空——区域被删除 / 移入回收站时后端保留引用，前端按缺失降级） */
+  areaId?: string
   goalId?: string
   nextActionId?: string
   dueAt?: string

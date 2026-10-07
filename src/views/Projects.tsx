@@ -271,7 +271,7 @@ interface ProjectRowProps {
 
 function ProjectRow({ project, index, variant, onOpen }: ProjectRowProps) {
   const progress = getProjectProgress(project.id)
-  const area = getAreaById(project.areaId)
+  const area = project.areaId !== undefined ? getAreaById(project.areaId) : undefined
   const nextAction = project.nextActionId !== undefined ? getTaskById(project.nextActionId) : undefined
   const pct = Math.round(progress.ratio * 100)
   const tag = project.tags[0]

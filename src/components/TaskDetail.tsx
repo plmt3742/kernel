@@ -43,12 +43,12 @@ export function TaskDetail({ task, onOpenTask }: TaskDetailProps) {
         <dd>{task.contexts.map(tagLabel).join(' · ') || '—'}</dd>
         <dt>区域</dt>
         <dd>
-          {task.areaId !== undefined ? (getAreaById(task.areaId)?.title ?? task.areaId) : '—'}
+          {task.areaId !== undefined ? (getAreaById(task.areaId)?.title ?? '—') : '—'}
         </dd>
         <dt>项目</dt>
         <dd>
           {task.projectId !== undefined
-            ? (getProjectById(task.projectId)?.title ?? task.projectId)
+            ? (getProjectById(task.projectId)?.title ?? '—')
             : '—'}
         </dd>
         <dt>截止</dt>

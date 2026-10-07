@@ -406,7 +406,7 @@ export function Review() {
         <div className="k-review__advice">
           {adviceList.map((advice, index) => (
             <div className="k-review__advice-row" key={`${keyPrefix}-${advice.projectId}-${index}`}>
-              <span>{getProjectById(advice.projectId)?.title ?? advice.projectId}</span>
+              <span>{getProjectById(advice.projectId)?.title ?? '已删除项目'}</span>
               <span className="k-muted">建议{ADVICE_ACTION_LABEL[advice.action]}</span>
               {advice.reason !== '' && <span className="k-muted">{advice.reason}</span>}
               <span className="k-view__actions">
@@ -678,7 +678,7 @@ export function Review() {
                 <div className="k-review__advice">
                   {draft.staleAdvice.map((advice) => (
                     <div className="k-review__advice-row" key={advice.projectId}>
-                      <span>{getProjectById(advice.projectId)?.title ?? advice.projectId}</span>
+                      <span>{getProjectById(advice.projectId)?.title ?? '已删除项目'}</span>
                       <span className="k-muted">建议{ADVICE_ACTION_LABEL[advice.action]}</span>
                       {advice.reason !== '' && <span className="k-muted">{advice.reason}</span>}
                       <span className="k-view__actions">

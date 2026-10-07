@@ -1524,6 +1524,28 @@ export interface ChatTraceProposal {
   at?: string
 }
 
+/** 新建任务提案（本切片）：AI 从「帮我记一条任务 / 打算做 X」识别出的新任务；确认后才经 /api/tasks 落盘 */
+export interface ChatTaskProposal {
+  title: string
+  /** 截止时间（ISO8601 带时区；仅当用户已明确给出日期 / 时间时由服务端下发） */
+  dueAt?: string
+  /** 重要性 0–3（可选） */
+  importance?: number
+}
+
+/** 新建日程提案（本切片）：AI 从「定点安排（会议 / 面试 / 考试 / 活动）」识别出的新日程；确认后才经 /api/events 落盘 */
+export interface ChatEventProposal {
+  title: string
+  /** 开始时间（ISO8601 带时区；服务端校验后必填） */
+  startAt: string
+  /** 结束时间（可选；须 ≥ startAt） */
+  endAt?: string
+  /** 全天（只有日期、无具体时刻；可选） */
+  allDay?: boolean
+  /** 地点（≤60 字；可选） */
+  location?: string
+}
+
 export interface AiChatResult {
   reply: string
   /** Slice G.1：本轮为作答实际执行的联网检索问题（空 / 缺省 = 未检索） */
@@ -1534,6 +1556,10 @@ export interface AiChatResult {
   edits?: ChatEditProposal[]
   /** 「踪迹」提案（服务端校验后；仅命中「我做了 X」意图时存在） */
   trace?: ChatTraceProposal
+  /** 「新建任务」提案（服务端清洗后；仅命中建任务意图时存在） */
+  task?: ChatTaskProposal
+  /** 「新建日程」提案（服务端清洗后；仅命中建日程意图时存在；可与 task 同时存在） */
+  event?: ChatEventProposal
   model: string | null
   ms: number
 }

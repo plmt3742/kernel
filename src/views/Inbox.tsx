@@ -1531,7 +1531,11 @@ export function Inbox() {
             <div>
               {/* 生命周期闭合（Slice V · F37）：查看产物深链 + 撤回（删除产物并回到未澄清，二次确认） */}
               {clarified.map((item) => {
-                const link = item.linkedId !== undefined ? deepLinkOfId(item.linkedId) : null
+                // 深链仅在产物仍存在于快照时才可点（产物被删除 / 移入回收站 → 悬挂，禁用入口）
+                const link =
+                  item.linkedId !== undefined && titleOfId(item.linkedId) !== null
+                    ? deepLinkOfId(item.linkedId)
+                    : null
                 // Slice N4：产物标题化（冷编号 → 标题；多产物取首个可解析者）；tooltip 保留原始 id
                 const productTitle = clarifiedProductTitle(item)
                 const productId = item.linkedId ?? item.id

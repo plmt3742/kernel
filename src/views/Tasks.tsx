@@ -213,7 +213,13 @@ export function Tasks() {
     if (groupMode === 'flat') return [{ key: 'all', title: '全部', tasks: visible }]
     const map = new Map<string, Task[]>()
     for (const task of visible) {
-      const key = groupMode === 'project' ? (task.projectId ?? '__none') : (task.contexts[0] ?? '__none')
+      // 悬挂的项目引用（项目已删除 / 移入回收站）归入「无项目」，绝不打印原始 id
+      const key =
+        groupMode === 'project'
+          ? task.projectId !== undefined && getProjectById(task.projectId) !== undefined
+            ? task.projectId
+            : '__none'
+          : (task.contexts[0] ?? '__none')
       const list = map.get(key)
       if (list === undefined) map.set(key, [task])
       else list.push(task)
@@ -226,7 +232,7 @@ export function Tasks() {
             ? '无项目'
             : '无上下文'
           : groupMode === 'project'
-            ? (getProjectById(key)?.title ?? key)
+            ? (getProjectById(key)?.title ?? '无项目')
             : tagLabel(key),
       tasks,
     }))

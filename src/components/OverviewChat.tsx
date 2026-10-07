@@ -19,12 +19,16 @@ import { formatDateTime } from '@/lib/date'
 import {
   chatNoteFromChat,
   chatWithAi,
+  createEvent,
   createNote,
+  createTask,
   createTrace,
   trashEntity,
   updateEntity,
   type AiChatMessage,
   type ChatEditProposal,
+  type ChatEventProposal,
+  type ChatTaskProposal,
   type ChatTraceProposal,
 } from '@/lib/mutations'
 
@@ -43,6 +47,12 @@ interface ChatTurn extends AiChatMessage {
   /** 「踪迹」提案（AI 识别「我做了 X」；确认前零写入） */
   trace?: ChatTraceProposal
   traceState?: 'pending' | 'applied' | 'dismissed'
+  /** 「新建日程」提案（AI 识别定点安排；确认前零写入；可与 task 同时存在） */
+  event?: ChatEventProposal
+  eventState?: 'pending' | 'applied' | 'dismissed'
+  /** 「新建任务」提案（AI 识别建任务意图；确认前零写入） */
+  task?: ChatTaskProposal
+  taskState?: 'pending' | 'applied' | 'dismissed'
 }
 
 /** 修改卡片字段名 → 中文标签（缺失时回退原键名） */
@@ -247,6 +257,14 @@ function requestChat(history: ChatTurn[]): void {
         reply.trace = result.trace
         reply.traceState = 'pending'
       }
+      if (result.task !== undefined && result.task !== null) {
+        reply.task = result.task
+        reply.taskState = 'pending'
+      }
+      if (result.event !== undefined && result.event !== null) {
+        reply.event = result.event
+        reply.eventState = 'pending'
+      }
       patchChat({ turns: [...history, reply], busy: false, error: '' })
     } catch (err) {
       if (chatToken !== token) return
@@ -407,6 +425,68 @@ export function OverviewChat() {
     })()
   }
 
+  // 应用「新建任务」提案（本切片）：经既有 /api/tasks 落盘（ai:true → 新标签按 origin:'ai' 登记）；
+  // 成功后标记「已应用」并提供撤销（回收站）。
+  const applyTask = (turn: ChatTurn): void => {
+    const task = turn.task
+    if (task === undefined || applying) return
+    setApplying(true)
+    void (async () => {
+      try {
+        const created = await createTask({
+          title: task.title,
+          dueAt: task.dueAt,
+          importance: task.importance,
+          ai: true,
+        })
+        patchTurn(turn.id, { taskState: 'applied' })
+        toast('已建立任务', {
+          action: {
+            label: '撤销',
+            onClick: () => {
+              void trashEntity('tasks', created.id).catch(() => undefined)
+            },
+          },
+        })
+      } catch (err) {
+        toast(`建立失败：${errorText(err)}`, { tone: 'error' })
+      } finally {
+        setApplying(false)
+      }
+    })()
+  }
+
+  // 应用「新建日程」提案（本切片）：经既有 /api/events 落盘；成功后标记「已应用」并提供撤销（回收站）。
+  const applyEvent = (turn: ChatTurn): void => {
+    const event = turn.event
+    if (event === undefined || applying) return
+    setApplying(true)
+    void (async () => {
+      try {
+        const created = await createEvent({
+          title: event.title,
+          startAt: event.startAt,
+          endAt: event.endAt,
+          allDay: event.allDay,
+          location: event.location,
+        })
+        patchTurn(turn.id, { eventState: 'applied' })
+        toast('已建立日程', {
+          action: {
+            label: '撤销',
+            onClick: () => {
+              void trashEntity('events', created.id).catch(() => undefined)
+            },
+          },
+        })
+      } catch (err) {
+        toast(`建立失败：${errorText(err)}`, { tone: 'error' })
+      } finally {
+        setApplying(false)
+      }
+    })()
+  }
+
   const send = (): void => {
     const text = draft.trim()
     if (text === '' || busy) return
@@ -539,6 +619,88 @@ export function OverviewChat() {
                               type="button"
                               className="k-btn k-btn--sm"
                               onClick={() => patchTurn(turn.id, { traceState: 'dismissed' })}
+                              disabled={applying}
+                            >
+                              忽略
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
+                  {turn.event !== undefined && turn.eventState !== 'dismissed' && (
+                    <div className="k-chat__edit">
+                      {turn.eventState === 'applied' ? (
+                        <span className="k-chat__searched u-label k-muted">已建立日程</span>
+                      ) : (
+                        <>
+                          <div className="k-chat__edit-item">
+                            <span className="k-chat__edit-title">建立日程：「{turn.event.title}」</span>
+                            <div className="k-chat__edit-diff">
+                              开始：{formatDateTime(turn.event.startAt)}
+                            </div>
+                            {turn.event.endAt !== undefined && (
+                              <div className="k-chat__edit-diff">
+                                结束：{formatDateTime(turn.event.endAt)}
+                              </div>
+                            )}
+                            {turn.event.allDay === true && <div className="k-chat__edit-diff">全天</div>}
+                            {turn.event.location !== undefined && (
+                              <div className="k-chat__edit-diff">地点：{turn.event.location}</div>
+                            )}
+                          </div>
+                          <div className="k-chat__edit-actions">
+                            <button
+                              type="button"
+                              className="k-btn k-btn--sm is-solid"
+                              onClick={() => applyEvent(turn)}
+                              disabled={applying}
+                            >
+                              建立
+                            </button>
+                            <button
+                              type="button"
+                              className="k-btn k-btn--sm"
+                              onClick={() => patchTurn(turn.id, { eventState: 'dismissed' })}
+                              disabled={applying}
+                            >
+                              忽略
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
+                  {turn.task !== undefined && turn.taskState !== 'dismissed' && (
+                    <div className="k-chat__edit">
+                      {turn.taskState === 'applied' ? (
+                        <span className="k-chat__searched u-label k-muted">已建立任务</span>
+                      ) : (
+                        <>
+                          <div className="k-chat__edit-item">
+                            <span className="k-chat__edit-title">建立任务：「{turn.task.title}」</span>
+                            {turn.task.dueAt !== undefined && (
+                              <div className="k-chat__edit-diff">
+                                截止：{formatDateTime(turn.task.dueAt)}
+                              </div>
+                            )}
+                            {turn.task.importance !== undefined && (
+                              <div className="k-chat__edit-diff">重要性：{turn.task.importance}</div>
+                            )}
+                          </div>
+                          <div className="k-chat__edit-actions">
+                            <button
+                              type="button"
+                              className="k-btn k-btn--sm is-solid"
+                              onClick={() => applyTask(turn)}
+                              disabled={applying}
+                            >
+                              建立
+                            </button>
+                            <button
+                              type="button"
+                              className="k-btn k-btn--sm"
+                              onClick={() => patchTurn(turn.id, { taskState: 'dismissed' })}
                               disabled={applying}
                             >
                               忽略

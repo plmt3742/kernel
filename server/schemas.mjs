@@ -377,7 +377,8 @@ export const projectSchema = z
     title: z.string().min(1),
     outcome: z.string(),
     status: projectStatus,
-    areaId: z.string(),
+    // 区域可选（ADR-0043 §2.7）：空区域 = 项目无区域；旧记录含 areaId 仍可解析
+    areaId: z.string().optional(),
     goalId: z.string().optional(),
     nextActionId: z.string().optional(),
     dueAt: iso.optional(),

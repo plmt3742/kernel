@@ -32,7 +32,7 @@ export function ProjectDetail({
 }: ProjectDetailProps) {
   const tasks = getTasksByProject(project.id)
   const progress = getProjectProgress(project.id)
-  const area = getAreaById(project.areaId)
+  const area = project.areaId !== undefined ? getAreaById(project.areaId) : undefined
   const nextAction = project.nextActionId !== undefined ? getTaskById(project.nextActionId) : undefined
   return (
     <div className="k-detail-grid">
@@ -42,7 +42,7 @@ export function ProjectDetail({
         <dt>状态</dt>
         <dd>{PROJECT_STATUS_LABEL[project.status]}</dd>
         <dt>区域</dt>
-        <dd>{area?.title ?? project.areaId}</dd>
+        <dd>{area?.title ?? '—'}</dd>
         <dt>下一步</dt>
         <dd>
           {nextAction !== undefined ? (

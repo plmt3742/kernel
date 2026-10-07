@@ -2474,6 +2474,10 @@ function buildChatSystem(digest) {
 - 当用户想了解某条记录（任务 / 日程 / 资料 / 笔记 / 项目等）的详细内容，或想修改它，而摘要信息不足时，**只输出一个 JSON**（不要任何其他文字）：{"entityQueries":["关键词","…"]}（1–3 条、每条 ≤30 字）；系统会把匹配到的完整记录发给你，你再回答或提出修改。**一次对话最多请求一次实体调取**。
 - 当用户明确要求修改某条记录，且你已能确定唯一目标记录时，**只输出一个 JSON**（不要任何其他文字）：{"edit":{"kind":"task|event|note|resource|project|area|goal|habit|course","id":"…","fields":{"字段名":"新值"},"label":"一句话说明将做什么修改"}}。绝不在不确定时输出 edit（先向用户确认）；id 必须来自你已看到的记录，绝不编造；fields 只放需要修改的字段；修改需要用户确认后才会生效。
 - 当用户**在陈述「我刚刚 / 今天做了什么」这类已经做完的事**（如「我刚刚跑完 5 公里」「今天把实验报告写完了」「给学弟讲完课了」）时，**只输出一个 JSON**（不要任何其他文字）：{"trace":{"title":"≤40 字，一句话我做了什么","note":"可选补充（≤200 字，可为空串）","at":"可选 ISO8601 带时区（原文有时间词才填，否则省略）"}}。系统会把它作为一条「踪迹」记录交用户确认后入库。**待办（task）、将来的安排（event）、纯粹的思考 / 感悟（该记进笔记的）不要当作 trace**，后者仍按「整理进笔记」流程处理。
+- 当用户想**新建一条待办任务**（如「帮我记一条任务：…」「打算做…」「我需要做…」，指**将来要去完成**的事）时，**只输出一个 JSON**（不要任何其他文字）：{"task":{"title":"≤80 字，一句话任务标题","dueAt":"可选：仅当用户已明确给出日期 / 时间才填 ISO8601 带时区（如 2026-10-07T23:59:00+08:00）；无法确定就省略","importance":可选 0–3 整数}}。系统会把它作为一条「任务」交用户确认后入库。**已做完的事记 trace、不是 task；纯想法 / 感悟走笔记；仅「发生」的定点安排（会议 / 面试 / 考试 / 活动）用 event（见下条），不是 task。**
+- 当用户想**新建日程**，或内容里出现**会在某个明确时刻「发生」的事**（会议 / 面试 / 考试 / 讲座 / 活动，且给出了具体日期或时间）时，**只输出一个 JSON**（不要任何其他文字）：{"event":{"title":"≤80 字","startAt":"必填 ISO8601 带时区，如 2026-10-09T19:30:00+08:00","endAt":"可选：明确结束时间才填","allDay":"可选 true（只有日期、没有具体时刻）","location":"可选 ≤60 字"}}。**只要出现「具体日期 / 时刻 + 一件会发生的事」，就必须产出 event**——不要把它降级成一句待办。**若同一内容还要求你做前置动作（报名 / 准备 / 提交 / 签到），在同一 JSON 内再加 task**：{"event":{…},"task":{…}}。**时间无法明确推出才不产 event**。
+  例：「10月9日（周五）19:30 新生辩论赛初赛，地点 某活动中心报告厅，观众需 19:20 前签到；报名 10月7日 17:00 开启」→ {"event":{"title":"新生辩论赛初赛（观看）","startAt":"2026-10-09T19:30:00+08:00","endAt":"2026-10-09T21:30:00+08:00","location":"某活动中心报告厅"},"task":{"title":"报名新生辩论赛初赛","dueAt":"2026-10-07T17:00:00+08:00"}}
+- **严禁声称已完成写入**：你只能输出上面的 JSON 提案或用文字回答，一切创建 / 修改都要等用户在界面上确认。绝不要写「已记下」「已建立」「已创建」「已保存」「已修改」这类话；提议时用「确认后建立 / 确认后生效」。
 - 若系统发来【实体记录】段落：只可据此回答 / 提出修改，不得编造；若用户要求修改，只输出上面的 edit JSON；否则正常用文字回答。
 - 正式回答用中文 markdown 组织（小标题 / 列表 / 加粗均可），简洁、直接、可执行；不要输出 markdown 代码块包裹整篇。
 - 当被问「最紧急」时，按「逾期 → 今日到期 → 即将开始的日程」排序给出判断与理由。
@@ -2729,13 +2733,74 @@ export function tryParseTraceRequest(reply) {
   return trace
 }
 
+/** ISO8601 带时区（与 server `iso` 口径一致）：任务 dueAt 仅接受此形状 */
+const TASK_DUE_ISO_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?([+-]\d{2}:\d{2}|Z)$/
+
+/** 解析「新建任务提案」JSON：{"task":{title,dueAt?,importance?}} → 清洗后的提案；非该形状返回 null */
+export function tryParseTaskRequest(reply) {
+  const cleaned = stripJsonFence(reply)
+  if (!cleaned.startsWith('{')) return null
+  let obj
+  try {
+    obj = JSON.parse(cleaned)
+  } catch {
+    return null
+  }
+  const raw = obj?.task
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return null
+  const title = Array.from(String(raw.title ?? '').trim()).slice(0, 80).join('')
+  if (title === '') return null
+  const task = { title }
+  if (typeof raw.dueAt === 'string' && TASK_DUE_ISO_RE.test(raw.dueAt.trim())) {
+    task.dueAt = raw.dueAt.trim()
+  }
+  if (
+    typeof raw.importance === 'number' &&
+    Number.isInteger(raw.importance) &&
+    raw.importance >= 0 &&
+    raw.importance <= 3
+  ) {
+    task.importance = raw.importance
+  }
+  return task
+}
+
+/** 解析「新建日程提案」JSON：{"event":{title,startAt,endAt?,allDay?,location?}} → 清洗后的提案；非该形状返回 null。
+ *  startAt 必填且须为 ISO8601 带时区；无法确定（非该形状）→ 返回 null（与收件箱 N10「时间无法明确推出就不产 event」同口径）。 */
+export function tryParseEventRequest(reply) {
+  const cleaned = stripJsonFence(reply)
+  if (!cleaned.startsWith('{')) return null
+  let obj
+  try {
+    obj = JSON.parse(cleaned)
+  } catch {
+    return null
+  }
+  const raw = obj?.event
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return null
+  const title = Array.from(String(raw.title ?? '').trim()).slice(0, 80).join('')
+  if (title === '') return null
+  const startAt = typeof raw.startAt === 'string' ? raw.startAt.trim() : ''
+  if (!TASK_DUE_ISO_RE.test(startAt)) return null
+  const event = { title, startAt }
+  if (typeof raw.endAt === 'string' && TASK_DUE_ISO_RE.test(raw.endAt.trim())) {
+    const endAt = raw.endAt.trim()
+    if (Date.parse(endAt) >= Date.parse(startAt)) event.endAt = endAt
+  }
+  if (raw.allDay === true) event.allDay = true
+  if (typeof raw.location === 'string' && raw.location.trim() !== '') {
+    event.location = Array.from(raw.location.trim()).slice(0, 60).join('')
+  }
+  return event
+}
+
 /**
  * 与 KERNEL 对话：读当前数据快照构造摘要，注入有界对话历史，返回自然语言回答。
  * Slice G.1：模型可请求联网检索（Sogou→360→Bing），服务端检索后回喂同一会话正式作答。
  * 本轮扩展：模型可请求调取实体完整记录（entityQueries），命中后回喂；随后可产出 edit 修改建议。
  * 最多两轮额外交互（实体调取 / 联网检索各一次），同一 opencode 会话。
  * @param {Array<{ role: 'user'|'assistant', content: string }>} messages 已由路由裁剪的有界历史（末条为用户）
- * @returns {Promise<{ reply: string, searched: string[], focused: string[], editRequest: { kind: string, id: string, fields: object, label: string } | null, model: string | null, ms: number }>}
+ * @returns {Promise<{ reply: string, searched: string[], focused: string[], editRequest: { kind: string, id: string, fields: object, label: string } | null, traceRequest: { title: string, note?: string, at?: string } | null, taskRequest: { title: string, dueAt?: string, importance?: number } | null, eventRequest: { title: string, startAt: string, endAt?: string, allDay?: boolean, location?: string } | null, model: string | null, ms: number }>}
  */
 export async function chatWithKernel(messages) {
   const t0 = Date.now()
@@ -2802,18 +2867,27 @@ export async function chatWithKernel(messages) {
   }
   const traceRequest = tryParseTraceRequest(lastReply)
   const editRequest = traceRequest === null ? tryParseEditRequest(lastReply) : null
+  const createRound = traceRequest === null && editRequest === null
+  const taskRequest = createRound ? tryParseTaskRequest(lastReply) : null
+  const eventRequest = createRound ? tryParseEventRequest(lastReply) : null
   const reply =
     traceRequest !== null
       ? `识别为一条踪迹：「${traceRequest.title}」。确认后记入踪迹。`
       : editRequest !== null
         ? editRequest.label || '已生成修改建议，请确认后生效。'
-        : lastReply
+        : eventRequest !== null && taskRequest !== null
+          ? `识别为 1 条日程「${eventRequest.title}」与 1 条任务「${taskRequest.title}」。确认后建立。`
+          : eventRequest !== null
+            ? `识别为一条日程：「${eventRequest.title}」。确认后建立。`
+            : taskRequest !== null
+              ? `识别为一条任务：「${taskRequest.title}」。确认后建立。`
+              : lastReply
   const model = modelOf(outcome.res)
   const ms = Date.now() - t0
   console.log(
-    `[ai] chat 完成 ${ms}ms（${model ?? '未知模型'}${searched.length > 0 ? ` · 检索${searched.length}条` : ''}${focused.length > 0 ? ` · 调取${focused.length}条` : ''}${editRequest !== null ? ' · 修改建议' : ''}${traceRequest !== null ? ' · 踪迹提案' : ''}）`,
+    `[ai] chat 完成 ${ms}ms（${model ?? '未知模型'}${searched.length > 0 ? ` · 检索${searched.length}条` : ''}${focused.length > 0 ? ` · 调取${focused.length}条` : ''}${editRequest !== null ? ' · 修改建议' : ''}${traceRequest !== null ? ' · 踪迹提案' : ''}${taskRequest !== null ? ' · 任务提案' : ''}${eventRequest !== null ? ' · 日程提案' : ''}）`,
   )
-  return { reply, searched, focused, editRequest, traceRequest, model, ms }
+  return { reply, searched, focused, editRequest, traceRequest, taskRequest, eventRequest, model, ms }
 }
 
 /** 构造「把回答整理成笔记」系统提示词（Slice G.1；聚焦用户要求、事实数字不变、不得编造） */
@@ -3183,13 +3257,15 @@ const CLUSTER_STOPWORDS = new Set([
 ])
 
 /**
- * 收集聚类候选（有界 ≤50）：无 projectId 的未完成任务（updatedAt 倒序）+ 未澄清收件箱
+ * 收集聚类候选（有界 ≤50）：无实时归属的未完成任务（updatedAt 倒序）+ 未澄清收件箱
  * （capturedAt 倒序）。任务优先，因其结构字段更利于主题判断。
+ * 「无实时归属」= 无 projectId，或 projectId 指向已删 / 回收站项目（ADR-0043 §2.7）。
  */
 export function collectClusterCandidates(snapshot) {
   const out = []
+  const liveProjectIds = new Set((snapshot.projects ?? []).map((p) => p.id))
   const tasks = [...(snapshot.tasks ?? [])]
-    .filter((t) => (t.projectId === undefined || t.projectId === '') && OPEN_TASK_STATUS.has(t.status))
+    .filter((t) => (!t.projectId || !liveProjectIds.has(t.projectId)) && OPEN_TASK_STATUS.has(t.status))
     .sort((a, b) => String(b.updatedAt ?? '').localeCompare(String(a.updatedAt ?? '')))
   for (const t of tasks) {
     out.push({ id: t.id, kind: 'task', title: String(t.title ?? ''), tags: normalizeTagList(t.tags ?? []) })

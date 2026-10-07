@@ -114,7 +114,7 @@
 | title | string | |
 | outcome | string | 完成定义 |
 | status | `active` \| `onHold` \| `someday` \| `done` \| `archived` | |
-| areaId | string | |
+| areaId? | string | 可选（ADR-0043：空 = 无区域，不再兜底 `a-0001`） |
 | goalId? | string | |
 | nextActionId? | string | |
 | dueAt? | ISO | |
@@ -122,7 +122,9 @@
 | createdAt | ISO | |
 | updatedAt | ISO | |
 
-> **创建可选字段（v0.5 · Slice R1，见 ADR-0015）**：`POST /api/projects` 除 `title`（必填）外接受可选 `outcome` / `areaId` / `tags`（项目快速新建草稿确认后一次性提交；`areaId` 须真实存在，否则 400）。缺省行为不变：`status:'active'`、`areaId:'a-0001'`、`outcome:'完成定义待整理'`、`tags:[]`。请求带 `ai:true` → 新标签 `origin:'ai'`；审计 `project.create` · `detail.fields`。**F23（Slice X，见 ADR-0019 §2.6）**：`ProjectDraftModal` 的区域下拉默认改为**首个区域 id**（移除「—」空选项），使归属显式可见、可改；服务端 `a-0001` 兜底保留以兼容旧调用 / AI 路径。
+> **创建可选字段（v0.5 · Slice R1，见 ADR-0015）**：`POST /api/projects` 除 `title`（必填）外接受可选 `outcome` / `areaId` / `tags`（项目快速新建草稿确认后一次性提交；`areaId` 须真实存在，否则 400）。缺省：`status:'active'`、`outcome:'完成定义待整理'`、`tags:[]`、**无 `areaId`**（ADR-0043 §2.7 起不再兜底 `a-0001`）。请求带 `ai:true` → 新标签 `origin:'ai'`；审计 `project.create` · `detail.fields`。**F23（Slice X，见 ADR-0019 §2.6）**：`ProjectDraftModal` 的区域下拉默认改为**首个区域 id**（移除「—」空选项），使归属显式可见、可改；服务端原 `a-0001` 兜底已随 ADR-0043 退役。
+>
+> **外键引用生命周期（ADR-0043）**：全部实体间引用由 `server/refs.mjs` 的 `REF_EDGES` 声明式描述（`detach` / `keep`）。规则「**软删只隐藏、彻底删除才断链**」：进回收站不改写任何引用（恢复无损，UI 按「目标不在实时快照 = 未关联」降级显示 无项目 / —）；`purge` 时 `detachRefsTo` 清扫 `detach` 入引用（实时 + 回收站）；`keep` 溯源引用（`sourceInboxId`、`inbox.linkedId(s)`、`appliedTagIds`、`reviews.stale*`）永不改写。删除不再被引用阻断（区域 / 目标原 409 护栏退役）；编辑校验 `assertRefsExist` = 实时 ∪ 回收站。存量悬空用 `scripts/refs-repair.mjs`（默认预演，`--apply` 落盘）修复。
 
 ### 4.4 area（`a-`）
 

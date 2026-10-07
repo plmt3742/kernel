@@ -1,7 +1,7 @@
 // KERNEL · 区域 / 目标 / 习惯管理（v0.5 · Slice X，见 ADR-0019）
 // 设置页三个管理区：关闭此前只读的 areas / goals / habits 结构——列表 + 新建 + 编辑 + 删除。
-// 区域 / 目标删除带引用护栏（被引用 → 服务端 409；UI 亦按快照预判并说明）；删除入回收站可恢复。
-// 视觉：quiet token-only，与设置其它区一致；所有操作成功后经 useDataRevision 刷新。
+// 删除一律入回收站可恢复；被引用记录数仅作信息展示，不再阻止删除（服务端不再 409）。
+// 前端按快照对缺失引用降级显示（不打印原始 id）；所有操作成功后经 useDataRevision 刷新。
 import { useState, type ReactNode } from 'react'
 import { Panel } from '@/components/Panel'
 import { Modal } from '@/components/Modal'
@@ -89,8 +89,6 @@ interface DimensionManagerProps<T extends { id: string; title: string }> {
   createInitial: Record<string, unknown>
   editInitial: (item: T) => Record<string, unknown>
   renderMeta: (item: T) => ReactNode
-  /** 返回非 null 表示被引用（阻止删除并展示说明） */
-  guardOf?: (item: T) => ReactNode | null
   /** 编辑弹窗中追加的只读区块（如目标的关键结果） */
   editExtra?: (item: T) => ReactNode
   onCreate: (patch: Record<string, unknown>) => Promise<void>
@@ -112,7 +110,6 @@ function DimensionManager<T extends { id: string; title: string }>({
   createInitial,
   editInitial,
   renderMeta,
-  guardOf,
   editExtra,
   onCreate,
   onUpdate,
@@ -253,45 +250,34 @@ function DimensionManager<T extends { id: string; title: string }>({
         </Modal>
       )}
 
-      {deleting !== null &&
-        (() => {
-          const guard = guardOf !== undefined ? guardOf(deleting) : null
-          const blocked = guard !== null
-          return (
-            <Modal
-              open
-              onClose={() => setDeleting(null)}
-              kicker={deleting.id}
-              title={`删除${title}`}
-              className="k-modal--detail"
-              footer={
-                <div className="k-modal__foot-actions">
-                  <button
-                    type="button"
-                    className="k-btn is-solid is-danger"
-                    disabled={blocked || saving}
-                    onClick={() => submitDelete(deleting)}
-                  >
-                    {saving ? '删除中…' : '确认删除'}
-                  </button>
-                  <button type="button" className="k-btn" onClick={() => setDeleting(null)}>
-                    取消
-                  </button>
-                </div>
-              }
-            >
-              {blocked ? (
-                <p className="k-view__intro" role="alert">
-                  {guard}
-                </p>
-              ) : (
-                <p className="k-view__intro k-muted">
-                  「{deleting.title}」（<code>{deleting.id}</code>）将移入回收站，可随时恢复或彻底删除。
-                </p>
-              )}
-            </Modal>
-          )
-        })()}
+      {deleting !== null && (
+        <Modal
+          open
+          onClose={() => setDeleting(null)}
+          kicker={deleting.id}
+          title={`删除${title}`}
+          className="k-modal--detail"
+          footer={
+            <div className="k-modal__foot-actions">
+              <button
+                type="button"
+                className="k-btn is-solid is-danger"
+                disabled={saving}
+                onClick={() => submitDelete(deleting)}
+              >
+                {saving ? '删除中…' : '确认删除'}
+              </button>
+              <button type="button" className="k-btn" onClick={() => setDeleting(null)}>
+                取消
+              </button>
+            </div>
+          }
+        >
+          <p className="k-view__intro k-muted">
+            「{deleting.title}」（<code>{deleting.id}</code>）将移入回收站，可随时恢复或彻底删除。
+          </p>
+        </Modal>
+      )}
     </Panel>
   )
 }
@@ -339,8 +325,8 @@ export function AreaManager({ focusId }: { focusId?: string }): ReactNode {
       focusId={focusId}
       intro={
         <p className="k-view__intro">
-          区域是长期责任领域（标准式，非身份标签）。被任务 / 项目 / 笔记 / 资料 / 日程 / 目标 / 习惯引用时不可删除；
-          请先解除引用。删除会移入回收站。
+          区域是长期责任领域（标准式，非身份标签）。删除会移入回收站，可随时恢复；
+          被引用的记录数仅供参考，不阻止删除（缺失引用在界面上降级显示）。
         </p>
       }
       items={areas}
@@ -361,16 +347,6 @@ export function AreaManager({ focusId }: { focusId?: string }): ReactNode {
             <span className="k-mono k-muted" title="被引用记录数">
               用 {refs}
             </span>
-          </>
-        )
-      }}
-      guardOf={(area) => {
-        const refs = countAreaRefs(area.id)
-        if (refs === 0) return null
-        return (
-          <>
-            该区域正被 <b>{refs}</b> 条记录引用，不能删除；请先解除引用（任务 / 项目 / 笔记 / 资料 / 日程 / 目标 /
-            习惯）。
           </>
         )
       }}
@@ -471,7 +447,8 @@ export function GoalManager({ focusId }: { focusId?: string }): ReactNode {
       focusId={focusId}
       intro={
         <p className="k-view__intro">
-          目标是区域下的可量化追求（学期 / 季度 / 年度）。被项目（goalId）或子目标（parentGoalId）引用时不可删除。
+          目标是区域下的可量化追求（学期 / 季度 / 年度）。删除会移入回收站，可随时恢复；
+          被引用记录数仅供参考，不阻止删除。
           关键结果本期只读保留，编辑能力延后。
         </p>
       }
@@ -499,15 +476,6 @@ export function GoalManager({ focusId }: { focusId?: string }): ReactNode {
             <span className="k-mono k-muted" title="被引用记录数">
               用 {refs}
             </span>
-          </>
-        )
-      }}
-      guardOf={(goal) => {
-        const refs = countGoalRefs(goal.id)
-        if (refs === 0) return null
-        return (
-          <>
-            该目标正被 <b>{refs}</b> 条记录引用（项目 / 子目标），不能删除；请先解除引用。
           </>
         )
       }}

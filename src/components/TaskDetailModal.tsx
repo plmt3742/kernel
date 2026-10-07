@@ -11,7 +11,7 @@ import {
   type EditFieldSpec,
 } from '@/components/EntityEditForm'
 import { useToast } from '@/context/ToastContext'
-import { getAreas, getSnapshot, getTags, getTaskById } from '@/lib/data'
+import { getAreas, getProjectById, getSnapshot, getTags, getTaskById } from '@/lib/data'
 import { isTaskDone, restoreEntity, trashEntity, undoPatchOf, updateEntity } from '@/lib/mutations'
 import { errorText } from '@/lib/api'
 import {
@@ -233,7 +233,7 @@ export function TaskDetailModal({ taskId, onClose, onToggled }: TaskDetailModalP
               >
                 {done ? '取消完成' : '标记完成'}
               </button>
-              {task.projectId !== undefined && (
+              {task.projectId !== undefined && getProjectById(task.projectId) !== undefined && (
                 <Link
                   to={`/projects?project=${task.projectId}`}
                   viewTransition

@@ -10,10 +10,12 @@ import { promisify } from 'node:util'
 import writeFileAtomic from 'write-file-atomic'
 import { z } from 'zod'
 import {
+  assertRefsExist,
   audit,
   backfillTags,
   commit,
   DATA_DIR,
+  detachRefsTo,
   ensureTags,
   lastCompleteStatus,
   mergeTags,
@@ -749,6 +751,19 @@ async function assertValidParentTask(callerId, parentId) {
   }
 }
 
+/** 存活项目 id 集（软删除 / 已彻底删除的项目不在此集，引用视作「无实时项目」） */
+function liveProjectIds(snapshot) {
+  return new Set((snapshot.projects ?? []).map((p) => p.id))
+}
+
+/**
+ * 任务是否「无归属」（ADR-0043 §2.7）：无 projectId，或 projectId 指向已删 / 回收站项目
+ * （即不在存活项目集中）——统一聚类 / 整理的候选口径。
+ */
+function isUnassignedTask(task, liveProjectIdSet) {
+  return !task.projectId || !liveProjectIdSet.has(task.projectId)
+}
+
 /**
  * 创建任务（v0.5 · Slice O）：title 必填；可一次性携带「预览确认（含编辑）」后的字段。
  * 可选字段与澄清覆盖同口径（taskCreateFieldsSchema），关联 id 只接受真实存在的项目 / 区域；
@@ -808,9 +823,10 @@ async function createTask(body) {
 }
 
 /**
- * 新建项目：title 非空（400）；默认 active + 区域 a-0001 + 完成定义待整理（Slice E2.5）。
+ * 新建项目：title 非空（400）；默认 active + 完成定义待整理（Slice E2.5）。
  * Slice R1：可携带草稿确认后的可选字段 outcome / areaId / tags（关联 id 须真实存在；
- * areaId 缺省仍为 a-0001；仅传 title 的旧调用行为不变）；origin 'ai' 表示 AI 草稿确认。
+ * areaId 缺省 = 项目无区域（ADR-0043 §2.7，不再兜底 a-0001）；仅传 title 的旧调用行为不变）；
+ * origin 'ai' 表示 AI 草稿确认。
  */
 async function createProject(body) {
   const title = typeof body.title === 'string' ? body.title.trim() : ''
@@ -828,11 +844,12 @@ async function createProject(body) {
     title,
     outcome: rawOutcome !== '' ? rawOutcome.slice(0, 200) : '完成定义待整理',
     status: 'active',
-    areaId: rawArea !== '' ? rawArea : 'a-0001',
     tags,
     createdAt: now,
     updatedAt: now,
   }
+  // ADR-0043 §2.7：空区域 = 项目无区域（不再兜底 a-0001）
+  if (rawArea !== '') project.areaId = rawArea
   const fields = []
   if (rawOutcome !== '') fields.push('outcome')
   if (rawArea !== '') fields.push('areaId')
@@ -1063,45 +1080,8 @@ async function importCourses(body) {
 /* ---------------------------------------------------------------------------
  * 区域 / 目标 / 习惯（v0.5 · Slice X，见 ADR-0019）
  * 关闭最后三个只读结构：创建 / 编辑（通用白名单）/ 删除（回收站）。
- * 区域与目标删除带「引用护栏」：被其它实体引用时 409（可读计数），未引用才可入回收站。
+ * 引用护栏退役（ADR-0043 §2.3）：删除不再被引用阻断——彻底删除时才由 detachRefsTo 断链。
  * ------------------------------------------------------------------------- */
-
-/** 区域引用扫描清单（kind + 中文名）；goals / habits 的 areaId 亦计入 */
-const AREA_REF_KINDS = [
-  ['tasks', '任务'],
-  ['projects', '项目'],
-  ['notes', '笔记'],
-  ['resources', '资料'],
-  ['events', '日程'],
-  ['goals', '目标'],
-  ['habits', '习惯'],
-]
-
-/** 统计区域被引用数（返回总数 + 可读明细，如「任务 3 · 项目 1」） */
-async function countAreaRefs(areaId) {
-  const snapshot = await readSnapshot()
-  let total = 0
-  const parts = []
-  for (const [kind, cn] of AREA_REF_KINDS) {
-    const count = (snapshot[kind] ?? []).filter((record) => record.areaId === areaId).length
-    if (count > 0) {
-      total += count
-      parts.push(`${cn} ${count}`)
-    }
-  }
-  return { total, text: parts.join(' · ') }
-}
-
-/** 统计目标被引用数（项目 goalId + 子目标 parentGoalId） */
-async function countGoalRefs(goalId) {
-  const snapshot = await readSnapshot()
-  const projects = (snapshot.projects ?? []).filter((p) => p.goalId === goalId).length
-  const children = (snapshot.goals ?? []).filter((g) => g.parentGoalId === goalId).length
-  const parts = []
-  if (projects > 0) parts.push(`项目 ${projects}`)
-  if (children > 0) parts.push(`子目标 ${children}`)
-  return { total: projects + children, text: parts.join(' · ') }
-}
 
 /** 创建区域（Slice X）：title 必填；standard / cadence / status 可选（缺省标准待补充 / weekly / active） */
 async function createArea(body) {
@@ -1248,32 +1228,18 @@ async function uncheckinHabit(id, body) {
   return { habit: saved, changed: true, date }
 }
 
-/** 删除区域：引用中 → 409（可读计数）；未引用 → 移入回收站（审计 area.remove） */
+/** 删除区域：引用护栏退役（ADR-0043）——直接移入回收站（审计 area.remove）；彻底删除时才断链 */
 async function removeArea(id) {
   const area = await readEntity('areas', id)
   if (area === null) throw Object.assign(new Error('区域不存在'), { status: 404 })
-  const refs = await countAreaRefs(id)
-  if (refs.total > 0) {
-    throw Object.assign(
-      new Error(`该区域正被 ${refs.total} 条记录引用（${refs.text}），不能删除；请先解除引用`),
-      { status: 409 },
-    )
-  }
   const record = await moveToTrash('areas', id, { action: 'area.remove', entity: 'area', id })
   return { trashed: { kind: 'areas', id }, record }
 }
 
-/** 删除目标：引用中（项目 / 子目标）→ 409；未引用 → 移入回收站（审计 goal.remove） */
+/** 删除目标：引用护栏退役（ADR-0043）——直接移入回收站（审计 goal.remove）；彻底删除时才断链 */
 async function removeGoal(id) {
   const goal = await readEntity('goals', id)
   if (goal === null) throw Object.assign(new Error('目标不存在'), { status: 404 })
-  const refs = await countGoalRefs(id)
-  if (refs.total > 0) {
-    throw Object.assign(
-      new Error(`该目标正被 ${refs.total} 条记录引用（${refs.text}），不能删除；请先解除引用`),
-      { status: 409 },
-    )
-  }
   const record = await moveToTrash('goals', id, { action: 'goal.remove', entity: 'goal', id })
   return { trashed: { kind: 'goals', id }, record }
 }
@@ -1298,6 +1264,7 @@ async function removeHabit(id) {
 async function applyClusterCore(parsed, { via, requireOpen = false }) {
   const snapshot = await readSnapshot()
   const areaIds = new Set((snapshot.areas ?? []).map((a) => a.id))
+  const liveProjects = liveProjectIds(snapshot)
   const rawArea = typeof parsed.areaId === 'string' ? parsed.areaId.trim() : ''
   if (rawArea !== '' && !areaIds.has(rawArea)) {
     throw Object.assign(new Error('区域不存在'), { status: 400 })
@@ -1307,7 +1274,7 @@ async function applyClusterCore(parsed, { via, requireOpen = false }) {
   for (const id of parsed.taskIds) {
     const task = taskMap.get(id)
     if (task === undefined) continue // 已不存在 / 臆造：丢弃
-    if (task.projectId !== undefined && task.projectId !== '') continue // 已有归属：跳过
+    if (!isUnassignedTask(task, liveProjects)) continue // 已有实时归属：跳过
     // 仅 organize 要求任务仍「打开」；cluster-apply 保持原有「未归属即可」行为（不改既有契约）
     if (requireOpen && !OPEN_TASK_STATUS.has(task.status)) continue
     targetIds.push(id)
@@ -1328,7 +1295,6 @@ async function applyClusterCore(parsed, { via, requireOpen = false }) {
     title: String(parsed.title ?? '').slice(0, 60),
     outcome: rawOutcome !== '' ? rawOutcome.slice(0, 200) : '完成定义待整理（由 AI 归纳创建）',
     status: 'active',
-    areaId: rawArea !== '' ? rawArea : 'a-0001',
     tags,
     createdAt: now,
     updatedAt: now,
@@ -1336,6 +1302,8 @@ async function applyClusterCore(parsed, { via, requireOpen = false }) {
     clusterTaskIds: targetIds,
     clusterTagIds: createdTagIds,
   }
+  // ADR-0043 §2.7：空区域 = 项目无区域（不再兜底 a-0001）
+  if (rawArea !== '') project.areaId = rawArea
   const savedProject = await commit('projects', project, {
     action: 'project.create',
     entity: 'project',
@@ -1346,7 +1314,7 @@ async function applyClusterCore(parsed, { via, requireOpen = false }) {
   for (const id of targetIds) {
     const task = await readEntity('tasks', id)
     if (task === null) continue
-    if (task.projectId !== undefined && task.projectId !== '') continue
+    if (!isUnassignedTask(task, liveProjects)) continue
     if (requireOpen && !OPEN_TASK_STATUS.has(task.status)) continue
     const next = { ...task, projectId: savedProject.id, updatedAt: nowIso() }
     await commit('tasks', next, {
@@ -1389,22 +1357,13 @@ async function clusterApply(body) {
 async function unapplyProjectCore(projectId, { via }) {
   const project = await readEntity('projects', projectId)
   if (project === null) return null
-  const taskIds = Array.isArray(project.clusterTaskIds) ? project.clusterTaskIds : []
-  const restoredTaskIds = []
-  for (const id of taskIds) {
-    const task = await readEntity('tasks', id)
-    if (task === null) continue
-    if (task.projectId !== projectId) continue
-    const next = { ...task, updatedAt: nowIso() }
-    delete next.projectId
-    await commit('tasks', next, {
-      action: 'task.update',
-      entity: 'task',
-      id,
-      detail: { fields: ['projectId'], cleared: true, via },
-    })
-    restoredTaskIds.push(id)
-  }
+  // 响应口径：预取本次被断链的存活任务（detachRefsTo 只返回计数，不返回 id）
+  const snapshot = await readSnapshot()
+  const restoredTaskIds = (snapshot.tasks ?? [])
+    .filter((task) => task.projectId === projectId)
+    .map((task) => task.id)
+  // ADR-0043 §2.7：复用 detachRefsTo 断开指向本项目的全部 detach 入引用（tasks / events / notes / traces）
+  await detachRefsTo('projects', projectId)
   const tagIds = Array.isArray(project.clusterTagIds) ? project.clusterTagIds : []
   if (tagIds.length > 0) await pruneTags(tagIds, { via })
   await moveToTrash('projects', projectId, {
@@ -1442,6 +1401,7 @@ async function organizeApply(body) {
   const snapshot = await readSnapshot()
   const projectById = new Map((snapshot.projects ?? []).map((p) => [p.id, p]))
   const areaIds = new Set((snapshot.areas ?? []).map((a) => a.id))
+  const liveProjects = liveProjectIds(snapshot)
   const result = { assignments: [], projects: [], createdTagIds: [], errors: [] }
   let assignedTotal = 0
 
@@ -1464,7 +1424,7 @@ async function organizeApply(body) {
         seen.add(id)
         const task = await readEntity('tasks', id)
         if (task === null) continue
-        if (task.projectId !== undefined && task.projectId !== '') continue
+        if (!isUnassignedTask(task, liveProjects)) continue
         if (!OPEN_TASK_STATUS.has(task.status)) continue
         const next = { ...task, projectId: a.projectId, updatedAt: nowIso() }
         await commit('tasks', next, {
@@ -1545,8 +1505,10 @@ async function organizeUnapply(body) {
     }
   }
   for (const a of parsed.assignments) {
+    // 归入撤销（ADR-0043 §2.7）：仅解除**本批次归入的**任务（按 taskIds 范围），
+    // 不按项目整体断链——避免误伤该项目既有的其它归属；仍逐条经单写者 commit。
     const seen = new Set()
-    for (const id of a.taskIds) {
+    for (const id of a.taskIds ?? []) {
       if (seen.has(id)) continue
       seen.add(id)
       try {
@@ -1846,7 +1808,6 @@ async function clarifyInbox(id, body) {
       title: item.content,
       outcome: '完成定义待整理（由收件箱澄清创建）',
       status: 'someday',
-      areaId: 'a-0001',
       tags: [],
       createdAt: now,
       updatedAt: now,
@@ -2016,11 +1977,12 @@ async function applyInboxActions(id, body) {
           ? projectAction.outcome
           : '完成定义待整理（由收件箱一揽子应用创建）',
       status: 'active',
-      areaId: projectAction.areaId ?? 'a-0001',
       tags,
       createdAt: now,
       updatedAt: now,
     }
+    // ADR-0043 §2.7：空区域 = 项目无区域（不再兜底 a-0001）
+    if (projectAction.areaId !== undefined) project.areaId = projectAction.areaId
     newProject = await commit('projects', project, {
       action: 'project.create',
       entity: 'project',
@@ -2394,6 +2356,9 @@ async function updateEntity(kind, id, body) {
   const fields = []
   let hasField = false
   let tagList = null
+  // 编辑校验统一（ADR-0043 §2.5）：按 refs.mjs 边表校验全部来源实体的标量引用
+  // （存在性 = 实时 ∪ 回收站；parentTaskId 的存在 + 自引用 + 成环另由下方 assertValidParentTask 护栏）
+  await assertRefsExist(kind, body)
   for (const key of EDITABLE_FIELDS[kind]) {
     if (!Object.prototype.hasOwnProperty.call(body, key)) continue
     hasField = true
@@ -2406,17 +2371,6 @@ async function updateEntity(kind, id, body) {
     // Slice R3：编辑父任务时校验存在性 / 自引用 / 环（null = 清除，合法无需校验）
     if (key === 'parentTaskId' && value !== null) {
       await assertValidParentTask(id, value)
-    }
-    // 安全 / 一致性加固：任务关联 id 须真实存在（与 createTask 同口径，防脏引用落盘）
-    if (kind === 'tasks' && key === 'projectId' && value !== null) {
-      if (!validId('projects', value) || (await readEntity('projects', value)) === null) {
-        throw Object.assign(new Error('项目不存在'), { status: 400 })
-      }
-    }
-    if (kind === 'tasks' && key === 'areaId' && value !== null) {
-      if (!validId('areas', value) || (await readEntity('areas', value)) === null) {
-        throw Object.assign(new Error('区域不存在'), { status: 400 })
-      }
     }
     if (value === null) {
       if (Object.prototype.hasOwnProperty.call(next, key)) {
@@ -2869,6 +2823,12 @@ const server = http.createServer(async (req, res) => {
       }
       // 「踪迹」提案（只读校验）：title 形状已由 tryParseTraceRequest 清洗；原样下发由前端确认后经 /api/traces 落盘
       const trace = result.traceRequest ?? null
+      // 「新建任务」提案（只读；title / dueAt / importance 形状已由 tryParseTaskRequest 清洗）：
+      // 原样下发由前端确认后经既有 POST /api/tasks 落盘；本端点不写数据、无新写入面
+      const task = result.taskRequest ?? null
+      // 「新建日程」提案（只读；title / startAt 必填 + endAt/allDay/location 已由 tryParseEventRequest 清洗）：
+      // 原样下发由前端确认后经既有 POST /api/events 落盘；本端点不写数据、无新写入面
+      const event = result.eventRequest ?? null
       console.log(`[ai] chat ok ${result.ms}ms`)
       send(res, 200, {
         reply,
@@ -2876,6 +2836,8 @@ const server = http.createServer(async (req, res) => {
         focused: result.focused,
         edits,
         trace,
+        task,
+        event,
         model: result.model,
         ms: result.ms,
       })
@@ -3305,8 +3267,10 @@ const server = http.createServer(async (req, res) => {
         entity: SINGULAR[kind],
         id,
       })
+      // ADR-0043 §2.3：彻底删除后按 refs 边表清扫全部 detach 入引用（实时 + 回收站）
+      const refs = await detachRefsTo(kind, id)
       console.log(`[data] ${SINGULAR[kind]}.purge ${id}`)
-      send(res, 200, { purged: { kind, id } })
+      send(res, 200, { purged: { kind, id }, detached: refs.cleared })
       return
     }
     // 在文件管理器中显示（Slice E2 · 仅本机）
