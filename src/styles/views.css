@@ -3440,6 +3440,10 @@ button.k-act__link:hover {
 .ic-composer.k-chat__composer {
   border-radius: var(--radius-inner);
 }
+/* 对话附件的待发送 chip 行（本切片）：复用 .ic-chips / .ic-chip，仅补行内纵向呼吸 */
+.k-chat__files {
+  padding-bottom: var(--space-1);
+}
 .k-chat__input {
   width: 100%;
   min-height: 44px;
@@ -3650,6 +3654,39 @@ button.k-act__link:hover {
   align-items: center;
   gap: var(--space-2);
   margin-top: var(--space-1);
+}
+/* 对话内提案的可拆分记录行（踪迹 / 任务 / 日程通用；输入复用 .k-input） */
+.k-chat__rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.k-chat__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.k-chat__row-meta {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: var(--text-caption);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+button.k-chat__row-del {
+  flex: 0 0 auto;
+  padding: 2px var(--space-2);
+  border: 0;
+  border-radius: var(--radius-inner);
+  background: transparent;
+  color: var(--muted);
+  font-size: var(--text-caption);
+  font-family: inherit;
+  cursor: pointer;
+}
+button.k-chat__row-del:hover {
+  color: var(--ink-2);
+  background: var(--fill-subtle);
 }
 
 @container route (max-width: 640px) {

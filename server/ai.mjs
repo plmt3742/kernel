@@ -2470,13 +2470,17 @@ function buildChatSystem(digest) {
 回答要求：
 - 关于用户自己的事：依据下方【系统现状摘要】中的事实回答；摘要里没有的，直接说「数据里没有」，绝不编造用户的任务 / 日程 / 项目 / 时间。
 - 一般知识与建议：可以直接自由回答（不限于摘要），但不得把猜测写成用户的数据。
-- 需要外部事实才能回答准确时（最新政策 / 未来日期 / 公开资料等），**只输出一个 JSON**（不要任何其他文字）：{"searchQueries":["…","…"]}（≤2 条、中文关键词、含年份，如「2026年下半年 全国大学英语四级考试 时间」）。系统会先检索并把结果发给你，然后你再正式回答。**一次对话最多请求一次检索**。
-- 当用户想了解某条记录（任务 / 日程 / 资料 / 笔记 / 项目等）的详细内容，或想修改它，而摘要信息不足时，**只输出一个 JSON**（不要任何其他文字）：{"entityQueries":["关键词","…"]}（1–3 条、每条 ≤30 字）；系统会把匹配到的完整记录发给你，你再回答或提出修改。**一次对话最多请求一次实体调取**。
+- 需要外部事实才能回答准确时（最新政策 / 未来日期 / 公开资料等），**只输出一个 JSON**（不要任何其他文字）：{"searchQueries":["…","…"]}（≤2 条、中文关键词、含年份，如「2026年下半年 全国大学英语四级考试 时间」）。系统会先检索并把结果发给你，然后你再正式回答。**一次对话最多请求 2 次检索**（每次 ≤2 条）。
+- 当用户想了解某条记录（任务 / 日程 / 资料 / 笔记 / 项目等）的详细内容，或想修改它，而摘要信息不足时，**只输出一个 JSON**（不要任何其他文字）：{"entityQueries":["关键词","…"]}（1–3 条、每条 ≤30 字）；系统会把匹配到的完整记录发给你，你再回答或提出修改。**一次对话最多请求 3 次实体调取**（每次 1–3 条）。
 - 当用户明确要求修改某条记录，且你已能确定唯一目标记录时，**只输出一个 JSON**（不要任何其他文字）：{"edit":{"kind":"task|event|note|resource|project|area|goal|habit|course","id":"…","fields":{"字段名":"新值"},"label":"一句话说明将做什么修改"}}。绝不在不确定时输出 edit（先向用户确认）；id 必须来自你已看到的记录，绝不编造；fields 只放需要修改的字段；修改需要用户确认后才会生效。
-- 当用户**在陈述「我刚刚 / 今天做了什么」这类已经做完的事**（如「我刚刚跑完 5 公里」「今天把实验报告写完了」「给学弟讲完课了」）时，**只输出一个 JSON**（不要任何其他文字）：{"trace":{"title":"≤40 字，一句话我做了什么","note":"可选补充（≤200 字，可为空串）","at":"可选 ISO8601 带时区（原文有时间词才填，否则省略）"}}。系统会把它作为一条「踪迹」记录交用户确认后入库。**待办（task）、将来的安排（event）、纯粹的思考 / 感悟（该记进笔记的）不要当作 trace**，后者仍按「整理进笔记」流程处理。
-- 当用户想**新建一条待办任务**（如「帮我记一条任务：…」「打算做…」「我需要做…」，指**将来要去完成**的事）时，**只输出一个 JSON**（不要任何其他文字）：{"task":{"title":"≤80 字，一句话任务标题","dueAt":"可选：仅当用户已明确给出日期 / 时间才填 ISO8601 带时区（如 2026-10-07T23:59:00+08:00）；无法确定就省略","importance":可选 0–3 整数}}。系统会把它作为一条「任务」交用户确认后入库。**已做完的事记 trace、不是 task；纯想法 / 感悟走笔记；仅「发生」的定点安排（会议 / 面试 / 考试 / 活动）用 event（见下条），不是 task。**
-- 当用户想**新建日程**，或内容里出现**会在某个明确时刻「发生」的事**（会议 / 面试 / 考试 / 讲座 / 活动，且给出了具体日期或时间）时，**只输出一个 JSON**（不要任何其他文字）：{"event":{"title":"≤80 字","startAt":"必填 ISO8601 带时区，如 2026-10-09T19:30:00+08:00","endAt":"可选：明确结束时间才填","allDay":"可选 true（只有日期、没有具体时刻）","location":"可选 ≤60 字"}}。**只要出现「具体日期 / 时刻 + 一件会发生的事」，就必须产出 event**——不要把它降级成一句待办。**若同一内容还要求你做前置动作（报名 / 准备 / 提交 / 签到），在同一 JSON 内再加 task**：{"event":{…},"task":{…}}。**时间无法明确推出才不产 event**。
-  例：「10月9日（周五）19:30 新生辩论赛初赛，地点 某活动中心报告厅，观众需 19:20 前签到；报名 10月7日 17:00 开启」→ {"event":{"title":"新生辩论赛初赛（观看）","startAt":"2026-10-09T19:30:00+08:00","endAt":"2026-10-09T21:30:00+08:00","location":"某活动中心报告厅"},"task":{"title":"报名新生辩论赛初赛","dueAt":"2026-10-07T17:00:00+08:00"}}
+- 当用户**在陈述「我刚刚 / 今天做了什么」这类已经做完的事**（如「我刚刚跑完 5 公里」「今天把实验报告写完了」「给学弟讲完课了」）时，用**踪迹**记录。**若一段话里包含多件不同的已完成的事，必须拆成多条踪迹**（绝不合并进一条），**只输出一个 JSON**（不要任何其他文字）：{"traces":[{"title":"≤40 字，一句话我做了什么","note":"可选补充（≤200 字，可为空串）","at":"可选 ISO8601 带时区（原文有时间词才填，否则省略）"}, …]}（**1–6 条**；只有确属同一件事时才用 1 条）。系统会把它们作为「踪迹」交用户确认后入库。**待办（task）、将来的安排（event）、纯粹的思考 / 感悟（该记进笔记的）不要当作 trace**，后者仍按「整理进笔记」流程处理。
+- 当用户想**新建待办任务**（如「帮我记一条任务：…」「打算做…」「我需要做…」，指**将来要去完成**的事）时，**只输出一个 JSON**（不要任何其他文字）：{"tasks":[{"title":"≤80 字，一句话任务标题","dueAt":"可选：仅当用户已明确给出日期 / 时间才填 ISO8601 带时区（如 2026-10-07T23:59:00+08:00）；无法确定就省略","importance":可选 0–3 整数}, …]}（**1–6 条**）。系统会把它们作为「任务」交用户确认后入库。**已做完的事记 trace、不是 task；纯想法 / 感悟走笔记；仅「发生」的定点安排（会议 / 面试 / 考试 / 活动）用 event（见下条），不是 task。**
+- 当用户想**新建日程**，或内容里出现**会在某个明确时刻「发生」的事**（会议 / 面试 / 考试 / 讲座 / 活动，且给出了具体日期或时间）时，**只输出一个 JSON**（不要任何其他文字）：{"events":[{"title":"≤80 字","startAt":"必填 ISO8601 带时区，如 2026-10-09T19:30:00+08:00","endAt":"可选：明确结束时间才填","allDay":"可选 true（只有日期、没有具体时刻）","location":"可选 ≤60 字"}, …]}（**1–6 条**）。**只要出现「具体日期 / 时刻 + 一件会发生的事」，就必须产出 event**——不要把它降级成一句待办。**时间无法明确推出才不产 event**。
+  例：「10月9日（周五）19:30 新生辩论赛初赛，地点 某活动中心报告厅，观众需 19:20 前签到；报名 10月7日 17:00 开启」→ {"events":[{"title":"新生辩论赛初赛（观看）","startAt":"2026-10-09T19:30:00+08:00","endAt":"2026-10-09T21:30:00+08:00","location":"某活动中心报告厅"}],"tasks":[{"title":"报名新生辩论赛初赛","dueAt":"2026-10-07T17:00:00+08:00"}]}
+- 当用户想**开启一个新项目**（如「我想做一个…项目」「帮我建个项目」）时，**只输出一个 JSON**（不要任何其他文字）：{"projects":[{"title":"≤60 字项目名","outcome":"可选：完成定义 ≤200 字"}, …]}（**1–3 条**）。系统会把它们作为「项目」交用户确认后建立。
+- 当用户想**把某段内容存成一条笔记**（如「把刚才说的整理进笔记」「帮我记一条笔记」）时，**只输出一个 JSON**（不要任何其他文字）：{"notes":[{"title":"≤60 字标题","body":"markdown 正文 ≤4000 字"}, …]}（**1–3 条**）。系统会把它们作为「笔记」交用户确认后保存。
+- 当用户**明确要求对某条既有记录执行 完成 / 重新打开 / 删除 / 归档**（如「把 t-0003 标记完成」「删掉那条日程」「归档 p-0002」），且目标记录是你在下方【系统现状摘要】或【实体记录】里**已经看到**的，**只输出一个 JSON**（不要任何其他文字）：{"actions":[{"op":"complete|reopen|delete|archive","kind":"tasks|projects|notes|resources|events|traces","id":"记录 id","label":"可选一句话"}, …]}（**1–3 条**）。op 必须适配 kind：complete / reopen 仅对 tasks；archive 仅对 projects / resources；delete 对 tasks / projects / notes / resources / events / traces。**id 必须来自你已看到的记录，绝不编造**；不确定就先向用户确认，不要输出 actions。
+- **同一段话可同时产出多类提案**：一段内容可同时含「做了什么」（traces）、「接下来做什么」（tasks / events）、「要开启项目」（projects）、「要存笔记」（notes）或「对既有记录的处置」（actions），**在同一个 JSON 里同时给出对应各类**（traces / tasks / events 每类 1–6 条；projects / notes / actions 每类 1–3 条）；各类互不排斥，不要因其中一类就丢掉其他类。
 - **严禁声称已完成写入**：你只能输出上面的 JSON 提案或用文字回答，一切创建 / 修改都要等用户在界面上确认。绝不要写「已记下」「已建立」「已创建」「已保存」「已修改」这类话；提议时用「确认后建立 / 确认后生效」。
 - 若系统发来【实体记录】段落：只可据此回答 / 提出修改，不得编造；若用户要求修改，只输出上面的 edit JSON；否则正常用文字回答。
 - 正式回答用中文 markdown 组织（小标题 / 列表 / 加粗均可），简洁、直接、可执行；不要输出 markdown 代码块包裹整篇。
@@ -2487,12 +2491,50 @@ function buildChatSystem(digest) {
 ${digest}`
 }
 
-/** 单次对话 prompt：调用 + 抽取纯文本；空响应视为失败（供重试判定） */
-async function promptChatOnce(sessionID, system, text) {
-  const res = await promptOnce(sessionID, system, text)
+/** 单次对话 prompt：调用 + 抽取纯文本；空响应视为失败（供重试判定）。
+ *  extraParts（对话附件 → file parts）只挂在首轮 prompt 与重试上（后续同会话轮次沿用会话上下文）。 */
+async function promptChatOnce(sessionID, system, text, extraParts = []) {
+  const res = await promptOnce(sessionID, system, text, extraParts)
   const reply = extractText(res).trim()
   if (reply === '') throw new Error('AI 未返回内容')
   return { res, reply }
+}
+
+/** 对话附件 stored 名形状（POST /api/ai/chat/upload 产物）：chat-<ts>-<4hex>-<name> */
+const CHAT_ATTACH_STORED_RE = /^chat-\d+-[0-9a-f]{4}-/
+/** 对话附件读取上限（超出静默跳过；上传侧已限 25MB，防止落盘后被替换为超大文件） */
+const CHAT_ATTACH_MAX_BYTES = 25 * 1024 * 1024
+
+/**
+ * 对话附件 → opencode file parts（≤6；data URL 形态镜像 buildImagePart）。
+ * 只接受本机 chat 上传产物（stored 形状 + 无路径分隔符）；不可读 / 超限 / 形状非法一律静默跳过。
+ * @param {Array<{ stored?: string, name?: string, mime?: string }> | undefined} attachments
+ * @returns {Promise<object[]>}
+ */
+async function buildChatAttachmentParts(attachments) {
+  const list = Array.isArray(attachments) ? attachments.slice(0, 6) : []
+  const parts = []
+  for (const att of list) {
+    if (att === null || typeof att !== 'object') continue
+    const stored = typeof att.stored === 'string' ? att.stored : ''
+    if (!CHAT_ATTACH_STORED_RE.test(stored) || stored.includes('/') || stored.includes('\\')) continue
+    let buf
+    try {
+      buf = await fs.readFile(path.join(DATA_DIR, 'files', stored))
+    } catch {
+      continue
+    }
+    if (buf.length > CHAT_ATTACH_MAX_BYTES) continue
+    const mime = typeof att.mime === 'string' && att.mime !== '' ? att.mime : 'application/octet-stream'
+    const name = typeof att.name === 'string' && att.name !== '' ? att.name : stored
+    parts.push({
+      type: 'file',
+      mime,
+      filename: name,
+      url: `data:${mime};base64,${buf.toString('base64')}`,
+    })
+  }
+  return parts
 }
 
 /** 解析「检索请求」JSON（Slice G.1）：{"searchQueries":[...]} → 清洗后的查询数组；非该形状返回 null */
@@ -2709,18 +2751,9 @@ export function resolveEntities(snapshot, queries) {
   return { section: lines.join('\n'), titles: titles.slice(0, 6) }
 }
 
-/** 解析「踪迹提案」JSON：{"trace":{title,note?,at?}} → 清洗后的提案；非该形状返回 null（「踪迹」功能） */
-export function tryParseTraceRequest(reply) {
-  const cleaned = stripJsonFence(reply)
-  if (!cleaned.startsWith('{')) return null
-  let obj
-  try {
-    obj = JSON.parse(cleaned)
-  } catch {
-    return null
-  }
-  const raw = obj?.trace
-  if (raw === null || typeof raw !== 'object') return null
+/** 清洗单条踪迹提案：{title,note?,at?} → 提案；非法返回 null */
+function cleanTraceItem(raw) {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return null
   const title = Array.from(String(raw.title ?? '').trim()).slice(0, 40).join('')
   if (title === '') return null
   const trace = { title }
@@ -2733,20 +2766,44 @@ export function tryParseTraceRequest(reply) {
   return trace
 }
 
-/** ISO8601 带时区（与 server `iso` 口径一致）：任务 dueAt 仅接受此形状 */
-const TASK_DUE_ISO_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?([+-]\d{2}:\d{2}|Z)$/
-
-/** 解析「新建任务提案」JSON：{"task":{title,dueAt?,importance?}} → 清洗后的提案；非该形状返回 null */
-export function tryParseTaskRequest(reply) {
+/**
+ * 解析「踪迹提案」JSON → 清洗后的提案数组（「踪迹」功能）。
+ * 支持 `{"traces":[{…}, …]}`（多件已完成的事，1–6 条）与旧式 `{"trace":{…}}`（视作 1 条）；
+ * 非该形状返回 `[]`。同段拆分为多条的纪律见提示词（避免把一天的事挤进一条）。
+ */
+export function tryParseTraceRequests(reply) {
   const cleaned = stripJsonFence(reply)
-  if (!cleaned.startsWith('{')) return null
+  if (!cleaned.startsWith('{')) return []
   let obj
   try {
     obj = JSON.parse(cleaned)
   } catch {
-    return null
+    return []
   }
-  const raw = obj?.task
+  const list = Array.isArray(obj?.traces)
+    ? obj.traces
+    : obj?.trace !== undefined && obj?.trace !== null
+      ? [obj.trace]
+      : []
+  const out = []
+  for (const raw of list) {
+    const trace = cleanTraceItem(raw)
+    if (trace !== null) out.push(trace)
+    if (out.length >= 6) break
+  }
+  return out
+}
+
+/** 兼容旧调用：返回首条踪迹提案 / null（内部改用 tryParseTraceRequests 支持拆分） */
+export function tryParseTraceRequest(reply) {
+  return tryParseTraceRequests(reply)[0] ?? null
+}
+
+/** ISO8601 带时区（与 server `iso` 口径一致）：任务 dueAt 仅接受此形状 */
+const TASK_DUE_ISO_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?([+-]\d{2}:\d{2}|Z)$/
+
+/** 清洗单条任务提案：{title,dueAt?,importance?} → 提案；非法返回 null */
+function cleanTaskItem(raw) {
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return null
   const title = Array.from(String(raw.title ?? '').trim()).slice(0, 80).join('')
   if (title === '') return null
@@ -2765,18 +2822,43 @@ export function tryParseTaskRequest(reply) {
   return task
 }
 
-/** 解析「新建日程提案」JSON：{"event":{title,startAt,endAt?,allDay?,location?}} → 清洗后的提案；非该形状返回 null。
- *  startAt 必填且须为 ISO8601 带时区；无法确定（非该形状）→ 返回 null（与收件箱 N10「时间无法明确推出就不产 event」同口径）。 */
-export function tryParseEventRequest(reply) {
+/** 从解析后的 JSON 取提案列表：优先复数键（tasks / events …），兼容旧单数键（task / event）；无则 [] */
+function listFromJson(obj, singular, plural) {
+  if (Array.isArray(obj?.[plural])) return obj[plural]
+  return obj?.[singular] !== undefined && obj?.[singular] !== null ? [obj[singular]] : []
+}
+
+/** 解析「提案 JSON」为数组：清洗 + 上限 6 条；非该形状返回 []（供 task / event 复用；trace 见 tryParseTraceRequests） */
+function parseProposalList(reply, singular, plural, clean) {
   const cleaned = stripJsonFence(reply)
-  if (!cleaned.startsWith('{')) return null
+  if (!cleaned.startsWith('{')) return []
   let obj
   try {
     obj = JSON.parse(cleaned)
   } catch {
-    return null
+    return []
   }
-  const raw = obj?.event
+  const out = []
+  for (const raw of listFromJson(obj, singular, plural)) {
+    const item = clean(raw)
+    if (item !== null) out.push(item)
+    if (out.length >= 6) break
+  }
+  return out
+}
+
+/** 解析「新建任务提案」JSON：{"tasks":[{title,dueAt?,importance?}, …]}（兼容旧 {"task":{…}}）→ 清洗后的数组（≤6）；非该形状返回 [] */
+export function tryParseTaskRequests(reply) {
+  return parseProposalList(reply, 'task', 'tasks', cleanTaskItem)
+}
+
+/** 兼容旧调用：返回首个任务提案 / null */
+export function tryParseTaskRequest(reply) {
+  return tryParseTaskRequests(reply)[0] ?? null
+}
+
+/** 清洗单条日程提案：{title,startAt,endAt?,allDay?,location?} → 提案；title 空 / startAt 缺失或非 ISO 返回 null */
+function cleanEventItem(raw) {
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return null
   const title = Array.from(String(raw.title ?? '').trim()).slice(0, 80).join('')
   if (title === '') return null
@@ -2794,16 +2876,135 @@ export function tryParseEventRequest(reply) {
   return event
 }
 
+/** 解析「新建日程提案」JSON：{"events":[{title,startAt,endAt?,allDay?,location?}, …]}（兼容旧 {"event":{…}}）→ 清洗后的数组（≤6）；非该形状返回 []。
+ *  startAt 必填且须为 ISO8601 带时区（与收件箱 N10「时间无法明确推出就不产 event」同口径）。 */
+export function tryParseEventRequests(reply) {
+  return parseProposalList(reply, 'event', 'events', cleanEventItem)
+}
+
+/** 兼容旧调用：返回首个日程提案 / null */
+export function tryParseEventRequest(reply) {
+  return tryParseEventRequests(reply)[0] ?? null
+}
+
 /**
- * 与 KERNEL 对话：读当前数据快照构造摘要，注入有界对话历史，返回自然语言回答。
- * Slice G.1：模型可请求联网检索（Sogou→360→Bing），服务端检索后回喂同一会话正式作答。
- * 本轮扩展：模型可请求调取实体完整记录（entityQueries），命中后回喂；随后可产出 edit 修改建议。
- * 最多两轮额外交互（实体调取 / 联网检索各一次），同一 opencode 会话。
- * @param {Array<{ role: 'user'|'assistant', content: string }>} messages 已由路由裁剪的有界历史（末条为用户）
- * @returns {Promise<{ reply: string, searched: string[], focused: string[], editRequest: { kind: string, id: string, fields: object, label: string } | null, traceRequest: { title: string, note?: string, at?: string } | null, taskRequest: { title: string, dueAt?: string, importance?: number } | null, eventRequest: { title: string, startAt: string, endAt?: string, allDay?: boolean, location?: string } | null, model: string | null, ms: number }>}
+ * 解析「数组提案」JSON：{"<key>":[…]} → 清洗后的数组（≤max）；非该形状返回 []。
+ * projects / notes / actions 用（只认复数数组键，不接受旧单数键）。
  */
-export async function chatWithKernel(messages) {
+function parseArrayProposal(reply, key, clean, max) {
+  const cleaned = stripJsonFence(reply)
+  if (!cleaned.startsWith('{')) return []
+  let obj
+  try {
+    obj = JSON.parse(cleaned)
+  } catch {
+    return []
+  }
+  if (!Array.isArray(obj?.[key])) return []
+  const out = []
+  for (const raw of obj[key]) {
+    const item = clean(raw)
+    if (item !== null) out.push(item)
+    if (out.length >= max) break
+  }
+  return out
+}
+
+/** 清洗单条项目提案：{title,outcome?} → 提案；title 空返回 null */
+function cleanProjectItem(raw) {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return null
+  const title = Array.from(String(raw.title ?? '').trim()).slice(0, 60).join('')
+  if (title === '') return null
+  const project = { title }
+  if (typeof raw.outcome === 'string' && raw.outcome.trim() !== '') {
+    project.outcome = Array.from(raw.outcome.trim()).slice(0, 200).join('')
+  }
+  return project
+}
+
+/** 解析「新建项目提案」JSON：{"projects":[{title,outcome?}, …]} → 清洗后的数组（≤3）；非该形状返回 [] */
+export function tryParseProjectRequests(reply) {
+  return parseArrayProposal(reply, 'projects', cleanProjectItem, 3)
+}
+
+/** 清洗单条笔记提案：{title,body} → 提案；title / body 任一为空返回 null（body ≤4000 字） */
+function cleanNoteItem(raw) {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return null
+  const title = Array.from(String(raw.title ?? '').trim()).slice(0, 60).join('')
+  const body = typeof raw.body === 'string' ? raw.body.trim() : ''
+  if (title === '' || body === '') return null
+  return { title, body: Array.from(body).slice(0, 4000).join('') }
+}
+
+/** 解析「新建笔记提案」JSON：{"notes":[{title,body}, …]} → 清洗后的数组（≤3）；非该形状返回 [] */
+export function tryParseNoteRequests(reply) {
+  return parseArrayProposal(reply, 'notes', cleanNoteItem, 3)
+}
+
+/** 动作 op 闭合集 */
+const CHAT_ACTION_OPS = new Set(['complete', 'reopen', 'delete', 'archive'])
+/** 动作 kind 闭合集（复数集合键） */
+const CHAT_ACTION_KINDS = new Set(['tasks', 'projects', 'notes', 'resources', 'events', 'traces'])
+
+/** 清洗单条动作提案：{op,kind,id,label?} → 提案；op / kind 非闭合集或 id 形状不符返回 null */
+function cleanActionItem(raw) {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return null
+  const op = typeof raw.op === 'string' ? raw.op.trim() : ''
+  const kind = typeof raw.kind === 'string' ? raw.kind.trim() : ''
+  const id = typeof raw.id === 'string' ? raw.id.trim() : ''
+  if (!CHAT_ACTION_OPS.has(op) || !CHAT_ACTION_KINDS.has(kind) || !EDIT_REQUEST_ID_RE.test(id)) return null
+  const action = { op, kind, id }
+  if (typeof raw.label === 'string' && raw.label.trim() !== '') {
+    action.label = Array.from(raw.label.trim()).slice(0, 60).join('')
+  }
+  return action
+}
+
+/** 解析「动作处置提案」JSON：{"actions":[{op,kind,id,label?}, …]} → 清洗后的数组（≤3）；非该形状返回 []。
+ *  仅做浅层形状校验（op / kind 闭合集 + id 形状）；id 实时存在性与 op-kind 适配由 index.mjs 复核。 */
+export function tryParseActionRequests(reply) {
+  return parseArrayProposal(reply, 'actions', cleanActionItem, 3)
+}
+
+/**
+ * 汇总多类提案的回复文案：仅一项时点名（「识别为一条任务：…」），多项时按类别计数
+ * （「识别为 3 条踪迹、1 条任务、1 条日程、1 个项目、2 条笔记、1 项操作。确认后分别处理。」）。
+ */
+function buildChatReply({ traces, tasks, events, projects, notes, actions }) {
+  const total =
+    traces.length + tasks.length + events.length + projects.length + notes.length + actions.length
+  if (total === 0) return ''
+  if (total === 1) {
+    if (traces.length === 1) return `识别为一条踪迹：「${traces[0].title}」。确认后记入踪迹。`
+    if (tasks.length === 1) return `识别为一条任务：「${tasks[0].title}」。确认后建立。`
+    if (events.length === 1) return `识别为一条日程：「${events[0].title}」。确认后建立。`
+    if (projects.length === 1) return `识别为一个项目：「${projects[0].title}」。确认后建立。`
+    if (notes.length === 1) return `识别为一条笔记：「${notes[0].title}」。确认后保存。`
+    return `识别为一项操作：${actions[0].label ?? actions[0].op}。确认后执行。`
+  }
+  const parts = []
+  if (traces.length > 0) parts.push(`${traces.length} 条踪迹`)
+  if (tasks.length > 0) parts.push(`${tasks.length} 条任务`)
+  if (events.length > 0) parts.push(`${events.length} 条日程`)
+  if (projects.length > 0) parts.push(`${projects.length} 个项目`)
+  if (notes.length > 0) parts.push(`${notes.length} 条笔记`)
+  if (actions.length > 0) parts.push(`${actions.length} 项操作`)
+  return `识别为 ${parts.join('、')}。确认后分别处理。`
+}
+
+/**
+ * 对话核心（同步 / 流式共用）：读当前数据快照构造摘要，注入有界对话历史，跑「prompt → 工具 → 提案」循环。
+ * 工具循环最多 4 轮：实体调取 ≤3 次、联网检索 ≤2 次；模型不再请求工具即提前结束。
+ * 提案解析**各类独立**（traces / tasks / events / projects / notes / actions / edit 可共存，互不抑制）。
+ * @param {Array<{ role: 'user'|'assistant', content: string }>} messages 已由路由裁剪的有界历史（末条为用户）
+ * @param {{ emit?: (e: object) => void, attachments?: Array<{ stored?: string, name?: string, mime?: string }>, onSession?: (id: string) => void }} [options]
+ *   emit 存在时发出 { kind:'retry', reason } / { kind:'status', status:'searching' }（流式过程可视）；
+ *   onSession 在会话创建后回调（流式 pump 需先拿到 sessionID 过滤事件）。
+ * @returns {Promise<{ reply: string, searched: string[], focused: string[], editRequest: object | null, traceRequests: object[], taskRequests: object[], eventRequests: object[], projectRequests: object[], noteRequests: object[], actionRequests: object[], model: string | null, ms: number }>}
+ */
+async function runChat(messages, options = {}) {
   const t0 = Date.now()
+  const emit = typeof options.emit === 'function' ? options.emit : null
   const snapshot = await loadSnapshot()
   const system = buildChatSystem(buildChatDigest(snapshot))
   const created = pick(await getClient().session.create({ title: 'kernel:chat' }))
@@ -2811,31 +3012,37 @@ export async function chatWithKernel(messages) {
   if (typeof sessionID !== 'string' || sessionID === '') {
     throw new Error('无法创建 opencode 会话')
   }
+  if (typeof options.onSession === 'function') options.onSession(sessionID)
+  // 对话附件（≤6）→ file parts，只挂首轮 prompt 与其重试（后续轮次沿用同会话上下文）
+  const extraParts = await buildChatAttachmentParts(options.attachments)
   const transcript = messages
     .map((m) => `${m.role === 'assistant' ? 'KERNEL' : '用户'}：${m.content}`)
     .join('\n\n')
   const userText = `${transcript}\n\n请只回答最后一条「用户：」的内容。`
   const withRetry = async (text) => {
     try {
-      return await promptChatOnce(sessionID, system, text)
+      return await promptChatOnce(sessionID, system, text, extraParts)
     } catch (err) {
       console.warn(`[ai] chat 单次失败（${err?.message ?? err}），重试一次`)
-      return await promptChatOnce(sessionID, system, text)
+      if (emit !== null) emit({ kind: 'retry', reason: err?.message ?? 'AI 未返回内容' })
+      return await promptChatOnce(sessionID, system, text, extraParts)
     }
   }
   let outcome = await withRetry(userText)
-  let searched = []
-  let focused = []
-  let entityRoundDone = false
-  let searchRoundDone = false
+  const searched = []
+  const focused = []
   let lastReply = outcome.reply
-  // 最多两轮额外交互：优先实体调取，其次联网检索；各最多一次
-  for (let round = 0; round < 2; round += 1) {
-    const entityQueries = entityRoundDone ? null : tryParseEntityRequest(lastReply)
+  let lookupCount = 0
+  let searchCount = 0
+  // 最多 4 轮工具交互：实体调取 ≤3、联网检索 ≤2；模型不再请求工具即 break
+  for (let round = 0; round < 4; round += 1) {
+    const entityQueries = lookupCount < 3 ? tryParseEntityRequest(lastReply) : null
     if (entityQueries !== null) {
-      entityRoundDone = true
+      lookupCount += 1
       const resolved = resolveEntities(snapshot, entityQueries)
-      focused = resolved.titles
+      for (const title of resolved.titles) {
+        if (!focused.includes(title)) focused.push(title)
+      }
       const section =
         resolved.section !== ''
           ? resolved.section
@@ -2846,15 +3053,18 @@ export async function chatWithKernel(messages) {
       lastReply = outcome.reply
       continue
     }
-    const searchQueries = searchRoundDone ? null : tryParseSearchRequest(lastReply)
+    const searchQueries = searchCount < 2 ? tryParseSearchRequest(lastReply) : null
     if (searchQueries !== null) {
-      searchRoundDone = true
+      searchCount += 1
+      if (emit !== null) emit({ kind: 'status', status: 'searching' })
       const search = await buildSearchSection(searchQueries)
+      for (const q of search.queries ?? []) {
+        if (!searched.includes(q)) searched.push(q)
+      }
       if (search.ok) {
         outcome = await withRetry(
           `${search.section}\n\n请基于以上检索结果，正式回答用户最后一条「用户：」的问题；用中文 markdown 组织，简洁直接。`,
         )
-        searched = search.queries
       } else {
         outcome = await withRetry(
           '联网检索未成功。请基于常识保守回答，并明确注明无法确认最新信息；不要编造日期与事实。',
@@ -2865,29 +3075,137 @@ export async function chatWithKernel(messages) {
     }
     break
   }
-  const traceRequest = tryParseTraceRequest(lastReply)
-  const editRequest = traceRequest === null ? tryParseEditRequest(lastReply) : null
-  const createRound = traceRequest === null && editRequest === null
-  const taskRequest = createRound ? tryParseTaskRequest(lastReply) : null
-  const eventRequest = createRound ? tryParseEventRequest(lastReply) : null
+  // 各类提案独立解析，互不排斥（同一 JSON 可同时给出多类）
+  const traceRequests = tryParseTraceRequests(lastReply)
+  const taskRequests = tryParseTaskRequests(lastReply)
+  const eventRequests = tryParseEventRequests(lastReply)
+  const projectRequests = tryParseProjectRequests(lastReply)
+  const noteRequests = tryParseNoteRequests(lastReply)
+  const actionRequests = tryParseActionRequests(lastReply)
+  const editRequest = tryParseEditRequest(lastReply)
+  const proposalTotal =
+    traceRequests.length +
+    taskRequests.length +
+    eventRequests.length +
+    projectRequests.length +
+    noteRequests.length +
+    actionRequests.length
   const reply =
-    traceRequest !== null
-      ? `识别为一条踪迹：「${traceRequest.title}」。确认后记入踪迹。`
+    proposalTotal > 0
+      ? buildChatReply({
+          traces: traceRequests,
+          tasks: taskRequests,
+          events: eventRequests,
+          projects: projectRequests,
+          notes: noteRequests,
+          actions: actionRequests,
+        })
       : editRequest !== null
         ? editRequest.label || '已生成修改建议，请确认后生效。'
-        : eventRequest !== null && taskRequest !== null
-          ? `识别为 1 条日程「${eventRequest.title}」与 1 条任务「${taskRequest.title}」。确认后建立。`
-          : eventRequest !== null
-            ? `识别为一条日程：「${eventRequest.title}」。确认后建立。`
-            : taskRequest !== null
-              ? `识别为一条任务：「${taskRequest.title}」。确认后建立。`
-              : lastReply
+        : lastReply
   const model = modelOf(outcome.res)
   const ms = Date.now() - t0
   console.log(
-    `[ai] chat 完成 ${ms}ms（${model ?? '未知模型'}${searched.length > 0 ? ` · 检索${searched.length}条` : ''}${focused.length > 0 ? ` · 调取${focused.length}条` : ''}${editRequest !== null ? ' · 修改建议' : ''}${traceRequest !== null ? ' · 踪迹提案' : ''}${taskRequest !== null ? ' · 任务提案' : ''}${eventRequest !== null ? ' · 日程提案' : ''}）`,
+    `[ai] chat 完成 ${ms}ms（${model ?? '未知模型'}${searched.length > 0 ? ` · 检索${searched.length}条` : ''}${focused.length > 0 ? ` · 调取${focused.length}条` : ''}${editRequest !== null ? ' · 修改建议' : ''}${traceRequests.length > 0 ? ` · 踪迹×${traceRequests.length}` : ''}${taskRequests.length > 0 ? ` · 任务×${taskRequests.length}` : ''}${eventRequests.length > 0 ? ` · 日程×${eventRequests.length}` : ''}${projectRequests.length > 0 ? ` · 项目×${projectRequests.length}` : ''}${noteRequests.length > 0 ? ` · 笔记×${noteRequests.length}` : ''}${actionRequests.length > 0 ? ` · 操作×${actionRequests.length}` : ''}）`,
   )
-  return { reply, searched, focused, editRequest, traceRequest, taskRequest, eventRequest, model, ms }
+  return {
+    reply,
+    searched,
+    focused,
+    editRequest,
+    traceRequests,
+    taskRequests,
+    eventRequests,
+    projectRequests,
+    noteRequests,
+    actionRequests,
+    model,
+    ms,
+  }
+}
+
+/**
+ * 与 KERNEL 对话（同步）：读库回答；可携带对话附件（≤6）。
+ * @param {Array<{ role: 'user'|'assistant', content: string }>} messages
+ * @param {Array<{ stored?: string, name?: string, mime?: string }>} [attachments]
+ */
+export async function chatWithKernel(messages, attachments = []) {
+  return runChat(messages, { attachments })
+}
+
+/**
+ * 与 KERNEL 对话（流式）：先订阅事件流（避免漏掉会话创建后的早期事件），边跑边 emit。
+ * 事件：{kind:'status',status} | {kind:'delta',field,delta} | {kind:'retry',reason} |
+ *       {kind:'result', …runChat 结果} | {kind:'error',message}。
+ * 说明：失败只 emit error，不抛出（SSE 路由由事件收尾）。
+ * @param {Array<{ role: 'user'|'assistant', content: string }>} messages
+ * @param {Array<{ stored?: string, name?: string, mime?: string }>} attachments
+ * @param {(event: object) => void} emit
+ */
+export async function chatWithKernelStream(messages, attachments, emit) {
+  // 必须先订阅（避免漏掉会话创建后的早期事件）
+  let stream = null
+  try {
+    const sub = await getClient().event.subscribe()
+    stream = sub?.stream ?? null
+  } catch (err) {
+    console.warn(`[ai] chat-stream event.subscribe 失败：${err?.message ?? err}`)
+    stream = null
+  }
+
+  let closed = false
+  let sessionID = null
+  const safeEmit = (event) => {
+    if (closed) return
+    try {
+      emit(event)
+    } catch {
+      /* 客户端已断开：忽略 */
+    }
+  }
+
+  let pump = null
+  if (stream !== null && typeof stream[Symbol.asyncIterator] === 'function') {
+    pump = (async () => {
+      try {
+        for await (const ev of stream) {
+          if (closed) break
+          if (sessionID === null) continue
+          const props = ev?.properties
+          if (props?.sessionID !== sessionID) continue
+          if (ev.type === 'session.status') {
+            safeEmit({ kind: 'status', status: props.status?.type })
+          } else if (ev.type === 'message.part.delta') {
+            safeEmit({ kind: 'delta', field: props.field, delta: props.delta })
+          }
+        }
+      } catch {
+        /* 事件流异常不影响主对话路径（prompt 自身会报错） */
+      }
+    })()
+  }
+
+  try {
+    const result = await runChat(messages, {
+      emit: safeEmit,
+      attachments,
+      onSession: (id) => {
+        sessionID = id
+      },
+    })
+    safeEmit({ kind: 'result', ...result })
+  } catch (err) {
+    console.error('[ai] chat-stream 失败：', err?.message ?? err)
+    safeEmit({ kind: 'error', message: err?.message ?? 'AI 调用失败' })
+  } finally {
+    closed = true
+    try {
+      await stream?.return?.()
+    } catch {
+      /* 忽略关闭错误 */
+    }
+    if (pump !== null) await pump.catch(() => {})
+  }
 }
 
 /** 构造「把回答整理成笔记」系统提示词（Slice G.1；聚焦用户要求、事实数字不变、不得编造） */

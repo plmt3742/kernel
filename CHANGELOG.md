@@ -4,6 +4,45 @@
 
 ## [Unreleased]
 
+### 总览对话 · 多轮工具 / 流式 / 新建项目·笔记 / 完成·删除·归档 / 贴图·附件（2026-10-08）
+
+答 owner「一次性把这些功能也做了吧」（对话加强剩余四项）。
+
+- **多轮工具**：工具循环放宽为**最多 4 轮**（实体调取 ≤3、联网检索 ≤2），直到模型不再请求工具。
+- **新建项目 / 笔记**：`{"projects":[…]} `（1–3）/ `{"notes":[…]} `（1–3）提案 + `tryParseProjectRequests` / `tryParseNoteRequests`；前端「建立项目卡」「存为笔记卡」→ **既有** `POST /api/projects`（`ai:true`）/ `POST /api/notes` + toast 撤销。
+- **完成 / 删除 / 归档**：`{"actions":[{op,kind,id,label?}]}`（1–3）提案；服务端**校验**（id 存在 + op/kind 兼容 + 标题快照，archive 附 `before` 状态）；前端「操作卡」逐条执行（complete→`POST /api/tasks/:id/complete`、reopen→`/reopen`、delete→软删除、archive→`update {status:'archived'}`）+ 对应撤销（reopen / complete / restore / 写回 before）。
+- **流式**：新增 `POST /api/ai/chat-stream`（SSE，镜收件箱解析流：`status` / `delta` / `result` / `error`）；`chatWithKernelStream` 先订阅 opencode 事件流再建会话、按 sessionID 转发；前端 `aiChatStream`（fetch + ReadableStream 帧解析）边收边渲染助手气泡。同步 `/api/ai/chat` 保留回退。
+- **贴图 / 附件**：新增 `POST /api/ai/chat/upload`（RAW ≤25MB → `data/files/chat-*`，返回 `{stored,name,mime,size}`）；聊天请求可带 `attachments`（≤6）→ opencode `{type:'file', url:'data:<mime>;base64,…'}` 文件 part 注入首轮（含重试）；composer 支持附件按钮 / 拖拽 / Ctrl+V 粘贴截图 + 待发 chips。
+- **全类共存**：traces / tasks / events / projects / notes / actions / edits 从同一 JSON **独立解析、可同现**；回复由 `buildChatReply` 汇总（单一则点名）。
+- 确认前零写入；附件为临时输入（不建实体）；无新端点语义外泄、无新依赖。
+
+- **修改**：`server/ai.mjs`、`server/index.mjs`、`src/lib/mutations.ts`、`src/components/OverviewChat.tsx`、`src/styles/views.css`、`docs/decisions/0035-chat-lookup-edit.md`（§8）
+- **验证**：三个新解析器单测 + 七类同 JSON 共存单测；`node --check` 0；`npx tsc --noEmit` 0；`npm run build` 0；**实机**（`/api/ai/chat` + `-stream` + `/upload`）：① 一句话同时产出 **1 个项目 + 1 条笔记**；② 流式返回 `status,delta,result`（**362 个增量帧**），result 帧含全部契约字段；③ 上传 201 返回 `stored`；④ 带附件读图 → 「纯白色的空白图」；⑤ 操作提案 → `actions:[{op:'complete',kind:'tasks',id:'t-0002',…}]`（含标题快照）。
+
+### 总览对话 · 多意图 + 多条（2026-10-08）
+
+答 owner「可以加强这个总览对话」并选定「多意图 + 多条」——此前各类创建提案**互斥且各限一条**（命中踪迹就不再解析任务 / 日程），一段日记里「今天做了什么 + 接下来要做什么」只能收下其中一类（如「下周去外地洽谈」被直接丢弃）。
+
+- **提示词**：任务 → `{"tasks":[…]} `、日程 → `{"events":[…]} `（各 **1–6 条**）；新增共存规则「一段内容既含已做的 traces 又含要做的 tasks / events 时，同一 JSON 里**同时**给出 traces、tasks、events」。
+- **解析**：新增 `tryParseTaskRequests` / `tryParseEventRequests`（数组 ≤6；兼容旧 `{"task":{…}}` / `{"event":{…}}`）；`chatWithKernel` **同时**解析三类、互不排斥（创建优先于 edit），回复由 `buildCreateReply` 汇总（单一则点名，多类则计数）。
+- **接口**：`/api/ai/chat` 下发 `traces` / `tasks` / `events` 三个数组。
+- **前端**：任务 / 日程卡同踪迹卡一样改**多行可编辑**（标题输入 + 只读时间 / 地点 + 单行删除），任务卡 / 踪迹卡带「**拆分**」，逐条经既有 `POST /api/tasks` / `/api/events` 落盘 + toast「已建立 N 条… · 撤销」；三类卡可**同时**出现。
+- 确认前零写入；无新端点 / 数据模型变化 / 新依赖。
+
+- **修改**：`server/ai.mjs`、`server/index.mjs`、`src/lib/mutations.ts`、`src/components/OverviewChat.tsx`、`src/styles/views.css`、`docs/decisions/0035-chat-lookup-edit.md`（§7）
+- **验证**：`tryParse{Task,Event,Trace}Requests` 单测（数组 / 旧单条兼容 / 上限 6 / 三类同 JSON 共存）；`node --check` 0；`npx tsc --noEmit` 0；`npm run build` 0；**实机**按 owner 日记长文复现 → **4 条踪迹 + 1 条日程**（未来安排「下周一/二去外地洽谈」→ allDay 日程 10/12–10/13），reply「识别为 4 条踪迹、1 条日程。确认后分别建立。」。
+
+### 踪迹 · 对话内多条踪迹 + 拆分（2026-10-08）
+
+答 owner「踪迹添加一个拆分功能，不能一次性全挤在一起」——此前总览 AI 对话对「我做了什么」只产**一条** `trace`，一段话里一天的多件事被挤进同一条（长 `title` + 长 `note`）。
+
+- **AI 同段拆分**：提示词改为「一段话含多件不同的已完成的事 → **必须拆成多条**」，输出 `{"traces":[{title,note?,at?}, …]}`（**1–6 条**；同一件事才 1 条）；新增 `tryParseTraceRequests`（数组清洗 title ≤40 / note ≤200 / at 限 ISO；旧 `{"trace":{…}}` 兼容为 1 条）。
+- **卡片可拆分**：`/api/ai/chat` 改为下发 `traces`；「记入踪迹」卡改为**多行可编辑**（每行标题输入 + 该行 `at` 只读 + 单行删除），「**拆分**」按钮追加一行（≤6），「记录」逐条经既有 `POST /api/traces` 落盘并 toast「已记入 N 条踪迹 · 撤销」（逐条回收站）。
+- 确认前零写入；无新端点 / 数据模型变化 / 新依赖。
+
+- **修改**：`server/ai.mjs`、`server/index.mjs`、`src/lib/mutations.ts`、`src/components/OverviewChat.tsx`、`src/styles/views.css`、`docs/decisions/0040-traces-feature.md`（修订）
+- **验证**：`tryParseTraceRequests` 单测（多条 / 旧单条兼容 / 空标题过滤 / 上限 6 / 非 JSON / 兼容 wrapper）；`node --check` 0；`npx tsc --noEmit` 0；`npm run build` 退出 0；**实机**按 owner 当日长文复现 `/api/ai/chat` → **6 条**踪迹（含 `at` 推断：早上 10:00 / 下午 15:00），不再合并为一条。
+
 ### 外键引用生命周期统一 · 软删只隐藏 / 彻底删除才断链（ADR-0043 · 2026-10-07）
 
 答 owner 实机反馈「把原项目（`p-0003`）删除后……我删除后应该把子任务归为无项目，但是这里没有，说明我的删除并没有真正删除到原数据」——**根因**：引用处理只有两处零散机制且都不在删除主路径（区域 / 目标 409 护栏；AI unapply 硬编码清 `task.projectId`），项目等删除走通用 `/trash` → `moveToTrash` **完全不看引用** → `tasks t-0003.projectId → p-0003`、5 个项目 `areaId → a-0001`、`inbox.linkedIds → 已彻底删除产物` 等悬空。

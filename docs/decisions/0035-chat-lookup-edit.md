@@ -68,3 +68,31 @@ QA `.qa/v73/`：
 **验证**：`tryParseTaskRequest` 单测 **6/6** + `tryParseEventRequest` 单测 **7/7**（缺 startAt / 非 ISO 时间 / end<start 丢弃 / allDay / event+task 同 JSON / 超长标题截断）；`node --check server/{ai,index}.mjs` 0；`npx tsc --noEmit` 0；`npm run build` 退出 0。**实机端到端**（服务端重启后复现 `/api/ai/chat`）：① 原反馈对话（「打算做 Java 实验作业」→「截止今晚 23:59」）→ `task={"title":"完成 Java 实验作业","dueAt":"2026-10-07T23:59:00+08:00"}`；② 通知「10月9日 19:30 新生辩论赛初赛…报名 10月7日 17:00」→ `event={"title":"新生辩论赛初赛（观看，19:20前签到入场）","startAt":"2026-10-09T19:30:00+08:00","endAt":"2026-10-09T21:30:00+08:00","location":"某活动中心报告厅"}` **且** `task={"title":"报名新生辩论赛初赛观看…","dueAt":"2026-10-07T17:00:00+08:00"}`、reply「识别为 1 条日程…与 1 条任务…。确认后建立。」（零写入）。
 
 **已知边界**：本修订支持**新建任务与日程**；对话内新建项目 / 笔记仍未接（笔记走「整理进笔记」）；新建任务卡 / 日程卡与踪迹卡同样**不随刷新持久化**（`normalizeTurn` 未还原 `task` / `event` / `trace`，与现状一致）。
+
+## 7. 修订（2026-10-08）：多意图 + 多条（traces / tasks / events 同段共存）
+
+答 owner「可以加强这个总览对话」并选定「多意图 + 多条」——此前各类创建提案**互斥且各限一条**：命中踪迹就不再解析任务 / 日程，且任务 / 日程各只产 1 条。这导致一段日记（「今天做了什么 + 接下来要做什么」）只能收下其中一类——如「下周一/二去外地洽谈」被直接丢弃。
+
+- **提示词**：任务 → `{"tasks":[…]} `、日程 → `{"events":[…]} `（各 **1–6 条**）；新增共存规则——一段内容既含已做的（traces）又含要做的（tasks / events）时，**在同一个 JSON 里同时给出 traces、tasks、events**。
+- **解析**：新增 `tryParseTaskRequests` / `tryParseEventRequests`（数组，≤6；兼容旧 `{"task":{…}}` / `{"event":{…}}`）；`tryParseTraceRequests` 已有。`chatWithKernel` **同时**解析三类、互不排斥；创建类提案优先于 `editRequest`；回复文案由 `buildCreateReply` 汇总（单一则点名，多类则计数）。
+- **接口**：`/api/ai/chat` 下发 `traces` / `tasks` / `events` 三个数组。
+- **前端**：任务 / 日程卡同踪迹卡一样改**多行可编辑**（标题输入 + 只读时间 / 地点 + 单行删除）；任务卡与踪迹卡带「**拆分**」（追加一行，≤6；日程因 `startAt` 必填不提供手动加行）；「建立」逐条经既有 `POST /api/tasks` / `/api/events`（`ai:true`）落盘，toast「已建立 N 条… · 撤销」（逐条回收站）。三类卡可**同时**出现。
+
+**边界**：仍不做项目 / 笔记的对话内新建（见 §6）；提案卡不随刷新持久化；确认前零写入；无新端点。
+
+**验证**：`tryParse{Task,Event,Trace}Requests` 单测（数组 / 旧单条兼容 / 上限 6 / 三类同 JSON 共存）；`node --check` / `npx tsc --noEmit` / `npm run build` 0；**实机**按 owner 日记长文复现 → 同时返回 **4 条踪迹 + 1 条日程**（未来安排「下周一/二去外地洽谈」→ allDay 日程 10/12–10/13），reply「识别为 4 条踪迹、1 条日程。确认后分别建立。」。
+
+## 8. 修订（2026-10-08）：多轮工具 · 流式 · 新建项目/笔记 · 完成/删除/归档 · 贴图/附件
+
+答 owner「一次性把这些功能也做了吧」（对话加强的剩余四项）——总览对话从「单轮、整段返回、只读 + 创建」升级为「可多轮工具、流式生成、能操作既有记录、能看图/读文件」。
+
+- **多轮工具**：工具循环由「调取 / 检索各一次、最多 2 轮」放宽为**最多 4 轮**（其中实体调取 ≤3、联网检索 ≤2），直到模型不再请求工具。
+- **对话内新建项目 / 笔记**：新增 `{"projects":[{title,outcome?}]}`（1–3）与 `{"notes":[{title,body}]}`（1–3）提案 + `tryParseProjectRequests` / `tryParseNoteRequests`；前端「建立项目卡」「存为笔记卡」（多行可编辑 + 拆分 / 删除），点「建立 / 存为笔记」经**既有** `POST /api/projects`（`ai:true`）/ `POST /api/notes` 逐条落盘 + toast 撤销（回收站）。
+- **完成 / 删除 / 归档**：新增 `{"actions":[{op:"complete|reopen|delete|archive",kind,id,label?}]}`（1–3）提案；服务端**校验**（id 真实存在；`complete/reopen` 仅 tasks、`archive` 仅 projects/resources、`delete` 限可回收实体）并附记录标题（archive 附 `before` 状态），非法项丢弃；前端「操作卡」逐条执行——complete→`POST /api/tasks/:id/complete`（写 `doneAt` + 审计 `beforeStatus`）、reopen→`/reopen`、delete→软删除、archive→`POST /api/<kind>/:id/update {status:'archived'}`；撤销分别为 reopen / complete / restore / 写回 `before`。
+- **流式**：新增 `POST /api/ai/chat-stream`（SSE，镜像收件箱解析流的 `data: <json>\n\n` 帧：`status` / `delta` / `result` / `error`）；`chatWithKernelStream` **先订阅** opencode 事件流再建会话、按 sessionID 转发 `session.status` 与 `message.part.delta`；前端 `aiChatStream`（fetch + ReadableStream 帧解析）边收边渲染助手气泡，`result` 落定。同步 `/api/ai/chat` 保留为回退。
+- **贴图 / 附件**：新增 `POST /api/ai/chat/upload`（RAW ≤25MB → `data/files/chat-*`，返回 `{stored,name,mime,size}`）；聊天请求可带 `attachments`（≤6），服务端解析为 opencode `{type:'file', url:'data:<mime>;base64,…'}` 文件 part 注入首轮（含重试）；composer 支持附件按钮 / 拖拽 / Ctrl+V 粘贴截图 + 待发 chips。
+- **全类共存**：所有提案（traces / tasks / events / projects / notes / actions / edits）均从同一 JSON **独立解析、可同时出现**，回复由 `buildChatReply` 汇总计数（单一则点名）。
+
+**边界**：对话本身仍不落盘无审计、确认前零写入；附件为临时输入（不建实体）；不新增依赖。
+
+**验证**：三个新解析器单测 + 七类同 JSON 共存单测；`node --check` 0；`npx tsc --noEmit` 0；`npm run build` 0；**实机**（`/api/ai/chat` + `-stream` + `/upload`）：① 一句话同时产出 **1 个项目 + 1 条笔记**；② 流式返回 `status,delta,result`（**362 个增量帧**），result 帧含全部契约字段；③ 上传 201 返回 `stored`；④ 带附件读图 → 「纯白色的空白图」；⑤ 操作提案 → `actions:[{op:'complete',kind:'tasks',id:'t-0002',…}]`（含标题快照）。

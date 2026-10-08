@@ -1546,6 +1546,39 @@ export interface ChatEventProposal {
   location?: string
 }
 
+/** 新建项目提案（本切片）：AI 从「帮我起一个项目 / 这件事该立个项目」识别；确认后才经 /api/projects 落盘 */
+export interface ChatProjectProposal {
+  title: string
+  /** 完成定义（可缺省；≤200 字） */
+  outcome?: string
+}
+
+/** 新建笔记提案（本切片）：AI 从对话内容整理出的一条独立笔记；确认后才经 /api/notes 落盘 */
+export interface ChatNoteProposal {
+  title: string
+  /** 正文（Markdown 文本） */
+  body: string
+}
+
+/** 操作提案可作用的实体类别（回收站同族子集；不含 courses / areas 等） */
+export type ChatActionKind = 'tasks' | 'projects' | 'notes' | 'resources' | 'events' | 'traces'
+
+/** 操作提案种类：标记完成 / 重新打开 / 删除（入回收站）/ 归档 */
+export type ChatActionOp = 'complete' | 'reopen' | 'delete' | 'archive'
+
+/** 操作提案（本切片）：对既有实体的就地操作；确认后才执行，撤销走对应反向动作 */
+export interface ChatActionProposal {
+  op: ChatActionOp
+  kind: ChatActionKind
+  id: string
+  /** 目标实体标题（服务端快照） */
+  title: string
+  /** 变更前值（归档撤销用；缺省以「进行中」兜底） */
+  before?: unknown
+  /** 模型给出的一句话操作说明（可缺省） */
+  label?: string
+}
+
 export interface AiChatResult {
   reply: string
   /** Slice G.1：本轮为作答实际执行的联网检索问题（空 / 缺省 = 未检索） */
@@ -1554,12 +1587,18 @@ export interface AiChatResult {
   focused?: string[]
   /** 本切片：实体修改提案（服务端校验后；仅命中修改意图时存在） */
   edits?: ChatEditProposal[]
-  /** 「踪迹」提案（服务端校验后；仅命中「我做了 X」意图时存在） */
-  trace?: ChatTraceProposal
-  /** 「新建任务」提案（服务端清洗后；仅命中建任务意图时存在） */
-  task?: ChatTaskProposal
-  /** 「新建日程」提案（服务端清洗后；仅命中建日程意图时存在；可与 task 同时存在） */
-  event?: ChatEventProposal
+  /** 「踪迹」提案（服务端校验后；命中「我做了 X」意图时存在；**1–6 条**，支持同段拆分） */
+  traces?: ChatTraceProposal[]
+  /** 「新建任务」提案（服务端清洗后；**1–6 条**；可与 traces / events 同时存在） */
+  tasks?: ChatTaskProposal[]
+  /** 「新建日程」提案（服务端清洗后；**1–6 条**；可与 traces / tasks 同时存在） */
+  events?: ChatEventProposal[]
+  /** 「新建项目」提案（服务端清洗后；**1–6 条**；确认前零写入） */
+  projects?: ChatProjectProposal[]
+  /** 「新建笔记」提案（服务端清洗后；**1–6 条**；确认前零写入） */
+  notes?: ChatNoteProposal[]
+  /** 「操作既有实体」提案（服务端清洗后；**1–6 条**；确认前零写入） */
+  actions?: ChatActionProposal[]
   model: string | null
   ms: number
 }
@@ -1570,6 +1609,176 @@ export interface AiChatResult {
  */
 export async function chatWithAi(messages: AiChatMessage[]): Promise<AiChatResult> {
   return api.post<AiChatResult>('/api/ai/chat', { messages })
+}
+
+/** 对话附件引用（`POST /api/ai/chat/upload` 的返回）：服务端受管文件名 + 原始名 + MIME */
+export interface ChatAttachment {
+  stored: string
+  name: string
+  mime: string
+}
+
+/**
+ * 上传对话附件（`POST /api/ai/chat/upload?name=&type=`，RAW body）。
+ * 与 uploadInboxFile 同款 RAW 通道，但只返回文件引用（不生成收件箱条目）；
+ * 失败抛出可读错误，由调用方提示。
+ */
+export async function uploadChatAttachment(file: File): Promise<ChatAttachment> {
+  const params = new URLSearchParams()
+  params.set('name', file.name)
+  if (file.type !== '') params.set('type', file.type)
+  let response: Response
+  try {
+    response = await fetch(`/api/ai/chat/upload?${params.toString()}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/octet-stream' },
+      body: file,
+    })
+  } catch {
+    throw new Error('数据服务不可用（确认 npm run dev 已启动数据服务）')
+  }
+  const text = await response.text()
+  let data: unknown = null
+  if (text !== '') {
+    try {
+      data = JSON.parse(text)
+    } catch {
+      data = null
+    }
+  }
+  if (!response.ok) {
+    if (response.status >= 500 && data === null) {
+      throw new Error('数据服务不可用（确认 npm run dev 已启动数据服务）')
+    }
+    const message =
+      data !== null &&
+      typeof data === 'object' &&
+      'error' in data &&
+      typeof (data as { error: unknown }).error === 'string'
+        ? (data as { error: string }).error
+        : `上传失败（HTTP ${response.status}）`
+    throw new Error(message)
+  }
+  const ref = (data as { file?: Partial<ChatAttachment> } | null)?.file
+  if (
+    ref === undefined ||
+    typeof ref.stored !== 'string' ||
+    typeof ref.name !== 'string' ||
+    typeof ref.mime !== 'string'
+  ) {
+    throw new Error('上传响应缺少文件信息')
+  }
+  return { stored: ref.stored, name: ref.name, mime: ref.mime }
+}
+
+/** AI 对话流式过程事件（对应 POST /api/ai/chat-stream 的 SSE 帧） */
+export type AiChatStreamEvent =
+  | { kind: 'status'; status: string }
+  | { kind: 'delta'; field: 'text' | 'reasoning'; delta: string }
+  | ({ kind: 'result' } & AiChatResult)
+  | { kind: 'error'; message: string }
+
+/**
+ * 流式对话：POST /api/ai/chat-stream（镜像 aiParseInboxStream 的 fetch + reader + `\n\n` 帧解析）。
+ * 过程帧（status / delta）交给 onEvent；收到 result 帧以 AiChatResult 兑现；error 帧 / 非 2xx 以可读错误拒绝。
+ * 不写数据；对话历史由调用方本地保留。attachments 为 uploadChatAttachment 的返回值数组（可选）。
+ */
+export async function aiChatStream(
+  messages: AiChatMessage[],
+  attachments: ChatAttachment[] | undefined,
+  onEvent: (event: AiChatStreamEvent) => void,
+): Promise<AiChatResult> {
+  const body: { messages: AiChatMessage[]; attachments?: ChatAttachment[] } = { messages }
+  if (attachments !== undefined && attachments.length > 0) body.attachments = attachments
+  let response: Response
+  try {
+    response = await fetch('/api/ai/chat-stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+  } catch {
+    throw new Error('数据服务不可用（确认 npm run dev 已启动数据服务）')
+  }
+  if (!response.ok) {
+    // 前置校验失败（400/503 等）：响应体为 JSON，沿用 api.ts 的错误解析
+    const text = await response.text()
+    let data: unknown = null
+    if (text !== '') {
+      try {
+        data = JSON.parse(text)
+      } catch {
+        data = null
+      }
+    }
+    if (response.status >= 500 && data === null) {
+      throw new Error('数据服务不可用（确认 npm run dev 已启动数据服务）')
+    }
+    const message =
+      data !== null &&
+      typeof data === 'object' &&
+      'error' in data &&
+      typeof (data as { error: unknown }).error === 'string'
+        ? (data as { error: string }).error
+        : `请求失败（HTTP ${response.status}）`
+    throw new Error(message)
+  }
+
+  const streamBody = response.body
+  if (streamBody === null) throw new Error('数据服务未返回流式响应')
+  const reader = streamBody.getReader()
+  const decoder = new TextDecoder()
+
+  const state: { result: AiChatResult | null; failure: string | null; buffer: string } = {
+    result: null,
+    failure: null,
+    buffer: '',
+  }
+
+  const handleFrame = (frame: string): void => {
+    const line = frame.split('\n').find((part) => part.startsWith('data:'))
+    if (line === undefined) return
+    const payload = line.slice(5).trim()
+    if (payload === '') return
+    let event: AiChatStreamEvent
+    try {
+      event = JSON.parse(payload) as AiChatStreamEvent
+    } catch {
+      return
+    }
+    if (event.kind === 'result') {
+      // result 帧携带完整 AiChatResult；剔除 kind 后即兑现值
+      const { kind: _kind, ...result } = event
+      void _kind
+      state.result = result
+      return
+    }
+    if (event.kind === 'error') {
+      state.failure = event.message
+      return
+    }
+    // status / delta 过程帧：交给调用方驱动流式气泡
+    onEvent(event)
+  }
+
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    state.buffer += decoder.decode(value, { stream: true })
+    let index = state.buffer.indexOf('\n\n')
+    while (index !== -1) {
+      const frame = state.buffer.slice(0, index)
+      state.buffer = state.buffer.slice(index + 2)
+      handleFrame(frame)
+      index = state.buffer.indexOf('\n\n')
+    }
+  }
+  state.buffer += decoder.decode()
+  if (state.buffer.trim() !== '') handleFrame(state.buffer)
+
+  if (state.failure !== null) throw new Error(state.failure)
+  if (state.result === null) throw new Error('AI 流式响应异常结束')
+  return state.result
 }
 
 /** 对话 → 笔记（Slice G.1）：把某条对话回答整理成独立笔记并落盘 */

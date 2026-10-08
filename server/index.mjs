@@ -2,6 +2,7 @@
 // 只监听 127.0.0.1:4097（永不暴露局域网；浏览器经 Vite 代理访问）。
 // 路由：health / snapshot / activity / tasks(create·complete·reopen) / inbox(capture·clarify·revert)
 import http from 'node:http'
+import { randomBytes } from 'node:crypto'
 import { execFile as execFileCb, spawn } from 'node:child_process'
 import { createReadStream, createWriteStream, existsSync, promises as fs } from 'node:fs'
 import path from 'node:path'
@@ -68,6 +69,7 @@ import {
   CHAT_MAX_MESSAGES,
   CHAT_TOTAL_CHARS,
   chatWithKernel,
+  chatWithKernelStream,
   computeMonthMetrics,
   computeWeekMetrics,
   draftChatNote,
@@ -326,6 +328,120 @@ async function buildChatEdits(editRequest) {
   }
   const label = typeof editRequest.label === 'string' ? editRequest.label : ''
   return [{ kind: plural, id, title: record.title ?? '', fields, before, label }]
+}
+
+/* ---------------------------------------------------------------------------
+ * AI 对话 · 动作处置建议（完成 / 重新打开 / 删除 / 归档）（只读）。
+ * 服务端**不写入、不审计**——仅在用户于前端确认后走既有 complete/reopen/trash 路径落盘。
+ * ------------------------------------------------------------------------- */
+
+/** 各 op 允许的 kind（与提示词 / 前端契约一致） */
+const CHAT_ACTION_KIND_BY_OP = {
+  complete: ['tasks'],
+  reopen: ['tasks'],
+  archive: ['projects', 'resources'],
+  delete: ['tasks', 'projects', 'notes', 'resources', 'events', 'traces'],
+}
+/** 动作目标 id 形状（前缀-四位数字） */
+const CHAT_ACTION_ID_RE = /^[a-z]+-\d{4}$/
+
+/**
+ * 校验 AI 动作处置建议：id 必须实时存在（readEntity）+ op 必须适配 kind；
+ * 附 title（记录标题）、archive 另附 before（当前 status）。任一步不合法即丢弃该项。始终 ≤3。
+ */
+async function buildChatActions(actions) {
+  const out = []
+  for (const raw of Array.isArray(actions) ? actions : []) {
+    if (out.length >= 3) break
+    if (raw === null || typeof raw !== 'object') continue
+    const allowed = CHAT_ACTION_KIND_BY_OP[raw.op]
+    const kind = raw.kind
+    const id = raw.id
+    if (!Array.isArray(allowed) || !allowed.includes(kind)) continue
+    if (typeof id !== 'string' || !CHAT_ACTION_ID_RE.test(id) || !validId(kind, id)) continue
+    const record = await readEntity(kind, id)
+    if (record === null) continue
+    const item = { op: raw.op, kind, id, title: typeof record.title === 'string' ? record.title : '' }
+    if (typeof raw.label === 'string' && raw.label.trim() !== '') {
+      item.label = Array.from(raw.label.trim()).slice(0, 60).join('')
+    }
+    if (raw.op === 'archive') item.before = record.status === undefined ? null : record.status
+    out.push(item)
+  }
+  return out
+}
+
+/* ---------------------------------------------------------------------------
+ * AI 对话 · 输入收口（同步 / 流式共用）：历史裁剪、附件白名单、响应契约。
+ * ------------------------------------------------------------------------- */
+
+/** 裁剪对话历史：最近 N 条 / 单条 M 字 / 合计 K 字；非法条目跳过（与旧内联逻辑同口径） */
+function sanitizeChatMessages(raw) {
+  const messages = []
+  let total = 0
+  for (const entry of (Array.isArray(raw) ? raw : []).slice(-CHAT_MAX_MESSAGES)) {
+    if (entry === null || typeof entry !== 'object') continue
+    const role = entry.role === 'assistant' ? 'assistant' : entry.role === 'user' ? 'user' : null
+    if (role === null) continue
+    const content =
+      typeof entry.content === 'string' ? entry.content.slice(0, CHAT_MAX_CHARS).trim() : ''
+    if (content === '') continue
+    if (total + content.length > CHAT_TOTAL_CHARS) break
+    total += content.length
+    messages.push({ role, content })
+  }
+  return messages
+}
+
+/** 对话附件 stored 名形状（与本服务 POST /api/ai/chat/upload 产物一致）：chat-<ts>-<4hex>-<name> */
+const CHAT_ATTACH_STORED_RE = /^chat-\d+-[0-9a-f]{4}-/
+
+/** 附件白名单：≤6；stored 须为 chat 上传产物形状且不含路径分隔符；非法项丢弃（只读） */
+function sanitizeChatAttachments(raw) {
+  if (!Array.isArray(raw)) return []
+  const out = []
+  for (const att of raw) {
+    if (out.length >= 6) break
+    if (att === null || typeof att !== 'object') continue
+    const stored = typeof att.stored === 'string' ? att.stored : ''
+    if (!CHAT_ATTACH_STORED_RE.test(stored) || stored.includes('/') || stored.includes('\\')) continue
+    out.push({
+      stored,
+      name: typeof att.name === 'string' ? att.name : '',
+      mime: typeof att.mime === 'string' ? att.mime : '',
+    })
+  }
+  return out
+}
+
+/**
+ * 把对话引擎输出收口为路由响应契约：校验 edits（字段白名单）与 actions（实时存在性 + op-kind），
+ * 全部只读、零写入零审计。chat 已不再有「创建抑制修改」的排他逻辑，各类可共存。
+ */
+async function finalizeChatResult(result) {
+  let reply = result.reply
+  let edits = []
+  if (result.editRequest !== null && result.editRequest !== undefined) {
+    edits = await buildChatEdits(result.editRequest)
+    if (edits.length === 0) {
+      reply = '我没能确认这条记录的修改（找不到记录或字段不合法），请换一种说法再试。'
+    }
+  }
+  const actions = await buildChatActions(result.actionRequests ?? [])
+  return {
+    reply,
+    searched: result.searched ?? [],
+    focused: result.focused ?? [],
+    edits,
+    traces: result.traceRequests ?? [],
+    tasks: result.taskRequests ?? [],
+    events: result.eventRequests ?? [],
+    projects: result.projectRequests ?? [],
+    notes: result.noteRequests ?? [],
+    actions,
+    model: result.model ?? null,
+    ms: result.ms ?? 0,
+  }
 }
 
 /* ---------------------------------------------------------------------------
@@ -2782,65 +2898,96 @@ const server = http.createServer(async (req, res) => {
       }
       return
     }
-    // AI 对话（Slice G）：读库回答；历史有界（最近 20 条 / 单条 4000 字 / 合计 16000 字）
-    if (method === 'POST' && pathname === '/api/ai/chat') {
-      const body = await readBody(req)
-      const raw = Array.isArray(body.messages) ? body.messages : []
-      const messages = []
-      let total = 0
-      for (const entry of raw.slice(-CHAT_MAX_MESSAGES)) {
-        if (entry === null || typeof entry !== 'object') continue
-        const role =
-          entry.role === 'assistant' ? 'assistant' : entry.role === 'user' ? 'user' : null
-        if (role === null) continue
-        const content =
-          typeof entry.content === 'string' ? entry.content.slice(0, CHAT_MAX_CHARS).trim() : ''
-        if (content === '') continue
-        if (total + content.length > CHAT_TOTAL_CHARS) break
-        total += content.length
-        messages.push({ role, content })
+    // AI 对话 · 附件上传（RAW，≤25MB）：落 data/files/chat-<ts>-<4hex>-<name>，无审计（临时输入）。
+    // 仅返回 basename（stored），不暴露绝对路径；随后经 /api/ai/chat 的 attachments 引用。
+    if (method === 'POST' && pathname === '/api/ai/chat/upload') {
+      const rawName = (url.searchParams.get('name') ?? '').trim()
+      const rawType = (url.searchParams.get('type') ?? '').trim()
+      const mime = normalizeUploadMime(rawType)
+      const safeName = sanitizeFilename(rawName)
+      const stored = `chat-${Date.now()}-${randomBytes(2).toString('hex')}-${safeName}`
+      await fs.mkdir(FILES_DIR, { recursive: true })
+      const dest = path.join(FILES_DIR, stored)
+      let size
+      try {
+        size = await saveUpload(req, dest, MAX_UPLOAD_BYTES)
+      } catch (err) {
+        // 写入失败 / 超限：清理半成品，错误交由全局处理器（413 / 500）
+        await fs.unlink(dest).catch(() => {})
+        throw err
       }
+      send(res, 201, { file: { stored, name: safeName, mime, size } })
+      return
+    }
+    // AI 对话 · 流式（SSE）：脚手架逐字镜像 /api/ai/inbox/:id/parse-stream；
+    // 前置校验（messages / health）全部通过后才切入事件流。
+    if (method === 'POST' && pathname === '/api/ai/chat-stream') {
+      const body = await readBody(req)
+      const messages = sanitizeChatMessages(body.messages)
       if (messages.length === 0 || messages[messages.length - 1].role !== 'user') {
         return fail(res, 400, '对话内容不能为空，且最后一条必须为用户消息')
       }
       const health = await getAiHealth()
       if (health.available === false) return fail(res, 503, 'opencode 服务未就绪（127.0.0.1:4096）')
+      const attachments = sanitizeChatAttachments(body.attachments)
+
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream; charset=utf-8',
+        'Cache-Control': 'no-cache, no-transform',
+        Connection: 'keep-alive',
+        'X-Accel-Buffering': 'no',
+      })
+      res.flushHeaders()
+      let sseClosed = false
+      req.on('close', () => {
+        sseClosed = true
+      })
+      let resultFrame = null
+      const emit = (event) => {
+        if (sseClosed || res.writableEnded) return
+        // 终端 result 帧先捕获，待补全 edits / actions 后再写出（与同步端点同一响应契约）
+        if (event !== null && typeof event === 'object' && event.kind === 'result') {
+          resultFrame = event
+          return
+        }
+        res.write(`data: ${JSON.stringify(event)}\n\n`)
+      }
+      try {
+        await chatWithKernelStream(messages, attachments, emit)
+        if (resultFrame !== null && !sseClosed && !res.writableEnded) {
+          const payload = await finalizeChatResult(resultFrame)
+          res.write(`data: ${JSON.stringify({ kind: 'result', ...payload })}\n\n`)
+        }
+      } catch (err) {
+        console.error('[ai] chat-stream 失败：', err?.message ?? err)
+        emit({ kind: 'error', message: err?.message ?? 'AI 调用失败' })
+      } finally {
+        if (!sseClosed && !res.writableEnded) res.end()
+      }
+      return
+    }
+    // AI 对话（Slice G）：读库回答；历史有界（最近 20 条 / 单条 4000 字 / 合计 16000 字）。
+    // 响应契约：{ reply, searched, focused, edits, traces, tasks, events, projects, notes, actions, model, ms }。
+    if (method === 'POST' && pathname === '/api/ai/chat') {
+      const body = await readBody(req)
+      const messages = sanitizeChatMessages(body.messages)
+      if (messages.length === 0 || messages[messages.length - 1].role !== 'user') {
+        return fail(res, 400, '对话内容不能为空，且最后一条必须为用户消息')
+      }
+      const health = await getAiHealth()
+      if (health.available === false) return fail(res, 503, 'opencode 服务未就绪（127.0.0.1:4096）')
+      const attachments = sanitizeChatAttachments(body.attachments)
       let result
       try {
-        result = await chatWithKernel(messages)
+        result = await chatWithKernel(messages, attachments)
       } catch (err) {
         console.error('[ai] chat 失败：', err?.message ?? err)
         return fail(res, 502, err?.message ?? 'AI 调用失败')
       }
-      // 修改建议（只读）：校验 kind / id / fields 白名单；无效则回退文案且不下发 edits
-      let reply = result.reply
-      let edits = []
-      if (result.editRequest !== null && result.editRequest !== undefined) {
-        edits = await buildChatEdits(result.editRequest)
-        if (edits.length === 0) {
-          reply = '我没能确认这条记录的修改（找不到记录或字段不合法），请换一种说法再试。'
-        }
-      }
-      // 「踪迹」提案（只读校验）：title 形状已由 tryParseTraceRequest 清洗；原样下发由前端确认后经 /api/traces 落盘
-      const trace = result.traceRequest ?? null
-      // 「新建任务」提案（只读；title / dueAt / importance 形状已由 tryParseTaskRequest 清洗）：
-      // 原样下发由前端确认后经既有 POST /api/tasks 落盘；本端点不写数据、无新写入面
-      const task = result.taskRequest ?? null
-      // 「新建日程」提案（只读；title / startAt 必填 + endAt/allDay/location 已由 tryParseEventRequest 清洗）：
-      // 原样下发由前端确认后经既有 POST /api/events 落盘；本端点不写数据、无新写入面
-      const event = result.eventRequest ?? null
-      console.log(`[ai] chat ok ${result.ms}ms`)
-      send(res, 200, {
-        reply,
-        searched: result.searched,
-        focused: result.focused,
-        edits,
-        trace,
-        task,
-        event,
-        model: result.model,
-        ms: result.ms,
-      })
+      // 收口（只读）：校验 edits（字段白名单）与 actions（实时存在性 + op-kind）；无效项丢弃 / 回退文案
+      const payload = await finalizeChatResult(result)
+      console.log(`[ai] chat ok ${payload.ms}ms`)
+      send(res, 200, payload)
       return
     }
     // 对话 → 笔记（Slice G.1）：把某条对话回答整理成独立笔记（AI 出草稿，服务端落盘；可撤销）
