@@ -25,6 +25,7 @@ export function ResourceDraftModal({ open, onClose, onCreated }: ResourceDraftMo
   const [kind, setKind] = useState<ResourceKind>('article')
   const [url, setUrl] = useState('')
   const [note, setNote] = useState('')
+  const [content, setContent] = useState('')
   const [tags, setTags] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
@@ -40,6 +41,7 @@ export function ResourceDraftModal({ open, onClose, onCreated }: ResourceDraftMo
     setKind('article')
     setUrl('')
     setNote('')
+    setContent('')
     setTags('')
     setSubmitting(false)
     setError('')
@@ -62,6 +64,8 @@ export function ResourceDraftModal({ open, onClose, onCreated }: ResourceDraftMo
         if (trimmedUrl !== '') input.url = trimmedUrl
         const trimmedNote = note.trim()
         if (trimmedNote !== '') input.note = trimmedNote
+        const trimmedContent = content.trim()
+        if (trimmedContent !== '') input.content = trimmedContent
         const tagList = splitList(tags)
         if (tagList.length > 0) input.tags = tagList
         const resource = await createResource(input)
@@ -152,6 +156,19 @@ export function ResourceDraftModal({ open, onClose, onCreated }: ResourceDraftMo
             value={note}
             placeholder="1–3 句小结：这是什么、讲了什么、有什么用（可选）"
             onChange={(event) => setNote(event.target.value)}
+          />
+        </div>
+        <div className="k-field">
+          <label className="k-field__label u-label" htmlFor="k-resource-content">
+            原文
+          </label>
+          <textarea
+            id="k-resource-content"
+            className="k-textarea"
+            rows={4}
+            value={content}
+            placeholder="粘贴资料原始文本（可选；保留换行，详情页按纯文本展示）"
+            onChange={(event) => setContent(event.target.value)}
           />
         </div>
         <div className="k-field">

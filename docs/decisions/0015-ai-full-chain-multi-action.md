@@ -111,3 +111,15 @@ Slice R1 把「一条内容 → 一揽子动作」铺开，对**文本**条目�
   2. **apply 侧对齐**：`applyInboxActions` 的「文件条目只能应用为资料」纵深防御收窄为**非图片文件**（`hasFile && !isImageFile(item)`）；图片条目允许内容动作与「图片自身」resource 一揽子落位（resource 分支照常带 `kind:'file'` + 附件 `path`）。
 - **不变**：非图片文件（pdf / docx / xlsx 等）= 资料 + 简介、绝不拆分；确认制、撤销（`unapply`）、审计动作名全部不变。
 - **验证**：`.qa/v74/`（探针 + 服务端断言；图片条目 resource+event 一揽子落位 → 撤销零残留；非图片文件仍被拦截）；详见 CHANGELOG / TASK_BOOK 本条目。
+
+### 5.6 修订（资料原文保全 · 2026-10-13）：收件箱文本应用不再只剩摘要
+
+- **背景（owner 报告）**：owner 原话：「每次往收信箱丢东西，分析完是要丢到资料里面的，它不会显示原始信息，只会显示总结后的信息，而且总结后的信息存在信息缺失」。**根因**：§2.2 的 apply 资源分支只写 AI 摘要 `note`（`normalizeResourceNote` 截断 ≤120 字），**从不复制条目原文** `item.content`——而笔记分支反而把原文复制进 `note.body`，两侧不对称；资源侧也无来源反链。资料详情因此只见摘要，原文信息丢失。
+- **决策**：
+  1. **apply 原文保全语义**：`applyInboxActions` 的资源分支在 `!isFile`（**文本条目**）时把 `item.content` **逐字复制**进 `resource.content`；**文件条目**的原文即文件本身（`kind:'file'` + `path`），**不复制**。
+  2. **schema / 白名单**：`resourceSchema` 与 `resourceCreateSchema` 新增可选 `content`（无 min/max）；`EDITABLE_FIELDS.resources` += `'content'`；`createResource` 接受 `content`（空值不落键；逐字保存、不作 trim 变换，trim 仅用于空值判定）。
+  3. **「原文」界面块**：资料详情读态在「简介」下方渲染「原文」（纯文本 `pre-wrap`、不渲染 Markdown，新增 token-only `.k-detail-raw`）；编辑表单（`rows=8`）与「新建资料」草稿弹窗（`rows=4`）新增「原文」textarea。
+  4. **存量修复**：`server/store.mjs` 新增导出 `repairResourceContents({ dryRun = true })`（镜像 `pruneDanglingRefs` 约定——单次 `serialize` + 原子写、apply 时一条 `resource.repair` 审计；扫收件箱条目 `linkedIds`（`linkedId` 兜底，兼容 Slice R1 前只有单数的旧条目）；只处理实时资料；跳过 `kind:'file'` / 带 `path` / 已有非空 `content`（`''` 与纯空白视作未设置）；逐字复制；**不 bump `updatedAt`**；幂等）+ CLI `scripts/resource-content-repair.mjs`（默认预演；`--apply` 落盘；用法 `node scripts/resource-content-repair.mjs [--apply]`）。
+- **不变**：`kind:'file'` + `path` 行为、Zod 校验、审计动作名（`inbox.apply` / `resource.create` / `resource.update`）均不变；**先确认后写入**语义不变；无新增依赖。
+- **显式延后**：原文不参与全局搜索（`searchSnapshot` 仍只索引 title / note / url / tags）。
+- **验证**：服务端隔离探针 **21/21 PASS** / 存量修复隔离测试 **24/24 PASS**（预演零写 · `--apply` 4 条回填 · 幂等复跑 0）/ 浏览器视觉 QA **5/5 PASS**；`node --check` / `tsc` / `build` 0（Library chunk 23.90 kB）；证据 `.qa/v82/`。详见 CHANGELOG / TASK_BOOK。

@@ -1585,8 +1585,9 @@ export async function buildSearchSection(queries) {
     if (q !== '' && !list.includes(q)) list.push(q)
     if (list.length >= SEARCH_MAX_QUERIES) break
   }
-  if (list.length === 0) return { section: '', queries: [], ok: false }
+  if (list.length === 0) return { section: '', queries: [], ok: false, sources: [] }
   const lines = ['【联网检索】（系统刚刚为你检索的网页摘要，可能不完整；只可据此修正时间与事实，不得编造）']
+  const sources = []
   let ok = false
   for (const q of list) {
     let results = []
@@ -1602,6 +1603,13 @@ export async function buildSearchSection(queries) {
     ok = true
     lines.push(`问题「${q}」：`)
     for (const r of results) lines.push(`- ${r.title}｜${r.snippet}`)
+    // 来源清单（P1-2）：附回前端供用户核验（≤6、按 url 去重）
+    for (const r of results) {
+      if (sources.length >= 6) break
+      if (typeof r.url === 'string' && r.url !== '' && !sources.some((s) => s.url === r.url)) {
+        sources.push({ title: Array.from(String(r.title ?? '')).slice(0, 80).join(''), url: r.url })
+      }
+    }
     // N9.1：补充首条结果页正文摘录（复用 N2 抓取；失败 / 安全拒抓一律静默跳过）
     const page = await fetchLinkExcerpt(results[0].url)
     if (page !== null) {
@@ -1610,7 +1618,7 @@ export async function buildSearchSection(queries) {
   }
   let section = lines.join('\n')
   if (section.length > SEARCH_SECTION_MAX) section = section.slice(0, SEARCH_SECTION_MAX)
-  return { section, queries: list, ok }
+  return { section, queries: list, ok, sources }
 }
 
 /** 构造系统提示词（注入当前本地时间 + 系统现状摘要 + 一揽子动作规则；Slice N0 增通知三性与截图） */
@@ -2393,9 +2401,27 @@ function nowStamp() {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${WEEKDAYS[d.getDay()]} ${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
+/** 日期落在学期第几周（周一为起点；startDate = 第 1 周周一）；term 缺失 / startDate 缺失返回 null */
+function weekOfTermNumber(term, date) {
+  const startDate = term?.startDate
+  if (typeof startDate !== 'string' || startDate === '') return null
+  const start = new Date(`${startDate}T00:00:00`)
+  if (!Number.isFinite(start.getTime())) return null
+  const mondayOf = (d) => {
+    const x = new Date(d)
+    x.setHours(0, 0, 0, 0)
+    x.setDate(x.getDate() - ((x.getDay() + 6) % 7))
+    return x
+  }
+  const diff = Math.round((mondayOf(date).getTime() - mondayOf(start).getTime()) / 86_400_000)
+  return Math.floor(diff / 7) + 1
+}
+
 /**
  * 构造「问答用」现状摘要：突出「今天最紧急」所需事实。
- * 含：现在时刻 / 逾期任务 / 今日到期 / 未来 7 天日程 / 收件箱积压 / 进行中项目 / 高优先下一步。
+ * 含：现在时刻 / 今日课程 / 逾期任务 / 今日到期 / 今日已完成 / 未来 7 天日程 /
+ *     习惯打卡 / 近 48h 踪迹 / 收件箱积压 / 进行中项目 / 高优先下一步。
+ * 已推迟（deferUntil 在未来）的任务不计入逾期 / 今日到期 / 下一步（与任务页口径一致，避免虚报紧急）。
  * 仅取事实，禁止模型据此编造；摘要外的信息模型须如实回答「数据里没有」。
  */
 export function buildChatDigest(snapshot, now = new Date()) {
@@ -2403,9 +2429,15 @@ export function buildChatDigest(snapshot, now = new Date()) {
   const dayKey = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
   const today = dayKey(now)
   const dueMs = (t) => (typeof t.dueAt === 'string' ? new Date(t.dueAt).getTime() : null)
+  const isDeferred = (t) => {
+    const m = typeof t.deferUntil === 'string' ? new Date(t.deferUntil).getTime() : null
+    return m !== null && Number.isFinite(m) && m > now.getTime()
+  }
   const openTasks = (snapshot.tasks ?? []).filter((t) => OPEN_TASK_STATUS.has(t.status))
+  // 活跃 = 未完成且未推迟（推迟项按任务页口径不参与「逾期 / 今日到期 / 下一步」）
+  const activeTasks = openTasks.filter((t) => !isDeferred(t))
 
-  const overdue = openTasks
+  const overdue = activeTasks
     .filter((t) => {
       const m = dueMs(t)
       return m !== null && Number.isFinite(m) && m < now.getTime()
@@ -2415,12 +2447,96 @@ export function buildChatDigest(snapshot, now = new Date()) {
       return `${t.id} · ${t.title} · 逾期 ${days} 天 · 重要性 ${t.importance}/3`
     })
 
-  const dueToday = openTasks
+  const dueToday = activeTasks
     .filter((t) => {
       const m = dueMs(t)
       return m !== null && Number.isFinite(m) && dayKey(new Date(m)) === today
     })
     .map((t) => `${t.id} · ${t.title} · 重要性 ${t.importance}/3`)
+
+  const doneToday = (snapshot.tasks ?? [])
+    .filter(
+      (t) =>
+        t.status === 'completed' &&
+        typeof t.doneAt === 'string' &&
+        dayKey(new Date(t.doneAt)) === today,
+    )
+    .map((t) => `${t.id} · ${t.title}`)
+
+  // 课程表（今天起 7 天）：按学期周 + 星期过滤并合并同课程相邻节次（周一为一周起点）
+  const weekLabels = ['一', '二', '三', '四', '五', '六', '日']
+  const dayCourseLines = (date) => {
+    const wd = ((date.getDay() + 6) % 7) + 1
+    const wk = weekOfTermNumber(snapshot.term, date)
+    const slots = []
+    for (const course of snapshot.courses ?? []) {
+      for (const session of course.sessions ?? []) {
+        if (session.dayOfWeek !== wd) continue
+        if (
+          Array.isArray(session.weeks) &&
+          session.weeks.length > 0 &&
+          wk !== null &&
+          !session.weeks.includes(wk)
+        ) {
+          continue
+        }
+        const loc = session.location ?? course.location
+        slots.push({
+          id: course.id,
+          title: course.title,
+          startPeriod: session.startPeriod,
+          endPeriod: session.endPeriod,
+          loc: typeof loc === 'string' && loc !== '' ? loc : '',
+        })
+      }
+    }
+    slots.sort((a, b) => a.startPeriod - b.startPeriod || (a.id < b.id ? -1 : 1))
+    const runs = []
+    for (const slot of slots) {
+      const last = runs.length > 0 ? runs[runs.length - 1] : null
+      if (last !== null && last.id === slot.id && slot.startPeriod <= last.endPeriod + 1) {
+        last.endPeriod = Math.max(last.endPeriod, slot.endPeriod)
+        if (last.loc === '') last.loc = slot.loc
+      } else {
+        runs.push({ ...slot })
+      }
+    }
+    return runs.map((r) => {
+      const period =
+        r.startPeriod === r.endPeriod ? `第${r.startPeriod}节` : `第${r.startPeriod}-${r.endPeriod}节`
+      return `${period} · ${r.title}${r.loc !== '' ? ` · ${r.loc}` : ''}`
+    })
+  }
+  const courseSchedule = []
+  for (let i = 0; i < 7; i += 1) {
+    const d = new Date(now)
+    d.setDate(d.getDate() + i)
+    const wd = ((d.getDay() + 6) % 7) + 1
+    const lines = dayCourseLines(d)
+    courseSchedule.push(
+      `${pad(d.getMonth() + 1)}/${pad(d.getDate())} 周${weekLabels[wd - 1]}：${lines.length > 0 ? lines.join('；') : '（无课）'}`,
+    )
+  }
+
+  // 习惯今日打卡（log 含今日即已打卡）
+  const habits = snapshot.habits ?? []
+  const isCheckedToday = (h) => Array.isArray(h.log) && h.log.some((e) => e?.date === today)
+  const checkedCount = habits.filter(isCheckedToday).length
+  const habitLines = habits.map((h) => `${h.id} · ${h.title} · ${isCheckedToday(h) ? '已打卡' : '未打卡'}`)
+
+  // 近 48 小时踪迹（按发生时间倒序，最多 15 条）
+  const traceSince = now.getTime() - 48 * 3600 * 1000
+  const traceLines = (snapshot.traces ?? [])
+    .filter((tr) => {
+      const t = Date.parse(tr.at)
+      return Number.isFinite(t) && t >= traceSince && t <= now.getTime()
+    })
+    .sort((a, b) => Date.parse(b.at) - Date.parse(a.at))
+    .slice(0, 15)
+    .map((tr) => {
+      const d = new Date(tr.at)
+      return `${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())} · ${tr.title}`
+    })
 
   const horizon = new Date(now)
   horizon.setDate(horizon.getDate() + 7)
@@ -2444,7 +2560,7 @@ export function buildChatDigest(snapshot, now = new Date()) {
   const projects = (snapshot.projects ?? []).filter((p) => p.status === 'active')
   const projectLines = projects.map((p) => `${p.id} · ${p.title} · 完成定义：${p.outcome}`)
 
-  const nextActions = openTasks
+  const nextActions = activeTasks
     .slice()
     .sort((a, b) => (b.importance ?? 0) - (a.importance ?? 0))
     .slice(0, 12)
@@ -2455,9 +2571,13 @@ export function buildChatDigest(snapshot, now = new Date()) {
 
   return [
     `【现在】${nowStamp()}`,
+    `【课程表（今天起 7 天）】\n${courseSchedule.join('\n')}`,
     `【逾期任务（${overdue.length}）】\n${overdue.join('\n') || '（无）'}`,
     `【今日到期（${dueToday.length}）】\n${dueToday.join('\n') || '（无）'}`,
+    `【今日已完成（${doneToday.length}）】\n${doneToday.join('\n') || '（无）'}`,
     `【未来 7 天日程（${events.length}）】\n${events.join('\n') || '（无）'}`,
+    `【习惯打卡（今日 ${checkedCount}/${habits.length}）】\n${habitLines.join('\n') || '（无习惯）'}`,
+    `【近 48 小时踪迹（${traceLines.length}）】\n${traceLines.join('\n') || '（无）'}`,
     `【收件箱积压（${inbox.length} 条未澄清）】\n${inboxLines.join('\n') || '（无）'}`,
     `【进行中项目（${projects.length}）】\n${projectLines.join('\n') || '（无）'}`,
     `【未完成下一步（按重要性，最多 12）】\n${nextActions.join('\n') || '（无）'}`,
@@ -2472,14 +2592,16 @@ function buildChatSystem(digest) {
 - 一般知识与建议：可以直接自由回答（不限于摘要），但不得把猜测写成用户的数据。
 - 需要外部事实才能回答准确时（最新政策 / 未来日期 / 公开资料等），**只输出一个 JSON**（不要任何其他文字）：{"searchQueries":["…","…"]}（≤2 条、中文关键词、含年份，如「2026年下半年 全国大学英语四级考试 时间」）。系统会先检索并把结果发给你，然后你再正式回答。**一次对话最多请求 2 次检索**（每次 ≤2 条）。
 - 当用户想了解某条记录（任务 / 日程 / 资料 / 笔记 / 项目等）的详细内容，或想修改它，而摘要信息不足时，**只输出一个 JSON**（不要任何其他文字）：{"entityQueries":["关键词","…"]}（1–3 条、每条 ≤30 字）；系统会把匹配到的完整记录发给你，你再回答或提出修改。**一次对话最多请求 3 次实体调取**（每次 1–3 条）。
-- 当用户明确要求修改某条记录，且你已能确定唯一目标记录时，**只输出一个 JSON**（不要任何其他文字）：{"edit":{"kind":"task|event|note|resource|project|area|goal|habit|course","id":"…","fields":{"字段名":"新值"},"label":"一句话说明将做什么修改"}}。绝不在不确定时输出 edit（先向用户确认）；id 必须来自你已看到的记录，绝不编造；fields 只放需要修改的字段；修改需要用户确认后才会生效。
-- 当用户**在陈述「我刚刚 / 今天做了什么」这类已经做完的事**（如「我刚刚跑完 5 公里」「今天把实验报告写完了」「给学弟讲完课了」）时，用**踪迹**记录。**若一段话里包含多件不同的已完成的事，必须拆成多条踪迹**（绝不合并进一条），**只输出一个 JSON**（不要任何其他文字）：{"traces":[{"title":"≤40 字，一句话我做了什么","note":"可选补充（≤200 字，可为空串）","at":"可选 ISO8601 带时区（原文有时间词才填，否则省略）"}, …]}（**1–6 条**；只有确属同一件事时才用 1 条）。系统会把它们作为「踪迹」交用户确认后入库。**待办（task）、将来的安排（event）、纯粹的思考 / 感悟（该记进笔记的）不要当作 trace**，后者仍按「整理进笔记」流程处理。
-- 当用户想**新建待办任务**（如「帮我记一条任务：…」「打算做…」「我需要做…」，指**将来要去完成**的事）时，**只输出一个 JSON**（不要任何其他文字）：{"tasks":[{"title":"≤80 字，一句话任务标题","dueAt":"可选：仅当用户已明确给出日期 / 时间才填 ISO8601 带时区（如 2026-10-07T23:59:00+08:00）；无法确定就省略","importance":可选 0–3 整数}, …]}（**1–6 条**）。系统会把它们作为「任务」交用户确认后入库。**已做完的事记 trace、不是 task；纯想法 / 感悟走笔记；仅「发生」的定点安排（会议 / 面试 / 考试 / 活动）用 event（见下条），不是 task。**
-- 当用户想**新建日程**，或内容里出现**会在某个明确时刻「发生」的事**（会议 / 面试 / 考试 / 讲座 / 活动，且给出了具体日期或时间）时，**只输出一个 JSON**（不要任何其他文字）：{"events":[{"title":"≤80 字","startAt":"必填 ISO8601 带时区，如 2026-10-09T19:30:00+08:00","endAt":"可选：明确结束时间才填","allDay":"可选 true（只有日期、没有具体时刻）","location":"可选 ≤60 字"}, …]}（**1–6 条**）。**只要出现「具体日期 / 时刻 + 一件会发生的事」，就必须产出 event**——不要把它降级成一句待办。**时间无法明确推出才不产 event**。
+- 当用户明确要求修改记录，且你已能确定目标记录时，**只输出一个 JSON**（不要任何其他文字）：{"edits":[{"kind":"task|event|note|resource|project|area|goal|habit|course","id":"…","fields":{"字段名":"新值"},"label":"一句话说明将做什么修改"}, …]}（**1–3 条**；只改一条时也可用旧式 {"edit":{…}}）。绝不在不确定时输出 edits（先向用户确认）；id 必须来自你已看到的记录，绝不编造；fields 只放需要修改的字段；修改需要用户确认后才会生效。
+- **当要创建 / 修改的东西缺了「必要信息」（用户没说、也无法从上下文或【系统现状摘要】合理推断）时，先用反问补齐，不要急着出卡片**：**只输出一个 JSON**（不要任何其他文字）：{"ask":{"text":"一句简洁的中文追问","options":["候选答案1","候选答案2"],"fields":["还缺的字段名"]}}（options 2–4 个常见候选，可为空数组；fields 为需要补齐的字段名如 startAt / dueAt / location）。**判定要由你来做**：① 只在**确属必要且不可推断**时问——日程缺 startAt、任务缺 dueAt、日程缺 location 等属于必要；能合理默认的（如任务未提截止）就不要问。② **一次只问最关键的 1–2 个问题**；③ 用户回答后按回答继续完善，仍缺必要信息可再问，但**整段对话最多追问 2 轮**，之后必须基于现有信息给出提案或直接回答；④ 用户说「随便 / 不确定 / 直接建」时立即停止追问、按现有信息出卡。**反问时不要同时输出任何提案。**
+- 当用户**在陈述「我刚刚 / 今天做了什么」这类已经做完的事**（如「我刚刚跑完 5 公里」「今天把实验报告写完了」「给学弟讲完课了」）时，用**踪迹**记录。**若一段话里包含多件不同的已完成的事，必须拆成多条踪迹**（绝不合并进一条），**只输出一个 JSON**（不要任何其他文字）：{"traces":[{"title":"≤40 字，一句话我做了什么","note":"可选补充（≤200 字，可为空串）","at":"可选 ISO8601 带时区（原文有时间词才填，否则省略）","tags":"可选：≤8 个短标签（每个 ≤12 字，如 阅读 / 健身 / ICPC）","projectId":"可选：仅当用户明确要归入某项目且该项目在【进行中项目】中，填其 id"}, …]}（**1–6 条**；只有确属同一件事时才用 1 条）。系统会把它们作为「踪迹」交用户确认后入库。**待办（task）、将来的安排（event）、纯粹的思考 / 感悟（该记进笔记的）不要当作 trace**，后者仍按「整理进笔记」流程处理。
+- 当用户想**新建待办任务**（如「帮我记一条任务：…」「打算做…」「我需要做…」，指**将来要去完成**的事）时，**只输出一个 JSON**（不要任何其他文字）：{"tasks":[{"title":"≤80 字，一句话任务标题","dueAt":"可选：仅当用户已明确给出日期 / 时间才填 ISO8601 带时区（如 2026-10-07T23:59:00+08:00）；无法确定就省略","importance":可选 0–3 整数,"tags":"可选：≤8 个短标签（每个 ≤12 字，如 学习 / 期末 / 竞赛）","projectId":"可选：仅当用户明确要归入某项目且该项目在【进行中项目】中，填其 id","parentTaskId":"可选：仅当用户明确说这是某任务的子任务且该任务已在【未完成下一步】或【实体记录】中看到时，填其 id"}, …]}（**1–6 条**）。系统会把它们作为「任务」交用户确认后入库。**已做完的事记 trace、不是 task；纯想法 / 感悟走笔记；仅「发生」的定点安排（会议 / 面试 / 考试 / 活动）用 event（见下条），不是 task。**
+- 当用户想**新建日程**，或内容里出现**会在某个明确时刻「发生」的事**（会议 / 面试 / 考试 / 讲座 / 活动，且给出了具体日期或时间）时，**只输出一个 JSON**（不要任何其他文字）：{"events":[{"title":"≤80 字","startAt":"必填 ISO8601 带时区，如 2026-10-09T19:30:00+08:00","endAt":"可选：明确结束时间才填","allDay":"可选 true（只有日期、没有具体时刻）","location":"可选 ≤60 字","tags":"可选：≤8 个短标签（每个 ≤12 字）","projectId":"可选：仅当用户明确要归入某项目且该项目在【进行中项目】中，填其 id"}, …]}（**1–6 条**）。**只要出现「具体日期 / 时刻 + 一件会发生的事」，就必须产出 event**——不要把它降级成一句待办。**时间无法明确推出才不产 event**。
   例：「10月9日（周五）19:30 新生辩论赛初赛，地点 某活动中心报告厅，观众需 19:20 前签到；报名 10月7日 17:00 开启」→ {"events":[{"title":"新生辩论赛初赛（观看）","startAt":"2026-10-09T19:30:00+08:00","endAt":"2026-10-09T21:30:00+08:00","location":"某活动中心报告厅"}],"tasks":[{"title":"报名新生辩论赛初赛","dueAt":"2026-10-07T17:00:00+08:00"}]}
-- 当用户想**开启一个新项目**（如「我想做一个…项目」「帮我建个项目」）时，**只输出一个 JSON**（不要任何其他文字）：{"projects":[{"title":"≤60 字项目名","outcome":"可选：完成定义 ≤200 字"}, …]}（**1–3 条**）。系统会把它们作为「项目」交用户确认后建立。
+- 当用户想**开启一个新项目**（如「我想做一个…项目」「帮我建个项目」）时，**只输出一个 JSON**（不要任何其他文字）：{"projects":[{"title":"≤60 字项目名","outcome":"可选：完成定义 ≤200 字","tags":"可选：≤8 个短标签（每个 ≤12 字）"}, …]}（**1–3 条**）。系统会把它们作为「项目」交用户确认后建立。
 - 当用户想**把某段内容存成一条笔记**（如「把刚才说的整理进笔记」「帮我记一条笔记」）时，**只输出一个 JSON**（不要任何其他文字）：{"notes":[{"title":"≤60 字标题","body":"markdown 正文 ≤4000 字"}, …]}（**1–3 条**）。系统会把它们作为「笔记」交用户确认后保存。
-- 当用户**明确要求对某条既有记录执行 完成 / 重新打开 / 删除 / 归档**（如「把 t-0003 标记完成」「删掉那条日程」「归档 p-0002」），且目标记录是你在下方【系统现状摘要】或【实体记录】里**已经看到**的，**只输出一个 JSON**（不要任何其他文字）：{"actions":[{"op":"complete|reopen|delete|archive","kind":"tasks|projects|notes|resources|events|traces","id":"记录 id","label":"可选一句话"}, …]}（**1–3 条**）。op 必须适配 kind：complete / reopen 仅对 tasks；archive 仅对 projects / resources；delete 对 tasks / projects / notes / resources / events / traces。**id 必须来自你已看到的记录，绝不编造**；不确定就先向用户确认，不要输出 actions。
+- 当用户想**把一条资料收进资料库**（如「把这篇链接存到资料库」「收录这条资料」）时，**只输出一个 JSON**（不要任何其他文字）：{"resources":[{"title":"≤60 字资料名","url":"可选链接（≤2000 字）","note":"可选简介（≤120 字）","tags":"可选：≤8 个短标签（每个 ≤12 字）"}, …]}（**1–3 条**）。系统会把它们作为「资料」交用户确认后收录。
+- 当用户**明确要求对某条既有记录执行 完成 / 重新打开 / 删除 / 归档 / 习惯打卡**（如「把 t-0003 标记完成」「删掉那条日程」「归档 p-0002」「帮我打卡刷题习惯」），且目标记录是你在下方【系统现状摘要】或【实体记录】里**已经看到**的，**只输出一个 JSON**（不要任何其他文字）：{"actions":[{"op":"complete|reopen|delete|archive|checkin|uncheckin","kind":"tasks|projects|notes|resources|events|traces|habits","id":"记录 id","label":"可选一句话"}, …]}（**1–3 条**）。op 必须适配 kind：complete / reopen 仅对 tasks；archive 仅对 projects / resources；delete 对 tasks / projects / notes / resources / events / traces；checkin / uncheckin 仅对 habits（今日打卡 / 取消今日打卡）。**id 必须来自你已看到的记录，绝不编造**；不确定就先向用户确认，不要输出 actions。
 - **同一段话可同时产出多类提案**：一段内容可同时含「做了什么」（traces）、「接下来做什么」（tasks / events）、「要开启项目」（projects）、「要存笔记」（notes）或「对既有记录的处置」（actions），**在同一个 JSON 里同时给出对应各类**（traces / tasks / events 每类 1–6 条；projects / notes / actions 每类 1–3 条）；各类互不排斥，不要因其中一类就丢掉其他类。
 - **严禁声称已完成写入**：你只能输出上面的 JSON 提案或用文字回答，一切创建 / 修改都要等用户在界面上确认。绝不要写「已记下」「已建立」「已创建」「已保存」「已修改」这类话；提议时用「确认后建立 / 确认后生效」。
 - 若系统发来【实体记录】段落：只可据此回答 / 提出修改，不得编造；若用户要求修改，只输出上面的 edit JSON；否则正常用文字回答。
@@ -2622,6 +2744,32 @@ export function tryParseEditRequest(reply) {
   return { kind: edit.kind, id: edit.id, fields, label }
 }
 
+/**
+ * 解析「修改建议」JSON（多实体版，P2-2）：支持 {"edits":[{kind,id,fields,label?}, …]}（≤3）
+ * 与旧式 {"edit":{…}}（视作 1 条）；逐条复用浅层校验，非法条目丢弃。
+ */
+export function tryParseEditRequests(reply) {
+  const cleaned = stripJsonFence(reply)
+  if (!cleaned.startsWith('{')) return []
+  let obj
+  try {
+    obj = JSON.parse(cleaned)
+  } catch {
+    return []
+  }
+  if (Array.isArray(obj?.edits)) {
+    const out = []
+    for (const raw of obj.edits) {
+      const one = tryParseEditRequest(JSON.stringify({ edit: raw }))
+      if (one !== null) out.push(one)
+      if (out.length >= 3) break
+    }
+    if (out.length > 0) return out
+  }
+  const single = tryParseEditRequest(reply)
+  return single !== null ? [single] : []
+}
+
 /** 实体调取：可检索集合（与 EDITABLE / 课程实体一致） */
 const ENTITY_SEARCH_KINDS = ['tasks', 'events', 'notes', 'resources', 'projects', 'courses']
 /** 实体集合 → 中文标签 */
@@ -2699,10 +2847,11 @@ function formatEntityLine(kind, record) {
 
 /**
  * 按关键词在收件箱外的实体集合里检索完整记录：每问取高分前 3、跨问按 id 去重、总上限 6。
- * 返回 { section, titles }：section 为注入段（无匹配则为空串），titles 为命中标题（去重 ≤6）。
+ * 返回 { section, titles, items }：section 为注入段（无匹配则为空串），titles 为命中标题（去重 ≤6），
+ * items 为命中实体引用（kind / id / title ≤6，供前端「已查阅」渲染为可点深链）。
  * @param {object} snapshot 数据快照
  * @param {string[]} queries 关键词（1–3 条）
- * @returns {{ section: string, titles: string[] }}
+ * @returns {{ section: string, titles: string[], items: Array<{ kind: string, id: string, title: string }> }}
  */
 export function resolveEntities(snapshot, queries) {
   const list = Array.isArray(queries)
@@ -2738,7 +2887,16 @@ export function resolveEntities(snapshot, queries) {
     const title = entityTitleOf(item.record)
     if (title !== '' && !titles.includes(title)) titles.push(title)
   }
-  if (matched.length === 0) return { section: '', titles: [] }
+  // 命中实体引用（P1-2）：kind / id / title，供前端把「已查阅」渲染为可点深链
+  const items = matched
+    .map((item) => ({
+      kind: item.kind,
+      id: typeof item.record.id === 'string' ? item.record.id : '',
+      title: entityTitleOf(item.record),
+    }))
+    .filter((it) => it.id !== '')
+    .slice(0, 6)
+  if (matched.length === 0) return { section: '', titles: [], items: [] }
   const header = '【实体记录】（系统按你的请求提供，只可据此回答，不得编造）'
   const lines = [header]
   let total = header.length
@@ -2748,7 +2906,21 @@ export function resolveEntities(snapshot, queries) {
     lines.push(line)
     total += line.length + 1
   }
-  return { section: lines.join('\n'), titles: titles.slice(0, 6) }
+  return { section: lines.join('\n'), titles: titles.slice(0, 6), items }
+}
+
+/** 清洗提案 tags：字符串数组、去空、每条 ≤12 字、去重、≤8 条；无则 undefined */
+function cleanProposalTags(raw) {
+  if (!Array.isArray(raw)) return undefined
+  const out = []
+  for (const item of raw) {
+    const tag = String(item ?? '').trim()
+    if (tag === '') continue
+    const clamped = Array.from(tag).slice(0, 12).join('')
+    if (!out.includes(clamped)) out.push(clamped)
+    if (out.length >= 8) break
+  }
+  return out.length > 0 ? out : undefined
 }
 
 /** 清洗单条踪迹提案：{title,note?,at?} → 提案；非法返回 null */
@@ -2762,6 +2934,11 @@ function cleanTraceItem(raw) {
   }
   if (typeof raw.at === 'string' && Number.isFinite(Date.parse(raw.at))) {
     trace.at = Array.from(raw.at.trim()).slice(0, 40).join('')
+  }
+  const tags = cleanProposalTags(raw.tags)
+  if (tags !== undefined) trace.tags = tags
+  if (typeof raw.projectId === 'string' && EDIT_REQUEST_ID_RE.test(raw.projectId.trim())) {
+    trace.projectId = raw.projectId.trim()
   }
   return trace
 }
@@ -2819,6 +2996,14 @@ function cleanTaskItem(raw) {
   ) {
     task.importance = raw.importance
   }
+  const tags = cleanProposalTags(raw.tags)
+  if (tags !== undefined) task.tags = tags
+  if (typeof raw.projectId === 'string' && EDIT_REQUEST_ID_RE.test(raw.projectId.trim())) {
+    task.projectId = raw.projectId.trim()
+  }
+  if (typeof raw.parentTaskId === 'string' && EDIT_REQUEST_ID_RE.test(raw.parentTaskId.trim())) {
+    task.parentTaskId = raw.parentTaskId.trim()
+  }
   return task
 }
 
@@ -2873,6 +3058,11 @@ function cleanEventItem(raw) {
   if (typeof raw.location === 'string' && raw.location.trim() !== '') {
     event.location = Array.from(raw.location.trim()).slice(0, 60).join('')
   }
+  const tags = cleanProposalTags(raw.tags)
+  if (tags !== undefined) event.tags = tags
+  if (typeof raw.projectId === 'string' && EDIT_REQUEST_ID_RE.test(raw.projectId.trim())) {
+    event.projectId = raw.projectId.trim()
+  }
   return event
 }
 
@@ -2919,6 +3109,8 @@ function cleanProjectItem(raw) {
   if (typeof raw.outcome === 'string' && raw.outcome.trim() !== '') {
     project.outcome = Array.from(raw.outcome.trim()).slice(0, 200).join('')
   }
+  const tags = cleanProposalTags(raw.tags)
+  if (tags !== undefined) project.tags = tags
   return project
 }
 
@@ -2941,10 +3133,75 @@ export function tryParseNoteRequests(reply) {
   return parseArrayProposal(reply, 'notes', cleanNoteItem, 3)
 }
 
-/** 动作 op 闭合集 */
-const CHAT_ACTION_OPS = new Set(['complete', 'reopen', 'delete', 'archive'])
-/** 动作 kind 闭合集（复数集合键） */
-const CHAT_ACTION_KINDS = new Set(['tasks', 'projects', 'notes', 'resources', 'events', 'traces'])
+/** 清洗单条资料提案：{title,url?,note?} → 提案；title 空返回 null（url ≤2000 / note ≤120） */
+function cleanResourceItem(raw) {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return null
+  const title = Array.from(String(raw.title ?? '').trim()).slice(0, 120).join('')
+  if (title === '') return null
+  const resource = { title }
+  if (
+    typeof raw.url === 'string' &&
+    raw.url.trim() !== '' &&
+    Array.from(raw.url.trim()).length <= 2000
+  ) {
+    resource.url = raw.url.trim()
+  }
+  if (typeof raw.note === 'string' && raw.note.trim() !== '') {
+    resource.note = Array.from(raw.note.trim()).slice(0, 120).join('')
+  }
+  const tags = cleanProposalTags(raw.tags)
+  if (tags !== undefined) resource.tags = tags
+  return resource
+}
+
+/** 解析「新建资料提案」JSON：{"resources":[{title,url?,note?}, …]} → 清洗后的数组（≤3）；非该形状返回 [] */
+export function tryParseResourceRequests(reply) {
+  return parseArrayProposal(reply, 'resources', cleanResourceItem, 3)
+}
+
+/**
+ * 解析「反问」JSON：{"ask":{text,options?,fields?}} → 清洗后的对象；非该形状返回 null。
+ * text 必填（≤200）；options 2–4 个候选（每个 ≤30，可为空数组）；fields ≤6 个字段名（每个 ≤20）。
+ */
+export function tryParseAskRequest(reply) {
+  const cleaned = stripJsonFence(reply)
+  if (!cleaned.startsWith('{')) return null
+  let obj
+  try {
+    obj = JSON.parse(cleaned)
+  } catch {
+    return null
+  }
+  const ask = obj === null || typeof obj !== 'object' ? null : obj.ask
+  if (ask === null || typeof ask !== 'object' || Array.isArray(ask)) return null
+  const text =
+    typeof ask.text === 'string' ? Array.from(ask.text.trim()).slice(0, 200).join('') : ''
+  if (text === '') return null
+  const options = []
+  if (Array.isArray(ask.options)) {
+    for (const raw of ask.options) {
+      const opt = String(raw ?? '').trim()
+      if (opt === '') continue
+      options.push(Array.from(opt).slice(0, 30).join(''))
+      if (options.length >= 4) break
+    }
+  }
+  const fields = []
+  if (Array.isArray(ask.fields)) {
+    for (const raw of ask.fields) {
+      const f = String(raw ?? '').trim()
+      if (f === '') continue
+      fields.push(Array.from(f).slice(0, 20).join(''))
+      if (fields.length >= 6) break
+    }
+  }
+  return { text, options, fields }
+}
+
+/** 动作 op 闭合集（含习惯打卡 checkin / uncheckin，P1-5） */
+const CHAT_ACTION_OPS = new Set(['complete', 'reopen', 'delete', 'archive', 'checkin', 'uncheckin'])
+/** 动作 kind 闭合集（复数集合键；含 habits，P1-5） */
+const CHAT_ACTION_KINDS = new Set(['tasks', 'projects', 'notes', 'resources', 'events', 'traces', 'habits'])
 
 /** 清洗单条动作提案：{op,kind,id,label?} → 提案；op / kind 非闭合集或 id 形状不符返回 null */
 function cleanActionItem(raw) {
@@ -2970,9 +3227,15 @@ export function tryParseActionRequests(reply) {
  * 汇总多类提案的回复文案：仅一项时点名（「识别为一条任务：…」），多项时按类别计数
  * （「识别为 3 条踪迹、1 条任务、1 条日程、1 个项目、2 条笔记、1 项操作。确认后分别处理。」）。
  */
-function buildChatReply({ traces, tasks, events, projects, notes, actions }) {
+function buildChatReply({ traces, tasks, events, projects, notes, resources, actions }) {
   const total =
-    traces.length + tasks.length + events.length + projects.length + notes.length + actions.length
+    traces.length +
+    tasks.length +
+    events.length +
+    projects.length +
+    notes.length +
+    resources.length +
+    actions.length
   if (total === 0) return ''
   if (total === 1) {
     if (traces.length === 1) return `识别为一条踪迹：「${traces[0].title}」。确认后记入踪迹。`
@@ -2980,6 +3243,7 @@ function buildChatReply({ traces, tasks, events, projects, notes, actions }) {
     if (events.length === 1) return `识别为一条日程：「${events[0].title}」。确认后建立。`
     if (projects.length === 1) return `识别为一个项目：「${projects[0].title}」。确认后建立。`
     if (notes.length === 1) return `识别为一条笔记：「${notes[0].title}」。确认后保存。`
+    if (resources.length === 1) return `识别为一条资料：「${resources[0].title}」。确认后收录。`
     return `识别为一项操作：${actions[0].label ?? actions[0].op}。确认后执行。`
   }
   const parts = []
@@ -2988,6 +3252,7 @@ function buildChatReply({ traces, tasks, events, projects, notes, actions }) {
   if (events.length > 0) parts.push(`${events.length} 条日程`)
   if (projects.length > 0) parts.push(`${projects.length} 个项目`)
   if (notes.length > 0) parts.push(`${notes.length} 条笔记`)
+  if (resources.length > 0) parts.push(`${resources.length} 条资料`)
   if (actions.length > 0) parts.push(`${actions.length} 项操作`)
   return `识别为 ${parts.join('、')}。确认后分别处理。`
 }
@@ -2995,12 +3260,12 @@ function buildChatReply({ traces, tasks, events, projects, notes, actions }) {
 /**
  * 对话核心（同步 / 流式共用）：读当前数据快照构造摘要，注入有界对话历史，跑「prompt → 工具 → 提案」循环。
  * 工具循环最多 4 轮：实体调取 ≤3 次、联网检索 ≤2 次；模型不再请求工具即提前结束。
- * 提案解析**各类独立**（traces / tasks / events / projects / notes / actions / edit 可共存，互不抑制）。
+ * 提案解析**各类独立**（traces / tasks / events / projects / notes / resources / actions / edits 可共存，互不抑制）。
  * @param {Array<{ role: 'user'|'assistant', content: string }>} messages 已由路由裁剪的有界历史（末条为用户）
  * @param {{ emit?: (e: object) => void, attachments?: Array<{ stored?: string, name?: string, mime?: string }>, onSession?: (id: string) => void }} [options]
  *   emit 存在时发出 { kind:'retry', reason } / { kind:'status', status:'searching' }（流式过程可视）；
  *   onSession 在会话创建后回调（流式 pump 需先拿到 sessionID 过滤事件）。
- * @returns {Promise<{ reply: string, searched: string[], focused: string[], editRequest: object | null, traceRequests: object[], taskRequests: object[], eventRequests: object[], projectRequests: object[], noteRequests: object[], actionRequests: object[], model: string | null, ms: number }>}
+ * @returns {Promise<{ reply: string, searched: string[], focused: string[], focusedRefs: object[], searchSources: object[], editRequests: object[], traceRequests: object[], taskRequests: object[], eventRequests: object[], projectRequests: object[], noteRequests: object[], resourceRequests: object[], actionRequests: object[], model: string | null, ms: number }>}
  */
 async function runChat(messages, options = {}) {
   const t0 = Date.now()
@@ -3031,6 +3296,8 @@ async function runChat(messages, options = {}) {
   let outcome = await withRetry(userText)
   const searched = []
   const focused = []
+  const focusedRefs = []
+  const searchSources = []
   let lastReply = outcome.reply
   let lookupCount = 0
   let searchCount = 0
@@ -3043,12 +3310,16 @@ async function runChat(messages, options = {}) {
       for (const title of resolved.titles) {
         if (!focused.includes(title)) focused.push(title)
       }
+      for (const item of resolved.items ?? []) {
+        if (focusedRefs.length >= 6) break
+        if (!focusedRefs.some((one) => one.id === item.id)) focusedRefs.push(item)
+      }
       const section =
         resolved.section !== ''
           ? resolved.section
           : '【实体记录】未找到与请求匹配的记录，请据现有摘要作答或向用户说明。'
       outcome = await withRetry(
-        `${section}\n\n请基于以上记录回答用户的最后一条消息；若用户要求修改，只输出 {"edit":{...}} JSON；否则正常用文字回答。`,
+        `${section}\n\n请基于以上记录回答用户的最后一条消息；若用户要求修改，只输出 {"edits":[...]} JSON；否则正常用文字回答。`,
       )
       lastReply = outcome.reply
       continue
@@ -3060,6 +3331,10 @@ async function runChat(messages, options = {}) {
       const search = await buildSearchSection(searchQueries)
       for (const q of search.queries ?? []) {
         if (!searched.includes(q)) searched.push(q)
+      }
+      for (const source of search.sources ?? []) {
+        if (searchSources.length >= 6) break
+        if (!searchSources.some((one) => one.url === source.url)) searchSources.push(source)
       }
       if (search.ok) {
         outcome = await withRetry(
@@ -3081,14 +3356,17 @@ async function runChat(messages, options = {}) {
   const eventRequests = tryParseEventRequests(lastReply)
   const projectRequests = tryParseProjectRequests(lastReply)
   const noteRequests = tryParseNoteRequests(lastReply)
+  const resourceRequests = tryParseResourceRequests(lastReply)
   const actionRequests = tryParseActionRequests(lastReply)
-  const editRequest = tryParseEditRequest(lastReply)
+  const editRequests = tryParseEditRequests(lastReply)
+  const askRequest = tryParseAskRequest(lastReply)
   const proposalTotal =
     traceRequests.length +
     taskRequests.length +
     eventRequests.length +
     projectRequests.length +
     noteRequests.length +
+    resourceRequests.length +
     actionRequests.length
   const reply =
     proposalTotal > 0
@@ -3098,26 +3376,33 @@ async function runChat(messages, options = {}) {
           events: eventRequests,
           projects: projectRequests,
           notes: noteRequests,
+          resources: resourceRequests,
           actions: actionRequests,
         })
-      : editRequest !== null
-        ? editRequest.label || '已生成修改建议，请确认后生效。'
-        : lastReply
+      : editRequests.length > 0
+        ? editRequests[0].label || '已生成修改建议，请确认后生效。'
+        : askRequest !== null
+          ? askRequest.text
+          : lastReply
   const model = modelOf(outcome.res)
   const ms = Date.now() - t0
   console.log(
-    `[ai] chat 完成 ${ms}ms（${model ?? '未知模型'}${searched.length > 0 ? ` · 检索${searched.length}条` : ''}${focused.length > 0 ? ` · 调取${focused.length}条` : ''}${editRequest !== null ? ' · 修改建议' : ''}${traceRequests.length > 0 ? ` · 踪迹×${traceRequests.length}` : ''}${taskRequests.length > 0 ? ` · 任务×${taskRequests.length}` : ''}${eventRequests.length > 0 ? ` · 日程×${eventRequests.length}` : ''}${projectRequests.length > 0 ? ` · 项目×${projectRequests.length}` : ''}${noteRequests.length > 0 ? ` · 笔记×${noteRequests.length}` : ''}${actionRequests.length > 0 ? ` · 操作×${actionRequests.length}` : ''}）`,
+    `[ai] chat 完成 ${ms}ms（${model ?? '未知模型'}${searched.length > 0 ? ` · 检索${searched.length}条` : ''}${focused.length > 0 ? ` · 调取${focused.length}条` : ''}${editRequests.length > 0 ? ` · 修改建议×${editRequests.length}` : ''}${traceRequests.length > 0 ? ` · 踪迹×${traceRequests.length}` : ''}${taskRequests.length > 0 ? ` · 任务×${taskRequests.length}` : ''}${eventRequests.length > 0 ? ` · 日程×${eventRequests.length}` : ''}${projectRequests.length > 0 ? ` · 项目×${projectRequests.length}` : ''}${noteRequests.length > 0 ? ` · 笔记×${noteRequests.length}` : ''}${resourceRequests.length > 0 ? ` · 资源×${resourceRequests.length}` : ''}${actionRequests.length > 0 ? ` · 操作×${actionRequests.length}` : ''}${askRequest !== null ? ' · 反问' : ''}）`,
   )
   return {
     reply,
     searched,
     focused,
-    editRequest,
+    focusedRefs,
+    searchSources,
+    askRequest,
+    editRequests,
     traceRequests,
     taskRequests,
     eventRequests,
     projectRequests,
     noteRequests,
+    resourceRequests,
     actionRequests,
     model,
     ms,

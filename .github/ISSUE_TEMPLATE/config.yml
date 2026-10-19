@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 协作规范
+    url: https://github.com/plmt3742/kernel/blob/main/CONTRIBUTING.md
+    about: 开工前必读：角色、工单、分支、PR、DoD、红线
+  - name: 项目宪法
+    url: https://github.com/plmt3742/kernel/blob/main/docs/00-DESIGN-BRIEF.md
+    about: 产品事实源；协作规范与宪法冲突时以宪法为准

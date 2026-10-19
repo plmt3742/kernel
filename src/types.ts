@@ -321,6 +321,8 @@ export interface Resource {
   areaId?: string
   addedAt: string
   note?: string
+  /** 原文 · 资料原始长文本（可选；纯文本展示，不经 Markdown） */
+  content?: string
 }
 
 /** 周/月回顾指标（`migrated` 可缺省：生成流程暂不产出，编辑追踪落地后补） */

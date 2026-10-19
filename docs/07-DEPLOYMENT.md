@@ -7,7 +7,7 @@
 
 ## 1. 环境要求
 
-- Node.js 18+ 与 npm。
+- Node.js **20.19+ 或 22.12+**（推荐 22 LTS；Vite 7 要求）与 npm。
 - Windows 桌面环境（本项目直接跑 Windows 侧，不使用 WSL）。
 - 手机与电脑处于同一 WiFi（局域网访问时）。
 
@@ -29,10 +29,11 @@ npm run seed
 npm run dev
 ```
 
-该命令由 `scripts/dev.mjs` 一并启动两个进程：
+该命令由 `scripts/dev.mjs` 一并启动三个进程：
 
 1. **数据服务**（`server/index.mjs`，仅监听 `127.0.0.1:4097`，写入的唯一路径）；
-2. **Vite 开发服务器**（`http://localhost:5173`，把 `/api` 代理到数据服务）。
+2. **opencode serve**（`127.0.0.1:4096`，AI 代理；缺失时 AI 不可用，但应用仍可运行）；
+3. **Vite 开发服务器**（`http://localhost:5173`，把 `/api` 代理到数据服务）。
 
 浏览器打开 `http://localhost:5173`。状态条右下角的胶囊会显示数据服务状态（在线 / 离线只读）；设置页可查看最近的审计活动。
 

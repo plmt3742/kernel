@@ -2,7 +2,7 @@
 
 > 文件即数据库，opencode 即大脑，网页即驾驶舱。
 
-KERNEL 是一个本地优先的个人事务工具：课表、任务、日程、项目、资料、笔记和复盘收在一个地方。数据是你自己电脑上的 JSON 文件，AI 跑在本机的 opencode 上，不经过任何服务器。
+KERNEL 是一个本地优先的个人事务工具：课表、任务、日程、项目、资料、笔记和复盘收在一个地方。数据是你自己电脑上的 JSON 文件；AI 由本机 opencode 代理，但模型请求会发往 DeepSeek（内容会出网，Key 只存本机）。
 
 ![KERNEL 总览](docs/assets/overview.png)
 
@@ -12,7 +12,7 @@ KERNEL 是一个本地优先的个人事务工具：课表、任务、日程、�
 
 ## 快速开始
 
-需要 Node.js 18+。
+需要 Node.js **20.19+ 或 22.12+**（Vite 7 要求；推荐 22 LTS）。
 
 ```bash
 npm install
@@ -82,7 +82,7 @@ npm run installer            # 打 Windows 安装包（见下）
 
 ## 环境配置
 
-**运行环境**：Node.js 18+、npm；Windows 10 / 11（直接跑 Windows 侧，不用 WSL）。
+**运行环境**：Node.js **20.19+ 或 22.12+**（推荐 22 LTS）、npm；Windows 10 / 11（直接跑 Windows 侧，不用 WSL）。
 
 **依赖**：`react` `react-dom` `react-router-dom` `zod` `write-file-atomic` `@opencode-ai/sdk` `date-fns` `clsx` `cmdk` `motion` `lucide-react` `react-markdown` `@fontsource-variable/inter` `@fontsource/jetbrains-mono`
 **开发依赖**：`vite` `typescript` `@vitejs/plugin-react` `@types/react` `@types/react-dom` `innosetup-compiler`
@@ -110,8 +110,15 @@ KERNEL 的代码主要是在 AI 编码代理的协作下写出来的——这套
 - **运行时**：Node.js 22 · npm 10 · Python 3.13。
 - **协作留痕**：[`docs/ai-worklog/`](docs/ai-worklog/) 按时间记录核心协作（日期 / 提交 / Prompt / 结果），并附 [`COMMITS-MAP.md`](docs/ai-worklog/COMMITS-MAP.md) 提交对照。
 
+## 协作
+
+协作者先读 [CONTRIBUTING.md](CONTRIBUTING.md)：角色与决策权、工单九要素、通道与文件所有权、分支与提交、PR 与合并、DoD 五条门禁、数据与隐私红线。
+
+`main` 受保护：不能直推，必须开 PR 并由所有者合并；CI 会跑构建、语法、隐私与文档义务检查。
+
 ## 文档
 
+- [CONTRIBUTING.md](CONTRIBUTING.md) — 协作规范
 - [docs/00-DESIGN-BRIEF.md](docs/00-DESIGN-BRIEF.md) — 项目宪法（事实源）
 - [docs/01-PROJECT-BRIEF.md](docs/01-PROJECT-BRIEF.md) — 背景、用户画像、设计立场
 - [docs/02-ARCHITECTURE.md](docs/02-ARCHITECTURE.md) — 技术选型与架构
@@ -120,6 +127,7 @@ KERNEL 的代码主要是在 AI 编码代理的协作下写出来的——这套
 - [docs/05-FILE-TREE.md](docs/05-FILE-TREE.md) — 目录结构
 - [docs/06-ROADMAP.md](docs/06-ROADMAP.md) — 版本路线
 - [docs/07-DEPLOYMENT.md](docs/07-DEPLOYMENT.md) — 运行、局域网、FAQ
+- [docs/09-RISK-REGISTER.md](docs/09-RISK-REGISTER.md) — 风险台账
 - [docs/decisions/](docs/decisions/) — 决策记录（ADR）
 - [CHANGELOG.md](CHANGELOG.md) · [TASK_BOOK.md](TASK_BOOK.md) — 变更日志与任务台账
 

@@ -13,6 +13,7 @@ kernel/
 ├─ README.md                    # 仓库门面、快速开始
 ├─ CHANGELOG.md                 # 变更日志
 ├─ TASK_BOOK.md                 # 任务台账与迭代记录
+├─ CONTRIBUTING.md              # 协作规范（角色 / 工单 / 分支 / PR / DoD / 红线）
 ├─ package.json                 # 依赖与脚本
 ├─ vite.config.ts               # Vite 配置（dev / preview 默认仅本机，--host 开局域网）
 ├─ tsconfig.json                # TypeScript strict 配置
@@ -25,6 +26,12 @@ kernel/
 │  ├─ KERNEL.iss                # Inno Setup 6 脚本（安装向导 / 空白数据骨架 / 卸载保留数据）
 │  └─ welcome.html              # 安装包启动页（自包含单文件）
 │
+├─ .github/                     # GitHub 协作配置（不参与运行时）
+│  ├─ CODEOWNERS                # 每个 PR 需所有者审批
+│  ├─ PULL_REQUEST_TEMPLATE.md  # PR 模板（工单 / 证据 / 文档义务 / 隐私）
+│  ├─ ISSUE_TEMPLATE/           # 工单与缺陷模板 + 入口配置
+│  └─ workflows/ci.yml          # CI：构建 / 语法 / 隐私 / 文档义务
+│
 ├─ docs/                        # 文档
 │  ├─ 00-DESIGN-BRIEF.md        # 项目宪法（事实源，只读）
 │  ├─ README.md                 # 文档索引
@@ -36,7 +43,8 @@ kernel/
 │  ├─ 06-ROADMAP.md             # 路线图
 │  ├─ 07-DEPLOYMENT.md          # 运行与部署
 │  ├─ 08-MATH-SYSTEM.md         # 数理自适应系统（流体公式 / 容器地图 / 复算方法）
-│  └─ decisions/                # 架构决策记录（ADR，0001–0039；完整清单见 docs/README.md）
+│  ├─ 09-RISK-REGISTER.md       # 风险台账（等级 / 影响 / 缓解 / 触发信号 / 负责人）
+│  └─ decisions/                # 架构决策记录（ADR，0001–0044；含历史重复编号 0031，完整清单见 docs/README.md）
 │
 ├─ data/                        # 数据源（一记录一文件；v0.4 起写入经数据服务）
 │  ├─ activity.jsonl            # 审计日志（每次变更追加；服务创建）
@@ -83,11 +91,15 @@ kernel/
 │  ├─ spawn-bg.mjs              # 后台安全启动器（detached spawn + 日志重定向；防工具调用挂起）
 │  ├─ sync-install.mjs          # 安装版实时同步（把工作区源码白名单镜像到 D:\KERNEL，供其自带 Vite dev 热更新）
 │  ├─ build-installer.mjs       # Windows 安装包构建器（白名单组装载荷 + 内置 Inno Setup 编译器 → Setup.exe）
+│  ├─ check-syntax.mjs          # 语法门禁：server/ 与 scripts/ 的 node --check
+│  ├─ check-privacy.mjs         # 隐私门禁：密钥 / 本机路径 / data/ / .qa/
+│  ├─ check-docs.mjs            # 文档义务门禁：CHANGELOG / TASK_BOOK / docs/04 / docs/05 / ADR 索引
 │  ├─ make-icon.ps1             # 生成本机启动器图标 kernel.ico（System.Drawing，可重跑）
 │  ├─ assets/
 │  │  └─ welcome.html           # 启动页（自包含单文件；file:// 打开后探活本机，就绪自动跳转）
 │  ├─ seed.mjs                  # 种子数据生成
-│  └─ reset.mjs                 # 数据清零（预演 / --yes：备份到 .qa/backups/ 后清空；保留 config）
+│  ├─ reset.mjs                 # 数据清零（预演 / --yes：备份到 .qa/backups/ 后清空；保留 config）
+│  └─ resource-content-repair.mjs # 资料原文回填（默认预演，--apply 落盘；镜像 refs-repair 的存量修复约定）
 └─ public/                      # 静态资源（字体、图标、guide.html 使用指南）
 ```
 
@@ -105,11 +117,12 @@ kernel/
 | `data/` | 数据源，一记录一文件 JSON + 附件二进制 `data/files/` + 回收站 `data/trash/`；v0.4 起写入一律经 `server/` 数据服务（单写者） | 数据服务（唯一写者） |
 | `server/` | 数据服务：Zod 校验 + 原子写 + 审计日志；仅监听 127.0.0.1:4097 | 数据层实现方 |
 | `src/` | React + TypeScript 前端应用（只读数据经水合，写入经 API） | 前端实现方 |
-| `scripts/` | 开发启动器（`dev.mjs`）、后台安全启动器（`spawn-bg.mjs`）、安装版实时同步（`sync-install.mjs`：源码白名单镜像到安装目录，供其 Vite dev 热更新）、启动页（`assets/welcome.html`）、Windows 安装包构建器（`build-installer.mjs`：白名单组装载荷 + 内置 Inno Setup 编译器）、启动器图标生成（`make-icon.ps1`）、种子数据生成（`seed.mjs`）、数据清零（`reset.mjs`） | 工程 |
+| `scripts/` | 开发启动器（`dev.mjs`）、后台安全启动器（`spawn-bg.mjs`）、安装版实时同步（`sync-install.mjs`：源码白名单镜像到安装目录，供其 Vite dev 热更新）、启动页（`assets/welcome.html`）、Windows 安装包构建器（`build-installer.mjs`：白名单组装载荷 + 内置 Inno Setup 编译器）、启动器图标生成（`make-icon.ps1`）、种子数据生成（`seed.mjs`）、数据清零（`reset.mjs`）、资料原文回填（`resource-content-repair.mjs`）、质量门禁（`check-syntax.mjs` / `check-privacy.mjs` / `check-docs.mjs`） | 工程 |
+| `.github/` | 协作配置：CODEOWNERS、PR / Issue 模板、CI（构建 + 语法 + 隐私 + 文档义务）；不参与运行时 | 所有者 |
 | `installer/` | Windows 安装包脚本（`KERNEL.iss`：安装向导 / 空白数据骨架 `uninsneveruninstall` / 卸载保留数据）与启动页（`welcome.html`） | 工程 |
 | `public/` | 静态资源：自托管字体、图标、自包含使用指南 `guide.html`（`/guide.html`，亦可 file:// 双击打开） | 前端实现方 |
 | 根目录启动器 | 桌面启动器 `启动器.vbs`（入口）+ `启动器.ps1`（原生 WPF 窗口）+ `kernel.ico` 图标；控制台入口 `启动.cmd`（显示运行日志，不变） | 工程 |
-| 根目录 `*.md` | 门面与台账（README / AGENTS / CHANGELOG / TASK_BOOK） | 文档工程师 |
+| 根目录 `*.md` | 门面与台账（README / CONTRIBUTING / AGENTS / CHANGELOG / TASK_BOOK） | 文档工程师 |
 
 ## 3. 数据目录与实体的对应
 

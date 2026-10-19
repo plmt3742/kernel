@@ -96,3 +96,49 @@ QA `.qa/v73/`：
 **边界**：对话本身仍不落盘无审计、确认前零写入；附件为临时输入（不建实体）；不新增依赖。
 
 **验证**：三个新解析器单测 + 七类同 JSON 共存单测；`node --check` 0；`npx tsc --noEmit` 0；`npm run build` 0；**实机**（`/api/ai/chat` + `-stream` + `/upload`）：① 一句话同时产出 **1 个项目 + 1 条笔记**；② 流式返回 `status,delta,result`（**362 个增量帧**），result 帧含全部契约字段；③ 上传 201 返回 `stored`；④ 带附件读图 → 「纯白色的空白图」；⑤ 操作提案 → `actions:[{op:'complete',kind:'tasks',id:'t-0002',…}]`（含标题快照）。
+
+## 9. 修订（2026-10-09）：全面审计驱动的 P0（摘要 v2 · 停止生成 · IME · 附件完整性 · 防重复 · 挂接项目）
+
+答 owner「总览页的 AI 助手不够全面完整……全面检查还有哪些需要优化的方面」——先四路并行只读审查（前端组件 / 后端 AI 链路 / HTTP 契约 / 文档意图）+ Oracle 复核（修正 5 处误判、补出 6 个真实使用场景），产出 P0/P1/P2 分级清单；本轮落地 **P0 六项**。
+
+- **摘要 v2**：`buildChatDigest` 增【今日课程】【习惯打卡】【近 48h 踪迹】【今日已完成】四段，并对逾期 / 今日到期 / 下一步**过滤 `deferUntil`**（与任务页口径一致）；新增 `weekOfTermNumber` 按学期周 + 星期过滤课程并合并同课程相邻节次。此前摘要不含课程 / 习惯 / 踪迹 → 「今天有课吗 / 打卡了吗 / 我今天做了什么」只能答「数据里没有」。
+- **停止生成 + 保留部分输出**：`aiChatStream` 增 `AbortSignal`；前端模块级 `AbortController` + 生成中「停止」按钮（替换发送键）；中止时把已流出文本保留为一条助手轮次（附「（已停止生成）」）。
+- **中文 IME 守卫**：composer Enter 加 `event.nativeEvent.isComposing` 判断（镜像 `Traces.tsx`），拼音候选期回车不再误发送。
+- **附件完整性**：上传**成功后才清空**待发队列（失败保留可重发）；用户气泡显示附件名（写入轮次 `attachments`，随对话持久化）；重试复用附件引用；文件选择加 `accept`；>25MB 客户端预检；上传阶段气泡显示「正在上传附件…」。
+- **创建卡防重复**：五类创建卡（踪迹 / 任务 / 日程 / 项目 / 笔记）统一为通用 `applyCreate`——逐行创建，全部成功方标记「已应用」；**部分失败时成功行移出卡片、仅保留失败行待重试**（此前各自 try/catch 整体中止、卡片仍 pending → 重试全量重跑造成重复）。
+- **创建记录挂接项目**：`traces / tasks / events` 提案新增可选 `projectId`（提示词 + `clean*Item` 清洗 + 前端类型 + apply 透传；落盘时经既有创建端点校验项目存在）。
+- **卡片持久化补齐**：`normalizeTurn` 增 `normalizeTraces` / `normalizeTasks` / `normalizeEvents`——刷新后**踪迹 / 任务 / 日程**三类提案卡不再丢失（此前仅 edits / projects / notes / actions 存活，属不一致）。
+
+**边界（本轮未做，列入 TASK_BOOK 待办）**：深链闭环（应用后「查看」/ `focused` 可点 / 检索来源 URL）· 按卡 `applying`（现为全局锁）· `NOTE_INTENT` 收紧 / 空态示例 / 滚动尊重 · 习惯打卡 action · `data/files/chat-*` 生命周期清理 · `remark-gfm` 表格 · multi-edit ≤3。历史遗留不变：`buildChatEdits` 每轮限 **1 条**（§2.2 的「≤3」实为 localStorage 恢复上限）；对话无跨请求记忆（每轮新 opencode session）。
+
+**验证**：`buildChatDigest` 夹具探针 6/6（课程按周 / 星期过滤 + 相邻合并 · `deferUntil` 过滤 · 逾期 · 今日已完成 · 习惯 N/M · 48h 踪迹窗口）；`node --check` 0；`npx tsc --noEmit` 0；`npm run build` 0。
+
+## 10. 修订（2026-10-09）：审计修复续（P1/P2 批次）
+
+同日续作：P0 之后按审计清单继续落地 P1 / P2（详见 CHANGELOG 同日条目「审计修复续」）。
+
+- **深链闭环（P1-2）**：`buildSearchSection` 回传 `sources`（title/url ≤6、按 url 去重）→ 响应 `searchSources`，「已联网检索」行附**来源链接**；`resolveEntities` 回传 `items`（kind/id/title）→ 响应 `focusedRefs`，「已查阅」渲染为**可点深链**（`deepLinkOfId`）；应用成功后 `createdRefs` 记录产物 id，「已应用」行给「**查看**（单条→实体详情）/ 查看全部（多条→列表页）」。
+- **按卡 applying（P1-3）**：全局 `applying` 布尔 → 按卡键 `${turnId}:kind`（ref 同步判重 + state 驱动渲染），**卡与卡互不阻塞**（同卡仍互斥防重复提交）。
+- **交互润滑（P1-4）**：`NOTE_INTENT` 收紧（以问号结尾的疑问句不再劫持为整理指令）；空态**示例问题**（点击填入草稿）；`saveTurnAsNote` 防连点；滚动**尊重用户上滑**（距底 <48px 吸底）+「回到底部」；>20 条时显示上下文截断提示。
+- **习惯打卡 action（P1-5）**：`actions` 增 `checkin` / `uncheckin`（仅 `habits`）；服务端 `CHAT_ACTION_KIND_BY_OP` + `cleanActionItem` 闭合集扩展；前端 `ACTION_RUN` / `ACTION_UNDO` / `ACTION_LABEL` / `ACTION_KINDS` 同步（撤销 = 反向打卡）。
+- **chat-* 生命周期（P1-6）**：数据服务启动时清理 **>7 天**的 `data/files/chat-*`（无实体引用的临时输入；失败静默）。
+- **multi-edit ≤3（P2-2）**：提示词与解析支持 `{"edits":[{…}, …]}`（**≤3**，兼容旧 `{"edit":{…}}`）；`tryParseEditRequests` + `buildChatEdits` 逐条校验、按 id 去重、总上限 3——§2.2 的「≤3」自此与实现对齐（此前每轮限 1 条）。
+- **资源从对话入档（P2-3）**：`{"resources":[{title,url?,note?}]}`（1–3）提案 +「收录资料卡」→ 既有 `POST /api/resources` + 撤销。
+- **子任务挂接（P2-3）**：`tasks` 提案支持可选 `parentTaskId`（落盘由既有 `assertValidParentTask` 护栏校验存在 / 不自引用 / 不成环）。
+- **remark-gfm 表格（P2-1）**：助手回复支持 GFM 表格（新增依赖 `remark-gfm`，已入前端白名单 `${docs/02}`）；`.k-chat__md table` token 样式；每轮「**复制**」按钮（剪贴板）；轮次**时间戳**（当天 HH:mm、跨天 M/D HH:mm）。
+
+**边界（显式延后，记录于 TASK_BOOK）**：按筛选批量（带预览——批量破坏性操作需专用预览 UI）· 对话内重复日程（`repeatRule` 全库仅展示保留、无写入路径）· 跨请求会话复用（单用户价值低；每轮已带有界历史）。
+
+**验证**：解析器 / 摘要探针 **7/7**（multi-edit ≤3 与去重 · 旧式单条兼容 · resource 提案 · checkin/uncheckin · parentTaskId · resolveEntities items · digest v2 段）；`node --check` 0；`npx tsc --noEmit` 0；`npm run build` 0。
+
+## 11. 修订（2026-10-09）：卡片字段 + 反问澄清 + 思考折叠
+
+答 owner「卡片要能带 tag / 时间 / 地点，创建时一次带上；缺必要信息时 AI 要反问、再按回答完善，直到可执行」+「思考要可折叠、默认折叠、可展开」。
+
+- **卡片字段**：`traces / tasks / events / projects / resources` 提案加 `tags`（`cleanProposalTags`：≤8 × ≤12 字、去重）；创建卡**就地编辑**（共享 `createRowFields` 按实体渲染），时间 `datetime-local` ↔ ISO8601 带偏移互转；apply 透传 tags（既有创建端点 + `ensureTags` 登记）。
+- **反问澄清（AI 判断）**：新增顶层 `{"ask":{text,options,fields}}` 意图；`tryParseAskRequest`（text 必填 ≤200 / options ≤4×≤30 / fields ≤6×≤20）；`runChat` 返回 `askRequest`、reply = `ask.text`；`finalizeChatResult` 清洗透传 `ask`。提示词：AI 自行判断缺「必要且不可推断」信息时**先追问再出卡**（日程缺 `startAt`、任务缺 `dueAt`、日程缺 `location` 等），给 2–4 个候选选项，**同段最多追问 2 轮**；用户答后继续完善。前端「反问面板」：选项 chips（点击即发 `sendOption`）+ 自由输入；**仅最新轮可答**。
+- **思考折叠**：捕获 `reasoning` 流（此前客户端只处理 text、**丢弃** reasoning）；`ChatTurn.reasoning` 随对话持久化；助手轮渲染「思考过程」`<details>`（**默认折叠**、可展开），内含 reasoning + 已查阅 / 已联网检索（含来源）步骤，流式阶段实时显示。
+
+**边界**：追问上限（2 轮）由提示词约束（非服务端硬计数）；反问与提案互斥（同一轮不并出）；卡片未做「项目 / 区域选择器」（`projectId` 仍由 AI 依据摘要给出）。
+
+**验证**：ask / tags 探针 **9/9**（ask 有效 / 无 text→null / 错形状→null / options ≤4；task·trace·event·project·resource tags 清洗去重）；`node --check` 0；`npx tsc --noEmit` 0；`npm run build` 0。

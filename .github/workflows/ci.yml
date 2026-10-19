@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Build · Syntax · Privacy · Docs
+    runs-on: windows-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Syntax check
+        run: node scripts/check-syntax.mjs
+
+      - name: Privacy check
+        if: github.event_name == 'pull_request'
+        run: node scripts/check-privacy.mjs --range origin/${{ github.base_ref }}...HEAD
+
+      - name: Docs obligations
+        if: github.event_name == 'pull_request'
+        run: node scripts/check-docs.mjs --range origin/${{ github.base_ref }}...HEAD

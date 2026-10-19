@@ -233,14 +233,17 @@
 | areaId? | string | |
 | addedAt | ISO | |
 | note? | string | 资料「简介」（Slice R2.5）：1–3 句、≤120 字的小结，在资料详情页标题下静默展示 |
+| content? | string | 资料「原文」（Slice R2.5 补充 · 2026-10-13）：由收件箱**文本条目**应用为资料时逐字保全的原始文本，无长度限制；文件条目的原文即文件本身，不复制 |
 
 > **资料「简介」+ 文件条目不拆分（v0.5 · Slice R2.5，见 ADR-0015 §5）**：带【附件】的收件箱条目解析**恰好产出 1 个 `resource` 动作**（`kind:'resource'` + `title` + `note` 小结 + `tags` ≤3 + 可选 `areaId`），绝不拆分为 task / note / project；`note` 经 `postValidateActions` 归一化（折叠空白 + 截断 ≤120 字；附件内容不可读时据文件名保守概括并在小结中注明）。澄清（`clarifyDetailsSchema`）与一揽子应用（`aiActionSchema`）的 resource 分支均接受并把 `note` 写入 `resource.note`。前端资料详情弹窗在标题下渲染「简介」区块（`note` 为空则不显示），并可在编辑表单中修改（`resources` 编辑白名单含 `note`）。
+
+> **资料「原文」保全（v0.5 · 2026-10-13，见 ADR-0015 §5.6）**：收件箱**文本条目**应用为资料时，`item.content`（条目原文）**逐字复制**进 `resource.content`——此前 apply 的资源分支只写 AI 摘要 `note`（≤120 字），原文信息丢失（owner 报告：「它不会显示原始信息，只会显示总结后的信息，而且总结后的信息存在信息缺失」）。文件条目的原文即文件本身（`kind:'file'` + `path`），**不复制**。`content` 无长度限制、逐字保存（不作 trim 变换；trim 仅用于空值判定，空值不落键）；资料详情在「简介」下方渲染安静「原文」块（纯文本 `pre-wrap`，不渲染 Markdown），编辑表单与「新建资料」草稿弹窗均可修改。存量资料经 `scripts/resource-content-repair.mjs` 回填（默认预演，`--apply` 落盘；`server/store.mjs` `repairResourceContents`：扫收件箱 `linkedIds`（`linkedId` 兜底）、只实时资料、跳过 `kind:'file'` / 带 `path` / 已有非空 `content`，逐字复制、不 bump `updatedAt`、幂等，apply 时记一条 `resource.repair` 审计）。
 
 > **文件投递 → 资料（v0.5 · Slice E2）**：`source:'file'` 的收件箱条目澄清为资料时，记录 `kind:'file'` 且 `path` = `data/files/<inboxId>-<fileName>` 的绝对路径；非文件条目行为不变。资料详情弹窗据此显示「文件位置」并可经 `POST /api/reveal` 在本机文件管理器中定位（见 ADR-0009）。
 
 > **状态判断标准 + 可设置（v0.5 · Slice H）**：资料状态五档——`unread` 未读（收进资料库、尚未开始阅读）、`reading` 在读（正在读、有明确推进）、`read` 读完（已完整读完）、`reference` 参考（不打算通读，仅备查引用）、`archived` 归档（已处理完，退出主动视野）。资料详情弹窗内以安静分段控件直接设置（经 `POST /api/resources/:id/update`，审计 `resource.update`）；`areaId` 也可在编辑表单中设置（`resources` 编辑白名单已含 `areaId / status`，见 ADR-0011）。UI helper 文本与本文一致（`src/lib/format.ts` `RESOURCE_STATUS_DEF`）。
 
-> **直接新建（v0.5 · Slice Y，见 ADR-0021）**：新增 `POST /api/resources`（`resourceCreateSchema`：`title` 必填；`kind` / `status` 缺省 `article` / `unread`；可选 `url` / `path` / `note` / `areaId` / `tags`；`areaId` 真实存在校验；标签规格化 + `ensureTags` 登记；审计 `resource.create`）。资料页「新建资料」→ 草稿弹窗（标题 / 类型 / 链接 / 简介 / 标签）→ 点「创建资料」才落盘（ESC / 取消零写入）→ toast 撤销（= 移入回收站）+ 打开 `?resource=` 深链。镜像 Slice M 的「新建笔记」流。
+> **直接新建（v0.5 · Slice Y，见 ADR-0021）**：新增 `POST /api/resources`（`resourceCreateSchema`：`title` 必填；`kind` / `status` 缺省 `article` / `unread`；可选 `url` / `path` / `note` / `content`（「原文」，2026-10-13 起）/ `areaId` / `tags`；`areaId` 真实存在校验；标签规格化 + `ensureTags` 登记；审计 `resource.create`）。资料页「新建资料」→ 草稿弹窗（标题 / 类型 / 链接 / 简介 / 标签）→ 点「创建资料」才落盘（ESC / 取消零写入）→ toast 撤销（= 移入回收站）+ 打开 `?resource=` 深链。镜像 Slice M 的「新建笔记」流。
 
 > **链接自动填充（v0.5 · Slice N2，见 ADR-0027）**：收件箱**文本条目**含网页链接时，AI 链接解析会抓取正文并据实写简介，同时把原始链接写入 `url`（`aiActionSchema.url` ≤2000，仅 http(s)；`POST /api/inbox/:id/apply` 的 resource 分支持久化）；用户在建议卡中可编辑该「链接」字段。
 
@@ -522,7 +525,7 @@ confirmed ──取消──> cancelled
 - **澄清联动**：收件箱条目澄清后 `status:'clarified'` 且 `linkedId` 指向新实体；新任务带 `sourceInboxId` 反指；撤销澄清（`revert`）会删除该次澄清创建的实体。
 - **编辑 / 回收站（v0.5 · Slice E2）**：四种可写实体（Slice E2 起为 task / project / note / resource 四类，后续切片逐步扩展至九类，见 §5.4b）经 `POST /api/<kind>/<id>/update` 部分更新（字段白名单，保留 id / createdAt，递增 updatedAt）；删除走回收站（`data/trash/`，见 §5.4b），可恢复或彻底删除；`POST /api/reveal` 在本机文件管理器中定位本地文件（见 ADR-0009）。
 - **通用笔记创建（v0.5 · Slice G）**：`POST /api/notes` 新建笔记（`title` 非空、`type` 白名单缺省 `memo`、`body` 为 markdown 文本；`nextId('notes')` + Zod + 原子写 + 审计 `note.create`）。总览「AI 对话归档」即经此端点落盘（标题 `AI 对话归档 · YYYY-MM-DD HH:mm`、`type:'memo'`、body 为 `**我**`/`**KERNEL**` 交替的 transcript）；只读对话 `POST /api/ai/chat` 不落盘（见 ADR-0010）。
-- **状态贯通（v0.5 · Slice H）**：编辑白名单扩充，使「已显示」的状态 / 字段可设置——`notes` 增 `areaId / projectId / distillLevel`、`resources` 增 `areaId`、`projects` 增 `goalId / nextActionId`（均经 `POST /api/<kind>/<id>/update`，审计 `<singular>.update`）。资料状态 / 笔记蒸馏层级在详情弹窗内以安静分段控件直接设置（判断标准见 §4.8 / §4.9）。任务快速新建 AI 补全 `POST /api/ai/task/draft { title }` 只产出建议（`contexts / energy / importance / estimateMin / dueAt / projectId / areaId / tags`，按快照过滤臆造 id / 标签），**绝不自动落盘**，应用经既有 update 端点（见 ADR-0011）。
+- **状态贯通（v0.5 · Slice H）**：编辑白名单扩充，使「已显示」的状态 / 字段可设置——`notes` 增 `areaId / projectId / distillLevel`、`resources` 增 `areaId`（后续切片再加 `content`「原文」，见 §4.9）、`projects` 增 `goalId / nextActionId`（均经 `POST /api/<kind>/<id>/update`，审计 `<singular>.update`）。资料状态 / 笔记蒸馏层级在详情弹窗内以安静分段控件直接设置（判断标准见 §4.8 / §4.9）。任务快速新建 AI 补全 `POST /api/ai/task/draft { title }` 只产出建议（`contexts / energy / importance / estimateMin / dueAt / projectId / areaId / tags`，按快照过滤臆造 id / 标签），**绝不自动落盘**，应用经既有 update 端点（见 ADR-0011）。
 - **先确认后写入（v0.5 · Slice O）**：`POST /api/tasks` 创建时接受可选字段 `contexts / energy / importance / estimateMin / dueAt / projectId / areaId / tags`（`title` 必填不变；缺省默认同旧：`contexts ['@computer'] / energy 'low' / importance 2 / tags []`）；`projectId / areaId` 需形状合法且存在（否则 400）；审计 `task.create` 的 `detail.fields` 列出本次携带字段。任务快速新建改为**草稿确认弹窗**（确认前零写入；AI 仅预填，绝不改写标题 / 用户已改字段；AI 失败不阻断创建）；收件箱 AI 建议卡增「编辑」，应用提交编辑值经既有 `clarify`（`details` + `ai:true`）。见 ADR-0011 §6。
 - 审计动作新增：`note.update` / `resource.update` / `project.update` 的 `detail.fields` 记录变更键；`task.update` 同。
 - **回顾报告归档（v0.5 · Slice L，见 ADR-0013）**：`POST /api/ai/review/draft` 成功后自动 `commit('reviews', …)`（`source:'ai'`，审计 `review.create` · `detail.auto`）；`POST /api/reviews/:id/update` 编辑归档报告（白名单 `summary` / `decisions`，递增 `updatedAt`，审计 `review.update` · `detail.fields`）；`POST /api/reviews/:id/remove` 删除（审计 `review.remove`）。前端回顾页「报告历史」按 `date` 倒序查阅。

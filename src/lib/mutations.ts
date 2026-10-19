@@ -1522,6 +1522,10 @@ export interface ChatTraceProposal {
   title: string
   note?: string
   at?: string
+  /** 标签（可选；服务端清洗 ≤8 × ≤12 字；落盘走 ensureTags 自动登记） */
+  tags?: string[]
+  /** 归入的项目 id（可选；仅当用户明确指定且该项目存在时由服务端下发，落盘时校验） */
+  projectId?: string
 }
 
 /** 新建任务提案（本切片）：AI 从「帮我记一条任务 / 打算做 X」识别出的新任务；确认后才经 /api/tasks 落盘 */
@@ -1531,6 +1535,12 @@ export interface ChatTaskProposal {
   dueAt?: string
   /** 重要性 0–3（可选） */
   importance?: number
+  /** 标签（可选；服务端清洗 ≤8 × ≤12 字；落盘走 ensureTags 自动登记） */
+  tags?: string[]
+  /** 归入的项目 id（可选；仅当用户明确指定且该项目存在时由服务端下发，落盘时校验） */
+  projectId?: string
+  /** 父任务 id（可选，P2-3：用户明确说这是某任务的子任务时下发；落盘时服务端校验存在且不成环） */
+  parentTaskId?: string
 }
 
 /** 新建日程提案（本切片）：AI 从「定点安排（会议 / 面试 / 考试 / 活动）」识别出的新日程；确认后才经 /api/events 落盘 */
@@ -1544,6 +1554,10 @@ export interface ChatEventProposal {
   allDay?: boolean
   /** 地点（≤60 字；可选） */
   location?: string
+  /** 标签（可选；服务端清洗 ≤8 × ≤12 字） */
+  tags?: string[]
+  /** 归入的项目 id（可选；仅当用户明确指定且该项目存在时由服务端下发，落盘时校验） */
+  projectId?: string
 }
 
 /** 新建项目提案（本切片）：AI 从「帮我起一个项目 / 这件事该立个项目」识别；确认后才经 /api/projects 落盘 */
@@ -1551,6 +1565,8 @@ export interface ChatProjectProposal {
   title: string
   /** 完成定义（可缺省；≤200 字） */
   outcome?: string
+  /** 标签（可选；服务端清洗 ≤8 × ≤12 字） */
+  tags?: string[]
 }
 
 /** 新建笔记提案（本切片）：AI 从对话内容整理出的一条独立笔记；确认后才经 /api/notes 落盘 */
@@ -1560,11 +1576,36 @@ export interface ChatNoteProposal {
   body: string
 }
 
-/** 操作提案可作用的实体类别（回收站同族子集；不含 courses / areas 等） */
-export type ChatActionKind = 'tasks' | 'projects' | 'notes' | 'resources' | 'events' | 'traces'
+/** 新建资料提案（P2-3）：AI 识别「收录一条资料 / 把链接存到资料库」；确认后才经 /api/resources 落盘 */
+export interface ChatResourceProposal {
+  title: string
+  /** 链接（可选；≤2000 字） */
+  url?: string
+  /** 简介（可选；≤120 字） */
+  note?: string
+  /** 标签（可选；服务端清洗 ≤8 × ≤12 字） */
+  tags?: string[]
+}
 
-/** 操作提案种类：标记完成 / 重新打开 / 删除（入回收站）/ 归档 */
-export type ChatActionOp = 'complete' | 'reopen' | 'delete' | 'archive'
+/** 「反问」提案（AI 判断必要信息缺失时先追问；用户回答后再完善）：text 必填，options/fields 可空 */
+export interface ChatAskRequest {
+  text: string
+  options: string[]
+  fields: string[]
+}
+
+/** 操作提案可作用的实体类别（回收站同族子集；含 habits 供习惯打卡，P1-5） */
+export type ChatActionKind =
+  | 'tasks'
+  | 'projects'
+  | 'notes'
+  | 'resources'
+  | 'events'
+  | 'traces'
+  | 'habits'
+
+/** 操作提案种类：标记完成 / 重新打开 / 删除（入回收站）/ 归档 / 习惯打卡·取消打卡（P1-5） */
+export type ChatActionOp = 'complete' | 'reopen' | 'delete' | 'archive' | 'checkin' | 'uncheckin'
 
 /** 操作提案（本切片）：对既有实体的就地操作；确认后才执行，撤销走对应反向动作 */
 export interface ChatActionProposal {
@@ -1585,7 +1626,13 @@ export interface AiChatResult {
   searched?: string[]
   /** 本切片：本轮为作答查阅过的实体标题（空 / 缺省 = 未查阅） */
   focused?: string[]
-  /** 本切片：实体修改提案（服务端校验后；仅命中修改意图时存在） */
+  /** P1-2：查阅命中的实体引用（kind / id / title ≤6；「已查阅」行可点深链） */
+  focusedRefs?: Array<{ kind: string; id: string; title: string }>
+  /** P1-2：联网检索来源（title / url ≤6；附在「已联网检索」行后供核验） */
+  searchSources?: Array<{ title: string; url: string }>
+  /** 反问（AI 判断必要信息缺失时先追问；前端渲染为可作答面板；无则 null / 缺省） */
+  ask?: ChatAskRequest | null
+  /** 实体修改提案（服务端校验后；**1–3 条**，P2-2 起支持多实体；仅命中修改意图时存在） */
   edits?: ChatEditProposal[]
   /** 「踪迹」提案（服务端校验后；命中「我做了 X」意图时存在；**1–6 条**，支持同段拆分） */
   traces?: ChatTraceProposal[]
@@ -1597,6 +1644,8 @@ export interface AiChatResult {
   projects?: ChatProjectProposal[]
   /** 「新建笔记」提案（服务端清洗后；**1–6 条**；确认前零写入） */
   notes?: ChatNoteProposal[]
+  /** 「新建资料」提案（服务端清洗后；**1–3 条**；确认前零写入；P2-3） */
+  resources?: ChatResourceProposal[]
   /** 「操作既有实体」提案（服务端清洗后；**1–6 条**；确认前零写入） */
   actions?: ChatActionProposal[]
   model: string | null
@@ -1674,6 +1723,7 @@ export async function uploadChatAttachment(file: File): Promise<ChatAttachment> 
 /** AI 对话流式过程事件（对应 POST /api/ai/chat-stream 的 SSE 帧） */
 export type AiChatStreamEvent =
   | { kind: 'status'; status: string }
+  | { kind: 'retry'; reason: string }
   | { kind: 'delta'; field: 'text' | 'reasoning'; delta: string }
   | ({ kind: 'result' } & AiChatResult)
   | { kind: 'error'; message: string }
@@ -1682,11 +1732,13 @@ export type AiChatStreamEvent =
  * 流式对话：POST /api/ai/chat-stream（镜像 aiParseInboxStream 的 fetch + reader + `\n\n` 帧解析）。
  * 过程帧（status / delta）交给 onEvent；收到 result 帧以 AiChatResult 兑现；error 帧 / 非 2xx 以可读错误拒绝。
  * 不写数据；对话历史由调用方本地保留。attachments 为 uploadChatAttachment 的返回值数组（可选）。
+ * signal 用于「停止生成」：中止时 fetch / reader 抛 AbortError（原样上抛，调用方据此保留已流出文本）。
  */
 export async function aiChatStream(
   messages: AiChatMessage[],
   attachments: ChatAttachment[] | undefined,
   onEvent: (event: AiChatStreamEvent) => void,
+  signal?: AbortSignal,
 ): Promise<AiChatResult> {
   const body: { messages: AiChatMessage[]; attachments?: ChatAttachment[] } = { messages }
   if (attachments !== undefined && attachments.length > 0) body.attachments = attachments
@@ -1696,8 +1748,11 @@ export async function aiChatStream(
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
+      signal,
     })
-  } catch {
+  } catch (err) {
+    // 用户主动停止（AbortError）：原样上抛，交由调用方保留已流出文本
+    if (err instanceof DOMException && err.name === 'AbortError') throw err
     throw new Error('数据服务不可用（确认 npm run dev 已启动数据服务）')
   }
   if (!response.ok) {
@@ -1820,6 +1875,7 @@ export interface ResourceCreateInput {
   url?: string
   path?: string
   note?: string
+  content?: string
   areaId?: string
   tags?: string[]
 }

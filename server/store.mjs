@@ -937,6 +937,117 @@ export function pruneDanglingRefs({ dryRun = false } = {}) {
 }
 
 /**
+ * 存量资料原文回填（维护）：为历史资源补回可选字段 `content`（原文，逐字保留），
+ * 来源 = 产生它的收件箱条目 `data/inbox/<i>.json` 的 `.content`（v0.5 起 apply 已落档；
+ * 早期资源仅存 ≤120 字 AI 小结 note，原文留在来源条目里）。同一管线镜像 pruneDanglingRefs 约定：
+ * 单次 serialize + 原子写；dryRun 只返回 findings 不落盘；确有回填时追加一条审计 `resource.repair`。
+ *
+ * 范围与口径：
+ *   · 只扫描**实时**资源（不含回收站——回收站资源不是「可用资料」，不参与回填）；
+ *   · 只扫全部收件箱条目（任意状态），从 `linkedIds` 取 r-* 目标，缺失时回退 `[linkedId]`
+ *     （Slice R1 之前的条目只有单数 `linkedId`，两形状都支持）；同一资源取首个非空原文的条目；
+ *   · 文件来源跳过（kind === 'file' 或带 `path`）——原文即文件本身，不适用；
+ *   · 已有非空 `content` 跳过（`''` / 纯空白视作未设置，可回填）；
+ *   · 回填值 = 来源 `content` **逐字**（不 trim / 不改写）；插入位置紧跟 `note`（无 note 则 `addedAt` 后）；
+ *   · **不 bump `updatedAt`**（修复 ≠ 用户编辑，避免污染停滞 / 最近活动口径）。
+ * @param {{ dryRun?: boolean }} [opts] 缺省预演（不落盘）
+ * @returns {Promise<{ findings: Array<{kind:string,id:string,field:string,inboxId:string}>, repaired: number }>}
+ */
+export function repairResourceContents({ dryRun = true } = {}) {
+  return serialize(async () => {
+    // 1) 收件箱 → 资源原文映射（首个非空原文的条目胜出；空白原文不占位）
+    const sourceById = new Map()
+    const inboxDir = path.join(DATA_DIR, 'inbox')
+    let inboxNames = []
+    try {
+      inboxNames = await fs.readdir(inboxDir)
+    } catch {
+      inboxNames = []
+    }
+    inboxNames.sort()
+    for (const name of inboxNames) {
+      if (!name.endsWith('.json')) continue
+      let item
+      try {
+        item = JSON.parse(await fs.readFile(path.join(inboxDir, name), 'utf8'))
+      } catch {
+        continue
+      }
+      const content = typeof item.content === 'string' ? item.content : ''
+      if (content.trim() === '') continue
+      const linked =
+        Array.isArray(item.linkedIds) && item.linkedIds.length > 0
+          ? item.linkedIds
+          : typeof item.linkedId === 'string'
+            ? [item.linkedId]
+            : []
+      for (const linkedId of linked) {
+        if (typeof linkedId !== 'string' || !linkedId.startsWith('r-')) continue
+        if (sourceById.has(linkedId)) continue // 首个非空原文胜出
+        sourceById.set(linkedId, { inboxId: item.id, content })
+      }
+    }
+
+    // 2) 实时资源基线 → 逐条规划回填（只在 apply 时写盘）
+    const resDir = path.join(DATA_DIR, 'resources')
+    let resNames = []
+    try {
+      resNames = await fs.readdir(resDir)
+    } catch {
+      resNames = []
+    }
+    resNames.sort()
+    const findings = []
+    let repaired = 0
+    for (const name of resNames) {
+      if (!name.endsWith('.json')) continue
+      const filePath = path.join(resDir, name)
+      let record
+      try {
+        record = JSON.parse(await fs.readFile(filePath, 'utf8'))
+      } catch {
+        continue
+      }
+      if (record.kind === 'file') continue // 文件来源：原文即文件本身
+      if (typeof record.path === 'string' && record.path !== '') continue // 已挂接本地文件
+      const existing = record.content
+      if (typeof existing === 'string' && existing.trim() !== '') continue // 已有原文
+      const source = sourceById.get(record.id)
+      if (source === undefined) continue // 无可回填来源
+      // 保留全部键与相对顺序，仅把 content 插到 note 之后（无 note 则 addedAt 之后）
+      const next = {}
+      const anchor = 'note' in record ? 'note' : 'addedAt' in record ? 'addedAt' : null
+      let placed = false
+      for (const key of Object.keys(record)) {
+        if (key === 'content') continue // 旧空值不复制，避免重复键
+        next[key] = record[key]
+        if (anchor !== null && key === anchor) {
+          next.content = source.content
+          placed = true
+        }
+      }
+      if (!placed) next.content = source.content
+      const parsed = SCHEMAS.resources.parse(next) // catchall 透传 content（不依赖字段声明）
+      if (!dryRun) {
+        await writeFileAtomic(filePath, `${JSON.stringify(parsed, null, 2)}\n`, { encoding: 'utf8' })
+        repaired += 1
+      }
+      findings.push({ kind: 'resources', id: record.id, field: 'content', inboxId: source.inboxId })
+    }
+
+    if (!dryRun && repaired > 0) {
+      await appendActivity({
+        action: 'resource.repair',
+        entity: 'resource',
+        id: '-',
+        detail: { repaired, findings: findings.length },
+      })
+    }
+    return { findings, repaired }
+  })
+}
+
+/**
  * 编辑校验统一（ADR-0043 §2.5）：按表校验来源为 kind 的全部 **detach** 标量引用边——
  * patch[field] 存在且非 null 时要求 refExistsLoose(target, value)（实时 ∪ 回收站）；
  * 不存在抛 400 中文可读。keep 边（溯源，允许悬空）/ 数组边 / 通配 target 不校验；

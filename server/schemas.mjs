@@ -100,6 +100,8 @@ export const resourceSchema = z
     areaId: z.string().optional(),
     addedAt: iso,
     note: z.string().optional(),
+    // 「原文」（收件箱文本条目应用为资料时保留原始输入；手建 / 编辑可写；空值不显示）
+    content: z.string().optional(),
   })
   .catchall(z.unknown())
 
@@ -115,6 +117,8 @@ export const resourceCreateSchema = z.object({
   url: z.string().max(2000).optional(),
   path: z.string().min(1).max(1000).optional(),
   note: z.string().max(600).optional(),
+  // 「原文」（收件箱文本条目应用为资料时保留原始输入；手建 / 编辑可写；空值不显示）
+  content: z.string().optional(),
   areaId: z.string().min(1).optional(),
   tags: z.array(z.string().min(1)).max(8).optional(),
 })

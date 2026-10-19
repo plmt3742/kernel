@@ -13,27 +13,33 @@ import {
   useRef,
   useState,
   type DragEvent as ReactDragEvent,
+  type ReactNode,
 } from 'react'
 import ReactMarkdown from 'react-markdown'
-import { ArrowUp, FileText, Paperclip } from 'lucide-react'
+import remarkGfm from 'remark-gfm'
+import { ArrowUp, FileText, Paperclip, Square } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useToast } from '@/context/ToastContext'
 import { errorText } from '@/lib/api'
 import { createUiStore, useUiStore } from '@/lib/uiState'
 import { formatDateTime } from '@/lib/date'
 import { humanSize } from '@/lib/format'
+import { deepLinkOfId } from '@/lib/relations'
 import {
   aiChatStream,
   chatNoteFromChat,
+  checkinHabit,
   completeTask,
   createEvent,
   createNote,
   createProject,
+  createResource,
   createTask,
   createTrace,
   reopenTask,
   restoreEntity,
   trashEntity,
+  uncheckinHabit,
   updateEntity,
   uploadChatAttachment,
   type AiChatMessage,
@@ -41,17 +47,22 @@ import {
   type ChatActionKind,
   type ChatActionOp,
   type ChatActionProposal,
+  type ChatAskRequest,
   type ChatAttachment,
   type ChatEditProposal,
   type ChatEventProposal,
   type ChatNoteProposal,
   type ChatProjectProposal,
+  type ChatResourceProposal,
   type ChatTaskProposal,
   type ChatTraceProposal,
 } from '@/lib/mutations'
 
 /** 多附件上传的受限并发上限（与 Inbox 同款 mapLimit 模式，Slice Y · F33） */
 const UPLOAD_CONCURRENCY = 3
+
+/** 对话附件单文件上限（与服务端 MAX_UPLOAD_BYTES 对齐）：超出在客户端即拦截 */
+const MAX_ATTACH_BYTES = 25 * 1024 * 1024
 
 /**
  * 受限并发映射（保持结果顺序）：至多 limit 个 worker 同时消费队列，结果按原始下标回填。
@@ -128,6 +139,8 @@ interface ChatTurn extends AiChatMessage {
   searched?: string[]
   /** Slice G.1：对话式整理产出的笔记 id（用于「打开笔记」链接） */
   noteId?: string
+  /** 上传成功后的对话附件引用（用于气泡展示与聊天失败重试复用；确认前零写入） */
+  attachments?: ChatAttachment[]
   /** 本切片：本轮为作答查阅过的实体标题（≤6、每条 ≤80） */
   focused?: string[]
   /** 本切片：实体修改提案（确认前零写入；≤3、还原时逐条校验） */
@@ -149,9 +162,24 @@ interface ChatTurn extends AiChatMessage {
   /** 「新建笔记」提案（AI 把对话整理成独立笔记；**1–6 条**；确认前零写入） */
   notes?: ChatNoteProposal[]
   noteState?: 'pending' | 'applied' | 'dismissed'
-  /** 「操作既有实体」提案（标记完成 / 重新打开 / 删除 / 归档；**1–6 条**；确认前零写入） */
+  /** 「操作既有实体」提案（标记完成 / 重新打开 / 删除 / 归档 / 习惯打卡；**1–6 条**；确认前零写入） */
   actions?: ChatActionProposal[]
   actionState?: 'pending' | 'applied' | 'dismissed'
+  /** 「新建资料」提案（P2-3；**1–3 条**；确认前零写入） */
+  resources?: ChatResourceProposal[]
+  resourceState?: 'pending' | 'applied' | 'dismissed'
+  /** P1-2：查阅命中的实体引用（kind/id/title；「已查阅」渲染为可点深链） */
+  focusedRefs?: Array<{ kind: string; id: string; title: string }>
+  /** P1-2：联网检索来源（title/url ≤6；附在「已联网检索」行后供核验） */
+  searchSources?: Array<{ title: string; url: string }>
+  /** P1-2：应用成功后落盘的实体 id（kind → ids；「已应用」行给「查看」深链） */
+  createdRefs?: Partial<Record<CreatePropKey, string[]>>
+  /** P2-1：轮次时间戳（ms；消息时间显示；旧轮次缺省不显示） */
+  at?: number
+  /** 模型思考过程（reasoning 流）；「思考过程」折叠块展示，默认折叠 */
+  reasoning?: string
+  /** 反问（AI 判断必要信息缺失时先追问）；用户回答后进入下一轮；仅最新轮可答 */
+  ask?: ChatAskRequest
 }
 
 /** 修改卡片字段名 → 中文标签（缺失时回退原键名） */
@@ -195,6 +223,8 @@ const ACTION_LABEL: Record<ChatActionOp, string> = {
   reopen: '重新打开',
   delete: '删除',
   archive: '归档',
+  checkin: '打卡',
+  uncheckin: '取消打卡',
 }
 
 /** 操作提案执行器：op → 正向写入（全部复用既有单写者动作） */
@@ -208,6 +238,12 @@ const ACTION_RUN: Record<ChatActionOp, (action: ChatActionProposal) => Promise<v
   delete: (action) => trashEntity(action.kind, action.id),
   archive: async (action) => {
     await updateEntity(action.kind, action.id, { status: 'archived' })
+  },
+  checkin: async (action) => {
+    await checkinHabit(action.id)
+  },
+  uncheckin: async (action) => {
+    await uncheckinHabit(action.id)
   },
 }
 
@@ -225,6 +261,12 @@ const ACTION_UNDO: Record<ChatActionOp, (action: ChatActionProposal) => Promise<
       typeof action.before === 'string' && action.before !== '' ? action.before : 'active'
     await updateEntity(action.kind, action.id, { status })
   },
+  checkin: async (action) => {
+    await uncheckinHabit(action.id)
+  },
+  uncheckin: async (action) => {
+    await checkinHabit(action.id)
+  },
 }
 
 /** ISO 日期时间前缀（用于将字符串值渲染为可读时间） */
@@ -234,6 +276,205 @@ const ISO_DATETIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/
 function truncate(value: string): string {
   const chars = Array.from(value)
   return chars.length > 60 ? `${chars.slice(0, 60).join('')}…` : value
+}
+
+/** 轮次时间显示（P2-1）：当天只显示 HH:mm，跨天显示 M/D HH:mm */
+function chatTime(at: number): string {
+  const d = new Date(at)
+  const now = new Date()
+  const hm = `${pad2(d.getHours())}:${pad2(d.getMinutes())}`
+  const sameDay =
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate()
+  return sameDay ? hm : `${d.getMonth() + 1}/${d.getDate()} ${hm}`
+}
+
+/** ISO8601 → datetime-local 输入值（本地时区；无效 / 空返回空串） */
+function isoToLocalInput(iso: string | undefined): string {
+  if (iso === undefined || iso === '') return ''
+  const d = new Date(iso)
+  if (!Number.isFinite(d.getTime())) return ''
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`
+}
+
+/** datetime-local 输入值 → 带本地偏移的 ISO8601（空 / 无效返回 undefined） */
+function localInputToIso(local: string): string | undefined {
+  if (local === '') return undefined
+  const d = new Date(local)
+  if (!Number.isFinite(d.getTime())) return undefined
+  const off = -d.getTimezoneOffset()
+  const sign = off >= 0 ? '+' : '-'
+  const oh = pad2(Math.floor(Math.abs(off) / 60))
+  const om = pad2(Math.abs(off) % 60)
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}:00${sign}${oh}:${om}`
+}
+
+/** tags → 输入框文本（逗号分隔） */
+function tagsToText(tags: string[] | undefined): string {
+  return (tags ?? []).join(', ')
+}
+
+/** 输入框文本 → tags（逗号 / 顿号 / 空格分隔；空返回 undefined） */
+function textToTags(text: string): string[] | undefined {
+  const list = text
+    .split(/[,，、\s]+/)
+    .map((t) => t.trim())
+    .filter((t) => t !== '')
+  return list.length > 0 ? list : undefined
+}
+
+type RowFieldKind = 'trace' | 'task' | 'event' | 'project' | 'note' | 'resource'
+
+/** 创建卡行的可编辑字段区（B-2）：按实体给出时间 / 地点 / 重要性 / 标签 / 备注 / 简介；token-only */
+function createRowFields(
+  kind: RowFieldKind,
+  row: Record<string, unknown>,
+  patch: (next: Record<string, unknown>) => void,
+  disabled: boolean,
+): ReactNode {
+  const text = (key: string): string => (typeof row[key] === 'string' ? (row[key] as string) : '')
+  const optText = (key: string): string | undefined => {
+    const v = row[key]
+    return typeof v === 'string' && v !== '' ? v : undefined
+  }
+  const fields: ReactNode[] = []
+  if (kind === 'task') {
+    fields.push(
+      <input
+        key="dueAt"
+        type="datetime-local"
+        className="k-input k-chat__field"
+        value={isoToLocalInput(text('dueAt'))}
+        disabled={disabled}
+        aria-label="截止时间"
+        onChange={(e) => patch({ dueAt: localInputToIso(e.target.value) })}
+      />,
+      <select
+        key="importance"
+        className="k-input k-chat__field"
+        value={typeof row.importance === 'number' ? String(row.importance) : ''}
+        disabled={disabled}
+        aria-label="重要性"
+        onChange={(e) =>
+          patch({ importance: e.target.value === '' ? undefined : Number(e.target.value) })
+        }
+      >
+        <option value="">重要性</option>
+        <option value="0">0</option>
+        <option value="1">1</option>
+        <option value="2">2</option>
+        <option value="3">3</option>
+      </select>,
+    )
+  } else if (kind === 'event') {
+    fields.push(
+      <input
+        key="startAt"
+        type="datetime-local"
+        className="k-input k-chat__field"
+        value={isoToLocalInput(text('startAt'))}
+        disabled={disabled}
+        aria-label="开始时间"
+        onChange={(e) => patch({ startAt: localInputToIso(e.target.value) })}
+      />,
+      <input
+        key="endAt"
+        type="datetime-local"
+        className="k-input k-chat__field"
+        value={isoToLocalInput(text('endAt'))}
+        disabled={disabled}
+        aria-label="结束时间"
+        onChange={(e) => patch({ endAt: localInputToIso(e.target.value) })}
+      />,
+      <label key="allDay" className="k-chat__field-check">
+        <input
+          type="checkbox"
+          checked={row.allDay === true}
+          disabled={disabled}
+          onChange={(e) => patch({ allDay: e.target.checked ? true : undefined })}
+        />
+        全天
+      </label>,
+      <input
+        key="location"
+        className="k-input k-chat__field"
+        value={text('location')}
+        disabled={disabled}
+        placeholder="地点"
+        aria-label="地点"
+        onChange={(e) => patch({ location: optText('location') === undefined ? undefined : e.target.value || undefined })}
+      />,
+    )
+  } else if (kind === 'trace') {
+    fields.push(
+      <input
+        key="at"
+        type="datetime-local"
+        className="k-input k-chat__field"
+        value={isoToLocalInput(text('at'))}
+        disabled={disabled}
+        aria-label="发生时间"
+        onChange={(e) => patch({ at: localInputToIso(e.target.value) })}
+      />,
+      <input
+        key="note"
+        className="k-input k-chat__field"
+        value={text('note')}
+        disabled={disabled}
+        placeholder="备注"
+        aria-label="备注"
+        onChange={(e) => patch({ note: e.target.value === '' ? undefined : e.target.value })}
+      />,
+    )
+  } else if (kind === 'project') {
+    fields.push(
+      <input
+        key="outcome"
+        className="k-input k-chat__field"
+        value={text('outcome')}
+        disabled={disabled}
+        placeholder="完成定义"
+        aria-label="完成定义"
+        onChange={(e) => patch({ outcome: e.target.value === '' ? undefined : e.target.value })}
+      />,
+    )
+  } else if (kind === 'resource') {
+    fields.push(
+      <input
+        key="url"
+        className="k-input k-chat__field"
+        value={text('url')}
+        disabled={disabled}
+        placeholder="链接"
+        aria-label="链接"
+        onChange={(e) => patch({ url: e.target.value === '' ? undefined : e.target.value })}
+      />,
+      <input
+        key="note"
+        className="k-input k-chat__field"
+        value={text('note')}
+        disabled={disabled}
+        placeholder="简介"
+        aria-label="简介"
+        onChange={(e) => patch({ note: e.target.value === '' ? undefined : e.target.value })}
+      />,
+    )
+  }
+  if (kind !== 'note') {
+    fields.push(
+      <input
+        key="tags"
+        className="k-input k-chat__field"
+        value={tagsToText(Array.isArray(row.tags) ? (row.tags as string[]) : undefined)}
+        disabled={disabled}
+        placeholder="标签（逗号分隔）"
+        aria-label="标签"
+        onChange={(e) => patch({ tags: textToTags(e.target.value) })}
+      />,
+    )
+  }
+  return <div className="k-chat__row-fields">{fields}</div>
 }
 
 /** 将修改字段值格式化为单行展示文本（空 / 布尔 / 时间 / 数组 / 其它） */
@@ -317,7 +558,7 @@ function normalizeNotes(value: unknown): ChatNoteProposal[] {
 
 /** 操作提案合法 op（用于还原校验） */
 const ACTION_OPS: readonly ChatActionOp[] = ['complete', 'reopen', 'delete', 'archive']
-/** 操作提案合法 kind（回收站同族子集） */
+/** 操作提案合法 kind（回收站同族子集；含 habits 供打卡，P1-5） */
 const ACTION_KINDS: readonly ChatActionKind[] = [
   'tasks',
   'projects',
@@ -325,6 +566,7 @@ const ACTION_KINDS: readonly ChatActionKind[] = [
   'resources',
   'events',
   'traces',
+  'habits',
 ]
 
 /** 还原时清洗操作提案：op / kind / id / title 必填，≤6 条 */
@@ -353,6 +595,154 @@ function normalizeActions(value: unknown): ChatActionProposal[] {
   return out
 }
 
+/** 还原时清洗踪迹提案：title 必填（≤200），note / at / projectId 可选，≤6 条 */
+function normalizeTraces(value: unknown): ChatTraceProposal[] {
+  if (!Array.isArray(value)) return []
+  const out: ChatTraceProposal[] = []
+  for (const item of value) {
+    if (typeof item !== 'object' || item === null) continue
+    const v = item as Record<string, unknown>
+    if (typeof v.title !== 'string') continue
+    const trace: ChatTraceProposal = { title: Array.from(v.title).slice(0, 200).join('') }
+    if (typeof v.note === 'string' && v.note !== '') trace.note = Array.from(v.note).slice(0, 2000).join('')
+    if (typeof v.at === 'string' && v.at !== '') trace.at = v.at
+    if (typeof v.projectId === 'string' && v.projectId !== '') trace.projectId = v.projectId
+    out.push(trace)
+    if (out.length >= 6) break
+  }
+  return out
+}
+
+/** 还原时清洗任务提案：title 必填（≤200），dueAt / importance / projectId 可选，≤6 条 */
+function normalizeTasks(value: unknown): ChatTaskProposal[] {
+  if (!Array.isArray(value)) return []
+  const out: ChatTaskProposal[] = []
+  for (const item of value) {
+    if (typeof item !== 'object' || item === null) continue
+    const v = item as Record<string, unknown>
+    if (typeof v.title !== 'string') continue
+    const task: ChatTaskProposal = { title: Array.from(v.title).slice(0, 200).join('') }
+    if (typeof v.dueAt === 'string' && v.dueAt !== '') task.dueAt = v.dueAt
+    if (typeof v.importance === 'number' && Number.isInteger(v.importance)) task.importance = v.importance
+    if (typeof v.projectId === 'string' && v.projectId !== '') task.projectId = v.projectId
+    if (typeof v.parentTaskId === 'string' && v.parentTaskId !== '') task.parentTaskId = v.parentTaskId
+    out.push(task)
+    if (out.length >= 6) break
+  }
+  return out
+}
+
+/** 还原时清洗日程提案：title / startAt 必填，endAt / allDay / location / projectId 可选，≤6 条 */
+function normalizeEvents(value: unknown): ChatEventProposal[] {
+  if (!Array.isArray(value)) return []
+  const out: ChatEventProposal[] = []
+  for (const item of value) {
+    if (typeof item !== 'object' || item === null) continue
+    const v = item as Record<string, unknown>
+    if (typeof v.title !== 'string' || typeof v.startAt !== 'string') continue
+    const event: ChatEventProposal = {
+      title: Array.from(v.title).slice(0, 200).join(''),
+      startAt: v.startAt,
+    }
+    if (typeof v.endAt === 'string' && v.endAt !== '') event.endAt = v.endAt
+    if (v.allDay === true) event.allDay = true
+    if (typeof v.location === 'string' && v.location !== '') {
+      event.location = Array.from(v.location).slice(0, 200).join('')
+    }
+    if (typeof v.projectId === 'string' && v.projectId !== '') event.projectId = v.projectId
+    out.push(event)
+    if (out.length >= 6) break
+  }
+  return out
+}
+
+/** 还原时清洗资料提案：title 必填（≤200），url / note 可选，≤6 条 */
+function normalizeResources(value: unknown): ChatResourceProposal[] {
+  if (!Array.isArray(value)) return []
+  const out: ChatResourceProposal[] = []
+  for (const item of value) {
+    if (typeof item !== 'object' || item === null) continue
+    const v = item as Record<string, unknown>
+    if (typeof v.title !== 'string') continue
+    const resource: ChatResourceProposal = { title: Array.from(v.title).slice(0, 200).join('') }
+    if (typeof v.url === 'string' && v.url !== '') resource.url = v.url
+    if (typeof v.note === 'string' && v.note !== '') {
+      resource.note = Array.from(v.note).slice(0, 200).join('')
+    }
+    out.push(resource)
+    if (out.length >= 6) break
+  }
+  return out
+}
+
+/** 还原时清洗实体引用（P1-2）：kind / id / title 均字符串，≤6 条 */
+function normalizeFocusedRefs(value: unknown): Array<{ kind: string; id: string; title: string }> {
+  if (!Array.isArray(value)) return []
+  const out: Array<{ kind: string; id: string; title: string }> = []
+  for (const item of value) {
+    if (typeof item !== 'object' || item === null) continue
+    const v = item as Record<string, unknown>
+    if (typeof v.kind !== 'string' || typeof v.id !== 'string') continue
+    out.push({
+      kind: v.kind,
+      id: v.id,
+      title: typeof v.title === 'string' ? Array.from(v.title).slice(0, 200).join('') : '',
+    })
+    if (out.length >= 6) break
+  }
+  return out
+}
+
+/** 还原时清洗检索来源（P1-2）：title / url 字符串，≤6 条 */
+function normalizeSearchSources(value: unknown): Array<{ title: string; url: string }> {
+  if (!Array.isArray(value)) return []
+  const out: Array<{ title: string; url: string }> = []
+  for (const item of value) {
+    if (typeof item !== 'object' || item === null) continue
+    const v = item as Record<string, unknown>
+    if (typeof v.url !== 'string' || v.url === '') continue
+    out.push({
+      title: typeof v.title === 'string' ? Array.from(v.title).slice(0, 200).join('') : '',
+      url: v.url,
+    })
+    if (out.length >= 6) break
+  }
+  return out
+}
+
+/** 还原时清洗反问提案（B-1）：text 必填，options / fields 字符串数组 */
+function normalizeAsk(value: unknown): ChatAskRequest | null {
+  if (typeof value !== 'object' || value === null) return null
+  const v = value as Record<string, unknown>
+  if (typeof v.text !== 'string' || v.text.trim() === '') return null
+  return {
+    text: Array.from(v.text).slice(0, 200).join(''),
+    options: cleanStringList(v.options, 4, 30),
+    fields: cleanStringList(v.fields, 6, 20),
+  }
+}
+
+/** 还原时清洗「已应用产物 id」（P1-2）：每类 ≤6 个字符串 id */
+function normalizeCreatedRefs(value: unknown): Partial<Record<CreatePropKey, string[]>> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return {}
+  const out: Partial<Record<CreatePropKey, string[]>> = {}
+  const keys: readonly CreatePropKey[] = [
+    'traces',
+    'tasks',
+    'events',
+    'projects',
+    'notes',
+    'resources',
+  ]
+  for (const key of keys) {
+    const raw = (value as Record<string, unknown>)[key]
+    if (!Array.isArray(raw)) continue
+    const ids = raw.filter((id): id is string => typeof id === 'string' && id !== '').slice(0, 6)
+    if (ids.length > 0) out[key] = ids
+  }
+  return out
+}
+
 /** 逆序写回 before（撤销 / 部分失败回滚共用）；返回未能还原的条目数（0 = 全部还原成功） */
 async function restoreEdits(edits: ChatEditProposal[]): Promise<number> {
   let failed = 0
@@ -364,6 +754,28 @@ async function restoreEdits(edits: ChatEditProposal[]): Promise<number> {
     }
   }
   return failed
+}
+
+/** 创建类提案卡可写的轮次字段键（traces / tasks / events / projects / notes / resources） */
+type CreatePropKey = 'traces' | 'tasks' | 'events' | 'projects' | 'notes' | 'resources'
+
+/**
+ * 通用创建卡应用规格：逐行创建、失败行保留待重试、成功行移出卡片（防重复创建）。
+ * 五个创建卡（踪迹 / 任务 / 日程 / 项目 / 笔记）共用同一个 applyCreate 实现。
+ */
+interface CreateSpec<T> {
+  rows: T[]
+  /** 保留（非空）判定 */
+  keep: (row: T) => boolean
+  create: (row: T) => Promise<{ id: string }>
+  /** 全部成功后的状态补丁（如 { traceState: 'applied' }） */
+  appliedPatch: Partial<ChatTurn>
+  /** 部分失败时把剩余失败行写回轮次（如 (rows) => ({ traces: rows })） */
+  rowsPatch: (rows: T[]) => Partial<ChatTurn>
+  /** 回收站族键（撤销用） */
+  kind: CreatePropKey
+  /** 成功文案（按条数） */
+  successText: (n: number) => string
 }
 
 interface ChatState {
@@ -388,6 +800,22 @@ function isTurn(value: unknown): value is ChatTurn {
   )
 }
 
+/** 还原时清洗附件引用：stored / name / mime 均为字符串，≤6 条 */
+function normalizeAttachments(value: unknown): ChatAttachment[] {
+  if (!Array.isArray(value)) return []
+  const out: ChatAttachment[] = []
+  for (const item of value) {
+    if (typeof item !== 'object' || item === null) continue
+    const v = item as Record<string, unknown>
+    if (typeof v.stored !== 'string' || typeof v.name !== 'string' || typeof v.mime !== 'string') {
+      continue
+    }
+    out.push({ stored: v.stored, name: v.name, mime: v.mime })
+    if (out.length >= 6) break
+  }
+  return out
+}
+
 /** 清洗还原轮次的可选字段（Slice G.1）：searched 仅保留字符串、每条 ≤60、最多 2；noteId 仅非空字符串；
  *  本切片追加 focused（≤6 · 每条 ≤80）与 edits（≤3 · 逐条校验，有提案则恢复 editState，缺省待确认） */
 function normalizeTurn(turn: ChatTurn): ChatTurn {
@@ -395,6 +823,8 @@ function normalizeTurn(turn: ChatTurn): ChatTurn {
   const searched = cleanStringList(turn.searched, 2, 60)
   if (searched.length > 0) next.searched = searched
   if (typeof turn.noteId === 'string' && turn.noteId !== '') next.noteId = turn.noteId
+  const attachments = normalizeAttachments(turn.attachments)
+  if (attachments.length > 0) next.attachments = attachments
   const focused = cleanStringList(turn.focused, 6, 80)
   if (focused.length > 0) next.focused = focused
   const edits = normalizeEdits(turn.edits)
@@ -425,6 +855,46 @@ function normalizeTurn(turn: ChatTurn): ChatTurn {
         ? turn.actionState
         : 'pending'
   }
+  const traces = normalizeTraces(turn.traces)
+  if (traces.length > 0) {
+    next.traces = traces
+    next.traceState =
+      turn.traceState === 'applied' || turn.traceState === 'dismissed'
+        ? turn.traceState
+        : 'pending'
+  }
+  const tasks = normalizeTasks(turn.tasks)
+  if (tasks.length > 0) {
+    next.tasks = tasks
+    next.taskState =
+      turn.taskState === 'applied' || turn.taskState === 'dismissed' ? turn.taskState : 'pending'
+  }
+  const events = normalizeEvents(turn.events)
+  if (events.length > 0) {
+    next.events = events
+    next.eventState =
+      turn.eventState === 'applied' || turn.eventState === 'dismissed' ? turn.eventState : 'pending'
+  }
+  const resources = normalizeResources(turn.resources)
+  if (resources.length > 0) {
+    next.resources = resources
+    next.resourceState =
+      turn.resourceState === 'applied' || turn.resourceState === 'dismissed'
+        ? turn.resourceState
+        : 'pending'
+  }
+  const focusedRefs = normalizeFocusedRefs(turn.focusedRefs)
+  if (focusedRefs.length > 0) next.focusedRefs = focusedRefs
+  const searchSources = normalizeSearchSources(turn.searchSources)
+  if (searchSources.length > 0) next.searchSources = searchSources
+  const createdRefs = normalizeCreatedRefs(turn.createdRefs)
+  if (Object.keys(createdRefs).length > 0) next.createdRefs = createdRefs
+  if (typeof turn.at === 'number' && Number.isFinite(turn.at)) next.at = turn.at
+  if (typeof turn.reasoning === 'string' && turn.reasoning !== '') {
+    next.reasoning = Array.from(turn.reasoning).slice(0, 8000).join('')
+  }
+  const ask = normalizeAsk(turn.ask)
+  if (ask !== null) next.ask = ask
   return next
 }
 
@@ -460,10 +930,11 @@ const chatStore = createUiStore<ChatState>(CHAT_KEY, EMPTY_CHAT, {
  */
 interface ChatStreamState {
   text: string
+  reasoning: string
   label: string
 }
 
-const EMPTY_STREAM: ChatStreamState = { text: '', label: '正在思考…' }
+const EMPTY_STREAM: ChatStreamState = { text: '', reasoning: '', label: '正在思考…' }
 
 const chatStreamStore = createUiStore<ChatStreamState>('kernel.ui.chat.stream.v1', EMPTY_STREAM, {
   persist: false,
@@ -481,6 +952,17 @@ let seq = maxTurnSeq(chatStore.get().turns) + 1
 /** 在途请求令牌（模块级）：清空 / 新请求令旧的迟到响应失效（跨挂载有效） */
 let chatToken = 0
 
+/** 在途流式请求的中止控制器（模块级）：停止按钮中止；切路由卸载不影响（请求本身跨挂载存活） */
+let chatAbort: AbortController | null = null
+
+/** 停止生成（模块级）：中止在途流式请求；已流出的文本由 requestChat 的中止分支保留为一条助手轮次 */
+function stopChat(): void {
+  const controller = chatAbort
+  if (controller === null) return
+  chatAbort = null
+  controller.abort()
+}
+
 function patchChat(patch: Partial<ChatState>): void {
   chatStore.set((prev) => ({ ...prev, ...patch }))
 }
@@ -495,10 +977,18 @@ function patchTurn(id: string, patch: Partial<ChatTurn>): void {
  * 请求令牌保证：清空后迟到的回复直接丢弃。
  */
 /** 由服务端结果构造一条 assistant 轮次（含全部提案；有提案则置「待确认」态） */
-function buildReplyTurn(result: AiChatResult): ChatTurn {
-  const reply: ChatTurn = { id: `c-${seq++}`, role: 'assistant', content: result.reply }
+function buildReplyTurn(result: AiChatResult, reasoning = ''): ChatTurn {
+  const reply: ChatTurn = { id: `c-${seq++}`, role: 'assistant', content: result.reply, at: Date.now() }
+  if (reasoning !== '') reply.reasoning = reasoning
+  if (result.ask !== undefined && result.ask !== null) reply.ask = result.ask
   if (result.searched !== undefined && result.searched.length > 0) reply.searched = result.searched
   if (result.focused !== undefined && result.focused.length > 0) reply.focused = result.focused
+  if (result.focusedRefs !== undefined && result.focusedRefs.length > 0) {
+    reply.focusedRefs = result.focusedRefs
+  }
+  if (result.searchSources !== undefined && result.searchSources.length > 0) {
+    reply.searchSources = result.searchSources
+  }
   if (result.edits !== undefined && result.edits.length > 0) {
     reply.edits = result.edits
     reply.editState = 'pending'
@@ -523,6 +1013,10 @@ function buildReplyTurn(result: AiChatResult): ChatTurn {
     reply.notes = result.notes
     reply.noteState = 'pending'
   }
+  if (result.resources !== undefined && result.resources.length > 0) {
+    reply.resources = result.resources
+    reply.resourceState = 'pending'
+  }
   if (result.actions !== undefined && result.actions.length > 0) {
     reply.actions = result.actions
     reply.actionState = 'pending'
@@ -539,20 +1033,30 @@ function requestChat(history: ChatTurn[], attachments?: ChatAttachment[]): void 
   const token = (chatToken += 1)
   patchChat({ busy: true, error: '' })
   chatStreamStore.set({ ...EMPTY_STREAM })
+  const controller = new AbortController()
+  chatAbort = controller
   void (async () => {
-    // 流式正文增量缓冲：约 80ms 合并一次，避免 token 级重渲染
+    // 流式增量缓冲：正文（text）与思考（reasoning）各自累积，约 80ms 合并一次，避免 token 级重渲染
     let buffered = ''
+    let bufferedReasoning = ''
     let flushTimer: ReturnType<typeof setTimeout> | null = null
     const flush = (): void => {
       if (flushTimer !== null) {
         clearTimeout(flushTimer)
         flushTimer = null
       }
-      if (buffered === '' || chatToken !== token) return
-      const chunk = buffered
+      if (chatToken !== token) return
+      if (buffered === '' && bufferedReasoning === '') return
+      const textChunk = buffered
+      const reasonChunk = bufferedReasoning
       buffered = ''
+      bufferedReasoning = ''
       const prev = chatStreamStore.get()
-      chatStreamStore.set({ ...prev, text: prev.text + chunk })
+      chatStreamStore.set({
+        ...prev,
+        text: prev.text + textChunk,
+        reasoning: prev.reasoning + reasonChunk,
+      })
     }
     const scheduleFlush = (): void => {
       if (flushTimer === null) flushTimer = setTimeout(flush, 80)
@@ -571,24 +1075,56 @@ function requestChat(history: ChatTurn[], attachments?: ChatAttachment[]): void 
           } else if (event.kind === 'delta' && event.field === 'text') {
             buffered += event.delta
             scheduleFlush()
+          } else if (event.kind === 'delta' && event.field === 'reasoning') {
+            bufferedReasoning += event.delta
+            scheduleFlush()
           }
         },
+        controller.signal,
       )
       flush()
       if (chatToken !== token) return
-      patchChat({ turns: [...history, buildReplyTurn(result)], busy: false, error: '' })
+      if (chatAbort === controller) chatAbort = null
+      const reasoning = chatStreamStore.get().reasoning.trim()
+      // 以 store 当前轮次为基准追加回复：保留 send 时对用户轮补写的附件引用
+      patchChat({
+        turns: [...chatStore.get().turns, buildReplyTurn(result, reasoning)],
+        busy: false,
+        error: '',
+      })
       chatStreamStore.set({ ...EMPTY_STREAM })
     } catch (err) {
       if (flushTimer !== null) clearTimeout(flushTimer)
+      if (chatAbort === controller) chatAbort = null
       if (chatToken !== token) return
+      // 用户主动停止（AbortError）：把已流出文本保留为一条助手轮次（可继续追问），不报错
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        flush()
+        const partial = chatStreamStore.get().text.trim()
+        const base = chatStore.get().turns
+        patchChat({
+          turns:
+            partial !== ''
+              ? [
+                  ...base,
+                  { id: `c-${seq++}`, role: 'assistant', content: `${partial}\n\n_（已停止生成）_` },
+                ]
+              : base,
+          busy: false,
+          error: '',
+        })
+        chatStreamStore.set({ ...EMPTY_STREAM })
+        return
+      }
       patchChat({ error: errorText(err), busy: false })
       chatStreamStore.set({ ...EMPTY_STREAM })
     }
   })()
 }
 
-/** 对话式整理意图（Slice G.1）：如「把这条整理进笔记」「存成笔记」→ 由 AI 整理上一条回答为独立笔记 */
-const NOTE_INTENT = /(整理|保存|存|归档)(进|到|为|成|入)[^。！？\n]{0,6}笔记/
+/** 对话式整理意图（Slice G.1）：如「把这条整理进笔记」「存成笔记」→ 由 AI 整理上一条回答为独立笔记。
+ *  P1-4 收紧：以问号结尾的疑问句（如「怎么保存进笔记？」）不再命中，避免劫持正常提问。 */
+const NOTE_INTENT = /(整理|保存|存|归档)(进|到|为|成|入)[^。！？\n]{0,6}笔记[^？?\n]*$/
 
 function pad2(n: number): string {
   return String(n).padStart(2, '0')
@@ -617,26 +1153,70 @@ export function OverviewChat() {
   const chat = useUiStore(chatStore)
   const stream = useUiStore(chatStreamStore)
   const { turns, draft, busy, error } = chat
+  /** 最新一轮 id（反问面板只对最新一轮开放作答；一旦出现新轮次即收起） */
+  const lastTurnId = turns.length > 0 ? turns[turns.length - 1].id : ''
   const threadRef = useRef<HTMLDivElement>(null)
-  /** 修改提案应用中的互斥锁（防重复提交） */
-  const [applying, setApplying] = useState(false)
+  /** 应用中的卡片键集合（`turnId:kind`）：按卡互斥、卡间互不阻塞（P1-3）；ref 同步判重、state 驱动渲染 */
+  const applyingRef = useRef<Set<string>>(new Set())
+  const [applyingKeys, setApplyingKeys] = useState<string[]>([])
+  const beginApply = (key: string): boolean => {
+    if (applyingRef.current.has(key)) return false
+    applyingRef.current.add(key)
+    setApplyingKeys([...applyingRef.current])
+    return true
+  }
+  const endApply = (key: string): void => {
+    applyingRef.current.delete(key)
+    setApplyingKeys([...applyingRef.current])
+  }
+  const isApplying = (key: string): boolean => applyingKeys.includes(key)
   /** 待发送附件（File 对象，刻意组件级、不持久化——二进制句柄不可序列化，见 ADR-0022） */
   const [files, setFiles] = useState<File[]>([])
+  /** 「存为笔记」进行中（P1-4 防连点） */
+  const [savingNote, setSavingNote] = useState(false)
+  /** 吸底滚动（P1-4）：用户上滑回看时不再强制拉到底；「回到底部」恢复 */
+  const stickBottomRef = useRef(true)
+  const [atBottom, setAtBottom] = useState(true)
   /** 拖拽悬停态（深度计数避免子元素 dragleave 抖动） */
   const [dragOver, setDragOver] = useState(false)
   const dragDepth = useRef(0)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  // 新消息 / 思考中 / 流式增量：线程滚到底部
+  // 新消息 / 思考中 / 流式增量：仅在「吸底」时滚到底部（用户上滑回看时不打扰，P1-4）
   useEffect(() => {
     const node = threadRef.current
-    if (node !== null) node.scrollTop = node.scrollHeight
+    if (node !== null && stickBottomRef.current) node.scrollTop = node.scrollHeight
   }, [turns, busy, stream.text])
 
-  // 待发送附件队列（点击选择 / 拖拽落入 / 粘贴共用）
+  /** 线程滚动（P1-4）：距底 < 48px 视为吸底 */
+  const onThreadScroll = (): void => {
+    const node = threadRef.current
+    if (node === null) return
+    const nearBottom = node.scrollHeight - node.scrollTop - node.clientHeight < 48
+    stickBottomRef.current = nearBottom
+    setAtBottom(nearBottom)
+  }
+
+  /** 回到底部（P1-4）：恢复吸底并立即滚底 */
+  const scrollToBottom = (): void => {
+    const node = threadRef.current
+    if (node !== null) node.scrollTop = node.scrollHeight
+    stickBottomRef.current = true
+    setAtBottom(true)
+  }
+
+  // 待发送附件队列（点击选择 / 拖拽落入 / 粘贴共用）；超过 25MB 在客户端即拦截并提示
   const addFiles = (incoming: File[]): void => {
     if (incoming.length === 0) return
-    setFiles((prev) => [...prev, ...incoming])
+    const ok: File[] = []
+    let oversized = 0
+    for (const file of incoming) {
+      if (file.size > MAX_ATTACH_BYTES) oversized += 1
+      else ok.push(file)
+    }
+    if (oversized > 0) toast(`已忽略 ${oversized} 个超过 25MB 的文件`, { tone: 'error' })
+    if (ok.length === 0) return
+    setFiles((prev) => [...prev, ...ok])
   }
 
   const removeFile = (index: number): void => {
@@ -722,8 +1302,10 @@ export function OverviewChat() {
     })()
   }
 
-  // 每轮 AI 回复的「存为笔记」按钮：只整理、不追加对话轮（安静反馈）
+  // 每轮 AI 回复的「存为笔记」按钮：只整理、不追加对话轮（安静反馈）；防连点（P1-4）
   const saveTurnAsNote = (turn: ChatTurn): void => {
+    if (savingNote) return
+    setSavingNote(true)
     void (async () => {
       try {
         const result = await chatNoteFromChat({
@@ -735,16 +1317,65 @@ export function OverviewChat() {
         })
       } catch (err) {
         toast(`整理失败：${errorText(err)}`, { tone: 'error' })
+      } finally {
+        setSavingNote(false)
       }
     })()
+  }
+
+  // 复制回答正文（P2-1）：剪贴板 API；不可用 / 未授权时给可读提示
+  const copyTurn = (turn: ChatTurn): void => {
+    void (async () => {
+      try {
+        await navigator.clipboard.writeText(turn.content)
+        toast('已复制回答')
+      } catch {
+        toast('复制失败（浏览器未授权剪贴板）', { tone: 'error' })
+      }
+    })()
+  }
+
+  /** 「已应用」行的「查看」入口（P1-2）：单条 → 实体详情深链，多条 → 实体列表页 */
+  const viewLinkFor = (turn: ChatTurn, kind: CreatePropKey): ReactNode => {
+    const ids = turn.createdRefs?.[kind]
+    if (ids === undefined || ids.length === 0) return null
+    if (ids.length === 1) {
+      const link = deepLinkOfId(ids[0])
+      if (link === null) return null
+      return (
+        <>
+          {' · '}
+          <button type="button" className="k-chat__ref" onClick={() => navigate(link)}>
+            查看
+          </button>
+        </>
+      )
+    }
+    const listLink: Record<CreatePropKey, string> = {
+      traces: '/traces',
+      tasks: '/tasks',
+      events: '/calendar',
+      projects: '/projects',
+      notes: '/library',
+      resources: '/library',
+    }
+    return (
+      <>
+        {' · '}
+        <button type="button" className="k-chat__ref" onClick={() => navigate(listLink[kind])}>
+          查看全部
+        </button>
+      </>
+    )
   }
 
   // 应用修改提案（本切片）：逐条经单写者更新；成功后标记「已应用」并提供撤销（逆序写回 before）。
   // 批量原子性：任一条失败时，回滚此前已写入的条目（逆序写回 before），不留半套修改。
   const applyEdits = (turn: ChatTurn): void => {
     const edits = turn.edits
-    if (edits === undefined || edits.length === 0 || applying) return
-    setApplying(true)
+    if (edits === undefined || edits.length === 0) return
+    const key = `${turn.id}:edit`
+    if (!beginApply(key)) return
     void (async () => {
       const applied: ChatEditProposal[] = []
       try {
@@ -775,193 +1406,175 @@ export function OverviewChat() {
         }
         toast(`修改失败${note}：${errorText(err)}`, { tone: 'error' })
       } finally {
-        setApplying(false)
+        endApply(key)
       }
     })()
   }
 
-  // 应用「踪迹」提案（「踪迹」功能）：逐条经 /api/traces 落盘（支持 1–N 条拆分）；
-  // 成功后标记已应用并提供撤销（回收站，逐条）。
-  const applyTrace = (turn: ChatTurn): void => {
-    const rows = (turn.traces ?? []).filter((trace) => trace.title.trim() !== '')
-    if (rows.length === 0 || applying) return
-    setApplying(true)
+  // 通用「创建卡」应用：逐行创建；成功行移出卡片、失败行保留待重试（避免重复创建）；
+  // 成功即提供撤销（回收站）。五个创建卡（踪迹 / 任务 / 日程 / 项目 / 笔记）共用本实现。
+  const undoCreated = (
+    kind: CreatePropKey,
+    ids: string[],
+  ): { label: string; onClick: () => void } => ({
+    label: '撤销',
+    onClick: () => {
+      void (async () => {
+        for (const id of ids) await trashEntity(kind, id).catch(() => undefined)
+      })()
+    },
+  })
+
+  const applyCreate = <T,>(turn: ChatTurn, spec: CreateSpec<T>): void => {
+    const rows = spec.rows.filter(spec.keep)
+    if (rows.length === 0) return
+    const key = `${turn.id}:${spec.kind}`
+    if (!beginApply(key)) return
     void (async () => {
-      const created: Array<{ id: string }> = []
-      try {
-        for (const row of rows) {
-          created.push(await createTrace({ title: row.title.trim(), note: row.note, at: row.at }))
+      const created: string[] = []
+      const failed: T[] = []
+      for (const row of rows) {
+        try {
+          created.push((await spec.create(row)).id)
+        } catch {
+          failed.push(row)
         }
-        patchTurn(turn.id, { traceState: 'applied' })
-        toast(created.length > 1 ? `已记入 ${created.length} 条踪迹` : '已记入踪迹', {
-          action: {
-            label: '撤销',
-            onClick: () => {
-              void (async () => {
-                for (const one of created) {
-                  await trashEntity('traces', one.id).catch(() => undefined)
-                }
-              })()
-            },
-          },
-        })
-      } catch (err) {
-        toast(`记录失败：${errorText(err)}`, { tone: 'error' })
-      } finally {
-        setApplying(false)
       }
+      // 已应用产物 id 累积（「已应用」行的「查看」深链用；部分失败也记录已成功项）
+      const prevIds = turn.createdRefs?.[spec.kind] ?? []
+      const createdRefs = { ...(turn.createdRefs ?? {}), [spec.kind]: [...prevIds, ...created] }
+      if (failed.length === 0) {
+        patchTurn(turn.id, { ...spec.appliedPatch, createdRefs })
+        toast(spec.successText(created.length), { action: undoCreated(spec.kind, created) })
+      } else {
+        // 已成功行移出卡片（避免重试重复创建），仅保留失败行待重试
+        patchTurn(turn.id, { ...spec.rowsPatch(failed), createdRefs })
+        const done = created.length > 0 ? `${spec.successText(created.length)}；` : ''
+        toast(`${done}${failed.length} 条未完成，可重试`, {
+          tone: 'error',
+          action: undoCreated(spec.kind, created),
+        })
+      }
+      endApply(key)
     })()
   }
 
-  // 应用「新建任务」提案：逐条经既有 /api/tasks 落盘（支持 1–N 条；ai:true → 新标签 origin:'ai'）；
-  // 成功后标记「已应用」并提供撤销（回收站，逐条）。
-  const applyTask = (turn: ChatTurn): void => {
-    const rows = (turn.tasks ?? []).filter((task) => task.title.trim() !== '')
-    if (rows.length === 0 || applying) return
-    setApplying(true)
-    void (async () => {
-      const created: Array<{ id: string }> = []
-      try {
-        for (const row of rows) {
-          created.push(
-            await createTask({
-              title: row.title.trim(),
-              dueAt: row.dueAt,
-              importance: row.importance,
-              ai: true,
-            }),
-          )
-        }
-        patchTurn(turn.id, { taskState: 'applied' })
-        toast(created.length > 1 ? `已建立 ${created.length} 条任务` : '已建立任务', {
-          action: {
-            label: '撤销',
-            onClick: () => {
-              void (async () => {
-                for (const one of created) await trashEntity('tasks', one.id).catch(() => undefined)
-              })()
-            },
-          },
-        })
-      } catch (err) {
-        toast(`建立失败：${errorText(err)}`, { tone: 'error' })
-      } finally {
-        setApplying(false)
-      }
-    })()
-  }
+  // 应用「踪迹」提案（「踪迹」功能）：逐条经 /api/traces 落盘（支持 1–N 条拆分）。
+  const applyTrace = (turn: ChatTurn): void =>
+    applyCreate(turn, {
+      rows: turn.traces ?? [],
+      keep: (trace) => trace.title.trim() !== '',
+      create: (trace) =>
+        createTrace({
+          title: trace.title.trim(),
+          note: trace.note,
+          at: trace.at,
+          tags: trace.tags,
+          projectId: trace.projectId,
+        }),
+      appliedPatch: { traceState: 'applied' },
+      rowsPatch: (rows) => ({ traces: rows }),
+      kind: 'traces',
+      successText: (n) => (n > 1 ? `已记入 ${n} 条踪迹` : '已记入踪迹'),
+    })
 
-  // 应用「新建日程」提案：逐条经既有 /api/events 落盘（支持 1–N 条）；成功后标记「已应用」并提供撤销（回收站，逐条）。
-  const applyEvent = (turn: ChatTurn): void => {
-    const rows = (turn.events ?? []).filter((event) => event.title.trim() !== '' && event.startAt.trim() !== '')
-    if (rows.length === 0 || applying) return
-    setApplying(true)
-    void (async () => {
-      const created: Array<{ id: string }> = []
-      try {
-        for (const row of rows) {
-          created.push(
-            await createEvent({
-              title: row.title.trim(),
-              startAt: row.startAt,
-              endAt: row.endAt,
-              allDay: row.allDay,
-              location: row.location,
-            }),
-          )
-        }
-        patchTurn(turn.id, { eventState: 'applied' })
-        toast(created.length > 1 ? `已建立 ${created.length} 条日程` : '已建立日程', {
-          action: {
-            label: '撤销',
-            onClick: () => {
-              void (async () => {
-                for (const one of created) await trashEntity('events', one.id).catch(() => undefined)
-              })()
-            },
-          },
-        })
-      } catch (err) {
-        toast(`建立失败：${errorText(err)}`, { tone: 'error' })
-      } finally {
-        setApplying(false)
-      }
-    })()
-  }
+  // 应用「新建任务」提案：逐条经既有 /api/tasks 落盘（支持 1–N 条；ai:true → 新标签 origin:'ai'）。
+  const applyTask = (turn: ChatTurn): void =>
+    applyCreate(turn, {
+      rows: turn.tasks ?? [],
+      keep: (task) => task.title.trim() !== '',
+      create: (task) =>
+        createTask({
+          title: task.title.trim(),
+          dueAt: task.dueAt,
+          importance: task.importance,
+          tags: task.tags,
+          projectId: task.projectId,
+          parentTaskId: task.parentTaskId,
+          ai: true,
+        }),
+      appliedPatch: { taskState: 'applied' },
+      rowsPatch: (rows) => ({ tasks: rows }),
+      kind: 'tasks',
+      successText: (n) => (n > 1 ? `已建立 ${n} 条任务` : '已建立任务'),
+    })
 
-  // 应用「新建项目」提案：逐条经既有 /api/projects 落盘（支持 1–N 条；ai:true → 新标签 origin:'ai'）；
-  // 成功后标记「已应用」并提供撤销（回收站，逐条）。
-  const applyProject = (turn: ChatTurn): void => {
-    const rows = (turn.projects ?? []).filter((project) => project.title.trim() !== '')
-    if (rows.length === 0 || applying) return
-    setApplying(true)
-    void (async () => {
-      const created: Array<{ id: string }> = []
-      try {
-        for (const row of rows) {
-          const project = await createProject({
-            title: row.title.trim(),
-            outcome: row.outcome,
-            ai: true,
-          })
-          created.push({ id: project.id })
-        }
-        patchTurn(turn.id, { projectState: 'applied' })
-        toast(created.length > 1 ? `已建立 ${created.length} 个项目` : '已建立项目', {
-          action: {
-            label: '撤销',
-            onClick: () => {
-              void (async () => {
-                for (const one of created) await trashEntity('projects', one.id).catch(() => undefined)
-              })()
-            },
-          },
-        })
-      } catch (err) {
-        toast(`建立失败：${errorText(err)}`, { tone: 'error' })
-      } finally {
-        setApplying(false)
-      }
-    })()
-  }
+  // 应用「新建日程」提案：逐条经既有 /api/events 落盘（支持 1–N 条）。
+  const applyEvent = (turn: ChatTurn): void =>
+    applyCreate(turn, {
+      rows: turn.events ?? [],
+      keep: (event) => event.title.trim() !== '' && event.startAt.trim() !== '',
+      create: (event) =>
+        createEvent({
+          title: event.title.trim(),
+          startAt: event.startAt,
+          endAt: event.endAt,
+          allDay: event.allDay,
+          location: event.location,
+          tags: event.tags,
+          projectId: event.projectId,
+        }),
+      appliedPatch: { eventState: 'applied' },
+      rowsPatch: (rows) => ({ events: rows }),
+      kind: 'events',
+      successText: (n) => (n > 1 ? `已建立 ${n} 条日程` : '已建立日程'),
+    })
 
-  // 应用「新建笔记」提案：逐条经既有 /api/notes 落盘（支持 1–N 条）；成功后标记「已应用」并提供撤销（回收站，逐条）。
-  const applyNote = (turn: ChatTurn): void => {
-    const rows = (turn.notes ?? []).filter((note) => note.title.trim() !== '')
-    if (rows.length === 0 || applying) return
-    setApplying(true)
-    void (async () => {
-      const created: Array<{ id: string }> = []
-      try {
-        for (const row of rows) {
-          const note = await createNote({ title: row.title.trim(), body: row.body })
-          created.push({ id: note.id })
-        }
-        patchTurn(turn.id, { noteState: 'applied' })
-        toast(created.length > 1 ? `已存 ${created.length} 条笔记` : '已存为笔记', {
-          action: {
-            label: '撤销',
-            onClick: () => {
-              void (async () => {
-                for (const one of created) await trashEntity('notes', one.id).catch(() => undefined)
-              })()
-            },
-          },
-        })
-      } catch (err) {
-        toast(`保存失败：${errorText(err)}`, { tone: 'error' })
-      } finally {
-        setApplying(false)
-      }
-    })()
-  }
+  // 应用「新建项目」提案：逐条经既有 /api/projects 落盘（支持 1–N 条；ai:true → 新标签 origin:'ai'）。
+  const applyProject = (turn: ChatTurn): void =>
+    applyCreate(turn, {
+      rows: turn.projects ?? [],
+      keep: (project) => project.title.trim() !== '',
+      create: (project) =>
+        createProject({
+          title: project.title.trim(),
+          outcome: project.outcome,
+          tags: project.tags,
+          ai: true,
+        }),
+      appliedPatch: { projectState: 'applied' },
+      rowsPatch: (rows) => ({ projects: rows }),
+      kind: 'projects',
+      successText: (n) => (n > 1 ? `已建立 ${n} 个项目` : '已建立项目'),
+    })
+
+  // 应用「新建笔记」提案：逐条经既有 /api/notes 落盘（支持 1–N 条）。
+  const applyNote = (turn: ChatTurn): void =>
+    applyCreate(turn, {
+      rows: turn.notes ?? [],
+      keep: (note) => note.title.trim() !== '',
+      create: (note) => createNote({ title: note.title.trim(), body: note.body }),
+      appliedPatch: { noteState: 'applied' },
+      rowsPatch: (rows) => ({ notes: rows }),
+      kind: 'notes',
+      successText: (n) => (n > 1 ? `已存 ${n} 条笔记` : '已存为笔记'),
+    })
+
+  // 应用「新建资料」提案：逐条经既有 /api/resources 落盘（支持 1–N 条；P2-3）。
+  const applyResource = (turn: ChatTurn): void =>
+    applyCreate(turn, {
+      rows: turn.resources ?? [],
+      keep: (resource) => resource.title.trim() !== '',
+      create: (resource) =>
+        createResource({
+          title: resource.title.trim(),
+          url: resource.url,
+          note: resource.note,
+          tags: resource.tags,
+        }),
+      appliedPatch: { resourceState: 'applied' },
+      rowsPatch: (rows) => ({ resources: rows }),
+      kind: 'resources',
+      successText: (n) => (n > 1 ? `已收录 ${n} 条资料` : '已收录资料'),
+    })
 
   // 应用「操作既有实体」提案：按 op 分派（完成 / 重开 / 删除入回收站 / 归档）；
   // 成功后标记「已应用」并提供撤销（反向动作，逆序）；部分失败逆序回滚已执行项，不留半套。
   const applyAction = (turn: ChatTurn): void => {
     const rows = turn.actions ?? []
-    if (rows.length === 0 || applying) return
-    setApplying(true)
+    if (rows.length === 0) return
+    const key = `${turn.id}:action`
+    if (!beginApply(key)) return
     void (async () => {
       const done: ChatActionProposal[] = []
       try {
@@ -997,47 +1610,58 @@ export function OverviewChat() {
         }
         toast(`操作失败${note}：${errorText(err)}`, { tone: 'error' })
       } finally {
-        setApplying(false)
+        endApply(key)
       }
     })()
   }
 
-  const send = (): void => {
-    const text = draft.trim()
-    if ((text === '' && files.length === 0) || busy) return
-    const pending = files
+  // 统一提交（草稿发送 / 反问选项点击共用）：追加用户轮 → 命中整理意图则整理，否则（带附件先上传）发起对话
+  const submit = (rawText: string, pending: File[]): void => {
+    if (busy) return
+    const text = rawText.trim()
+    if (text === '' && pending.length === 0) return
     // 用户轮正文：纯附件时给出占位，避免空气泡
     const content = text !== '' ? text : '（见附件）'
     // 对话式整理：命中意图且有上一条 AI 回答 → 走整理流程而非普通问答
     const lastAssistant = [...turns].reverse().find((turn) => turn.role === 'assistant')
-    const history = [...turns, { id: `c-${seq++}`, role: 'user' as const, content }]
+    const userTurn: ChatTurn = { id: `c-${seq++}`, role: 'user', content, at: Date.now() }
+    const history = [...turns, userTurn]
     patchChat({ turns: history, draft: '', busy: true, error: '' })
     if (NOTE_INTENT.test(text) && lastAssistant !== undefined) {
       setFiles([])
       runNote(text, lastAssistant.content, history)
       return
     }
-    setFiles([])
     if (pending.length === 0) {
       requestChat(history)
       return
     }
-    // 先受限并发上传附件（≤3），再携引用发起流式对话；上传失败以可读错误结束本轮
+    // 先受限并发上传附件（≤3），成功后才清空待发送队列（失败保留文件供重发）；随后携引用发起流式对话
+    chatStreamStore.set({ text: '', reasoning: '', label: '正在上传附件…' })
     void (async () => {
       try {
         const refs = await mapLimit(pending, UPLOAD_CONCURRENCY, uploadChatAttachment)
+        setFiles([])
+        patchTurn(userTurn.id, { attachments: refs })
         requestChat(history, refs)
       } catch (err) {
         patchChat({ error: `附件上传失败：${errorText(err)}`, busy: false })
+        chatStreamStore.set({ ...EMPTY_STREAM })
       }
     })()
   }
 
-  // 失败重试：保留已发出的用户消息，重新请求（不重复追加用户轮）
+  const send = (): void => submit(draft, files)
+
+  // 反问面板的选项点击：把该选项直接作为用户消息发回（不经过草稿）
+  const sendOption = (option: string): void => submit(option, [])
+
+  // 失败重试：保留已发出的用户消息，重新请求（不重复追加用户轮；复用其附件引用）
   const retry = (): void => {
     if (busy || turns.length === 0) return
+    const lastUser = [...turns].reverse().find((turn) => turn.role === 'user')
     patchChat({ busy: true, error: '' })
-    requestChat(turns)
+    requestChat(turns, lastUser?.attachments)
   }
 
   // 清空：非空对话先归档为笔记；归档失败则不清空（对话保留）。
@@ -1065,27 +1689,110 @@ export function OverviewChat() {
   return (
     <section className="k-chat" aria-label="AI 对话">
       {turns.length > 0 && (
-        <div className="k-chat__thread" ref={threadRef} role="log" aria-live="polite">
+        <div
+          className="k-chat__thread"
+          ref={threadRef}
+          role="log"
+          aria-live="polite"
+          onScroll={onThreadScroll}
+        >
           {turns.map((turn) => (
             <div
               key={turn.id}
               className={turn.role === 'user' ? 'k-chat__msg k-chat__msg--me' : 'k-chat__msg k-chat__msg--ai'}
             >
-              <span className="k-chat__who u-label">{turn.role === 'user' ? '我' : 'KERNEL'}</span>
+              <span className="k-chat__head">
+                <span className="k-chat__who u-label">{turn.role === 'user' ? '我' : 'KERNEL'}</span>
+                {turn.at !== undefined && (
+                  <span className="k-chat__time u-label k-muted">{chatTime(turn.at)}</span>
+                )}
+              </span>
               {turn.role === 'assistant' ? (
                 <>
                   <div className="k-chat__text k-chat__md">
-                    <ReactMarkdown>{turn.content}</ReactMarkdown>
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{turn.content}</ReactMarkdown>
                   </div>
-                  {turn.searched !== undefined && turn.searched.length > 0 && (
-                    <span className="k-chat__searched u-label k-muted">
-                      已联网检索 · {turn.searched.join(' · ')}
-                    </span>
+                  {turn.ask !== undefined && turn.id === lastTurnId && (
+                    <div className="k-chat__ask">
+                      {turn.ask.options.length > 0 && (
+                        <div className="k-chat__ask-options">
+                          {turn.ask.options.map((option) => (
+                            <button
+                              key={option}
+                              type="button"
+                              className="k-pill"
+                              onClick={() => sendOption(option)}
+                              disabled={busy}
+                            >
+                              {option}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      <span className="k-chat__ask-hint u-label k-muted">
+                        可直接在下方输入答案，或点上方的选项
+                      </span>
+                    </div>
                   )}
-                  {turn.focused !== undefined && turn.focused.length > 0 && (
-                    <span className="k-chat__searched u-label k-muted">
-                      已查阅 · {turn.focused.join(' · ')}
-                    </span>
+                  {(turn.reasoning !== undefined ||
+                    (turn.searched !== undefined && turn.searched.length > 0) ||
+                    (turn.focused !== undefined && turn.focused.length > 0) ||
+                    (turn.focusedRefs !== undefined && turn.focusedRefs.length > 0)) && (
+                    <details className="k-chat__think">
+                      <summary className="k-chat__think-summary u-label k-muted">思考过程</summary>
+                      <div className="k-chat__think-body">
+                        {turn.reasoning !== undefined && (
+                          <p className="k-chat__think-reason">{turn.reasoning}</p>
+                        )}
+                        {turn.searched !== undefined && turn.searched.length > 0 && (
+                          <span className="k-chat__searched u-label k-muted">
+                            已联网检索 · {turn.searched.join(' · ')}
+                            {turn.searchSources !== undefined && turn.searchSources.length > 0 && (
+                              <>
+                                {' · 来源：'}
+                                {turn.searchSources.map((source, index) => (
+                                  <span key={source.url}>
+                                    {index > 0 && ' · '}
+                                    <a href={source.url} target="_blank" rel="noreferrer">
+                                      {source.title !== '' ? source.title : source.url}
+                                    </a>
+                                  </span>
+                                ))}
+                              </>
+                            )}
+                          </span>
+                        )}
+                        {turn.focusedRefs !== undefined && turn.focusedRefs.length > 0 ? (
+                          <span className="k-chat__searched u-label k-muted">
+                            已查阅 ·{' '}
+                            {turn.focusedRefs.map((ref, index) => {
+                              const link = deepLinkOfId(ref.id)
+                              const label = ref.title !== '' ? ref.title : ref.id
+                              return (
+                                <span key={ref.id}>
+                                  {index > 0 && ' · '}
+                                  {link !== null ? (
+                                    <button
+                                      type="button"
+                                      className="k-chat__ref"
+                                      onClick={() => navigate(link)}
+                                    >
+                                      {label}
+                                    </button>
+                                  ) : (
+                                    label
+                                  )}
+                                </span>
+                              )
+                            })}
+                          </span>
+                        ) : turn.focused !== undefined && turn.focused.length > 0 ? (
+                          <span className="k-chat__searched u-label k-muted">
+                            已查阅 · {turn.focused.join(' · ')}
+                          </span>
+                        ) : null}
+                      </div>
+                    </details>
                   )}
                   {turn.edits !== undefined && turn.edits.length > 0 && turn.editState !== 'dismissed' && (
                     <div className="k-chat__edit">
@@ -1110,7 +1817,7 @@ export function OverviewChat() {
                               type="button"
                               className="k-btn k-btn--sm is-solid"
                               onClick={() => applyEdits(turn)}
-                              disabled={applying}
+                              disabled={isApplying(`${turn.id}:edit`)}
                             >
                               应用
                             </button>
@@ -1118,7 +1825,7 @@ export function OverviewChat() {
                               type="button"
                               className="k-btn k-btn--sm"
                               onClick={() => patchTurn(turn.id, { editState: 'dismissed' })}
-                              disabled={applying}
+                              disabled={isApplying(`${turn.id}:edit`)}
                             >
                               忽略
                             </button>
@@ -1132,6 +1839,7 @@ export function OverviewChat() {
                       {turn.traceState === 'applied' ? (
                         <span className="k-chat__searched u-label k-muted">
                           已记入 {turn.traces.filter((trace) => trace.title.trim() !== '').length} 条踪迹
+                          {viewLinkFor(turn, 'traces')}
                         </span>
                       ) : (
                         <>
@@ -1139,35 +1847,47 @@ export function OverviewChat() {
                           <div className="k-chat__rows">
                             {turn.traces.map((trace, index) => (
                               <div className="k-chat__row" key={index}>
-                                <input
-                                  className="k-input"
-                                  value={trace.title}
-                                  placeholder="我做了什么…"
-                                  aria-label={`踪迹 ${index + 1} 标题`}
-                                  onChange={(event) =>
-                                    patchTurn(turn.id, {
-                                      traces: (turn.traces ?? []).map((row, i) =>
-                                        i === index ? { ...row, title: event.target.value } : row,
-                                      ),
-                                    })
-                                  }
-                                />
-                                {trace.at !== undefined && (
-                                  <span className="k-chat__row-meta">{formatDateTime(trace.at)}</span>
-                                )}
-                                {(turn.traces?.length ?? 0) > 1 && (
-                                  <button
-                                    type="button"
-                                    className="k-chat__row-del"
-                                    aria-label={`删除第 ${index + 1} 条`}
-                                    onClick={() =>
+                                <div className="k-chat__row-line">
+                                  <input
+                                    className="k-input"
+                                    value={trace.title}
+                                    placeholder="我做了什么…"
+                                    aria-label={`踪迹 ${index + 1} 标题`}
+                                    onChange={(event) =>
                                       patchTurn(turn.id, {
-                                        traces: (turn.traces ?? []).filter((_, i) => i !== index),
+                                        traces: (turn.traces ?? []).map((row, i) =>
+                                          i === index ? { ...row, title: event.target.value } : row,
+                                        ),
                                       })
                                     }
-                                  >
-                                    删除
-                                  </button>
+                                  />
+                                  {(turn.traces?.length ?? 0) > 1 && (
+                                    <button
+                                      type="button"
+                                      className="k-chat__row-del"
+                                      aria-label={`删除第 ${index + 1} 条`}
+                                      onClick={() =>
+                                        patchTurn(turn.id, {
+                                          traces: (turn.traces ?? []).filter((_, i) => i !== index),
+                                        })
+                                      }
+                                    >
+                                      删除
+                                    </button>
+                                  )}
+                                </div>
+                                {createRowFields(
+                                  'trace',
+                                  trace as unknown as Record<string, unknown>,
+                                  (next) =>
+                                    patchTurn(turn.id, {
+                                      traces: (turn.traces ?? []).map((row, i) =>
+                                        i === index
+                                          ? ({ ...row, ...next } as ChatTraceProposal)
+                                          : row,
+                                      ),
+                                    }),
+                                  isApplying(`${turn.id}:traces`),
                                 )}
                               </div>
                             ))}
@@ -1177,7 +1897,10 @@ export function OverviewChat() {
                               type="button"
                               className="k-btn k-btn--sm is-solid"
                               onClick={() => applyTrace(turn)}
-                              disabled={applying || !turn.traces.some((trace) => trace.title.trim() !== '')}
+                              disabled={
+                                isApplying(`${turn.id}:traces`) ||
+                                !turn.traces.some((trace) => trace.title.trim() !== '')
+                              }
                             >
                               记录
                             </button>
@@ -1187,7 +1910,7 @@ export function OverviewChat() {
                               onClick={() =>
                                 patchTurn(turn.id, { traces: [...(turn.traces ?? []), { title: '' }] })
                               }
-                              disabled={applying || turn.traces.length >= 6}
+                              disabled={isApplying(`${turn.id}:traces`) || turn.traces.length >= 6}
                             >
                               拆分
                             </button>
@@ -1195,7 +1918,7 @@ export function OverviewChat() {
                               type="button"
                               className="k-btn k-btn--sm"
                               onClick={() => patchTurn(turn.id, { traceState: 'dismissed' })}
-                              disabled={applying}
+                              disabled={isApplying(`${turn.id}:traces`)}
                             >
                               忽略
                             </button>
@@ -1209,6 +1932,7 @@ export function OverviewChat() {
                       {turn.eventState === 'applied' ? (
                         <span className="k-chat__searched u-label k-muted">
                           已建立 {turn.events.filter((event) => event.title.trim() !== '').length} 条日程
+                          {viewLinkFor(turn, 'events')}
                         </span>
                       ) : (
                         <>
@@ -1216,36 +1940,47 @@ export function OverviewChat() {
                           <div className="k-chat__rows">
                             {turn.events.map((event, index) => (
                               <div className="k-chat__row" key={index}>
-                                <input
-                                  className="k-input"
-                                  value={event.title}
-                                  placeholder="日程标题…"
-                                  aria-label={`日程 ${index + 1} 标题`}
-                                  onChange={(e) =>
-                                    patchTurn(turn.id, {
-                                      events: (turn.events ?? []).map((row, i) =>
-                                        i === index ? { ...row, title: e.target.value } : row,
-                                      ),
-                                    })
-                                  }
-                                />
-                                <span className="k-chat__row-meta">{formatDateTime(event.startAt)}</span>
-                                {event.location !== undefined && event.location !== '' && (
-                                  <span className="k-chat__row-meta">{event.location}</span>
-                                )}
-                                {(turn.events?.length ?? 0) > 1 && (
-                                  <button
-                                    type="button"
-                                    className="k-chat__row-del"
-                                    aria-label={`删除第 ${index + 1} 条`}
-                                    onClick={() =>
+                                <div className="k-chat__row-line">
+                                  <input
+                                    className="k-input"
+                                    value={event.title}
+                                    placeholder="日程标题…"
+                                    aria-label={`日程 ${index + 1} 标题`}
+                                    onChange={(e) =>
                                       patchTurn(turn.id, {
-                                        events: (turn.events ?? []).filter((_, i) => i !== index),
+                                        events: (turn.events ?? []).map((row, i) =>
+                                          i === index ? { ...row, title: e.target.value } : row,
+                                        ),
                                       })
                                     }
-                                  >
-                                    删除
-                                  </button>
+                                  />
+                                  {(turn.events?.length ?? 0) > 1 && (
+                                    <button
+                                      type="button"
+                                      className="k-chat__row-del"
+                                      aria-label={`删除第 ${index + 1} 条`}
+                                      onClick={() =>
+                                        patchTurn(turn.id, {
+                                          events: (turn.events ?? []).filter((_, i) => i !== index),
+                                        })
+                                      }
+                                    >
+                                      删除
+                                    </button>
+                                  )}
+                                </div>
+                                {createRowFields(
+                                  'event',
+                                  event as unknown as Record<string, unknown>,
+                                  (next) =>
+                                    patchTurn(turn.id, {
+                                      events: (turn.events ?? []).map((row, i) =>
+                                        i === index
+                                          ? ({ ...row, ...next } as ChatEventProposal)
+                                          : row,
+                                      ),
+                                    }),
+                                  isApplying(`${turn.id}:events`),
                                 )}
                               </div>
                             ))}
@@ -1255,7 +1990,10 @@ export function OverviewChat() {
                               type="button"
                               className="k-btn k-btn--sm is-solid"
                               onClick={() => applyEvent(turn)}
-                              disabled={applying || !turn.events.some((event) => event.title.trim() !== '')}
+                              disabled={
+                                isApplying(`${turn.id}:events`) ||
+                                !turn.events.some((event) => event.title.trim() !== '')
+                              }
                             >
                               建立
                             </button>
@@ -1263,7 +2001,7 @@ export function OverviewChat() {
                               type="button"
                               className="k-btn k-btn--sm"
                               onClick={() => patchTurn(turn.id, { eventState: 'dismissed' })}
-                              disabled={applying}
+                              disabled={isApplying(`${turn.id}:events`)}
                             >
                               忽略
                             </button>
@@ -1277,6 +2015,7 @@ export function OverviewChat() {
                       {turn.taskState === 'applied' ? (
                         <span className="k-chat__searched u-label k-muted">
                           已建立 {turn.tasks.filter((task) => task.title.trim() !== '').length} 条任务
+                          {viewLinkFor(turn, 'tasks')}
                         </span>
                       ) : (
                         <>
@@ -1284,35 +2023,47 @@ export function OverviewChat() {
                           <div className="k-chat__rows">
                             {turn.tasks.map((task, index) => (
                               <div className="k-chat__row" key={index}>
-                                <input
-                                  className="k-input"
-                                  value={task.title}
-                                  placeholder="任务标题…"
-                                  aria-label={`任务 ${index + 1} 标题`}
-                                  onChange={(e) =>
-                                    patchTurn(turn.id, {
-                                      tasks: (turn.tasks ?? []).map((row, i) =>
-                                        i === index ? { ...row, title: e.target.value } : row,
-                                      ),
-                                    })
-                                  }
-                                />
-                                {task.dueAt !== undefined && (
-                                  <span className="k-chat__row-meta">{formatDateTime(task.dueAt)}</span>
-                                )}
-                                {(turn.tasks?.length ?? 0) > 1 && (
-                                  <button
-                                    type="button"
-                                    className="k-chat__row-del"
-                                    aria-label={`删除第 ${index + 1} 条`}
-                                    onClick={() =>
+                                <div className="k-chat__row-line">
+                                  <input
+                                    className="k-input"
+                                    value={task.title}
+                                    placeholder="任务标题…"
+                                    aria-label={`任务 ${index + 1} 标题`}
+                                    onChange={(e) =>
                                       patchTurn(turn.id, {
-                                        tasks: (turn.tasks ?? []).filter((_, i) => i !== index),
+                                        tasks: (turn.tasks ?? []).map((row, i) =>
+                                          i === index ? { ...row, title: e.target.value } : row,
+                                        ),
                                       })
                                     }
-                                  >
-                                    删除
-                                  </button>
+                                  />
+                                  {(turn.tasks?.length ?? 0) > 1 && (
+                                    <button
+                                      type="button"
+                                      className="k-chat__row-del"
+                                      aria-label={`删除第 ${index + 1} 条`}
+                                      onClick={() =>
+                                        patchTurn(turn.id, {
+                                          tasks: (turn.tasks ?? []).filter((_, i) => i !== index),
+                                        })
+                                      }
+                                    >
+                                      删除
+                                    </button>
+                                  )}
+                                </div>
+                                {createRowFields(
+                                  'task',
+                                  task as unknown as Record<string, unknown>,
+                                  (next) =>
+                                    patchTurn(turn.id, {
+                                      tasks: (turn.tasks ?? []).map((row, i) =>
+                                        i === index
+                                          ? ({ ...row, ...next } as ChatTaskProposal)
+                                          : row,
+                                      ),
+                                    }),
+                                  isApplying(`${turn.id}:tasks`),
                                 )}
                               </div>
                             ))}
@@ -1322,7 +2073,10 @@ export function OverviewChat() {
                               type="button"
                               className="k-btn k-btn--sm is-solid"
                               onClick={() => applyTask(turn)}
-                              disabled={applying || !turn.tasks.some((task) => task.title.trim() !== '')}
+                              disabled={
+                                isApplying(`${turn.id}:tasks`) ||
+                                !turn.tasks.some((task) => task.title.trim() !== '')
+                              }
                             >
                               建立
                             </button>
@@ -1332,7 +2086,7 @@ export function OverviewChat() {
                               onClick={() =>
                                 patchTurn(turn.id, { tasks: [...(turn.tasks ?? []), { title: '' }] })
                               }
-                              disabled={applying || turn.tasks.length >= 6}
+                              disabled={isApplying(`${turn.id}:tasks`) || turn.tasks.length >= 6}
                             >
                               拆分
                             </button>
@@ -1340,7 +2094,7 @@ export function OverviewChat() {
                               type="button"
                               className="k-btn k-btn--sm"
                               onClick={() => patchTurn(turn.id, { taskState: 'dismissed' })}
-                              disabled={applying}
+                              disabled={isApplying(`${turn.id}:tasks`)}
                             >
                               忽略
                             </button>
@@ -1354,6 +2108,7 @@ export function OverviewChat() {
                       {turn.projectState === 'applied' ? (
                         <span className="k-chat__searched u-label k-muted">
                           已建立 {turn.projects.filter((project) => project.title.trim() !== '').length} 个项目
+                          {viewLinkFor(turn, 'projects')}
                         </span>
                       ) : (
                         <>
@@ -1361,37 +2116,47 @@ export function OverviewChat() {
                           <div className="k-chat__rows">
                             {turn.projects.map((project, index) => (
                               <div className="k-chat__row" key={index}>
-                                <input
-                                  className="k-input"
-                                  value={project.title}
-                                  placeholder="项目标题…"
-                                  aria-label={`项目 ${index + 1} 标题`}
-                                  onChange={(event) =>
-                                    patchTurn(turn.id, {
-                                      projects: (turn.projects ?? []).map((row, i) =>
-                                        i === index ? { ...row, title: event.target.value } : row,
-                                      ),
-                                    })
-                                  }
-                                />
-                                {project.outcome !== undefined && project.outcome !== '' && (
-                                  <span className="k-chat__row-meta" title={project.outcome}>
-                                    完成定义：{truncate(project.outcome)}
-                                  </span>
-                                )}
-                                {(turn.projects?.length ?? 0) > 1 && (
-                                  <button
-                                    type="button"
-                                    className="k-chat__row-del"
-                                    aria-label={`删除第 ${index + 1} 条`}
-                                    onClick={() =>
+                                <div className="k-chat__row-line">
+                                  <input
+                                    className="k-input"
+                                    value={project.title}
+                                    placeholder="项目标题…"
+                                    aria-label={`项目 ${index + 1} 标题`}
+                                    onChange={(event) =>
                                       patchTurn(turn.id, {
-                                        projects: (turn.projects ?? []).filter((_, i) => i !== index),
+                                        projects: (turn.projects ?? []).map((row, i) =>
+                                          i === index ? { ...row, title: event.target.value } : row,
+                                        ),
                                       })
                                     }
-                                  >
-                                    删除
-                                  </button>
+                                  />
+                                  {(turn.projects?.length ?? 0) > 1 && (
+                                    <button
+                                      type="button"
+                                      className="k-chat__row-del"
+                                      aria-label={`删除第 ${index + 1} 条`}
+                                      onClick={() =>
+                                        patchTurn(turn.id, {
+                                          projects: (turn.projects ?? []).filter((_, i) => i !== index),
+                                        })
+                                      }
+                                    >
+                                      删除
+                                    </button>
+                                  )}
+                                </div>
+                                {createRowFields(
+                                  'project',
+                                  project as unknown as Record<string, unknown>,
+                                  (next) =>
+                                    patchTurn(turn.id, {
+                                      projects: (turn.projects ?? []).map((row, i) =>
+                                        i === index
+                                          ? ({ ...row, ...next } as ChatProjectProposal)
+                                          : row,
+                                      ),
+                                    }),
+                                  isApplying(`${turn.id}:projects`),
                                 )}
                               </div>
                             ))}
@@ -1401,7 +2166,10 @@ export function OverviewChat() {
                               type="button"
                               className="k-btn k-btn--sm is-solid"
                               onClick={() => applyProject(turn)}
-                              disabled={applying || !turn.projects.some((project) => project.title.trim() !== '')}
+                              disabled={
+                                isApplying(`${turn.id}:projects`) ||
+                                !turn.projects.some((project) => project.title.trim() !== '')
+                              }
                             >
                               建立
                             </button>
@@ -1409,7 +2177,7 @@ export function OverviewChat() {
                               type="button"
                               className="k-btn k-btn--sm"
                               onClick={() => patchTurn(turn.id, { projectState: 'dismissed' })}
-                              disabled={applying}
+                              disabled={isApplying(`${turn.id}:projects`)}
                             >
                               忽略
                             </button>
@@ -1423,6 +2191,7 @@ export function OverviewChat() {
                       {turn.noteState === 'applied' ? (
                         <span className="k-chat__searched u-label k-muted">
                           已存 {turn.notes.filter((note) => note.title.trim() !== '').length} 条笔记
+                          {viewLinkFor(turn, 'notes')}
                         </span>
                       ) : (
                         <>
@@ -1470,7 +2239,10 @@ export function OverviewChat() {
                               type="button"
                               className="k-btn k-btn--sm is-solid"
                               onClick={() => applyNote(turn)}
-                              disabled={applying || !turn.notes.some((note) => note.title.trim() !== '')}
+                              disabled={
+                                isApplying(`${turn.id}:notes`) ||
+                                !turn.notes.some((note) => note.title.trim() !== '')
+                              }
                             >
                               存为笔记
                             </button>
@@ -1478,7 +2250,90 @@ export function OverviewChat() {
                               type="button"
                               className="k-btn k-btn--sm"
                               onClick={() => patchTurn(turn.id, { noteState: 'dismissed' })}
-                              disabled={applying}
+                              disabled={isApplying(`${turn.id}:notes`)}
+                            >
+                              忽略
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
+                  {turn.resources !== undefined && turn.resources.length > 0 && turn.resourceState !== 'dismissed' && (
+                    <div className="k-chat__edit">
+                      {turn.resourceState === 'applied' ? (
+                        <span className="k-chat__searched u-label k-muted">
+                          已收录 {turn.resources.filter((resource) => resource.title.trim() !== '').length} 条资料
+                          {viewLinkFor(turn, 'resources')}
+                        </span>
+                      ) : (
+                        <>
+                          <span className="k-chat__edit-title">收录资料（{turn.resources.length} 条）</span>
+                          <div className="k-chat__rows">
+                            {turn.resources.map((resource, index) => (
+                              <div className="k-chat__row" key={index}>
+                                <div className="k-chat__row-line">
+                                  <input
+                                    className="k-input"
+                                    value={resource.title}
+                                    placeholder="资料标题…"
+                                    aria-label={`资料 ${index + 1} 标题`}
+                                    onChange={(event) =>
+                                      patchTurn(turn.id, {
+                                        resources: (turn.resources ?? []).map((row, i) =>
+                                          i === index ? { ...row, title: event.target.value } : row,
+                                        ),
+                                      })
+                                    }
+                                  />
+                                  {(turn.resources?.length ?? 0) > 1 && (
+                                    <button
+                                      type="button"
+                                      className="k-chat__row-del"
+                                      aria-label={`删除第 ${index + 1} 条`}
+                                      onClick={() =>
+                                        patchTurn(turn.id, {
+                                          resources: (turn.resources ?? []).filter((_, i) => i !== index),
+                                        })
+                                      }
+                                    >
+                                      删除
+                                    </button>
+                                  )}
+                                </div>
+                                {createRowFields(
+                                  'resource',
+                                  resource as unknown as Record<string, unknown>,
+                                  (next) =>
+                                    patchTurn(turn.id, {
+                                      resources: (turn.resources ?? []).map((row, i) =>
+                                        i === index
+                                          ? ({ ...row, ...next } as ChatResourceProposal)
+                                          : row,
+                                      ),
+                                    }),
+                                  isApplying(`${turn.id}:resources`),
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                          <div className="k-chat__edit-actions">
+                            <button
+                              type="button"
+                              className="k-btn k-btn--sm is-solid"
+                              onClick={() => applyResource(turn)}
+                              disabled={
+                                isApplying(`${turn.id}:resources`) ||
+                                !turn.resources.some((resource) => resource.title.trim() !== '')
+                              }
+                            >
+                              收录
+                            </button>
+                            <button
+                              type="button"
+                              className="k-btn k-btn--sm"
+                              onClick={() => patchTurn(turn.id, { resourceState: 'dismissed' })}
+                              disabled={isApplying(`${turn.id}:resources`)}
                             >
                               忽略
                             </button>
@@ -1529,7 +2384,7 @@ export function OverviewChat() {
                               type="button"
                               className="k-btn k-btn--sm is-solid"
                               onClick={() => applyAction(turn)}
-                              disabled={applying || turn.actions.length === 0}
+                              disabled={isApplying(`${turn.id}:action`) || turn.actions.length === 0}
                             >
                               应用
                             </button>
@@ -1537,7 +2392,7 @@ export function OverviewChat() {
                               type="button"
                               className="k-btn k-btn--sm"
                               onClick={() => patchTurn(turn.id, { actionState: 'dismissed' })}
-                              disabled={applying}
+                              disabled={isApplying(`${turn.id}:action`)}
                             >
                               忽略
                             </button>
@@ -1559,21 +2414,42 @@ export function OverviewChat() {
                     type="button"
                     className="k-chat__save"
                     onClick={() => saveTurnAsNote(turn)}
+                    disabled={savingNote}
                   >
                     存为笔记
                   </button>
+                  <button type="button" className="k-chat__save" onClick={() => copyTurn(turn)}>
+                    复制
+                  </button>
                 </>
               ) : (
-                <p className="k-chat__text">{turn.content}</p>
+                <>
+                  <p className="k-chat__text">{turn.content}</p>
+                  {turn.attachments !== undefined && turn.attachments.length > 0 && (
+                    <span className="k-chat__searched u-label k-muted">
+                      附件 · {turn.attachments.map((file) => file.name).join(' · ')}
+                    </span>
+                  )}
+                </>
               )}
             </div>
           ))}
           {busy && (
             <div className="k-chat__msg k-chat__msg--ai">
               <span className="k-chat__who u-label">KERNEL</span>
+              {stream.reasoning.trim() !== '' && (
+                <details className="k-chat__think">
+                  <summary className="k-chat__think-summary u-label k-muted">
+                    思考过程（生成中…）
+                  </summary>
+                  <div className="k-chat__think-body">
+                    <p className="k-chat__think-reason">{stream.reasoning}</p>
+                  </div>
+                </details>
+              )}
               {stream.text.trim() !== '' ? (
                 <div className="k-chat__text k-chat__md">
-                  <ReactMarkdown>{stream.text}</ReactMarkdown>
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{stream.text}</ReactMarkdown>
                 </div>
               ) : (
                 <p className="k-chat__text k-chat__text--thinking" role="status" aria-live="polite">
@@ -1593,6 +2469,40 @@ export function OverviewChat() {
         </div>
       )}
 
+      {turns.length === 0 && (
+        <div className="k-chat__suggest" aria-label="示例问题">
+          {[
+            '我今天有什么特别紧急需要去做的事情？',
+            '今天有什么课？',
+            '我今天做了什么？',
+            '帮我记一条任务：…',
+          ].map((example) => (
+            <button
+              key={example}
+              type="button"
+              className="k-pill is-ghost"
+              onClick={() => patchChat({ draft: example })}
+            >
+              {example}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {turns.length > 20 && (
+        <p className="k-chat__note u-label k-muted">
+          上下文上限：仅最近 20 条消息会发送给 AI（更早的仍保留显示，但模型看不到）。
+        </p>
+      )}
+
+      {turns.length > 0 && !atBottom && (
+        <div className="k-chat__tobottomrow">
+          <button type="button" className="k-pill is-ghost" onClick={scrollToBottom}>
+            ↓ 回到底部
+          </button>
+        </div>
+      )}
+
       <div
         className={dragOver ? 'ic-composer k-chat__composer is-dragover' : 'ic-composer k-chat__composer'}
         onDragEnter={onDragEnter}
@@ -1604,6 +2514,7 @@ export function OverviewChat() {
           ref={fileInputRef}
           type="file"
           multiple
+          accept="image/*,.pdf,.txt,.md,.csv,.json,.doc,.docx,.ppt,.pptx,.xls,.xlsx"
           className="ic-composer__file"
           onChange={(event) => {
             addFiles(Array.from(event.target.files ?? []))
@@ -1637,6 +2548,8 @@ export function OverviewChat() {
           rows={1}
           onChange={(event) => patchChat({ draft: event.target.value })}
           onKeyDown={(event) => {
+            // 中文输入法组合期：Enter 用于确认候选词，不触发发送（与 Traces 同守卫）
+            if (event.nativeEvent.isComposing) return
             if (event.key === 'Enter' && !event.shiftKey) {
               event.preventDefault()
               send()
@@ -1670,15 +2583,27 @@ export function OverviewChat() {
             >
               清空对话
             </button>
-            <button
-              type="button"
-              className="ic-send"
-              onClick={send}
-              disabled={busy || (draft.trim() === '' && files.length === 0)}
-              aria-label="发送"
-            >
-              <ArrowUp size={16} strokeWidth={2} aria-hidden />
-            </button>
+            {busy ? (
+              <button
+                type="button"
+                className="ic-send"
+                onClick={stopChat}
+                title="停止生成"
+                aria-label="停止生成"
+              >
+                <Square size={14} strokeWidth={2} aria-hidden />
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="ic-send"
+                onClick={send}
+                disabled={draft.trim() === '' && files.length === 0}
+                aria-label="发送"
+              >
+                <ArrowUp size={16} strokeWidth={2} aria-hidden />
+              </button>
+            )}
           </div>
         </div>
       </div>

@@ -289,6 +289,7 @@ export function Library() {
     { key: 'path', label: '文件位置', type: 'text', clearable: true, placeholder: '如 G:\\…\\file.pdf' },
     { key: 'tags', label: '标签（逗号分隔）', type: 'list' },
     { key: 'note', label: '简介', type: 'textarea' },
+    { key: 'content', label: '原文', type: 'textarea', rows: 8 },
   ]
 
   const handleSave = (patch: Record<string, unknown>): void => {
@@ -959,6 +960,12 @@ export function Library() {
               <div className="k-detail-block">
                 <span className="k-detail-block__label u-label">简介</span>
                 <p className="k-detail-note">{selectedResource.note}</p>
+              </div>
+            )}
+            {typeof selectedResource.content === 'string' && selectedResource.content.trim() !== '' && (
+              <div className="k-detail-block">
+                <span className="k-detail-block__label u-label">原文</span>
+                <div className="k-detail-raw">{selectedResource.content}</div>
               </div>
             )}
             <dl className="k-dl">

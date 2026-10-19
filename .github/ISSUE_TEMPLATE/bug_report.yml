@@ -1,0 +1,72 @@
+name: 缺陷
+description: 记录一个可复现的缺陷
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: symptom
+    attributes:
+      label: 现象
+      description: 你看到了什么？在哪个页面 / 入口？
+      placeholder: 资料详情只显示摘要，没有原文
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 从干净状态开始，1 / 2 / 3。
+      placeholder: |
+        1. 收件箱粘贴一段文本
+        2. AI 解析后应用为资料
+        3. 打开资料详情
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望
+      placeholder: 详情页显示完整原文，换行保留
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际
+      placeholder: 只有 ≤120 字摘要
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: 环境
+      description: 版本 / 浏览器 / 是否安装版
+      placeholder: v0.5.0 · Chrome 141 · npm run dev
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 证据
+      description: 截图、日志、探针输出。注意不要包含密钥或真实个人数据。
+      placeholder: .qa/vNN/...
+  - type: dropdown
+    id: data_impact
+    attributes:
+      label: 数据影响
+      options:
+        - 只影响界面
+        - 产生错误数据
+        - 丢失数据
+        - 不确定
+    validations:
+      required: true
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: 安全确认
+      options:
+        - label: 未在真实 data/ 上运行破坏性脚本
+          required: true
+        - label: 证据中不含密钥、本机路径或真实个人数据
+          required: true

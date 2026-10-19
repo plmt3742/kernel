@@ -1,0 +1,104 @@
+name: 工单
+description: 一张可执行、可验收的协作工单
+title: "[任务] "
+labels: ["task"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        开工前请先读 `CONTRIBUTING.md`。缺任何必填项，先补全再动代码。
+  - type: input
+    id: goal
+    attributes:
+      label: 目标
+      description: 一句话，一个可交付物。超过 1–3 天请拆分。
+      placeholder: 例如：资料详情页显示原文并支持编辑
+    validations:
+      required: true
+  - type: textarea
+    id: background
+    attributes:
+      label: 背景
+      description: 对应 ADR / 文档章节 / Issue / 用户原话。
+      placeholder: 关联 ADR-0015 §5.6；用户反馈「资料只剩摘要」
+    validations:
+      required: true
+  - type: dropdown
+    id: lane
+    attributes:
+      label: 通道
+      description: 按层切，不按页面切。
+      options:
+        - A 数据面（server / docs/04）
+        - B 契约与状态（types / src/lib）
+        - C 视图（views / components）
+        - D 样式（styles / docs/03）
+        - E 文档与 QA（docs / .qa / guide）
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: 范围文件
+      description: 只允许改这些文件或目录；其他文件不动。
+      placeholder: |
+        src/views/Library.tsx
+        src/styles/views.css
+    validations:
+      required: true
+  - type: textarea
+    id: dod
+    attributes:
+      label: DoD（可观测的完成标准）
+      description: 必须是别人能复现的动作 + 可检查的产物。
+      placeholder: |
+        1. 资料详情在「简介」下显示「原文」，换行保留
+        2. npm run build 退出 0
+        3. data/ 哈希基线不变
+    validations:
+      required: true
+  - type: textarea
+    id: forbidden
+    attributes:
+      label: 禁区
+      description: 明确不能碰的东西。
+      placeholder: 不改 schema；不新增依赖；不动 OverviewChat.tsx
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 证据要求
+      description: 截图 / 探针脚本 / 日志 / 哈希基线，准备放哪里。
+      placeholder: .qa/vNN/ + 探针脚本
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: 依赖与阻塞
+      description: 前置工单、待确认问题、外部条件。没有就写「无」。
+      placeholder: 等待接口契约冻结
+    validations:
+      required: true
+  - type: dropdown
+    id: priority
+    attributes:
+      label: 优先级
+      options:
+        - P0（本周）
+        - P1（近期）
+        - P2（后续）
+    validations:
+      required: true
+  - type: checkboxes
+    id: readiness
+    attributes:
+      label: Definition of Ready
+      options:
+        - label: 已读 CONTRIBUTING.md
+          required: true
+        - label: 范围文件已列全，且没有跨通道夹带
+          required: true
+        - label: 数据安全方案已确认（不需要动真实 data/，或已备份）
+          required: true

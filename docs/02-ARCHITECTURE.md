@@ -29,7 +29,7 @@
 - 路由：`react-router-dom`（使用 `viewTransition` 能力）
 - 动效：**Motion**（组件状态 / 布局 / layoutId 共享元素 / 手势）+ **View Transitions API**（路由级变形）
 - 命令面板：**cmdk**
-- 其他白名单依赖：`date-fns`、`clsx`、`lucide-react`、`react-markdown`
+- 其他白名单依赖：`date-fns`、`clsx`、`lucide-react`、`react-markdown`、`remark-gfm`（P2-1：助手回复 GFM 表格）
 - 字体：`@fontsource-variable/inter`、`@fontsource/jetbrains-mono`（自托管，离线可用）
 - 数据服务（`server/`，仅服务端）：`zod`、`write-file-atomic`（见 ADR-0004）
 
@@ -37,7 +37,7 @@
 
 ```text
 react  react-dom  react-router-dom  motion  cmdk  date-fns  clsx
-lucide-react  react-markdown  @fontsource-variable/inter  @fontsource/jetbrains-mono
+lucide-react  react-markdown  remark-gfm  @fontsource-variable/inter  @fontsource/jetbrains-mono
 ```
 
 ### 2.2 状态与路由

@@ -172,7 +172,7 @@ const EDITABLE_FIELDS = {
   ],
   projects: ['title', 'outcome', 'status', 'areaId', 'goalId', 'nextActionId', 'dueAt', 'tags'],
   notes: ['title', 'type', 'body', 'areaId', 'projectId', 'tags', 'distillLevel'],
-  resources: ['title', 'kind', 'status', 'url', 'path', 'areaId', 'tags', 'note'],
+  resources: ['title', 'kind', 'status', 'url', 'path', 'areaId', 'tags', 'note', 'content'],
   // 日程（Slice W）：repeatRule 仅展示保留，不开放编辑（见 ADR-0018）
   events: ['title', 'startAt', 'endAt', 'allDay', 'location', 'status', 'projectId', 'areaId', 'tags', 'notes'],
   // 踪迹（「踪迹」新功能）：title 必填；at 可编辑（发生时间）；note / tags / 关联可选
@@ -303,31 +303,40 @@ function isEditableFieldValue(value) {
 }
 
 /**
- * 校验并转换 AI 修改建议：kind/id 真实存在 + fields 过 EDITABLE_FIELDS 白名单 + 值类型合法。
- * 任一步不合法返回 []（调用方据此回退文案）。始终返回数组（0 或 1 项）。
+ * 校验并转换 AI 修改建议（多实体版，P2-2）：逐条 kind/id 真实存在 + fields 过 EDITABLE_FIELDS 白名单 + 值类型合法；
+ * 非法条目丢弃、按 id 去重，总上限 3。返回数组（0–3 项；全部不合法 → []，调用方据此回退文案）。
  */
-async function buildChatEdits(editRequest) {
-  const plural = CHAT_EDIT_PLURAL[editRequest?.kind]
-  if (plural === undefined) return []
-  const allowed = EDITABLE_FIELDS[plural]
-  if (!Array.isArray(allowed)) return []
-  const id = editRequest.id
-  if (typeof id !== 'string' || !validId(plural, id)) return []
-  const record = await readEntity(plural, id)
-  if (record === null) return []
-  const fields = {}
-  for (const [key, value] of Object.entries(editRequest.fields ?? {})) {
-    if (!allowed.includes(key)) continue
-    if (!isEditableFieldValue(value)) continue
-    fields[key] = value
+async function buildChatEdits(editRequests) {
+  const list = Array.isArray(editRequests) ? editRequests : []
+  const out = []
+  const seen = new Set()
+  for (const editRequest of list) {
+    if (out.length >= 3) break
+    const plural = CHAT_EDIT_PLURAL[editRequest?.kind]
+    if (plural === undefined) continue
+    const allowed = EDITABLE_FIELDS[plural]
+    if (!Array.isArray(allowed)) continue
+    const id = editRequest.id
+    if (typeof id !== 'string' || !validId(plural, id)) continue
+    if (seen.has(id)) continue
+    const record = await readEntity(plural, id)
+    if (record === null) continue
+    const fields = {}
+    for (const [key, value] of Object.entries(editRequest.fields ?? {})) {
+      if (!allowed.includes(key)) continue
+      if (!isEditableFieldValue(value)) continue
+      fields[key] = value
+    }
+    if (Object.keys(fields).length === 0) continue
+    const before = {}
+    for (const key of Object.keys(fields)) {
+      before[key] = record[key] === undefined ? null : record[key]
+    }
+    const label = typeof editRequest.label === 'string' ? editRequest.label : ''
+    seen.add(id)
+    out.push({ kind: plural, id, title: record.title ?? '', fields, before, label })
   }
-  if (Object.keys(fields).length === 0) return []
-  const before = {}
-  for (const key of Object.keys(fields)) {
-    before[key] = record[key] === undefined ? null : record[key]
-  }
-  const label = typeof editRequest.label === 'string' ? editRequest.label : ''
-  return [{ kind: plural, id, title: record.title ?? '', fields, before, label }]
+  return out
 }
 
 /* ---------------------------------------------------------------------------
@@ -335,12 +344,14 @@ async function buildChatEdits(editRequest) {
  * 服务端**不写入、不审计**——仅在用户于前端确认后走既有 complete/reopen/trash 路径落盘。
  * ------------------------------------------------------------------------- */
 
-/** 各 op 允许的 kind（与提示词 / 前端契约一致） */
+/** 各 op 允许的 kind（与提示词 / 前端契约一致；habits 支持 checkin / uncheckin，P1-5） */
 const CHAT_ACTION_KIND_BY_OP = {
   complete: ['tasks'],
   reopen: ['tasks'],
   archive: ['projects', 'resources'],
   delete: ['tasks', 'projects', 'notes', 'resources', 'events', 'traces'],
+  checkin: ['habits'],
+  uncheckin: ['habits'],
 }
 /** 动作目标 id 形状（前缀-四位数字） */
 const CHAT_ACTION_ID_RE = /^[a-z]+-\d{4}$/
@@ -421,23 +432,69 @@ function sanitizeChatAttachments(raw) {
 async function finalizeChatResult(result) {
   let reply = result.reply
   let edits = []
-  if (result.editRequest !== null && result.editRequest !== undefined) {
-    edits = await buildChatEdits(result.editRequest)
+  const editRequests = Array.isArray(result.editRequests) ? result.editRequests : []
+  if (editRequests.length > 0) {
+    edits = await buildChatEdits(editRequests)
     if (edits.length === 0) {
       reply = '我没能确认这条记录的修改（找不到记录或字段不合法），请换一种说法再试。'
     }
   }
   const actions = await buildChatActions(result.actionRequests ?? [])
+  // 命中实体引用（P1-2）：kind/id/title ≤6，供前端「已查阅」渲染可点深链
+  const focusedRefs = (Array.isArray(result.focusedRefs) ? result.focusedRefs : [])
+    .filter(
+      (item) =>
+        item !== null &&
+        typeof item === 'object' &&
+        typeof item.id === 'string' &&
+        typeof item.kind === 'string',
+    )
+    .slice(0, 6)
+    .map((item) => ({
+      kind: item.kind,
+      id: item.id,
+      title: typeof item.title === 'string' ? item.title : '',
+    }))
+  // 检索来源（P1-2）：title/url ≤6，供前端附在「已联网检索」行后
+  const searchSources = (Array.isArray(result.searchSources) ? result.searchSources : [])
+    .filter((item) => item !== null && typeof item === 'object' && typeof item.url === 'string')
+    .slice(0, 6)
+    .map((item) => ({
+      title: typeof item.title === 'string' ? item.title : '',
+      url: item.url,
+    }))
+  // 反问（ask）：text ≤200 / options ≤4×≤30 / fields ≤6×≤20；无则 null
+  const askRaw = result.askRequest
+  let ask = null
+  if (askRaw !== null && askRaw !== undefined && typeof askRaw === 'object') {
+    const text =
+      typeof askRaw.text === 'string' ? Array.from(askRaw.text.trim()).slice(0, 200).join('') : ''
+    if (text !== '') {
+      const options = (Array.isArray(askRaw.options) ? askRaw.options : [])
+        .filter((o) => typeof o === 'string' && o.trim() !== '')
+        .slice(0, 4)
+        .map((o) => Array.from(o.trim()).slice(0, 30).join(''))
+      const fields = (Array.isArray(askRaw.fields) ? askRaw.fields : [])
+        .filter((f) => typeof f === 'string' && f.trim() !== '')
+        .slice(0, 6)
+        .map((f) => Array.from(f.trim()).slice(0, 20).join(''))
+      ask = { text, options, fields }
+    }
+  }
   return {
     reply,
     searched: result.searched ?? [],
     focused: result.focused ?? [],
+    focusedRefs,
+    searchSources,
+    ask,
     edits,
     traces: result.traceRequests ?? [],
     tasks: result.taskRequests ?? [],
     events: result.eventRequests ?? [],
     projects: result.projectRequests ?? [],
     notes: result.noteRequests ?? [],
+    resources: result.resourceRequests ?? [],
     actions,
     model: result.model ?? null,
     ms: result.ms ?? 0,
@@ -1790,6 +1847,12 @@ async function createResource(body) {
     resource.note = parsed.note.trim()
     fields.push('note')
   }
+  // 「原文」：收件箱文本条目应用为资料时保留原始输入（手建 / 编辑可写）；空值不落键。
+  // 与 note（摘要）不同——摘要 trim 后写入，原文按原样保存（trim 仅用于空值判定）。
+  if (parsed.content !== undefined && parsed.content.trim() !== '') {
+    resource.content = parsed.content
+    fields.push('content')
+  }
   if (parsed.areaId !== undefined) {
     resource.areaId = parsed.areaId
     fields.push('areaId')
@@ -2231,6 +2294,10 @@ async function applyInboxActions(id, body) {
       // Slice N2：条目含网页链接时，把 resource.url 端到端持久化（Zod 已验形状）
       if (typeof action.url === 'string' && action.url.trim() !== '') {
         record.url = action.url.trim()
+      }
+      // 「原文」保留：文本条目应用为资料时，连同原始输入一并落盘（摘要仍为 note；文件条目的原文即文件本身，不复制）
+      if (!isFile && typeof item.content === 'string' && item.content.trim() !== '') {
+        record.content = item.content
       }
       saved = await commit('resources', record, {
         action: 'resource.create',
@@ -3659,6 +3726,31 @@ server.on('error', (err) => {
   process.exit(1)
 })
 
+/** 对话附件（data/files/chat-*）无实体生命周期：启动时按龄清理（>7 天），失败静默（P1-6） */
+const CHAT_UPLOAD_TTL_MS = 7 * 24 * 3600 * 1000
+
+async function cleanupChatUploads() {
+  try {
+    const entries = await fs.readdir(FILES_DIR).catch(() => [])
+    const now = Date.now()
+    let removed = 0
+    for (const name of entries) {
+      if (!name.startsWith('chat-')) continue
+      const full = path.join(FILES_DIR, name)
+      const stat = await fs.stat(full).catch(() => null)
+      if (stat === null || !stat.isFile()) continue
+      if (now - stat.mtimeMs > CHAT_UPLOAD_TTL_MS) {
+        await fs.unlink(full).catch(() => {})
+        removed += 1
+      }
+    }
+    if (removed > 0) console.log(`[data] 清理过期对话附件 ${removed} 个（>7 天）`)
+  } catch {
+    /* 启动清理失败不影响服务 */
+  }
+}
+
 server.listen(PORT, HOST, () => {
   console.log(`[data] KERNEL 数据服务已就绪：http://${HOST}:${PORT}（仅本机；写入唯一路径）`)
+  void cleanupChatUploads()
 })

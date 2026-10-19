@@ -2478,6 +2478,20 @@ button.k-act__link:hover {
   font-size: var(--text-body-sm);
   max-width: var(--measure);
 }
+/* 原文（资料原始长文本）：与简介同视觉语言，但保留换行、内部滚动 */
+.k-detail-raw {
+  background: var(--fill-subtle);
+  border-radius: var(--radius-inner);
+  box-shadow: inset 2px 0 0 var(--outline-strong);
+  padding: var(--space-3) var(--space-4);
+  color: var(--ink-2);
+  font-size: var(--text-body-sm);
+  max-width: var(--measure);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 42vh;
+  overflow: auto;
+}
 .k-tasklist-mini {
   display: flex;
   flex-direction: column;
@@ -3663,7 +3677,44 @@ button.k-act__link:hover {
 }
 .k-chat__row {
   display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.k-chat__row-line {
+  display: flex;
   align-items: center;
+  gap: var(--space-2);
+}
+.k-chat__row-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.k-chat__field {
+  flex: 1 1 140px;
+  min-width: 0;
+}
+.k-chat__field-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+  font-size: var(--text-caption);
+}
+/* 反问面板（B-3）：AI 追问 + 快捷选项 chips + 输入提示 */
+.k-chat__ask {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  padding: var(--space-3);
+  border: var(--hairline) solid var(--outline-strong);
+  border-radius: var(--radius-inner);
+  background: var(--fill-subtle);
+}
+.k-chat__ask-options {
+  display: flex;
+  flex-wrap: wrap;
   gap: var(--space-2);
 }
 .k-chat__row-meta {
@@ -3687,6 +3738,114 @@ button.k-chat__row-del {
 button.k-chat__row-del:hover {
   color: var(--ink-2);
   background: var(--fill-subtle);
+}
+/* P2-1：轮次头（我 / KERNEL + 时间） */
+.k-chat__head {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+.k-chat__time {
+  font-variant-numeric: tabular-nums;
+}
+/* P1-2：实体引用 / 「查看」深链（安静行内按钮，继承正文色） */
+button.k-chat__ref {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+button.k-chat__ref:hover {
+  color: var(--ink);
+}
+.k-chat__searched a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  overflow-wrap: anywhere;
+}
+.k-chat__searched a:hover {
+  color: var(--ink);
+}
+/* P1-4：空态示例问题（点击填入草稿，不直接发送） */
+.k-chat__suggest {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+/* P1-4：上下文截断提示（>20 条时） */
+.k-chat__note {
+  margin: 0 0 var(--space-2);
+}
+/* P1-4：回到底部（用户上滑回看时出现） */
+.k-chat__tobottomrow {
+  display: flex;
+  justify-content: center;
+  margin-bottom: var(--space-2);
+}
+/* 思考过程（可折叠，默认折叠）：模型 reasoning + 查阅/检索步骤 */
+.k-chat__think {
+  margin-top: var(--space-1);
+  border: var(--hairline) solid var(--outline);
+  border-radius: var(--radius-inner);
+  background: var(--surface-sunken);
+  overflow: hidden;
+}
+.k-chat__think-summary {
+  cursor: pointer;
+  list-style: none;
+  padding: var(--space-1) var(--space-2);
+  user-select: none;
+}
+.k-chat__think-summary::-webkit-details-marker {
+  display: none;
+}
+.k-chat__think-summary::before {
+  content: '▸ ';
+}
+.k-chat__think[open] > .k-chat__think-summary::before {
+  content: '▾ ';
+}
+.k-chat__think-summary:hover {
+  color: var(--ink);
+  background: var(--fill-subtle);
+}
+.k-chat__think-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border-top: var(--hairline) solid var(--outline);
+}
+.k-chat__think-reason {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-caption);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+/* P2-1：GFM 表格（remark-gfm） */
+.k-chat__md table {
+  width: 100%;
+  margin: var(--space-2) 0;
+  border-collapse: collapse;
+  font-size: var(--text-body-sm);
+}
+.k-chat__md th,
+.k-chat__md td {
+  padding: var(--space-1) var(--space-2);
+  border: var(--hairline) solid var(--outline);
+  text-align: left;
+}
+.k-chat__md th {
+  background: var(--fill-subtle);
+  color: var(--ink);
 }
 
 @container route (max-width: 640px) {

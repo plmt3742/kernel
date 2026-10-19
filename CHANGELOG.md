@@ -4,6 +4,90 @@
 
 ## [Unreleased]
 
+### 协作规范与质量门禁（2026-10-19）
+
+答 owner「学习东莞理工学院技术协助项目的工程文件，优化本项目，并引入协作规范」——借鉴其「编号文档 + 一次动作三处留痕 + 未记录 = 未发生」的制度，落一套适合本仓库的轻量版。
+
+- **协作规范**：新增 `CONTRIBUTING.md`（角色与决策权 / 工单九要素 / 通道 A–E 与文件所有权 / 分支与提交 / PR 与合并 / DoD 五条门禁 / 数据与隐私红线 / 会话交接模板）。
+- **GitHub 协作面**：`.github/CODEOWNERS`（每个 PR 需所有者审批）、`PULL_REQUEST_TEMPLATE.md`、`ISSUE_TEMPLATE/{task,bug_report,config}.yml`、`workflows/ci.yml`（Windows：`npm ci` → `npm run build` → 语法 → 隐私 → 文档义务）。
+- **本地门禁**：新增 `scripts/check-syntax.mjs`（`server/` 与 `scripts/` 全量 `node --check`）、`scripts/check-privacy.mjs`（密钥 / 本机路径 / `data/` / `.qa/`）、`scripts/check-docs.mjs`（CHANGELOG / TASK_BOOK / `docs/04` / `docs/05` / ADR 索引与重复编号）；`package.json` 增 `check:syntax` / `check:privacy` / `check:docs` / `verify`。
+- **风险台账**：新增 `docs/09-RISK-REGISTER.md`（R1–R12：未提交基线、CI/测试缺口、文档漂移、安装包 dev server、数据备份、巨石文件、双份口径、LAN 暴露、SSRF、密钥、Node 版本、ADR 重复编号）。
+- **决策记录**：新增 ADR-0044（协作规范与质量门禁）。
+- **文档修正**：README / `docs/07` 的 Node 版本改为 **20.19+ 或 22.12+**（Vite 7 要求）；README 的 AI 口径改为「本机 opencode 代理，模型请求发往 DeepSeek」；`docs/06` v0.6 状态改为「范围已在 v0.5 切片内交付，待测试与发布门禁收口」；`docs/README` 补登历史重复编号 `0031-friend-release-package.md`，ADR 索引更新至 0044；`docs/05` 同步 `.github/`、`CONTRIBUTING.md`、`docs/09` 与三个检查脚本。
+- **死代码**：删除全库未引用的 `src/components/DaySpine.tsx` 与 `src/components/StatTile.tsx`。
+- 无新增运行时依赖；无数据模型变化。
+
+- **修改**：`CONTRIBUTING.md`（新）、`.github/**`（新）、`scripts/check-{syntax,privacy,docs}.mjs`（新）、`docs/09-RISK-REGISTER.md`（新）、`docs/decisions/0044-collaboration-workflow.md`（新）、`package.json`、`README.md`、`AGENTS.md`、`docs/{README,05-FILE-TREE,06-ROADMAP,07-DEPLOYMENT}.md`；删除 `src/components/{DaySpine,StatTile}.tsx`
+- **验证**：`node scripts/check-syntax.mjs` → **19/19 passed**；`npm run build` 退出 **0**；`node scripts/check-docs.mjs --worktree` → **38 files / 0 errors**；`node scripts/check-privacy.mjs --files <本轮新增文件>` → **13 files / 0 errors**。CI 工作流本身未在本机执行（需推送后在 GitHub Actions 验证）。
+
+### 资料原文保全 · 收件箱文本应用不再只剩摘要（2026-10-13）
+
+答 owner 实机反馈「每次往收信箱丢东西，分析完是要丢到资料里面的，它不会显示原始信息，只会显示总结后的信息，而且总结后的信息存在信息缺失」。**根因**：apply 的资源分支只写 AI 摘要 `note`（≤120 字），从不复制条目原文 `item.content`（笔记分支反而把原文复制进 `note.body`——两侧不对称；资源侧也无来源反链），资料详情因此只见摘要 → 原文信息丢失。
+
+- **数据面**：`server/schemas.mjs` 的 `resourceSchema` 与 `resourceCreateSchema` 新增可选 `content`（「原文」，无 min/max）；`server/index.mjs` 的 `EDITABLE_FIELDS.resources` += `'content'`；`applyInboxActions` 的资源分支在 `!isFile`（文本条目）时**逐字复制** `item.content`（文件条目的原文即文件本身，不复制）；`createResource` 接受 `content`（空值不落键；逐字保存、不作 trim 变换，trim 仅用于空值判定）。
+- **界面**：`src/views/Library.tsx` 资料详情读态在「简介」下方新增「**原文**」块（纯文本 `pre-wrap`、不渲染 Markdown）；编辑表单新增「原文」textarea（`rows=8`）；`src/components/ResourceDraftModal.tsx`「新建资料」弹窗新增「原文」textarea（`rows=4`）；`src/styles/views.css` 新增 token-only `.k-detail-raw`（镜像 `.k-detail-note` 的视觉语言 + `white-space: pre-wrap; word-break: break-word; max-height: 42vh; overflow: auto`）；`src/types.ts` + `src/lib/mutations.ts` 类型同步。
+- **存量修复**：`server/store.mjs` 新增导出 `repairResourceContents({ dryRun = true })`（镜像 `pruneDanglingRefs` 约定：单次 `serialize` + 原子写、apply 时一条 `resource.repair` 审计；扫描收件箱条目 `linkedIds`（`linkedId` 兜底，兼容 Slice R1 前只有单数的旧条目）；只处理实时资料；跳过 `kind:'file'` / 带 `path` / 已有非空 `content`（`''` 与纯空白视作未设置）；逐字复制、**不 bump `updatedAt`**、幂等）+ CLI `scripts/resource-content-repair.mjs`（默认预演；`--apply` 落盘；用法 `node scripts/resource-content-repair.mjs [--apply]`）。
+- 无新增依赖；**先确认后写入**语义不变。
+
+- **修改**：`server/{schemas,index,store}.mjs`、`scripts/resource-content-repair.mjs`（新）、`src/{types.ts,lib/mutations.ts,views/Library.tsx,components/ResourceDraftModal.tsx,styles/views.css}`、`public/guide.html`、`docs/{04-DATA-MODEL,05-FILE-TREE,README}.md`、`docs/decisions/0015-ai-full-chain-multi-action.md`（§5.6）
+- **验证**：服务端隔离探针 **21/21 PASS**（`content` 逐字保全 / 多行换行保留 / 手建含与不含 / 编辑 set + `null` 删键 + `''` 接受 / 文件条目即使有来源也不复制 / url 回归 / 同批任务回归），证据 `.qa/v82/probe-resource-content.mjs` 与 `.qa/v82/logs/probe-resource-content.log`；存量修复隔离测试 **24/24 PASS**（预演零写 / `--apply` 4 条回填 / 幂等复跑 0），证据 `.qa/v82/repair-qa/`、`.qa/v82/logs/repair-*.log`；浏览器视觉 QA **5/5 PASS**（桌面读态逐字 + 换行 / 编辑态 rows=8 预填 / 无原文资料不渲染该块 / 390×844 零横溢 / console 0 error），截图 `.qa/v82/visual-*.png`；`node --check` 0；`npx tsc --noEmit` 0；`npm run build` 0（Library chunk 23.90 kB）。
+
+### 总览 AI 对话 · 课程表摘要扩到 7 天（2026-10-09）
+
+答 owner 实机「问『明天有啥课』AI 答不了」。**根因两点**：① 摘要的【今日课程】只给**今天**，问「明天」自然无从作答（模型转而按「课表」关键词去做实体检索，命中的是那份未导入的 `.xls` 资料，故无法给出周几/第几节）；② **数据服务不热重载**——`scripts/dev.mjs` 用 `spawn(process.execPath, [serverEntry])`（**无 `--watch`**），运行实例上的服务端代码仍是旧的（此前所有服务端改动都未生效）。
+
+- **修复**：`buildChatDigest` 的课程段由「今日课程」扩为 **【课程表（今天起 7 天）】**——逐日按学期周 + 星期过滤、合并同课程相邻节次，输出 `M/D 周X：第p-q节 · 课程 · 地点`（无课标注）；「今天 / 明天 / 某天有啥课」皆可答。
+- **运维提醒**：改 `server/**` 后**必须重启数据服务**（Node 无热重载；`scripts/sync-install.mjs` 只镜像文件、不重启进程）。
+- **重启与复验**：按原方式（repo `scripts/spawn-bg.mjs` → `<安装目录>\scripts\dev.mjs`）**重启整栈**（数据服务 61100→63608、Vite 55704→49776；4096/4097/5173 均恢复监听，`/api/snapshot` 200）；**实机** live `POST /api/ai/chat` 问「明天有啥课」→ **11.7s 正确回答**「10/11 周日无课；最近 10/12 周一：第1-2节 · 数据库系统原理 · 7B-313；第3-4节 · 面向对象程序设计(Java) · 6F-404；第5-7节 · 马克思主义基本原理 · 7B-203；第9-10节 · 工程伦理 · 6E-304」。此次重启同时使本会话**全部服务端改动**（摘要 v2 / 习惯打卡 / multi-edit / 反问·标签 / 思考折叠的数据面）在运行实例生效。
+- **修改**：`server/ai.mjs`
+- **验证**：课程摘要探针（明日无课 / 周一有课 / 7 日行齐全）+ 上述实机复验；`node --check` 0；`npx tsc --noEmit` 0；`npm run build` 0。
+
+### 总览 AI 对话 · 卡片字段 + 反问澄清 + 思考折叠（2026-10-09）
+
+答 owner「卡片要能带 tag / 时间 / 地点，创建时一次带上；并且当涉及时间、地点等或语义上还缺必要信息时，AI 要能反问、再按回答完善，直到可执行」+「思考要可折叠、默认折叠、可展开」。
+
+- **卡片字段补齐**：`traces / tasks / events / projects / resources` 提案新增 `tags`（≤8 个 × ≤12 字；落盘经既有 `ensureTags` 自动登记）；创建卡支持**就地编辑**——任务（截止 / 重要性 / 标签）、日程（开始 / 结束 / 全天 / 地点 / 标签）、踪迹（时间 / 备注 / 标签）、资料（链接 / 简介 / 标签）、项目（完成定义 / 标签）；时间用 `datetime-local`（本地时区 ↔ ISO8601 带偏移互转）；apply 透传 tags。
+- **反问澄清（全由 AI 判断）**：新增 `{"ask":{text,options,fields}}` 意图 + `tryParseAskRequest`；`runChat` 返回 `askRequest`（reply = 追问文本）；`finalizeChatResult` 清洗透传 `ask`（text ≤200 / options ≤4×≤30 / fields ≤6×≤20）。提示词要求 AI 自行判断「必要且不可推断」的信息缺失时**先追问再出卡**（日程缺 `startAt`、任务缺 `dueAt`、日程缺 `location` 等），给 2–4 个候选选项，**同一段最多追问 2 轮**，之后必须基于现有信息出卡；用户说「随便 / 直接建」立即停止追问。前端渲染**反问面板**：问题 + 快捷选项 chips + 输入提示；点选项即作为用户消息发回（`sendOption`），自由输入走常规输入框；**仅最新一轮可答**（出现新轮次即收起）。
+- **思考可折叠**：客户端不再丢弃 `reasoning` 流——`ChatStreamState` 增 `reasoning`、轮次 `ChatTurn` 增 `reasoning`（随对话持久化）；助手轮渲染「思考过程」`<details>`（**默认折叠**、可展开），内含模型 reasoning + 已查阅 / 已联网检索（含来源）步骤；流式阶段实时显示。
+- 确认前零写入；无新端点语义外泄、无新依赖（`remark-gfm` 见同日 P2-1 条目）。
+
+- **修改**：`server/ai.mjs`、`server/index.mjs`、`src/lib/mutations.ts`、`src/components/OverviewChat.tsx`、`src/styles/views.css`、`public/guide.html`、`docs/decisions/0035-chat-lookup-edit.md`（§11）
+- **验证**：ask / tags 探针 **9/9**（ask 有效 / 无 text→null / 错形状→null / options ≤4；task·trace·event·project·resource tags 清洗去重）；`node --check` 0；`npx tsc --noEmit` 0；`npm run build` 0。
+
+### 总览 AI 对话 · 审计修复续（P1/P2 批次）（2026-10-09）
+
+同日续作：P0 之后按审计清单继续落地 P1 / P2。
+
+- **深链闭环（P1-2）**：`buildSearchSection` 回传 `sources`（title/url ≤6、按 url 去重）→ 响应 `searchSources`，「已联网检索」行附**来源链接**；`resolveEntities` 回传 `items`（kind/id/title）→ 响应 `focusedRefs`，「已查阅」渲染为**可点深链**（`deepLinkOfId`）；应用成功后 `createdRefs` 记录产物 id，「已应用」行给「**查看**（单条→实体详情）/ 查看全部（多条→列表页）」。
+- **按卡 applying（P1-3）**：全局 `applying` 布尔 → 按卡键 `${turnId}:kind`（ref 同步判重 + state 驱动渲染），**卡与卡互不阻塞**（同卡仍互斥防重复提交）。
+- **交互润滑（P1-4）**：`NOTE_INTENT` 收紧（问号结尾的疑问句不再劫持为整理指令）；空态**示例问题**（点击填入草稿）；`saveTurnAsNote` 防连点；滚动**尊重用户上滑**（距底 <48px 吸底）+「回到底部」；>20 条时上下文截断提示。
+- **习惯打卡 action（P1-5）**：`actions` 增 `checkin` / `uncheckin`（仅 `habits`）；`CHAT_ACTION_KIND_BY_OP` + `cleanActionItem` 闭合集扩展；前端 `ACTION_RUN` / `ACTION_UNDO` / `ACTION_LABEL` / `ACTION_KINDS` 同步（撤销 = 反向打卡）。
+- **chat-* 生命周期（P1-6）**：数据服务启动时清理 **>7 天**的 `data/files/chat-*`（无实体引用的临时输入；失败静默）。
+- **multi-edit ≤3（P2-2）**：提示词与解析支持 `{"edits":[{…}, …]}`（**≤3**，兼容旧 `{"edit":{…}}`）；`tryParseEditRequests` + `buildChatEdits` 逐条校验、按 id 去重、总上限 3——ADR-0035 §2.2 的「≤3」自此与实现对齐。
+- **资源从对话入档 + 子任务（P2-3）**：`{"resources":[{title,url?,note?}]}`（1–3）提案 +「收录资料卡」→ 既有 `POST /api/resources` + 撤销；`tasks` 提案支持可选 `parentTaskId`（落盘由既有 `assertValidParentTask` 护栏校验）。
+- **remark-gfm 表格 + 复制 + 时间戳（P2-1）**：助手回复支持 GFM 表格（新增前端依赖 `remark-gfm`，已入白名单）；每轮「**复制**」按钮（剪贴板）；轮次**时间戳**（当天 HH:mm、跨天 M/D HH:mm）。
+- **显式延后**（记录于 TASK_BOOK）：按筛选批量（带预览）· 对话内重复日程（`repeatRule` 全库无写入路径）· 跨请求会话复用。
+- 确认前零写入；chat 仍不落盘无审计（落盘路径不变：chat/note + 用户确认后的既有创建端点）。
+
+- **修改**：`server/ai.mjs`、`server/index.mjs`、`src/lib/mutations.ts`、`src/components/OverviewChat.tsx`、`src/styles/views.css`、`package.json`、`public/guide.html`、`docs/{02-ARCHITECTURE,README}.md`、`docs/decisions/0035-chat-lookup-edit.md`（§10）
+- **验证**：解析器 / 摘要探针 **7/7**（multi-edit ≤3 与去重 · 旧式单条兼容 · resource 提案 · checkin/uncheckin · parentTaskId · resolveEntities items · digest v2 段）；`node --check` 0；`npx tsc --noEmit` 0；`npm run build` 0。
+
+### 总览 AI 对话 · 全面审计修复（P0 六项 + 卡片持久化）（2026-10-09）
+
+答 owner「总览页的 AI 助手不够全面完整……全面检查还有哪些需要优化的方面」——先四路并行只读审查（前端组件 / 后端 AI 链路 / HTTP 契约 / 文档意图）+ Oracle 逐条复核（修正 5 处误判、补出 6 个真实场景），产出分级清单；本轮落地 **P0 六项**（清单其余项列入 TASK_BOOK 待办）。
+
+- **现状摘要 v2（P0-1）**：`buildChatDigest` 新增【今日课程】【习惯打卡】【近 48h 踪迹】【今日已完成】四段，并对逾期 / 今日到期 / 下一步**过滤 `deferUntil`**（与任务页口径一致，避免已推迟项虚报紧急）。解锁「今天有课吗 / 打卡了吗 / 我今天做了什么」等学生高频问句——此前摘要不含课程 / 习惯 / 踪迹，这三类问题只能答「数据里没有」。
+- **停止生成 + 保留部分输出（P0-2）**：`aiChatStream` 增 `AbortSignal`；前端模块级 `AbortController` + 生成中「停止」按钮（替换发送键，`Square` 图标）；中止时把已流出文本保留为一条助手轮次（附「（已停止生成）」），不再丢弃。
+- **中文输入法守卫（P0-3）**：composer Enter 加 `event.nativeEvent.isComposing` 判断（镜像 Traces.tsx:419），拼音候选期回车不再误发送。
+- **附件完整性（P0-4）**：上传**成功后才清空**待发队列（失败保留可重发）；用户气泡显示附件名（写入轮次 `attachments`，随对话持久化）；失败重试复用附件引用；文件选择加 `accept`；>25MB 客户端预检并提示；上传阶段气泡显示「正在上传附件…」。
+- **创建卡防重复（P0-5）**：五类创建卡（踪迹 / 任务 / 日程 / 项目 / 笔记）统一为通用 `applyCreate`——**逐行创建，全部成功方标记「已应用」；部分失败时成功行移出卡片、仅保留失败行待重试**，杜绝「部分失败后重试把已成功的也重建」造成的静默重复（此前 5 个 apply 各自 try/catch 整体中止、卡片仍 pending → 重试全量重跑）。
+- **创建记录挂接项目（P0-6）**：`traces / tasks / events` 提案新增可选 `projectId`（提示词 + `cleanTraceItem`/`cleanTaskItem`/`cleanEventItem` 清洗 + 前端类型 + apply 透传）——「帮我记一条任务，归到算法竞赛项目」可落位（落盘时经既有创建端点校验项目存在）。
+- **卡片持久化补齐**：`normalizeTurn` 增 `normalizeTraces` / `normalizeTasks` / `normalizeEvents`——刷新后**踪迹 / 任务 / 日程**三类提案卡不再丢失（此前仅 edits / projects / notes / actions 存活，属不一致）。
+- 确认前零写入；无新端点 / 数据模型变化 / 新依赖。
+
+- **修改**：`server/ai.mjs`、`src/lib/mutations.ts`、`src/components/OverviewChat.tsx`、`public/guide.html`、`docs/decisions/0035-chat-lookup-edit.md`（§9）
+- **验证**：`buildChatDigest` 夹具探针 **6/6**（今日课程按周/星期过滤并合并相邻节次 / `deferUntil` 过滤 / 逾期 / 今日已完成 / 习惯 N/M / 48h 踪迹窗口）；`node --check` 0；`npx tsc --noEmit` 0；`npm run build` 0。
+
 ### 总览对话 · 多轮工具 / 流式 / 新建项目·笔记 / 完成·删除·归档 / 贴图·附件（2026-10-08）
 
 答 owner「一次性把这些功能也做了吧」（对话加强剩余四项）。

@@ -19,11 +19,15 @@ KERNEL 的完整文档集。本文件是导航中心，说明每份文档的职�
 7. **`06-ROADMAP.md`**：v0.1 到 v1.0 的里程碑路线。
 8. **`07-DEPLOYMENT.md`**：运行与部署。本地、局域网、防火墙、FAQ。
 9. **`08-MATH-SYSTEM.md`**：数理自适应。流体公式、容器查询、φ 层级、复算与验证方法。
+10. **`09-RISK-REGISTER.md`**：风险台账。等级、影响、缓解、触发信号与负责人。
+
+参与协作前，先读根目录的 `CONTRIBUTING.md`：角色、工单、分支、PR、DoD 与红线都在那里。
 
 按角色的最短路径：
 
 | 你的任务 | 优先读 |
 |---|---|
+| 参与协作 / 开 PR | `CONTRIBUTING.md` → `AGENTS.md` |
 | 新 AI 会话冷启动 | `AGENTS.md` → `00-DESIGN-BRIEF.md` |
 | 写前端 / 做交互 | `03-DESIGN-SYSTEM.md` → `01-PROJECT-BRIEF.md` |
 | 改数据 / 加字段 | `04-DATA-MODEL.md` → `02-ARCHITECTURE.md` |
@@ -45,6 +49,7 @@ KERNEL 的完整文档集。本文件是导航中心，说明每份文档的职�
 | `06-ROADMAP.md` | 计划 | 版本里程碑 |
 | `07-DEPLOYMENT.md` | 操作 | 运行、局域网、FAQ |
 | `08-MATH-SYSTEM.md` | 规范 | 数理自适应：流体公式、容器地图、复算方法 |
+| `09-RISK-REGISTER.md` | 台账 | 风险登记：等级、影响、缓解、触发信号、负责人 |
 | `decisions/0001-naming-kernel.md` | ADR | 命名决策：KERNEL |
 | `decisions/0002-no-role-silos.md` | ADR | 不做身份/领域分区 |
 | `decisions/0003-design-direction-v2.md` | ADR | 视觉方向 v2：C 柔暗 + 柔影悬浮 |
@@ -59,7 +64,7 @@ KERNEL 的完整文档集。本文件是导航中心，说明每份文档的职�
 | `decisions/0012-unified-detail-modal.md` | ADR | 全站详情统一（Slice K）：所有实体详情改居中弹窗 + 统一操作矩阵 + 底栏统一 + 日历吸顶遮罩柔化；删除 Drawer |
 | `decisions/0013-review-report-and-archive.md` | ADR | 回顾报告升级 + 自动归档（Slice L）：七段结构正文 + 环比 / 阈值 / 带 id 清单 + 数字护栏 + 生成即归档（复用 reviews + update 路径 + 报告历史）；Slice U 修订（§6）：阅读视图（默认）+ 同期等长窗口 + 下期行动去重；Slice N6 修订（§7）：回顾人话化（digest 人话化 + 真诚口吻 + 友好七段标题 + 新旧别名双兼容） |
 | `decisions/0014-tag-lifecycle.md` | ADR | 标签生命周期（Slice T）：录入即生成 + 自动登记（origin/createdAt/firstUsedIn）+ AI 可提议新标签 + 管理（重命名 / 合并 / 删除 / backfill）+ 筛选条不截断 |
-| `decisions/0015-ai-full-chain-multi-action.md` | ADR | AI 全链 · 多实体一揽子处置（Slice R1）：多动作抽取（≤6，含新项目）+ 一次确认批量应用（建项目 / 挂接 / 标签登记）+ 精确撤销（产物 + 注册表）+ 项目草稿端点；默认仍先确认后写入；Slice R2.5 修订（§5）：文件条目 = 资料 + 简介（不拆分），文本条目保留多动作 + 反过拆 |
+| `decisions/0015-ai-full-chain-multi-action.md` | ADR | AI 全链 · 多实体一揽子处置（Slice R1）：多动作抽取（≤6，含新项目）+ 一次确认批量应用（建项目 / 挂接 / 标签登记）+ 精确撤销（产物 + 注册表）+ 项目草稿端点；默认仍先确认后写入；Slice R2.5 修订（§5）：文件条目 = 资料 + 简介（不拆分），文本条目保留多动作 + 反过拆；资料原文保全修订（§5.6）：收件箱**文本条目**应用逐字保全 `item.content` 为资料 `content`（文件条目不复制）+ 详情「原文」块 + `repairResourceContents` 存量回填（.qa/v82） |
 | `decisions/0016-cluster-project-and-ai-automation.md` | ADR | 项目诞生：聚类立项 + AI 自动化档位（Slice R2）：连续累积相似任务 → 确定性预分组 + AI 命名（按组引用、抗幻觉）+ 一次建项归入 / 精确撤销；`aiAutomation` 档位（默认 confirm）+ 自动化能力边界表 + AI 动态 feed |
 | `decisions/0017-subtasks-and-project-actions.md` | ADR | 子任务全链路 + 项目内操作（Slice R3）：`parentTaskId` 一等写入字段（创建 / 编辑 + 自引用 / 成环 / 存在性服务端护栏）；任务详情「子任务」区块 + 就地打开 + quick-add 继承父项目；项目任务行就地打开 + 按项目预填新建（草稿确认）；替换式覆盖层 |
 | `decisions/0018-events-writable.md` | ADR | 事件可写（日程 · Slice W）：events 并入可写 / 可回收实体族（schema + `e-` id + `EDITABLE_FIELDS` + `POST /api/events` / `:id/remove` + 回收站）；`endAt` 可选 + `end ≥ start` 服务端校验；文档状态流（tentative→confirmed→cancelled）可执行；日历新建（先确认后写入）+ 详情编辑 / 删除 / 状态快捷切换 + 迷你月历日格可点；`repeatRule` 仅展示延后 |
@@ -76,10 +81,11 @@ KERNEL 的完整文档集。本文件是导航中心，说明每份文档的职�
 | `decisions/0029-source-summary.md` | ADR | 来源摘要：一句话摘要 + 引用人话化（Slice N4）：收件箱解析增顶层 `summary`（≤40 字、单行、多要点「 · 」分隔、不引入原文外信息；服务端确定性清洗折叠 / 去引号 / 硬截断 40；**解析仍零写入、不落盘**）；`POST /api/inbox/:id/apply { actions, summary? }` 的 `summary` 可选（≤100），提供且非空时写入条目 `summary`（`inboxItemSchema.summary` 可选、≤200 防御），只在 apply 落档；引用人话化：关联区块来源标题 `summary` 优先 / 原文截断 ~90 字兜底、来源芯片可见编号入 tooltip、已澄清区产物引用显示产物标题；历史条目无 `summary` 展示自动降级、不回填；无新增依赖 / 写入面 |
 | `decisions/0030-ai-key-local.md` | ADR | AI Key 本地配置 + 双击启动器（Slice N5）：设置页「AI 集成」填 DeepSeek API Key（密码型、不回显；保存 / 清除 + 状态 pill「已配置 / 未配置」）；存储 `data/meta/secrets.json`（**已 gitignore**，git 跟踪的 `config.json` 刻意不放）；`POST /api/ai/key`（空串 = 清除；审计 `ai.key.update` 仅 `detail.hasKey` 布尔、绝无明文）；`GET /api/ai/health` 增 `hasKey`；`scripts/dev.mjs` 托管拉起 opencode serve 时注入 `DEEPSEEK_API_KEY`（已在运行则下次生效，日志只报「已注入」）；启动器 `启动.cmd` + `scripts/launcher.mjs`（Node 18 自检 / 依赖自动装 / 轮询 5173 自动开浏览器 / 错误按回车退出）；无新增依赖 |
 | `decisions/0031-installer-distribution.md` | ADR | Windows 安装包分发：`installer/KERNEL.iss`（Inno Setup 6；每用户安装 `PrivilegesRequired=lowest`、自选安装目录、开始菜单 + 可选桌面快捷方式、标准卸载程序）+ `scripts/build-installer.mjs`（白名单组装载荷 + 仓库内置 Inno Setup 编译器 → `KERNEL-Setup-<version>.exe`，位于仓库之外）；数据位于 `<安装目录>\data` 并以 `uninsneveruninstall` 标记——覆盖安装不清空、**卸载保留用户数据**；无新增依赖 |
+| `decisions/0031-friend-release-package.md` | ADR | 历史记录：朋友版分发包（便携目录 + 压缩包 + 内置运行时）。与上一条同为 `0031`（历史重复编号），保留原名与内容，不重编号；新 ADR 从 `0044` 起 |
 | `decisions/0032-ai-organize-projects.md` | ADR | 项目「AI 整理」+ 每日调度（Slice N8）：项目页两段提案（归并到已有项目 / 建议新项目）——`POST /api/ai/organize/draft`（只读，候选 = 无 projectId 未完成任务 + 未澄清收件箱 ≤50；确定性预分组 + AI **按候选编号引用**（不可编造 id）+ 后校验 + 确定性兜底簇）+ `POST /api/projects/organize-apply`（201；服务端重校验；归并**只写任务文件**、逐簇建项、单簇失败不中止、审计 `via:'organize'`）+ `POST /api/projects/organize-unapply`（精确复原）；`src/lib/organize.ts` 每日调度（12:00 后每日一次、30s tick + focus 补跑、跨标签锁 TTL 120s + 会话守卫；**只出草案、绝不自动应用**）+ `OrganizeProposalCard`（两段提案、逐行勾选）；无 schema 变更、无新增依赖 |
 | `decisions/0033-web-search.md` | ADR | 收件箱 AI 联网检索（Slice N9 / N9.1）：模型请求式两阶段检索（searchQueries ≤2）→ Sogou→360→Bing 链 + 相关性过滤 + 首条结果页摘录 → 回喂补全 dueAt；固定主机、不落盘、失败保守；证据 .qa/v68 |
 | `decisions/0034-inbox-ai-event-actions.md` | ADR | 收件箱 AI 事件识别（Slice N10）：第 5 类动作 event——定点安排（面试 / 会议 / 考试 / 约谈）产日程（startAt 必填 + endAt/allDay/location），动作仍产 task；确认后一次应用、撤销经 linkedIds；证据 .qa/v71 |
-| `decisions/0035-chat-lookup-edit.md` | ADR | 总览 AI 对话：实体查阅与代改（QA v73）：模型可请求 `entityQueries`（1–3 条、每条 ≤30 字）→ `resolveEntities` 命中完整记录回喂（响应 `focused` ≤6 条）；修改走 `editRequest` → `buildChatEdits` 白名单校验（≤3 条、fields ≤12 键）→ 前端「修改卡」逐字段「旧值 → 新值」，点「应用」才经既有 `POST /api/<kind>/:id/update` 写入（toast 可撤销：逆序写回 before）；**确认前零写入**；证据 `.qa/v73/`；修订（2026-10-07 · §6）：新增对话内**新建任务** `taskRequest`（确认后经既有 `POST /api/tasks` 落盘，可撤销）与**新建日程** `eventRequest`（`POST /api/events`；同一 JSON 可同时出 task + event）+ 提示词**禁止谎报写入**；修订（2026-10-08 · §7）：**多意图 + 多条**（traces / tasks / events 同段共存，各 1–6 条）；修订（2026-10-08 · §8）：**多轮工具 / 流式（`/api/ai/chat-stream`）/ 新建项目·笔记 / 完成·删除·归档（`actions`）/ 贴图·附件（`/api/ai/chat/upload` + file part）** |
+| `decisions/0035-chat-lookup-edit.md` | ADR | 总览 AI 对话：实体查阅与代改（QA v73）：模型可请求 `entityQueries`（1–3 条、每条 ≤30 字）→ `resolveEntities` 命中完整记录回喂（响应 `focused` ≤6 条）；修改走 `editRequest` → `buildChatEdits` 白名单校验（≤3 条、fields ≤12 键）→ 前端「修改卡」逐字段「旧值 → 新值」，点「应用」才经既有 `POST /api/<kind>/:id/update` 写入（toast 可撤销：逆序写回 before）；**确认前零写入**；证据 `.qa/v73/`；修订（2026-10-07 · §6）：新增对话内**新建任务** `taskRequest`（确认后经既有 `POST /api/tasks` 落盘，可撤销）与**新建日程** `eventRequest`（`POST /api/events`；同一 JSON 可同时出 task + event）+ 提示词**禁止谎报写入**；修订（2026-10-08 · §7）：**多意图 + 多条**（traces / tasks / events 同段共存，各 1–6 条）；修订（2026-10-08 · §8）：**多轮工具 / 流式（`/api/ai/chat-stream`）/ 新建项目·笔记 / 完成·删除·归档（`actions`）/ 贴图·附件（`/api/ai/chat/upload` + file part）**；修订（2026-10-09 · §9）：摘要 v2（今日课程 / 习惯 / 踪迹 / 今日已完成 + `deferUntil` 过滤）+ 停止生成 + 中文 IME 守卫 + 附件完整性 + 创建卡防重复 + 挂接 `projectId`；修订（2026-10-09 · §10）：深链闭环（来源链接 / focused 可点 / 已应用「查看」）+ 按卡 applying + 交互润滑（NOTE_INTENT / 空态示例 / 滚动 / 截断提示）+ 习惯打卡 action + `chat-*` 清理 + multi-edit ≤3 + 资源入档 + 子任务挂接 + remark-gfm·复制·时间戳 |
 | `decisions/0036-parse-defaults-long-image.md` | ADR | 解析默认时间/地点 + 长图分片（QA v73）：事件时间默认钟点补全（早上 08:00 / 上午 09:30 / 中午 12:00 / 下午 14:30 / 傍晚 17:30 / 晚上 19:30；用餐：早饭 07:30 / 午饭 12:00 / 晚饭 18:00 / 夜宵 21:30——系统认可、不算编造）+ 地点提取（≤50 字）；长截图 >400KB 客户端 `sliceImageForAi` 切 ≤6 张 JPEG（长边 ≤1600 / 片高 1600 / q0.82；失败回退单图）→ `POST /api/inbox/:id/ai-preview?index=1..6` RAW 落 `data/files/<id>-ai-<n>.jpg`（派生辅助资源、**无审计**、随条目清理）→ 解析多发 file part、图片解析超时放宽 **180s**；证据 `.qa/v73/` + 探针 `.qa/probe-longimg/` |
 | `decisions/0037-native-launcher.md` | ADR | 原生桌面启动器（Slice N7.2）：`启动器.vbs`（ASCII 入口，`wscript` 隐藏拉起，零黑窗）→ `启动器.ps1`（PowerShell 5.1 + .NET Framework WPF 原生窗口，零安装；无边框圆角卡片 + 自绘标题栏 + 品牌 K + `kernel.ico`）；行为对齐旧 HTA + 单实例互斥锁 + `KERNEL_LAUNCHER_SELFTEST` / `KERNEL_LAUNCHER_SMOKE_MS` / `KERNEL_LAUNCHER_PROBE_URL` 钩子；`scripts/make-icon.ps1` 从 `public/favicon.svg` 生成图标；打包同步收录 ps1 / vbs / ico；删除 `启动器.hta`；证据 `.qa/v75/` |
 | `decisions/0038-review-automation.md` | ADR | 回顾自动化：周期调度自动生成 + 迁移建议持久化——`useReviewScheduler`（周一 12:00 后 / 每月 1 日 12:00 后，周期已归档 / 未水合 / 会话已试 / 跨标签锁 / AI 离线均跳过；成功 toast + 水合，失败静默；**绝不自动应用建议**）；`reviewSchema` 增可选 `staleAdvice`（draft 归档随报告持久化、手工保存可透传清洗、update 白名单不变），归档报告阅读视图「迁移建议」块；证据 `.qa/v76/`（WS5 25/25 + 前端回归 40/40） |
@@ -88,12 +94,14 @@ KERNEL 的完整文档集。本文件是导航中心，说明每份文档的职�
 | `decisions/0041-layered-navigation-ia.md` | ADR | 分层导航：轨道按功能分四组（行动 / 时间 / 记录 / 系统 + 总览置顶），`NavItem` 增 `group`/`mobile`（取代仅移动端生效的 `secondary`）；桌面轨道 / 命令面板 / 移动底栏同源同组，移动端收敛为 5 项 + 「更多」；**路由与深链全部冻结、不合并页面**；确立一级项准入规则（新功能默认进组 / hub / 上下文入口）；宪法 §3/§4 受控修订 |
 | `decisions/0042-settings-data-management.md` | ADR | 设置内数据管理（ADR-0041 Phase 3）：**回收站并入设置**（`/trash` 移入 `EXTRA_PAGES`、路由与深链保留、命令面板动作、设置分区复用同一 `TrashPanel`）；**示例数据载入 / 清空**——`POST /api/demo/seed`（仅空工作区 + `confirm` + 审计，复用维护脚本 `scripts/seed.mjs`）与 `POST /api/demo/reset`（`confirm` + 复用 `scripts/reset.mjs --yes` 先自动备份）；安装包白名单纳入 `seed.mjs`；维护脚本例外显式引用，不新增常规写路径 |
 | `decisions/0043-unified-reference-lifecycle.md` | ADR | 外键引用生命周期统一：**软删只隐藏、彻底删除才断链**——`server/refs.mjs` 声明式引用表（`detach` / `keep`）+ `detachRefsTo`（purge 时清扫）/ `pruneDanglingRefs`（存量修复）/ `assertRefsExist`（编辑校验，实时 ∪ 回收站）；区域 / 目标 409 护栏退役；`scripts/refs-repair.mjs` 修存量悬空 |
+| `decisions/0044-collaboration-workflow.md` | ADR | 协作规范与质量门禁：`CONTRIBUTING.md`（角色 / 工单 / 通道 / 分支 / PR / DoD / 红线）+ Issue·PR 模板 + `CODEOWNERS` + CI（构建 / 语法 / 隐私 / 文档义务）+ `docs/09-RISK-REGISTER.md` + ADR 索引纪律 |
 
 ## 根目录文档（不在本目录）
 
 | 文件 | 职责 |
 |---|---|
 | `README.md` | 仓库门面、快速开始、文档总入口 |
+| `CONTRIBUTING.md` | 协作规范：角色、工单、分支、PR、DoD、红线 |
 | `AGENTS.md` | 新会话 AI 第一入口、命令、数据纪律、变更记录 |
 | `CHANGELOG.md` | 变更日志（Keep a Changelog） |
 | `TASK_BOOK.md` | 任务台账与迭代记录 |
@@ -101,6 +109,7 @@ KERNEL 的完整文档集。本文件是导航中心，说明每份文档的职�
 ## 维护规则
 
 - 文档与代码/数据必须保持一致，不一致时应尽快修复。
-- 改目录结构更新 `05-FILE-TREE.md`；改数据字段更新 `04-DATA-MODEL.md`；新决策开新 ADR。
+- 改目录结构更新 `05-FILE-TREE.md`；改数据字段更新 `04-DATA-MODEL.md`；新决策开新 ADR，并在本索引登记。
 - 每次改代码，追加 `CHANGELOG.md` 与 `TASK_BOOK.md`（详见 `AGENTS.md` 的文档义务表）。
+- 协作流程与验收门禁见根目录 `CONTRIBUTING.md`；本地可跑 `npm run check:syntax` / `check:privacy` / `check:docs`。
 - 宪法 `00` 除项目所有者明确要求外不随意改动；重大方向调整走 `decisions/`。

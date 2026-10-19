@@ -1109,6 +1109,7 @@ body.demo-locked { overflow: hidden; }
               <li>蒸馏层级 L0–L3：<strong>点选只标注层级、不会改写内容</strong>（L0 原文 → L1 划线 → L2 摘要 → L3 永久笔记）</li>
               <li class="signal">「AI 蒸馏」生成<strong>下一层草稿</strong>（按层级：划线 / 摘要 / 永久笔记；≤300 字、保守、保留关键事实）；草稿可编辑，点「应用到笔记」才<strong>追加</strong>到正文末尾（原文不丢），toast 撤销可精确还原</li>
               <li class="signal">阅读弹窗标题下有「简介」（文件投递时 AI 的小结）与「关联」；文件类资料可打开文件 / 在文件管理器中定位；可编辑 / 删除</li>
+              <li>文本资料会保留原文：详情页「简介」下方多一个「原文」块，逐字不丢；可在编辑里修改</li>
             </ul>
           </article>
 
@@ -1172,14 +1173,15 @@ body.demo-locked { overflow: hidden; }
         <p>条目的去向都有出口：已丢弃的行可以「恢复」回未澄清、也可「删除」；已澄清的行可以「查看产物」直达它生成的笔记 / 任务 / 资料，或「撤回」（删除产物并回到未澄清）；未澄清与已丢弃条目都能「删除」，删除会连附件一起清理。删除与撤回都会先内联确认。</p>
 
         <h3>对话盒：直接问库里的事</h3>
-        <p>总览的对话盒读整库回答你，比如「我今天有什么特别紧急需要去做的事情」。它按<strong>逾期 → 今日到期 → 日程</strong>的顺序给出最紧急的几件，话不多，但都落在库里的真实记录上。</p>
-        <p>它也能<strong>查阅</strong>和<strong>修改</strong>库里的记录。你说「把明天下午的面试改到后天三点」，它会先去翻阅那条日程，然后给你一张<strong>「修改卡」</strong>，逐字段列出「旧值 → 新值」；你点「应用」，改动才写入，写入后 5 秒内可撤销（恢复原值）。不点「应用」，数据原封不动：它<strong>不会擅自改你库里任何东西</strong>。</p>
-        <p>清空对话不是删掉——它会先把这轮记录归档成一条按时间命名的笔记，从 toast 就能跳到资料库查看。归档成功，才会清空。</p>
+        <p>总览的对话盒<strong>读整库</strong>回答你，比如「我今天有什么特别紧急需要去做的事情」。它按<strong>逾期 → 今日到期 → 日程</strong>的顺序给出最紧急的几件；也能直接回答<strong>今天有什么课、习惯打卡了吗、我今天做了什么</strong>——摘要里包含今日课程、习惯打卡、近 48 小时踪迹与今日已完成，已推迟的任务不会虚报紧急。话不多，但都落在库里的真实记录上。</p>
+        <p>它也能<strong>查阅</strong>、<strong>修改</strong>、<strong>新建</strong>库里的记录。说「把明天下午的面试改到后天三点」，它会先翻阅那条日程，再给你一张<strong>「修改卡」</strong>（逐字段「旧值 → 新值」；一句话要改多条也可以，最多 3 条），点「应用」才写入、可撤销；说「记一条任务，归到竞赛项目」，它会给出<strong>「建立任务卡」</strong>（还能建日程 / 踪迹 / 项目 / 笔记 / 资料；一条消息可同时给多类，支持逐行编辑与「拆分」），确认后才落盘并归入项目。它还会给出<strong>「操作卡」</strong>把已有记录标记完成 / 删除 / 归档，或给习惯<strong>打卡 / 取消打卡</strong>。不点确认，数据原封不动——它<strong>不会擅自改你库里任何东西</strong>。</p>
+        <p>回复是<strong>流式</strong>生成的，可以随时点<strong>「停止」</strong>；也可以附上<strong>截图 / 文件</strong>让它读（回形针、拖拽或 Ctrl+V 粘贴，单个不超过 25MB）。每条回答下有「<strong>复制</strong>」与「存为笔记」；写完的记录在卡上点「<strong>查看</strong>」直达；联网检索会附上<strong>来源链接</strong>。清空对话不是删掉——它会先把这轮记录归档成一条按时间命名的笔记，从 toast 就能跳到资料库查看；归档成功，才会清空。</p>
+        <p><strong>信息不全时它会先问。</strong>当涉及<strong>时间 / 地点</strong>等而你没说清、或它判断还缺必要信息时，会先<strong>反问</strong>并给出几个快捷选项——点一下或自己输入，它再据此把卡片补全，直到能准确执行。卡片里还能<strong>就地改</strong>时间、地点、重要性、标签等；它的<strong>「思考过程」默认折叠</strong>在回答下方，想看再展开。</p>
 
         <figure class="chatmock">
           <div class="chatmock__thread">
             <div class="chatmock__msg chatmock__msg--me"><span class="chatmock__who">我</span><p>我今天有什么特别紧急需要去做的事情？</p></div>
-            <div class="chatmock__msg"><span class="chatmock__who">KERNEL</span><p>最紧急的是今晚 23:59 到期的实验报告初稿；其次是 12:00 的群公告，再往后是下午的三节连排课。</p></div>
+            <div class="chatmock__msg"><span class="chatmock__who">KERNEL</span><p>最紧急的是今晚 23:59 到期的实验报告初稿；今天第 1-2 节有高等数学；刷题习惯还没打卡，别忘了晚上 14:00 的组会。</p></div>
           </div>
           <div class="chatmock__composer"><span class="chatmock__ph">问点什么，回车发送…</span><span class="chatmock__send" aria-hidden="true">↵</span></div>
           <figcaption>对话盒的示例。清空时，这段记录会先归档为一条「AI 对话归档」笔记。</figcaption>
@@ -1359,7 +1361,7 @@ body.demo-locked { overflow: hidden; }
 
 <!-- ===================== 页脚 ===================== -->
 <footer class="foot">
-  <p class="mono">KERNEL v0.5.0（切片） · 2026-10-05 · 数据与界面均为本地运行</p>
+  <p class="mono">KERNEL v0.5.0（切片） · 2026-10-09 · 数据与界面均为本地运行</p>
 </footer>
 
 <!-- ===================== 任务详情面板 · 交互演示（居中弹窗） ===================== -->
