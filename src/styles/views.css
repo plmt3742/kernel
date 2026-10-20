@@ -1009,6 +1009,21 @@ button.k-pill.is-danger:hover {
   color: var(--muted);
 }
 
+/* 窄容器仍保留表格语义；截止列让出空间，完整任务标题换行。 */
+@container route (max-width: 480px) {
+  .k-tasks__col--check {
+    width: calc(var(--touch-target) + var(--space-4));
+  }
+  .k-tasks__col--due {
+    width: calc(var(--touch-target) * 2);
+  }
+  .k-tasks__row .k-task__title {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    overflow: visible;
+  }
+}
+
 /* 容器查询（.k-route 即容器）：窄屏逐级收列，保留「完成 / 标题 / 截止」骨架 */
 @container route (max-width: 900px) {
   .k-tasks__table .k-tasks__col--proj {
@@ -5368,5 +5383,40 @@ button.k-trace__del:hover {
   }
   .k-start__actions {
     margin-left: auto;
+  }
+}
+
+/* Phase 1：手机主操作的触控尺寸；页面细节继续由各具名容器负责。 */
+@media (max-width: 767px) {
+  .ic-icon-btn,
+  .ic-send {
+    width: var(--touch-target);
+    height: var(--touch-target);
+  }
+  .ic-composer__input,
+  .k-input,
+  .k-select,
+  .k-quickadd__input,
+  .k-collapse-head,
+  .k-chat__clear,
+  .k-streak__toggle,
+  .k-habit__expand,
+  .k-trace-composer__attach,
+  .k-settings__nav-item,
+  .k-field__check,
+  .k-empty__guide {
+    min-height: var(--touch-target);
+  }
+  .k-input,
+  .k-select,
+  .k-textarea {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .k-tasks__title-btn {
+    min-height: var(--touch-target);
+  }
+  .k-chat__actions {
+    flex-wrap: wrap;
   }
 }

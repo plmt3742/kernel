@@ -866,4 +866,51 @@
   .k-palette {
     top: 8vh;
   }
+  /* 手机触控：不改变桌面按钮密度，图标按钮不可被 flex 挤窄。 */
+  .k-btn,
+  .k-iconbtn {
+    min-width: var(--touch-target);
+    min-height: var(--touch-target);
+    height: auto;
+    flex-shrink: 0;
+  }
+  .k-btn {
+    padding-block: var(--space-2);
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .k-iconbtn {
+    width: var(--touch-target);
+    height: var(--touch-target);
+  }
+  .k-topbar__actions {
+    flex-wrap: wrap;
+  }
+  /* 视口高度使用动态单位；首尾不收缩，长内容只在 body 内滚动。 */
+  .k-modal {
+    width: calc(100% - var(--space-4) * 2);
+    max-height: calc(100dvh - var(--space-4) * 2);
+  }
+  .k-modal__head,
+  .k-modal__foot {
+    flex-shrink: 0;
+  }
+  .k-modal__head > div {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .k-modal__body {
+    min-height: 0;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .k-modal__foot-actions {
+    flex-wrap: wrap;
+  }
+  .k-palette {
+    max-height: calc(100dvh - var(--tabbar-h) - var(--statusbar-h) - var(--space-8));
+  }
+  .k-palette__input {
+    min-width: 0;
+  }
 }

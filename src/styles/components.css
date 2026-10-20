@@ -200,6 +200,49 @@
     border-color var(--dur-fast) var(--ease-standard),
     transform var(--dur-fast) var(--ease-standard);
 }
+
+/* 手机交互目标与视觉符号分离：圆形勾选仍保持正文比例，点击区扩为 44px。 */
+@media (max-width: 767px) {
+  button.k-pill,
+  a.k-pill {
+    min-width: var(--touch-target);
+    min-height: var(--touch-target);
+    justify-content: center;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  button.k-check {
+    position: relative;
+    width: var(--touch-target);
+    height: var(--touch-target);
+    border: none;
+  }
+  button.k-check::before {
+    content: '';
+    position: absolute;
+    width: 1.2em;
+    height: 1.2em;
+    border: var(--hairline) solid var(--outline-strong);
+    border-radius: var(--radius-pill);
+  }
+  button.k-check:hover::before {
+    border-color: var(--ink-2);
+  }
+  button.k-check.is-done {
+    background: transparent;
+  }
+  button.k-check.is-done::before {
+    background: var(--ink);
+    border-color: var(--ink);
+  }
+  .k-check svg {
+    position: relative;
+  }
+  .k-task__open {
+    min-height: var(--touch-target);
+    justify-content: center;
+  }
+}
 button.k-pill {
   cursor: pointer;
 }
@@ -1294,4 +1337,17 @@ button.k-pill.is-selected:hover {
 .k-ov-habit.is-hit {
   background: var(--accent-veil);
   color: var(--accent-text);
+}
+
+@container route (max-width: 480px) {
+  .k-panel__head {
+    flex-wrap: wrap;
+  }
+  .k-panel__cn {
+    flex-shrink: 0;
+  }
+  .k-panel__actions {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
 }
