@@ -19,7 +19,7 @@ npm install
 npm run dev
 ```
 
-打开 http://localhost:5173 。`npm run dev` 会同时拉起三样东西：
+打开终端打印的实际地址（默认 http://localhost:5173 ，占用时顺延）。`npm run dev` 启动数据服务与 Vite，并检查 opencode：4096 已有监听则复用，否则尝试启动 CLI；CLI 不可用时应用仍可运行，AI 状态以界面检查为准。
 
 | 端口 | 是什么 |
 |---|---|
@@ -46,8 +46,8 @@ npm run installer            # 打 Windows 安装包（见下）
 不想装 Node.js，就用安装包：
 
 1. 从 GitHub Releases 下载 `KERNEL-Setup-x.y.z.exe`；
-2. 双击，选安装目录（比如 `D:\KERNEL`；别装到 `C:\Program Files`，那里 Windows 不让程序写数据）；
-3. 装完从开始菜单或桌面图标启动，目标电脑不用装任何东西。
+2. 双击，选择用户可写的 `<安装目录>`（保留安装器默认位置也可以）；
+3. 装完从开始菜单或可选的桌面图标启动，无需另装 Node.js 或 opencode；AI 仍需配置模型凭据。启动器拉起本地服务与 Vite 开发服务器，默认浏览器入口为 `http://localhost:5173`，并非生产预览。
 
 数据在 `<安装目录>\data`，和程序放在一起，整个文件夹能直接拷到别的电脑。卸载时程序删掉，`data\` 会保留。
 
