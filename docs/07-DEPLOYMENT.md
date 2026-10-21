@@ -111,7 +111,7 @@ A：按顺序排查：是否用了 `--host`；防火墙是否放行；手机与�
 A：`localhost` 只在电脑本机有效。手机必须用电脑的局域网 IP。
 
 **Q：端口被占用。**
-A：Vite 会自动切换到下一个可用端口，注意看终端输出的实际端口；也可用 `npm run dev -- --port 5175` 指定前端端口。这不会改变数据服务的 4097 或启动器检查的 opencode 4096。
+A：Vite 会自动切换到下一个可用端口，注意看终端输出的实际端口；也可用 `npm run dev -- --port 5175` 指定前端端口。这不会改变数据服务的 4097 或 `dev.mjs` 检查的 opencode 4096。
 
 **Q：中文显示成方框或字体不对。**
 A：字体应自托管（`@fontsource-variable/inter`、`@fontsource/jetbrains-mono`）。检查是否误用了 CDN，项目禁止 CDN。
