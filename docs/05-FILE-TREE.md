@@ -44,16 +44,18 @@ kernel/
 │  ├─ 07-DEPLOYMENT.md          # 运行与部署
 │  ├─ 08-MATH-SYSTEM.md         # 数理自适应系统（流体公式 / 容器地图 / 复算方法）
 │  ├─ 09-RISK-REGISTER.md       # 风险台账（等级 / 影响 / 缓解 / 触发信号 / 负责人）
-│  └─ decisions/                # 架构决策记录（ADR，0001–0044；含历史重复编号 0031，完整清单见 docs/README.md）
+│  └─ decisions/                # 架构决策记录（ADR，0001–0046；含历史重复编号 0031，完整清单见 docs/README.md）
 │
 ├─ data/                        # 数据源（一记录一文件；v0.4 起写入经数据服务）
 │  ├─ activity.jsonl            # 审计日志（每次变更追加；服务创建）
 │  ├─ files/                    # 文件投递附件二进制（不进 git；见 ADR-0008）
 │  ├─ trash/                    # 回收站：<kind>/<id>.json（原记录 + trashedAt；见 ADR-0009）
 │  ├─ meta/
-│  │  ├─ config.json            # 全局配置
+│  │  ├─ config.json            # 全局配置（含通知简报时间 / 提前分钟）
 │  │  ├─ tags.json              # 标签命名空间
-│  │  └─ term.json              # 学期信息（第 1 周周一 / 总周数；缺失 = 未设置）
+│  │  ├─ term.json              # 学期信息（第 1 周周一 / 总周数；缺失 = 未设置）
+│  │  ├─ secrets.json           # AI Key / 微信 webhook / token（本机；gitignore，不入库）
+│  │  └─ notify-state.json      # 通知去重 / 退避 / 最近发送状态（非密钥）
 │  ├─ inbox/                    # i-*.json
 │  ├─ tasks/                    # t-*.json
 │  ├─ projects/                 # p-*.json
@@ -70,7 +72,10 @@ kernel/
 │  ├─ index.mjs                 # HTTP 入口与路由
 │  ├─ ai.mjs                    # AI 代理（opencode 接入：解析 / 挂接建议 / SSE 过程流 / 回顾草稿 / 读库对话）
 │  ├─ store.mjs                 # 存储层（读快照 / 串行写队列 / nextId / activity.jsonl）
-│  └─ schemas.mjs               # Zod schema（写入前校验的唯一事实源）
+│  ├─ schemas.mjs               # Zod schema（写入前校验的唯一事实源）
+│  └─ notify/                   # 通知服务（#10 Phase 1）
+│     ├─ index.mjs              # 调度 / 简报 / 到期提醒 / 入站 / 状态
+│     └─ wecom.mjs              # 企业微信 webhook 适配器 + URL 白名单
 │
 ├─ src/                         # 前端应用
 │  ├─ main.tsx                  # 挂载入口（样式导入、字体自托管）

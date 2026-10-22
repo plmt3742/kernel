@@ -16,6 +16,7 @@ import type {
   InboxItem,
   KernelSnapshot,
   Note,
+  NotifyStatus,
   Project,
   Resource,
   Review,
@@ -1332,6 +1333,27 @@ export async function fetchActivity(limit = 200): Promise<ActivityEntry[]> {
 export async function setAiKey(apiKey: string): Promise<boolean> {
   const res = await api.post<{ ok: true; hasKey: boolean }>('/api/ai/key', { apiKey })
   return res.hasKey
+}
+
+export interface NotifyConfigInput {
+  webhookUrl?: string
+  inboundToken?: string
+  dailyDigestTime?: string
+  dueReminderMinutes?: number
+}
+
+export async function getNotifyStatus(): Promise<NotifyStatus> {
+  return api.get<NotifyStatus>('/api/notify/status')
+}
+
+export async function saveNotifyConfig(
+  input: NotifyConfigInput,
+): Promise<{ ok: boolean; status: NotifyStatus }> {
+  return api.post<{ ok: boolean; status: NotifyStatus }>('/api/notify/config', input)
+}
+
+export async function sendTestNotify(): Promise<{ ok: boolean; at: string }> {
+  return api.post<{ ok: boolean; at: string }>('/api/notify/test')
 }
 
 /* ---------------------------------------------------------------------------

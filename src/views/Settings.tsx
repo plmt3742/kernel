@@ -14,10 +14,17 @@ import { useToast } from '@/context/ToastContext'
 import { getConfig, getSnapshot } from '@/lib/data'
 import { getDataRecordCount } from '@/lib/derive'
 import { useAiHealth, useDataRevision, useDataSource } from '@/lib/hooks'
-import { hydrateFromServer, setAiKey, updateAiAutomation } from '@/lib/mutations'
+import {
+  getNotifyStatus,
+  hydrateFromServer,
+  saveNotifyConfig,
+  sendTestNotify,
+  setAiKey,
+  updateAiAutomation,
+} from '@/lib/mutations'
 import { api, errorText } from '@/lib/api'
 import { formatTime } from '@/lib/date'
-import type { AiAutomation } from '@/types'
+import type { AiAutomation, NotifyStatus } from '@/types'
 
 interface ActivityEntry {
   ts: string
@@ -31,6 +38,7 @@ type SectionId =
   | 'appearance'
   | 'ai'
   | 'automation'
+  | 'notify'
   | 'tags'
   | 'areas'
   | 'goals'
@@ -43,6 +51,7 @@ const SECTIONS: Array<{ id: SectionId; cn: string; en: string }> = [
   { id: 'appearance', cn: '外观', en: 'APPEARANCE' },
   { id: 'ai', cn: 'AI 集成', en: 'OPENCODE' },
   { id: 'automation', cn: 'AI 自动化', en: 'AUTOMATION' },
+  { id: 'notify', cn: '通知', en: 'WECHAT' },
   { id: 'tags', cn: '标签管理', en: 'TAGS' },
   { id: 'areas', cn: '区域', en: 'AREAS' },
   { id: 'goals', cn: '目标', en: 'GOALS' },
@@ -99,6 +108,116 @@ export function Settings() {
   useEffect(() => {
     setKeyOverride(null)
   }, [ai.hasKey])
+
+  const [notifyStatus, setNotifyStatus] = useState<NotifyStatus | null>(null)
+  const [webhookDraft, setWebhookDraft] = useState('')
+  const [inboundTokenDraft, setInboundTokenDraft] = useState('')
+  const [digestTime, setDigestTime] = useState('08:00')
+  const [dueMinutes, setDueMinutes] = useState('30')
+  const [notifyBusy, setNotifyBusy] = useState(false)
+  const [testBusy, setTestBusy] = useState(false)
+
+  const applyNotifyStatus = (status: NotifyStatus): void => {
+    setNotifyStatus(status)
+    setDigestTime(status.dailyDigestTime)
+    setDueMinutes(String(status.dueReminderMinutes))
+  }
+
+  useEffect(() => {
+    if (section !== 'notify') return
+    let cancelled = false
+    getNotifyStatus()
+      .then((status) => {
+        if (!cancelled) applyNotifyStatus(status)
+      })
+      .catch((err) => {
+        if (!cancelled) toast(`读取通知状态失败：${errorText(err)}`, { tone: 'error' })
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [section])
+
+  const saveNotify = (): void => {
+    const minutes = Number(dueMinutes)
+    if (!Number.isInteger(minutes) || minutes < 1 || minutes > 1440) {
+      toast('到期提醒需为 1–1440 分钟', { tone: 'error' })
+      return
+    }
+    if (notifyBusy) return
+    const input: {
+      dailyDigestTime: string
+      dueReminderMinutes: number
+      webhookUrl?: string
+      inboundToken?: string
+    } = { dailyDigestTime: digestTime, dueReminderMinutes: minutes }
+    const webhook = webhookDraft.trim()
+    const token = inboundTokenDraft.trim()
+    if (webhook !== '') input.webhookUrl = webhook
+    if (token !== '') input.inboundToken = token
+    setNotifyBusy(true)
+    void (async () => {
+      try {
+        const result = await saveNotifyConfig(input)
+        applyNotifyStatus(result.status)
+        setWebhookDraft('')
+        setInboundTokenDraft('')
+        toast('通知配置已保存')
+      } catch (err) {
+        toast(`保存失败：${errorText(err)}`, { tone: 'error' })
+      } finally {
+        setNotifyBusy(false)
+      }
+    })()
+  }
+
+  const clearWebhook = (): void => {
+    if (notifyBusy) return
+    setNotifyBusy(true)
+    void (async () => {
+      try {
+        const result = await saveNotifyConfig({ webhookUrl: '' })
+        applyNotifyStatus(result.status)
+        toast('已清除 webhook')
+      } catch (err) {
+        toast(`清除失败：${errorText(err)}`, { tone: 'error' })
+      } finally {
+        setNotifyBusy(false)
+      }
+    })()
+  }
+
+  const clearInboundToken = (): void => {
+    if (notifyBusy) return
+    setNotifyBusy(true)
+    void (async () => {
+      try {
+        const result = await saveNotifyConfig({ inboundToken: '' })
+        applyNotifyStatus(result.status)
+        toast('已清除入站 token')
+      } catch (err) {
+        toast(`清除失败：${errorText(err)}`, { tone: 'error' })
+      } finally {
+        setNotifyBusy(false)
+      }
+    })()
+  }
+
+  const testNotify = (): void => {
+    if (testBusy || notifyStatus?.configured !== true) return
+    setTestBusy(true)
+    void (async () => {
+      try {
+        await sendTestNotify()
+        toast('测试推送已发送')
+        applyNotifyStatus(await getNotifyStatus())
+      } catch (err) {
+        toast(`测试推送失败：${errorText(err)}`, { tone: 'error' })
+      } finally {
+        setTestBusy(false)
+      }
+    })()
+  }
 
   const saveKey = (): void => {
     const value = keyDraft.trim()
@@ -191,6 +310,7 @@ export function Settings() {
 
   const snapshot = getSnapshot()
   const total = getDataRecordCount(snapshot)
+  const notifyLastError = notifyStatus?.lastError ?? ''
 
   const rows: Array<{ label: string; value: number }> = [
     { label: '收件箱 INBOX', value: snapshot.inbox.length },
@@ -228,7 +348,7 @@ export function Settings() {
   return (
     <div className="k-view">
       <p className="k-view__intro">
-        按分类浏览设置：外观、AI 集成、AI 自动化、标签管理、区域、目标、数据统计、回收站、数据服务、关于。左侧选中分类决定右侧面板内容。
+        按分类浏览设置：外观、AI 集成、AI 自动化、通知、标签管理、区域、目标、数据统计、回收站、数据服务、关于。左侧选中分类决定右侧面板内容。
       </p>
 
       <div className="k-settings__grid">
@@ -415,6 +535,153 @@ export function Settings() {
                 <span className="u-label k-muted">AI 幕后动作记录 · 最近 50 条</span>
               </div>
               <AiActivityFeed />
+            </Panel>
+          )}
+
+          {section === 'notify' && (
+            <Panel
+              title="通知"
+              en="WECHAT"
+              actions={
+                <span
+                  className={['k-svc-pill', notifyStatus?.configured ? 'is-ok' : '']
+                    .filter(Boolean)
+                    .join(' ')}
+                >
+                  {notifyStatus?.configured ? '已配置' : '未配置'}
+                </span>
+              }
+            >
+              <p className="k-view__intro">
+                企业微信群机器人 webhook（Phase 1 仅出站）：每日简报 + 任务到期提醒。个人微信非官方协议不接入；
+                数据服务与 opencode 仅监听本机。
+              </p>
+
+              <div className="k-between">
+                <span className="k-panel__cn">企业微信 webhook</span>
+                <span className="u-label k-muted">{notifyStatus?.webhookHost || '未配置'}</span>
+              </div>
+              <div className="k-field">
+                <input
+                  type="password"
+                  className="k-input"
+                  autoComplete="off"
+                  spellCheck={false}
+                  placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=…（留空保持不变）"
+                  aria-label="企业微信 webhook URL"
+                  value={webhookDraft}
+                  disabled={notifyBusy}
+                  onChange={(event) => setWebhookDraft(event.target.value)}
+                />
+                {notifyStatus?.configured && (
+                  <div className="k-view__actions">
+                    <button
+                      type="button"
+                      className="k-btn is-danger"
+                      onClick={clearWebhook}
+                      disabled={notifyBusy}
+                    >
+                      清除 webhook
+                    </button>
+                  </div>
+                )}
+              </div>
+              <p className="k-view__intro k-muted">
+                URL 只存本机 <code>data/meta/secrets.json</code>，不回显、不入库；留空保存表示保持不变。
+              </p>
+
+              <div className="k-between">
+                <span className="k-panel__cn">入站 token（Phase 2 预留）</span>
+                <span className="u-label k-muted">
+                  {notifyStatus?.hasInboundToken ? '已配置' : '未配置'}
+                </span>
+              </div>
+              <div className="k-field">
+                <input
+                  type="password"
+                  className="k-input"
+                  autoComplete="off"
+                  spellCheck={false}
+                  placeholder="Bearer token（留空保持不变）"
+                  aria-label="微信入站 token"
+                  value={inboundTokenDraft}
+                  disabled={notifyBusy}
+                  onChange={(event) => setInboundTokenDraft(event.target.value)}
+                />
+                {notifyStatus?.hasInboundToken && (
+                  <div className="k-view__actions">
+                    <button
+                      type="button"
+                      className="k-btn is-danger"
+                      onClick={clearInboundToken}
+                      disabled={notifyBusy}
+                    >
+                      清除 token
+                    </button>
+                  </div>
+                )}
+              </div>
+              <p className="k-view__intro k-muted">
+                用于 <code>POST /api/wechat/inbound</code> 的 Bearer token；仅本机可调用，Phase 2 中继直接使用。
+              </p>
+
+              <div className="k-settings__divider" aria-hidden />
+
+              <div className="k-between">
+                <span className="k-panel__cn">简报 / 到期提醒</span>
+                <span className="u-label k-muted">服务端定时器</span>
+              </div>
+              <div className="k-field">
+                <label className="u-label" htmlFor="notify-digest-time">
+                  每日简报时间
+                </label>
+                <input
+                  id="notify-digest-time"
+                  type="time"
+                  className="k-input"
+                  value={digestTime}
+                  disabled={notifyBusy}
+                  onChange={(event) => setDigestTime(event.target.value)}
+                />
+              </div>
+              <div className="k-field">
+                <label className="u-label" htmlFor="notify-due-minutes">
+                  到期提前分钟
+                </label>
+                <input
+                  id="notify-due-minutes"
+                  type="number"
+                  min={1}
+                  max={1440}
+                  className="k-input"
+                  value={dueMinutes}
+                  disabled={notifyBusy}
+                  onChange={(event) => setDueMinutes(event.target.value)}
+                />
+              </div>
+              <div className="k-view__actions">
+                <button type="button" className="k-btn is-solid" onClick={saveNotify} disabled={notifyBusy}>
+                  {notifyBusy ? '保存中…' : '保存'}
+                </button>
+                <button
+                  type="button"
+                  className="k-btn"
+                  onClick={testNotify}
+                  disabled={testBusy || notifyStatus?.configured !== true}
+                >
+                  {testBusy ? '发送中…' : '测试推送'}
+                </button>
+              </div>
+
+              <div className="k-settings__divider" aria-hidden />
+              <p className="k-view__intro k-muted">
+                最近发送：{notifyStatus?.lastSendAt ? formatTime(notifyStatus.lastSendAt) : '—'} · 最近简报：
+                {notifyStatus?.lastDigestAt ? formatTime(notifyStatus.lastDigestAt) : '—'} · 待重试：
+                {notifyStatus?.pendingFailures ?? 0}
+              </p>
+              {notifyLastError !== '' && (
+                <p className="k-view__intro k-muted">最近错误：{notifyLastError}</p>
+              )}
             </Panel>
           )}
 

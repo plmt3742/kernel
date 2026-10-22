@@ -2,6 +2,8 @@
 
 KERNEL 的完整文档集。本文件是导航中心，说明每份文档的职责与推荐阅读顺序。
 
+> 最后更新：2026-10-22（新增 ADR-0046 微信通道 Phase 1）。
+
 事实源是 `docs/00-DESIGN-BRIEF.md`（项目宪法）。其余文档都是对它的展开，冲突时以宪法为准。
 
 ---
@@ -96,6 +98,7 @@ KERNEL 的完整文档集。本文件是导航中心，说明每份文档的职�
 | `decisions/0043-unified-reference-lifecycle.md` | ADR | 外键引用生命周期统一：**软删只隐藏、彻底删除才断链**——`server/refs.mjs` 声明式引用表（`detach` / `keep`）+ `detachRefsTo`（purge 时清扫）/ `pruneDanglingRefs`（存量修复）/ `assertRefsExist`（编辑校验，实时 ∪ 回收站）；区域 / 目标 409 护栏退役；`scripts/refs-repair.mjs` 修存量悬空 |
 | `decisions/0044-collaboration-workflow.md` | ADR | 协作规范与质量门禁：`CONTRIBUTING.md`（角色 / 工单 / 通道 / 分支 / PR / DoD / 红线）+ Issue·PR 模板 + `CODEOWNERS` + CI（构建 / 语法 / 隐私 / 文档义务）+ `docs/09-RISK-REGISTER.md` + ADR 索引纪律 |
 | `decisions/0045-mobile-platform-split.md` | ADR | 移动端独立界面（平台分支）：同一路由 + `PlatformGate` 按视口挂载桌面 / 移动两套组件树（不引入 `/m/*`）；`src/mobile/**` 与 `src/styles/mobile*.css` 物理隔离，桌面 DOM / 样式零改动；共享 tokens / `src/lib/**` / 路由 / 深链；视觉语言不变（配色 / 圆角 / 柔影），只改布局与交互语汇；设计先行（P0 设计稿 → owner 选型 → P1 核心适配 → P2 其余页） |
+| `decisions/0046-wechat-channel.md` | ADR | 微信通道：Phase 1 企业微信群机器人 webhook 仅出站（每日简报 / 到期提醒 / 测试推送）+ 本机入站预留（Bearer token + msgId 幂等）；个人微信非官方协议禁止；密钥只存本机，审计不落明文 |
 
 ## 根目录文档（不在本目录）
 

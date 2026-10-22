@@ -55,6 +55,7 @@ import {
   inboxApplySchema,
   normalizeCourseSessions,
   noteDistillRequestSchema,
+  notifyConfigSchema,
   organizeApplySchema,
   organizeDraftSchema,
   organizeUnapplySchema,
@@ -94,7 +95,16 @@ import {
   TASK_DRAFT_MAX_TITLE_CHARS,
 } from './ai.mjs'
 // 本机凭据（v0.5 · Slice N5）：只读 / 写 data/meta/secrets.json（gitignore，绝不入库）
-import { getDeepseekKey, setDeepseekKey } from './secrets.mjs'
+import { getDeepseekKey, setDeepseekKey, setWechatConfig } from './secrets.mjs'
+// 通知服务（#10 Phase 1）：企业微信 webhook 出站 + 入站预留
+import {
+  getNotifyStatus,
+  handleWechatInbound,
+  runNotifyTick,
+  sendTestNotification,
+  startNotifyScheduler,
+} from './notify/index.mjs'
+import { normalizeWebhookUrl } from './notify/wecom.mjs'
 
 const HOST = '127.0.0.1'
 const PORT = 4097
@@ -1778,6 +1788,71 @@ async function applyConfigUpdate(body) {
 }
 
 /**
+ * 通知配置（#10 Phase 1）：webhook URL / 入站 token → secrets.json；
+ * 每日简报时间 / 到期提醒分钟数 → config.json。审计只记键名与主机，不落 URL / token。
+ */
+async function applyNotifyConfig(body) {
+  const patch = notifyConfigSchema.parse(body)
+  const base = {
+    name: 'KERNEL',
+    owner: '',
+    version: SERVICE_VERSION,
+    locale: 'zh-CN',
+    weekStart: 'monday',
+    createdAt: nowIso(),
+  }
+  const raw = (await readConfig()) ?? {}
+  const needsBaseWrite = ['name', 'owner', 'version', 'locale', 'weekStart', 'createdAt'].some(
+    (key) => raw[key] === undefined,
+  )
+  const current = { ...base, ...raw }
+  const next = { ...current }
+  const fields = []
+  if (
+    patch.dailyDigestTime !== undefined &&
+    next.notifyDailyDigestTime !== patch.dailyDigestTime
+  ) {
+    next.notifyDailyDigestTime = patch.dailyDigestTime
+    fields.push('notifyDailyDigestTime')
+  }
+  if (
+    patch.dueReminderMinutes !== undefined &&
+    next.notifyDueReminderMinutes !== patch.dueReminderMinutes
+  ) {
+    next.notifyDueReminderMinutes = patch.dueReminderMinutes
+    fields.push('notifyDueReminderMinutes')
+  }
+
+  const secretsPatch = {}
+  let webhookHost = ''
+  if (patch.webhookUrl !== undefined) {
+    const normalized = normalizeWebhookUrl(patch.webhookUrl)
+    secretsPatch.webhookUrl = normalized.url
+    webhookHost = normalized.host
+  }
+  if (patch.inboundToken !== undefined) secretsPatch.inboundToken = patch.inboundToken
+  if (Object.keys(secretsPatch).length > 0) await setWechatConfig(secretsPatch)
+  if (fields.length > 0 || needsBaseWrite) await writeConfig(next, null)
+
+  const status = await getNotifyStatus()
+  await recordAudit({
+    action: 'wechat.configure',
+    entity: 'notify',
+    id: '-',
+    detail: {
+      fields,
+      webhookHost: status.webhookHost || webhookHost,
+      hasWebhook: status.configured,
+      hasInboundToken: status.hasInboundToken,
+      clearedWebhook: patch.webhookUrl === '',
+      clearedInboundToken: patch.inboundToken === '',
+    },
+  })
+  console.log(`[data] wechat.configure fields=${fields.join(',') || 'secrets'}`)
+  return { ok: true, status }
+}
+
+/**
  * 新建笔记（v0.5 · Slice G）：通用创建端点，供「AI 对话归档」等调用。
  * title 非空（400）；type 取白名单（缺省 memo）；body 原文（markdown 文本）；审计 note.create。
  */
@@ -2848,6 +2923,46 @@ const server = http.createServer(async (req, res) => {
       send(res, 200, { ok: true, hasKey })
       return
     }
+    // 通知（#10 Phase 1）：状态 / 配置 / 测试推送 / 测试时钟 tick / 微信入站预留
+    if (method === 'GET' && pathname === '/api/notify/status') {
+      send(res, 200, await getNotifyStatus())
+      return
+    }
+    if (method === 'POST' && pathname === '/api/notify/config') {
+      send(res, 200, await applyNotifyConfig(await readBody(req)))
+      return
+    }
+    if (method === 'POST' && pathname === '/api/notify/test') {
+      send(res, 200, await sendTestNotification())
+      return
+    }
+    if (method === 'POST' && pathname === '/api/notify/tick') {
+      if (process.env.KERNEL_NOTIFY_TEST !== '1') return fail(res, 404, '接口不存在')
+      const input = z
+        .object({
+          now: z.string().optional(),
+          dryRun: z.boolean().optional(),
+          forceDigest: z.boolean().optional(),
+        })
+        .parse(await readBody(req))
+      const now = input.now !== undefined ? new Date(input.now) : new Date()
+      if (Number.isNaN(now.getTime())) return fail(res, 400, 'now 不是合法时间')
+      const result = await runNotifyTick(now, {
+        dryRun: input.dryRun === true,
+        forceDigest: input.forceDigest === true,
+      })
+      send(res, 200, result)
+      return
+    }
+    if (method === 'POST' && pathname === '/api/wechat/inbound') {
+      const result = await handleWechatInbound({
+        authorization: req.headers.authorization,
+        remoteAddress: req.socket.remoteAddress,
+        body: await readBody(req),
+      })
+      send(res, 200, result)
+      return
+    }
     const aiParseMatch = AI_INBOX_PARSE_RE.exec(pathname)
     if (method === 'POST' && aiParseMatch !== null) {
       const id = decodeURIComponent(aiParseMatch[1])
@@ -3753,4 +3868,5 @@ async function cleanupChatUploads() {
 server.listen(PORT, HOST, () => {
   console.log(`[data] KERNEL 数据服务已就绪：http://${HOST}:${PORT}（仅本机；写入唯一路径）`)
   void cleanupChatUploads()
+  startNotifyScheduler()
 })

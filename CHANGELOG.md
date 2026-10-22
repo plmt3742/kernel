@@ -4,6 +4,16 @@
 
 ## [Unreleased]
 
+### 微信通道 Phase 1 · 企业微信群机器人（2026-10-22）
+
+- **通道**：Phase 1 企业微信群机器人 webhook 仅出站；个人微信非官方协议不接入（ADR-0046）。
+- **服务端**：新增 `server/notify/{index,wecom}.mjs`；每日简报（默认 08:00）/ 到期提醒（默认提前 30 分钟）/ 测试推送；服务端 30s 定时器；`digest:<date>` / `due:<taskId>|<dueAt>` 去重；失败 1/5/15 分钟退避，3 次后标记失败。
+- **配置**：webhook URL / 入站 token 只存 `data/meta/secrets.json`（gitignore，不回显）；简报时间 / 分钟数存 `data/meta/config.json`；去重 / 退避状态存 `data/meta/notify-state.json`。
+- **入站预留**：`POST /api/wechat/inbound`（Bearer token + 仅本机 + msgId 幂等 → 收件箱；`source:'wechat'`；审计 `wechat.inbound`）。
+- **设置页**：新增「通知」分区（webhook / token / 简报时间 / 提前分钟 / 测试推送 / 状态）。
+- **文档**：ADR-0046、`docs/02` 端点、`docs/04` config / inbox source、`docs/05` 目录、`docs/README`、`README`、`public/guide.html`。
+- **验证**：`npm run build` 0；`check:syntax` **20/20**；`check:docs` / `check:privacy` **19 files / 0**；本地 mock webhook 收到测试推送 / 简报 / 到期提醒（tick 1 发送 2 条，tick 2 发送 0 条，去重有效）；入站无 token → 401、带 token 写入收件箱、重复 `msgId` → `duplicate: true`；设置页保存 08:30 生效；证据 `.qa/wechat-v1/`（截图 / `received.jsonl` / `tick-*.json` / `inbound-*.json`）。
+
 ### 协作规范与质量门禁（2026-10-19）
 
 答 owner「学习东莞理工学院技术协助项目的工程文件，优化本项目，并引入协作规范」——借鉴其「编号文档 + 一次动作三处留痕 + 未记录 = 未发生」的制度，落一套适合本仓库的轻量版。

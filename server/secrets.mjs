@@ -76,3 +76,48 @@ export async function setDeepseekKey(key) {
   await writeFileAtomic(SECRETS_FILE, `${JSON.stringify(current, null, 2)}\n`, { encoding: 'utf8' })
   return current
 }
+
+/**
+ * 读取企业微信通知凭据（同步；无 / 形状非法 → 空串）。
+ * webhook URL 与入站 token 只存本机 secrets.json，绝不回显 / 入日志。
+ * @returns {{ webhookUrl: string, inboundToken: string }}
+ */
+export function getWechatConfig() {
+  const current = readSecrets()
+  return {
+    webhookUrl: typeof current.wechatWebhookUrl === 'string' ? current.wechatWebhookUrl.trim() : '',
+    inboundToken: typeof current.wechatInboundToken === 'string' ? current.wechatInboundToken.trim() : '',
+  }
+}
+
+/**
+ * 写入 / 清除企业微信通知凭据（浅合并；空串 = 删除对应键）。
+ * @param {{ webhookUrl?: string, inboundToken?: string }} patch
+ * @returns {Promise<Record<string, unknown>>} 写入后的完整凭据对象
+ */
+export async function setWechatConfig(patch = {}) {
+  const current = readSecrets()
+  let changed = false
+  const entries = [
+    ['wechatWebhookUrl', patch.webhookUrl],
+    ['wechatInboundToken', patch.inboundToken],
+  ]
+  for (const [key, raw] of entries) {
+    if (raw === undefined) continue
+    const value = typeof raw === 'string' ? raw.trim() : ''
+    if (value === '') {
+      if (Object.prototype.hasOwnProperty.call(current, key)) {
+        delete current[key]
+        changed = true
+      }
+    } else if (current[key] !== value) {
+      current[key] = value
+      changed = true
+    }
+  }
+  if (changed) {
+    await fs.mkdir(SECRETS_DIR, { recursive: true })
+    await writeFileAtomic(SECRETS_FILE, `${JSON.stringify(current, null, 2)}\n`, { encoding: 'utf8' })
+  }
+  return current
+}

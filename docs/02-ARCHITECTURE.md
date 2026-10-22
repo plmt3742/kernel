@@ -167,6 +167,14 @@ v0.5 增补（桌面启动器 v2，见 ADR-0037）：**原生 WPF 启动器**。
 - 回顾写入路径：`POST /api/reviews`（手工保存 / 回退创建）、`POST /api/reviews/:id/update`（Slice L · 编辑归档报告，白名单 `summary` / `decisions`，审计 `review.update`）、`POST /api/reviews/:id/remove`（审计 `review.remove`）。
 - 本地服务与 opencode 之间使用 `OPENCODE_SERVER_PASSWORD` 保护（本机场景下的纵深防御）。
 
+### 4.4 微信通知（Phase 1）
+
+- 出站：数据服务内 `server/notify/` 定时器 → 企业微信群机器人 webhook；每日简报（默认 08:00）/ 到期提醒（默认提前 30 分钟）/ 测试推送；`digest:<date>` 与 `due:<taskId>|<dueAt>` 去重，失败按 1 / 5 / 15 分钟退避，3 次后标记失败。
+- 密钥：webhook URL / 入站 token 只存本机 `data/meta/secrets.json`，不回显、不入日志 / 审计；每日简报时间与提前分钟数存 `data/meta/config.json`。
+- 入站预留：`POST /api/wechat/inbound`（`Authorization: Bearer <token>` + 仅 `127.0.0.1` + `msgId` 幂等 → 收件箱，审计 `wechat.inbound`）。
+- 管理端点：`GET /api/notify/status`、`POST /api/notify/config`、`POST /api/notify/test`；测试时钟 `POST /api/notify/tick` 仅在 `KERNEL_NOTIFY_TEST=1` 时可用。
+- 详见 ADR-0046。
+
 ## 5. 托管拓扑（局域网）
 
 - 开发：`npm run dev -- --host`（v0.4 起同一命令拉起数据服务 + Vite）。

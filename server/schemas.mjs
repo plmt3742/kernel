@@ -5,7 +5,7 @@ import { z } from 'zod'
 /** ISO 8601 带偏移（或 Z）：2026-10-02T09:00:00+08:00 */
 export const iso = z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?([+-]\d{2}:\d{2}|Z)$/)
 
-export const inboxSource = z.enum(['manual', 'file', 'notification', 'voice'])
+export const inboxSource = z.enum(['manual', 'file', 'notification', 'voice', 'wechat'])
 export const inboxStatus = z.enum(['unprocessed', 'clarified', 'discarded'])
 export const taskStatus = z.enum(['next', 'waiting', 'scheduled', 'someday', 'done', 'dropped'])
 export const energy = z.enum(['low', 'medium', 'high'])
@@ -725,6 +725,10 @@ export const appConfigSchema = z
     aiAutomation: aiAutomationSchema.optional(),
     bio: z.string().max(160).optional(),
     avatarPath: z.string().optional(),
+    /** 微信通知：每日简报时间（HH:mm，默认 08:00） */
+    notifyDailyDigestTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).optional(),
+    /** 微信通知：到期提醒提前分钟数（1..1440，默认 30） */
+    notifyDueReminderMinutes: z.number().int().min(1).max(1440).optional(),
   })
   .catchall(z.unknown())
 
@@ -736,6 +740,25 @@ export const configUpdateSchema = z.object({
   aiAutomation: aiAutomationSchema.optional(),
   owner: z.string().max(40).optional(),
   bio: z.string().max(160).optional(),
+})
+
+/**
+ * 通知配置（#10 Phase 1）：webhook URL / 入站 token 只写 secrets.json（空串 = 清除）；
+ * 每日简报时间与到期提醒分钟数写 config.json。至少提供一项，否则 400。
+ */
+export const notifyConfigSchema = z
+  .object({
+    webhookUrl: z.string().max(2000).optional(),
+    inboundToken: z.string().max(200).optional(),
+    dailyDigestTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).optional(),
+    dueReminderMinutes: z.number().int().min(1).max(1440).optional(),
+  })
+  .refine((value) => Object.keys(value).length > 0, { message: '没有可更新的通知配置' })
+
+/** 微信入站消息（Phase 1 预留）：msgId 幂等；text 写入收件箱。 */
+export const wechatInboundSchema = z.object({
+  msgId: z.string().min(1).max(128),
+  text: z.string().min(1).max(2000),
 })
 
 /* ---------------------------------------------------------------------------
