@@ -8,7 +8,7 @@
 |---|---|---|---|---|---|---|---|---|
 | R1 | 工作区长期堆积未提交改动，基线漂移 | 高 | 协作者 clone 到的不是文档描述的版本；PR diff 混杂 | 先按迭代拆分提交并推送；每次会话结束清理工作区 | `git status` 超过 10 项未提交 | 所有者 | AGENTS §5 | 跟踪中 |
 | R2 | 无自动化测试、无 CI 门禁 | 高 | 回归只能靠人工发现；协作者提交无法自动验证 | 已加 CI（build + syntax + privacy + docs）；下一步引入 vitest 纯函数测试 | PR 合并后出现低级回归 | 所有者 | `CONTRIBUTING.md` §13 | 部分缓解 |
-| R3 | 文档与代码漂移（路线图状态、Node 版本、实体计数、ADR 编号） | 高 | 新人按错误文档实现；决策依据失真 | `check-docs` 校验 CHANGELOG/TASK_BOOK/docs/04/docs/05/ADR 索引；本次已修 Node 版本与 v0.6 状态 | 文档描述与 `package.json` / 代码不一致 | 所有者 | `docs/README.md` | 跟踪中 |
+| R3 | 文档与代码漂移（路线图状态、Node 版本、实体计数、ADR 编号） | 高 | 新人按错误文档实现；决策依据失真 | `check-docs` 校验 CHANGELOG/TASK_BOOK/docs/04/docs/05/ADR 索引；ENG-AUDIT #6 已修 docs/02/05/06/README 与 ADR 索引口径 | 文档描述与 `package.json` / 代码不一致 | 所有者 | `docs/README.md` | 跟踪中 |
 | R4 | 安装包启动的是 Vite dev server，发布不可复现 | 高 | 体积大、含 devDependencies、构建结果依赖本机 node_modules | 改为 `npm run build` 产物 + 静态服务；打包前 `npm ci`；版本号单源 | 安装包内出现 `src/`、`vite.config.ts` | 所有者 | ADR-0031 | 跟踪中 |
 | R5 | 数据无自动备份，损坏 JSON 被静默跳过 | 高 | 误操作或磁盘故障导致记录消失且无告警 | 启动时 / 每日快照，保留 N 份；损坏文件隔离并提示 | 详情出现「记录不存在」但文件仍在 | 所有者 | ADR-0004 / ADR-0009 | 跟踪中 |
 | R6 | `server/ai.mjs`（约 5.4k 行）与 `server/index.mjs`（约 3.7k 行）为巨石文件 | 中高 | 多人协作冲突；改动影响面难评估 | 按「提示词 / 解析器 / 检索 / 回顾指标 / 路由」拆模块，先拆纯函数 | 同一 PR 同时改 AI 与路由 | 通道 A | — | 跟踪中 |
@@ -16,7 +16,7 @@
 | R8 | `--host` 局域网模式下 API 无鉴权，私有来源均通过 Origin 校验 | 中高 | 同网段设备可读写数据；仅适合可信 WiFi | 默认仅本机；需要局域网时加一次性 token 或限制来源 | 启动日志出现 `Network:` | 所有者 | `docs/07-DEPLOYMENT.md` | 跟踪中 |
 | R9 | 链接抓取的 SSRF 防护只做域名黑名单，未做 DNS 解析固定 | 中 | 恶意域名可解析到内网地址 | 解析后校验 IP 并固定连接；或禁用非公网解析结果 | 抓取日志出现非预期私网地址 | 通道 A | ADR-0027 | 跟踪中 |
 | R10 | AI Key 以明文存于本机 `secrets.json`，随环境变量传给子进程 | 中 | 同机同用户进程可读；日志/转储可能泄露 | 保持文件权限最小化；日志只记 `hasKey`；不把 Key 写入任何文档或截图 | 日志出现 `sk-` | 所有者 | ADR-0030 | 跟踪中 |
-| R11 | 首次上手的 Node 版本要求与文档不一致 | 中 | 协作者 `npm install` 后 Vite 无法启动 | README / docs/07 已改为 20.19+ 或 22.12+；CI 固定 Node 22 | `npm run dev` 报 engine 错误 | 通道 E | `README.md` | 已缓解 |
+| R11 | 首次上手的 Node 版本要求与文档不一致 | 中 | 协作者 `npm install` 后 Vite 无法启动 | README / docs/07 已改为 20.19+ 或 22.12+；`package.json` 增 `engines`（`^20.19.0 || >=22.12.0`）；CI 固定 Node 22 | `npm run dev` 报 engine 错误 | 通道 E | `README.md` | 已缓解 |
 | R12 | ADR 编号重复（`0031` 两个文件），索引缺项 | 低 | 决策追溯混乱 | 保留历史文件名并在 `docs/README.md` 显式登记；新 ADR 从 0044 起，CI 阻止新增重复编号 | `docs/decisions` 出现同号文件 | 通道 E | `docs/README.md` | 已登记 |
 
 ---

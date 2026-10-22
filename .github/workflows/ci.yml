@@ -38,12 +38,12 @@ jobs:
         run: npm run build
 
       - name: Syntax check
-        run: node scripts/check-syntax.mjs
+        run: npm run check:syntax
 
       - name: Privacy check
         if: github.event_name == 'pull_request'
-        run: node scripts/check-privacy.mjs --range origin/${{ github.base_ref }}...HEAD
+        run: npm run check:privacy -- --range origin/${{ github.base_ref }}...HEAD
 
       - name: Docs obligations
         if: github.event_name == 'pull_request'
-        run: node scripts/check-docs.mjs --range origin/${{ github.base_ref }}...HEAD
+        run: npm run check:docs -- --range origin/${{ github.base_ref }}...HEAD

@@ -14,12 +14,17 @@ kernel/
 ├─ CHANGELOG.md                 # 变更日志
 ├─ TASK_BOOK.md                 # 任务台账与迭代记录
 ├─ CONTRIBUTING.md              # 协作规范（角色 / 工单 / 分支 / PR / DoD / 红线）
-├─ package.json                 # 依赖与脚本
+├─ package.json                 # 依赖、engines 与脚本
+├─ package-lock.json            # npm 锁文件
 ├─ vite.config.ts               # Vite 配置（dev / preview 默认仅本机，--host 开局域网）
 ├─ tsconfig.json                # TypeScript strict 配置
+├─ tsconfig.app.json            # 前端 TS 配置
+├─ tsconfig.node.json           # 构建脚本 TS 配置
+├─ .env.example                 # 环境变量模板
 ├─ index.html                   # 应用入口 HTML
 ├─ 启动器.vbs                   # 桌面启动器入口（隐藏拉起 PowerShell，零黑窗）
 ├─ 启动器.ps1                   # 原生 WPF 启动器窗口（PowerShell 5.1 + .NET WPF）
+├─ 启动.cmd                     # 控制台入口（显示运行日志）
 ├─ kernel.ico                   # 启动器 / 快捷方式图标（多尺寸，由 scripts/make-icon.ps1 生成）
 │
 ├─ installer/                   # Windows 安装包脚本与启动页
@@ -53,7 +58,8 @@ kernel/
 │  ├─ meta/
 │  │  ├─ config.json            # 全局配置
 │  │  ├─ tags.json              # 标签命名空间
-│  │  └─ term.json              # 学期信息（第 1 周周一 / 总周数；缺失 = 未设置）
+│  │  ├─ term.json              # 学期信息（第 1 周周一 / 总周数；缺失 = 未设置）
+│  │  └─ secrets.json           # AI Key（本机；gitignore，不入库）
 │  ├─ inbox/                    # i-*.json
 │  ├─ tasks/                    # t-*.json
 │  ├─ projects/                 # p-*.json
@@ -62,25 +68,28 @@ kernel/
 │  ├─ habits/                   # h-*.json
 │  ├─ events/                   # e-*.json
 │  ├─ courses/                  # c-*.json
+│  ├─ traces/                   # tr-*.json
 │  ├─ notes/                    # n-*.json
 │  ├─ resources/                # r-*.json
 │  └─ reviews/                  # rev-*.json
 │
 ├─ server/                      # 数据服务（v0.4：单写者 · 原子写 · Zod 校验 · 审计；仅 127.0.0.1:4097）
 │  ├─ index.mjs                 # HTTP 入口与路由
-│  ├─ ai.mjs                    # AI 代理（opencode 接入：解析 / 挂接建议 / SSE 过程流 / 回顾草稿 / 读库对话）
+│  ├─ ai.mjs                    # AI 代理（opencode 接入：解析 / 挂接建议 / SSE 过程流 / 回顾草稿 / 读库对话 / 课表草稿）
 │  ├─ store.mjs                 # 存储层（读快照 / 串行写队列 / nextId / activity.jsonl）
-│  └─ schemas.mjs               # Zod schema（写入前校验的唯一事实源）
+│  ├─ schemas.mjs               # Zod schema（写入前校验的唯一事实源）
+│  ├─ refs.mjs                  # 外键引用生命周期（detach / keep / purge 清扫）
+│  └─ secrets.mjs               # 本机 AI Key 读写（data/meta/secrets.json）
 │
 ├─ src/                         # 前端应用
 │  ├─ main.tsx                  # 挂载入口（样式导入、字体自托管）
 │  ├─ App.tsx                   # 应用壳与路由
 │  ├─ views/                    # 视图（Overview/Inbox/Tasks/Calendar/Timetable/Projects/Habits/Library/Review/Settings/Trash/Profile；NotFound）
-│  ├─ components/               # 通用组件（Panel / Modal / Toast / EntityEditForm / CommandPalette / TaskDetail / TaskDetailModal / ProjectDetail / ProjectDetailModal / OverviewChat / StartHereCard（首启「开始使用」清单卡）/ AiSuggestionForm / TaskDraftModal / OrganizeProposalCard（项目 AI 整理建议卡）/ HabitHeatmap（习惯热力图）/ ActivityCalendar（活跃贡献日历）…）
+│  ├─ components/               # 通用组件（Panel / Modal / Toast / EntityEditForm / CommandPalette / TaskDetail / TaskDetailModal / ProjectDetail / ProjectDetailModal / OverviewChat / StartHereCard（首启「开始使用」清单卡）/ AiSuggestionForm / TaskDraftModal / TimetableDraftCard（课表导入选择卡）/ CourseDetailModal（课程详情）/ OrganizeProposalCard（项目 AI 整理建议卡）/ HabitHeatmap（习惯热力图）/ ActivityCalendar（活跃贡献日历）…）
 │  │  ├─ shell/                 # 应用壳（RailNav / TopBar / StatusBar / AppLayout）
 │  │  └─ charts/                # 图表（TrendLine / EnergyBars）
 │  ├─ context/                  # React Context（Theme / Toast / Palette）
-│  ├─ lib/                      # 数据访问与工具（data 可变快照 / api 客户端 / mutations 写入动作 / inboxAi 收件箱 AI 解析状态 / organize 项目 AI 整理状态与每日调度 / review 回顾自动化每日调度（周一 / 每月 1 日 12:00 后，周期去重 + 跨标签锁 + AI 离线静默） / imagePreview 长图 AI 分片（>400KB 大图切 ≤6 JPEG 供解析；失败回退单图） / aiForm AI 建议表单换算 / derive / relations 互链派生 / date / format / motion / focus / hooks）
+│  ├─ lib/                      # 数据访问与工具（data 可变快照 / api 客户端 / mutations 写入动作 / inboxAi 收件箱 AI 解析状态 / timetableAi 课表导入状态 / organize 项目 AI 整理状态与每日调度 / review 回顾自动化每日调度（周一 / 每月 1 日 12:00 后，周期去重 + 跨标签锁 + AI 离线静默） / imagePreview 长图 AI 分片（>400KB 大图切 ≤6 JPEG 供解析；失败回退单图） / aiForm AI 建议表单换算 / derive / relations 互链派生 / date / format / motion / focus / hooks）
 │  └─ styles/                   # 全局样式与 token（tokens / base / shell / components / views）
 │
 ├─ design-drafts/               # 设计选型稿（v1 视觉方向 a/b/c；v2 页面排版多版本 29 方案 + 选型页 index.html + 三版对比页 _sheets/）
@@ -88,19 +97,19 @@ kernel/
 │
 ├─ scripts/                     # 脚本
 │  ├─ dev.mjs                   # 开发启动器（数据服务 + Vite 一体启动；--preview 走 preview）
+│  ├─ launcher.mjs              # 双击启动器逻辑（Node 自检 / 依赖安装 / 探活 5173 开浏览器）
 │  ├─ spawn-bg.mjs              # 后台安全启动器（detached spawn + 日志重定向；防工具调用挂起）
-│  ├─ sync-install.mjs          # 安装版实时同步（把工作区源码白名单镜像到 D:\KERNEL，供其自带 Vite dev 热更新）
+│  ├─ sync-install.mjs          # 安装版实时同步（把工作区源码白名单镜像到 <安装目录>，供其自带 Vite dev 热更新）
 │  ├─ build-installer.mjs       # Windows 安装包构建器（白名单组装载荷 + 内置 Inno Setup 编译器 → Setup.exe）
 │  ├─ check-syntax.mjs          # 语法门禁：server/ 与 scripts/ 的 node --check
 │  ├─ check-privacy.mjs         # 隐私门禁：密钥 / 本机路径 / data/ / .qa/
 │  ├─ check-docs.mjs            # 文档义务门禁：CHANGELOG / TASK_BOOK / docs/04 / docs/05 / ADR 索引
 │  ├─ make-icon.ps1             # 生成本机启动器图标 kernel.ico（System.Drawing，可重跑）
-│  ├─ assets/
-│  │  └─ welcome.html           # 启动页（自包含单文件；file:// 打开后探活本机，就绪自动跳转）
 │  ├─ seed.mjs                  # 种子数据生成
 │  ├─ reset.mjs                 # 数据清零（预演 / --yes：备份到 .qa/backups/ 后清空；保留 config）
+│  ├─ refs-repair.mjs           # 存量悬空外键修复（默认预演，--apply 落盘）
 │  └─ resource-content-repair.mjs # 资料原文回填（默认预演，--apply 落盘；镜像 refs-repair 的存量修复约定）
-└─ public/                      # 静态资源（字体、图标、guide.html 使用指南）
+└─ public/                      # 静态资源（favicon.svg、guide.html 使用指南；字体由 @fontsource 依赖提供）
 ```
 
 > 具体文件名（如组件文件名、token 文件拆分方式）由脚手架实现决定；本树表达的是**结构与职责**，结构变化时更新本文件。
@@ -117,10 +126,10 @@ kernel/
 | `data/` | 数据源，一记录一文件 JSON + 附件二进制 `data/files/` + 回收站 `data/trash/`；v0.4 起写入一律经 `server/` 数据服务（单写者） | 数据服务（唯一写者） |
 | `server/` | 数据服务：Zod 校验 + 原子写 + 审计日志；仅监听 127.0.0.1:4097 | 数据层实现方 |
 | `src/` | React + TypeScript 前端应用（只读数据经水合，写入经 API） | 前端实现方 |
-| `scripts/` | 开发启动器（`dev.mjs`）、后台安全启动器（`spawn-bg.mjs`）、安装版实时同步（`sync-install.mjs`：源码白名单镜像到安装目录，供其 Vite dev 热更新）、启动页（`assets/welcome.html`）、Windows 安装包构建器（`build-installer.mjs`：白名单组装载荷 + 内置 Inno Setup 编译器）、启动器图标生成（`make-icon.ps1`）、种子数据生成（`seed.mjs`）、数据清零（`reset.mjs`）、资料原文回填（`resource-content-repair.mjs`）、质量门禁（`check-syntax.mjs` / `check-privacy.mjs` / `check-docs.mjs`） | 工程 |
+| `scripts/` | 开发启动器（`dev.mjs`）、双击启动器（`launcher.mjs`）、后台安全启动器（`spawn-bg.mjs`）、安装版实时同步（`sync-install.mjs`：源码白名单镜像到安装目录，供其 Vite dev 热更新）、Windows 安装包构建器（`build-installer.mjs`：白名单组装载荷 + 内置 Inno Setup 编译器）、启动器图标生成（`make-icon.ps1`）、种子数据生成（`seed.mjs`）、数据清零（`reset.mjs`）、存量引用修复（`refs-repair.mjs`）、资料原文回填（`resource-content-repair.mjs`）、质量门禁（`check-syntax.mjs` / `check-privacy.mjs` / `check-docs.mjs`） | 工程 |
 | `.github/` | 协作配置：CODEOWNERS、PR / Issue 模板、CI（构建 + 语法 + 隐私 + 文档义务）；不参与运行时 | 所有者 |
 | `installer/` | Windows 安装包脚本（`KERNEL.iss`：安装向导 / 空白数据骨架 `uninsneveruninstall` / 卸载保留数据）与启动页（`welcome.html`） | 工程 |
-| `public/` | 静态资源：自托管字体、图标、自包含使用指南 `guide.html`（`/guide.html`，亦可 file:// 双击打开） | 前端实现方 |
+| `public/` | 静态资源：`favicon.svg`、自包含使用指南 `guide.html`（`/guide.html`，亦可 file:// 双击打开）；字体由 `@fontsource` 依赖自托管 | 前端实现方 |
 | 根目录启动器 | 桌面启动器 `启动器.vbs`（入口）+ `启动器.ps1`（原生 WPF 窗口）+ `kernel.ico` 图标；控制台入口 `启动.cmd`（显示运行日志，不变） | 工程 |
 | 根目录 `*.md` | 门面与台账（README / CONTRIBUTING / AGENTS / CHANGELOG / TASK_BOOK） | 文档工程师 |
 
@@ -138,13 +147,14 @@ kernel/
 | `data/habits/` | `h-` | habit | §4.6 |
 | `data/events/` | `e-` | event | §4.7 |
 | `data/courses/` | `c-` | course | §4.10b |
+| `data/traces/` | `tr-` | trace | §4.7b |
 | `data/notes/` | `n-` | note | §4.8 |
 | `data/resources/` | `r-` | resource | §4.9 |
 | `data/reviews/` | `rev-` | review | §4.10 |
 
 > 附件二进制：`data/files/<id>-<safeName>`（文件投递；`data/files/` 已在 `.gitignore`，随条目删除清理）。详见 ADR-0008。
 >
-> 回收站：`data/trash/<kind>/<id>.json`（原记录 + `trashedAt`；九种可写实体 task / project / note / resource / event / area / goal / habit / course 的软删除）。恢复写回正册并删副本；彻底删除仅删副本；`nextId` 同时扫描正册与回收站以防 id 复用。回收站不参与 `/api/snapshot`，经 `GET /api/trash` 读取。详见 ADR-0009（课程并入见 ADR-0024）。
+> 回收站：`data/trash/<kind>/<id>.json`（原记录 + `trashedAt`；十种可写实体 task / project / note / resource / event / trace / area / goal / habit / course 的软删除）。恢复写回正册并删副本；彻底删除仅删副本；`nextId` 同时扫描正册与回收站以防 id 复用。回收站不参与 `/api/snapshot`，经 `GET /api/trash` 读取。详见 ADR-0009（课程并入见 ADR-0024，踪迹见 ADR-0040）。
 
 ## 4. 前端目录职责
 
