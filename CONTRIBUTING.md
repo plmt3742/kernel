@@ -87,6 +87,17 @@ GitHub Issue 模板：`.github/ISSUE_TEMPLATE/task.yml`。
 
 **跨通道改动先冻结接口**：ADR 半页 → `docs/04` 字段 → `server/schemas.mjs` → `src/types.ts`，四步完成后再并行。
 
+### 4.1 在途认领与文件互斥（2026-10-21）
+
+起因：两个 AI 会话各自从 `TASK_BOOK` 取活，M 认领了 W 的范围，导致同一批文件被并发写入。
+
+1. **未登记不得开工**：开工前在 `TASK_BOOK.md` 的「在途认领」表登记 `工单 / 负责人 / 分支 / 文件范围 / 开始时间`。没有登记行 = 没有认领。
+2. **文件互斥**：同一时段，下列文件只允许一个负责人改动——`src/App.tsx`、`src/views/**`、`src/components/shell/**`、`src/styles/*.css`、`server/index.mjs`、`package.json`。范围重叠即冲突；后到者先与先到者拆分，不得自行合并。
+3. **共享台账**：`CHANGELOG.md` / `TASK_BOOK.md` 允许并行追加，但只追加自己的区块；冲突时双方条目都保留。
+4. **交付即释放**：工单完成 → 从在途表移除 → 在工单下留证据链接。
+
+判断口径：认领看**文件范围**，不看功能描述。
+
 ---
 
 ## 5. 分支与提交

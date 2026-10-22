@@ -6,6 +6,55 @@ KERNEL 的任务台账与迭代记录。记录当前迭代目标、未来待办�
 
 ---
 
+## 在途认领（In-flight）
+
+> 规则见 `CONTRIBUTING.md` §4.1：**未登记不得开工**；文件范围重叠即冲突；交付即释放。
+
+| 工单 | 负责人 | 分支 | 文件范围 | 开始 |
+|---|---|---|---|---|
+| `MOBILE-P0`（#5）移动端界面全量重设计（设计稿） | M（@MTB111-prog） | `feat/mobile-p0-design` | `design-drafts/mobile-v1/**`、`docs/decisions/0045-mobile-platform-split.md`（仅追加 §6 设计评审结论）、`TASK_BOOK.md`（本工单区块） | 2026-10-21 |
+| `ENG-AUDIT`（#6）工程文件全量检阅与版本同步 | W（@WZ147） | `chore/eng-audit` | `package.json`（仅 `engines` / `scripts` / 版本元数据，**不加依赖**）、`.github/**`、`docs/**`（**不含** `docs/decisions/0045-*`）、`README.md`、`.env.example`、`scripts/**`（仅失效引用）、`.qa/w-audit/**` | 2026-10-21 |
+
+**互斥**：M 不碰 `src/**`、`server/**`、`data/**`、`package.json`（P0 只出设计稿）；W 不碰 `src/**`、`server/**`、`data/**`、`design-drafts/**`、`docs/decisions/0045-*`。`CHANGELOG.md` / `TASK_BOOK.md` 只追加各自区块。
+
+**GitHub 委派（2026-10-21）**：`#5` → @MTB111-prog（M）；`#6` → @WZ147（W）。旧 `#1` / `#2` 已由 `#5` / `#6` 吸收；PR `#3`（docs，M）/ `#4`（手机适配，M）**已暂停**，去留待所有者裁决。
+
+---
+
+## 当前工单
+
+### MOBILE-P0 · 移动端界面全量重设计（设计稿阶段）· M
+
+| 字段 | 内容 |
+|---|---|
+| 目标 | 交付移动端**全量界面设计稿**（覆盖 13 路由）+ 移动设计规格，供所有者检阅选型；**本工单不写业务代码** |
+| 背景 | 所有者 2026-10-21：「重新全量设计手机版界面，符合手机软件使用习惯，界面要完全独立、和电脑端不同，设计风格保持不变（如配色）」；架构见 `docs/decisions/0045-mobile-platform-split.md` |
+| 通道 | C 视图 / D 样式 / E 文档（仅到 `design-drafts/`） |
+| 范围文件 | `design-drafts/mobile-v1/**`（新）；`docs/decisions/0045-*.md` 仅追加 §6 设计评审结论；`TASK_BOOK.md` 本工单区块 |
+| DoD | ① **13 路由全量设计稿**：5 个核心页（总览 / 收件箱 / 任务 / 日程 / 资料）高保真**可交互**，其余 8 页中保真静态；② 13 路由移动形态说明表（每页保留哪些区块与动作、哪些下沉）；③ token 映射表（**不新增色**，只复用现有 token）；④ 390×844 自检：零横溢、可点元素 ≥44×44、无 hover-only 依赖；⑤ 逐版 Playwright 自检 console 0 error |
+| 禁区 | 不改 `src/**`、`server/**`、`data/**`、`package.json`；不改桌面样式；不引入依赖；**不预设 IA**——Tab 结构 / 页面构图 / 详情形态由设计稿提出，等所有者选型，不在本工单定稿 |
+| 证据 | `design-drafts/mobile-v1/*.html` + 截图 `.qa/mobile-p0/` + 自检日志 |
+| 依赖 | `ADR-0045`（架构已定，页面设计未定）；所有者选型后才开 `MOBILE-P1` |
+| 优先级 | P0 |
+
+**交付后**：所有者选型 → `MOBILE-P1` 核心适配（Shell + 核心 4 页）→ `MOBILE-P2` 其余 9 页 → `MOBILE-P3` 全量回归。
+
+### ENG-AUDIT · 仓库工程文件全量检阅与版本同步 · W
+
+| 字段 | 内容 |
+|---|---|
+| 目标 | 全量检阅仓库工程文件，找出**落后版本 / 过期声明 / 失效引用 / 双份口径**，逐项同步更新并出报告 |
+| 背景 | 多轮切片（A–Y、N0–N10 与 ADR-0044 之前）后工程文件可能漂移；所有者 2026-10-21 指派 |
+| 通道 | B 契约（只读）/ E 文档与配置 |
+| 范围文件 | 全仓**只读**检阅；允许修改：`package.json`（仅 `engines` / `scripts` / 版本元数据，**不加依赖、不升 major**）、`.github/**`、`README.md`、`.env.example`、`docs/**`（不含 `decisions/0045-*`）、`scripts/**` 中的失效引用；报告写 `.qa/w-audit/REPORT.md` |
+| DoD | ① 报告表逐项列 `文件 / 现状 / 应为 / 依据 / 风险 / 是否已改`；② 至少覆盖：Node 版本声明（README / `docs/07` / CI / `engines`）、Vite·React·TS 版本与 `docs/02` 白名单、依赖清单与 `package.json` 一致性、CI 步骤与本地 `check:*` 一致性、ADR 索引与编号、失效命令 / 死链 / 已删文件引用、`docs/05` 目录漂移、`docs/06` 里程碑状态；③ 改动后 `npm run build` + `check:syntax` + `check:docs` + `check:privacy` 全 0 |
+| 禁区 | 不升级 major 依赖 / 不新增依赖；不动 `src/**`、`server/**`、`data/**`、`design-drafts/**`、`docs/decisions/0045-*`；不顺手改业务逻辑 |
+| 证据 | `.qa/w-audit/REPORT.md` + 改动前后 `git diff --stat` + 四个门禁输出 |
+| 依赖 | 无（与 M 文件范围不重叠）；需要 owner 拍板的升级项只报告、不执行 |
+| 优先级 | P1 |
+
+---
+
 ## 下一会话待办（遗留待办）
 
 > **新会话处理入口**：先读 `AGENTS.md` → 本清单 → 按序处理。每项均附上下文与落点。

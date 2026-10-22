@@ -237,5 +237,6 @@ npm run verify       # build + syntax（提交前最小校验）
 - **CI**：`.github/workflows/ci.yml`（`npm ci` → `npm run build` → `check:syntax` → `check:privacy` → `check:docs`）。
 - **本地门禁**：`npm run check:syntax` / `check:privacy` / `check:docs`；`npm run verify` = build + syntax。
 - **三处留痕**：代码改动 → `CHANGELOG.md` + `TASK_BOOK.md`；方向性决策 → ADR；新增 / 修改文档 → `docs/README.md`；结构变化 → `docs/05-FILE-TREE.md`。
+- **在途认领（2026-10-21）**：开工前在 `TASK_BOOK.md`「在途认领」表登记工单 / 负责人 / 分支 / 文件范围；**未登记不得开工**，文件范围重叠即冲突；`CHANGELOG` / `TASK_BOOK` 只追加各自区块（详见 `CONTRIBUTING.md` §4.1）。
 - **风险台账**：`docs/09-RISK-REGISTER.md`（`R1…`，每两周或重大变化复核）。
 - **红线不变**：前端不直写 `data/`；AI 先确认后写入；不提交 `data/`、`.qa/`、密钥、本机绝对路径。
