@@ -167,6 +167,13 @@ v0.5 增补（桌面启动器 v2，见 ADR-0037）：**原生 WPF 启动器**。
 - 回顾写入路径：`POST /api/reviews`（手工保存 / 回退创建）、`POST /api/reviews/:id/update`（Slice L · 编辑归档报告，白名单 `summary` / `decisions`，审计 `review.update`）、`POST /api/reviews/:id/remove`（审计 `review.remove`）。
 - 本地服务与 opencode 之间使用 `OPENCODE_SERVER_PASSWORD` 保护（本机场景下的纵深防御）。
 
+### 4.4 任务闹铃（Phase 1）
+
+- 任务可选字段：`alarmAt`（ISO 8601）+ `alarmSoundId`（全局铃声库 id）；经既有 `POST /api/tasks/:id/update` 编辑，任务详情弹窗提供时间 / 铃声选择。
+- 铃声库：`GET /api/alarm/sounds`、`POST /api/alarm/sounds`（RAW，≤10MB）、`GET /api/alarm/sounds/:id/file`、`POST /api/alarm/sounds/:id/remove`；音频只存本机 `data/files/alarm-<id>.<ext>`，元数据存 `data/meta/alarm-sounds.json`；被未完成任务引用时删除 409。
+- 客户端 `TaskAlarmWatcher`（挂在 `AppLayout`）：15s 轮询本地快照，到点播放铃声 + 应用内弹窗 + 可选浏览器通知；去重 / 10 分钟稍后提醒只存 localStorage。
+- **边界**：Phase 1 只在 KERNEL 页面打开时响铃；页面关闭后的系统级响铃不在本切片。详见 ADR-0047。
+
 ## 5. 托管拓扑（局域网）
 
 - 开发：`npm run dev -- --host`（v0.4 起同一命令拉起数据服务 + Vite）。

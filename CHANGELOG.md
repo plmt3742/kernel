@@ -4,6 +4,16 @@
 
 ## [Unreleased]
 
+### 任务闹铃与本地铃声库 Phase 1（2026-10-22）
+
+- **任务**：新增可选 `alarmAt`（ISO）+ `alarmSoundId`；任务详情弹窗设置日期时间与铃声，详情读态显示闹铃；`dueAt` 语义不变。
+- **铃声库**：新增 `server/alarms.mjs` + `/api/alarm/sounds` 列表 / RAW 上传 / 文件读取 / 删除；支持 mp3 / wav / ogg / webm / m4a / aac（≤10MB），音频只存本机 `data/files/alarm-<id>.<ext>`，元数据存 `data/meta/alarm-sounds.json`；被未完成任务引用时删除 409。
+- **客户端**：新增 `TaskAlarmWatcher`（挂 `AppLayout`）：15s 轮询、到点播放任务铃声 / 内置提示音 + 应用内弹窗 + 可选浏览器通知；停止 / 10 分钟后提醒；去重与稍后提醒只存 localStorage。
+- **设置页**：新增「闹铃」分区：全局铃声导入 / 试听 / 删除 + 浏览器通知权限。
+- **边界**：Phase 1 仅页面打开时响铃；页面关闭后的系统级响铃不在本切片（ADR-0047）。
+- **文档**：ADR-0047、`docs/02` 端点、`docs/04` 任务字段 / 铃声元数据、`docs/05` 目录、`docs/README`、`README`、`public/guide.html`。
+- **验证**：`npm run build` 0；`check:syntax` **19/19**；`check:docs` / `check:privacy` **19 files / 0**；WAV 上传 / 读取、任务绑定、删除引用 409；闹铃弹窗 / 停止后刷新去重 / 10 分钟稍后提醒 / 设置页铃声库截图证据 `.qa/alarm-v1/`。
+
 ### 协作规范与质量门禁（2026-10-19）
 
 答 owner「学习东莞理工学院技术协助项目的工程文件，优化本项目，并引入协作规范」——借鉴其「编号文档 + 一次动作三处留痕 + 未记录 = 未发生」的制度，落一套适合本仓库的轻量版。

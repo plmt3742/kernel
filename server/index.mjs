@@ -95,6 +95,14 @@ import {
 } from './ai.mjs'
 // 本机凭据（v0.5 · Slice N5）：只读 / 写 data/meta/secrets.json（gitignore，绝不入库）
 import { getDeepseekKey, setDeepseekKey } from './secrets.mjs'
+import {
+  addAlarmSound,
+  alarmFilePath,
+  getAlarmSound,
+  listAlarmSounds,
+  nextAlarmSoundId,
+  removeAlarmSound,
+} from './alarms.mjs'
 
 const HOST = '127.0.0.1'
 const PORT = 4097
@@ -113,6 +121,18 @@ const MAINTENANCE_MAX_BUFFER = 16 * 1024 * 1024
 const FILES_DIR = path.join(DATA_DIR, 'files')
 /** 个人头像单文件上限（RAW body；超出即 413） */
 const MAX_AVATAR_BYTES = 2 * 1024 * 1024
+/** 闹铃铃声单文件上限（RAW body；超出即 413） */
+const MAX_ALARM_BYTES = 10 * 1024 * 1024
+/** 闹铃铃声扩展名 → MIME（只接受可被浏览器 Audio 播放的常见格式） */
+const ALARM_EXT_MIME = {
+  mp3: 'audio/mpeg',
+  wav: 'audio/wav',
+  ogg: 'audio/ogg',
+  webm: 'audio/webm',
+  m4a: 'audio/mp4',
+  aac: 'audio/aac',
+}
+const ALARM_MIME_SET = new Set(Object.values(ALARM_EXT_MIME))
 /** 应用配置路径（data/meta/config.json；store 内部同名常量未导出，此处镜像） */
 const CONFIG_FILE = path.join(DATA_DIR, 'meta', 'config.json')
 /** 头像 MIME → 落盘扩展名（POST /api/profile/avatar 白名单：png / jpeg / webp / gif） */
@@ -162,13 +182,13 @@ const SINGULAR = {
 const NO_TIMESTAMP_KINDS = new Set(['events', 'traces', 'areas', 'goals', 'habits'])
 /** 任务创建可携带的可选字段顺序（Slice O；用于审计 detail.fields） */
 const CREATE_FIELD_KEYS = [
-  'contexts', 'energy', 'importance', 'estimateMin', 'dueAt', 'deferUntil', 'projectId', 'areaId', 'parentTaskId', 'tags',
+  'contexts', 'energy', 'importance', 'estimateMin', 'dueAt', 'deferUntil', 'alarmAt', 'alarmSoundId', 'projectId', 'areaId', 'parentTaskId', 'tags',
 ]
 /** 各 kind 允许编辑的字段白名单（其余一律忽略，见 ADR-0009） */
 const EDITABLE_FIELDS = {
   tasks: [
     'title', 'status', 'contexts', 'energy', 'importance', 'estimateMin',
-    'dueAt', 'deferUntil', 'projectId', 'areaId', 'parentTaskId', 'tags', 'notes',
+    'dueAt', 'deferUntil', 'alarmAt', 'alarmSoundId', 'projectId', 'areaId', 'parentTaskId', 'tags', 'notes',
   ],
   projects: ['title', 'outcome', 'status', 'areaId', 'goalId', 'nextActionId', 'dueAt', 'tags'],
   notes: ['title', 'type', 'body', 'areaId', 'projectId', 'tags', 'distillLevel'],
@@ -635,6 +655,95 @@ async function removeInbox(id) {
   return { removed: { kind: 'inbox', id } }
 }
 
+function alarmExtOf(name) {
+  const ext = path.extname(name).slice(1).toLowerCase()
+  return ALARM_EXT_MIME[ext] !== undefined ? ext : ''
+}
+
+function publicAlarmSound(sound) {
+  return {
+    id: sound.id,
+    name: sound.name,
+    mime: sound.mime,
+    size: sound.size,
+    createdAt: sound.createdAt,
+  }
+}
+
+async function uploadAlarmSound(req, url) {
+  const rawName = (url.searchParams.get('name') ?? '').trim()
+  const name = rawName === '' ? '未命名铃声' : Array.from(rawName).slice(0, 120).join('')
+  const ext = alarmExtOf(name)
+  if (ext === '') {
+    throw Object.assign(new Error('铃声仅支持 mp3 / wav / ogg / webm / m4a / aac'), { status: 400 })
+  }
+  const rawType = (url.searchParams.get('type') ?? '').trim().toLowerCase()
+  const mime = ALARM_MIME_SET.has(rawType) ? rawType : ALARM_EXT_MIME[ext]
+  const id = await nextAlarmSoundId()
+  const fileName = `alarm-${id}.${ext}`
+  await fs.mkdir(FILES_DIR, { recursive: true })
+  const dest = path.join(FILES_DIR, fileName)
+  let size
+  try {
+    size = await saveUpload(req, dest, MAX_ALARM_BYTES)
+  } catch (err) {
+    await fs.unlink(dest).catch(() => {})
+    throw err
+  }
+  if (size <= 0) {
+    await fs.unlink(dest).catch(() => {})
+    throw Object.assign(new Error('铃声文件为空'), { status: 400 })
+  }
+  const record = { id, name, mime, size, fileName, createdAt: nowIso() }
+  await addAlarmSound(record)
+  await recordAudit({
+    action: 'alarm.sound.create',
+    entity: 'alarmSound',
+    id,
+    detail: { name, mime, size },
+  })
+  return { sound: publicAlarmSound(record) }
+}
+
+async function serveAlarmSound(res, id) {
+  const sound = await getAlarmSound(id)
+  if (sound === null) return fail(res, 404, '铃声不存在')
+  const file = alarmFilePath(sound)
+  let stat
+  try {
+    stat = await fs.stat(file)
+  } catch {
+    return fail(res, 404, '铃声文件不存在')
+  }
+  res.writeHead(200, {
+    'Content-Type': sound.mime ?? 'application/octet-stream',
+    'Content-Length': stat.size,
+    'Cache-Control': 'no-store',
+    'X-Content-Type-Options': 'nosniff',
+  })
+  createReadStream(file).pipe(res)
+}
+
+async function removeAlarmSoundEntry(id) {
+  const sound = await getAlarmSound(id)
+  if (sound === null) throw Object.assign(new Error('铃声不存在'), { status: 404 })
+  const snapshot = await readSnapshot()
+  const used = snapshot.tasks.filter(
+    (task) => task.alarmSoundId === id && task.status !== 'done' && task.status !== 'dropped',
+  ).length
+  if (used > 0) {
+    throw Object.assign(new Error(`有 ${used} 个未完成任务正在使用该铃声`), { status: 409 })
+  }
+  await removeAlarmSound(id)
+  await recordAudit({
+    action: 'alarm.sound.remove',
+    entity: 'alarmSound',
+    id,
+    detail: { name: sound.name },
+  })
+  return { removed: { id } }
+}
+
 /**
  * 读取附件：流式返回（文件名为 RFC 5987 编码，兼容非 ASCII）。
  * 安全加固：强制 `Content-Disposition: attachment` + `X-Content-Type-Options: nosniff`，
@@ -966,6 +1075,13 @@ async function createTask(body) {
   if (fields.dueAt !== undefined) task.dueAt = fields.dueAt
   // 软推迟（v0.5）：与 dueAt 同口径——仅当显式提供时写入（缺省不落该键）
   if (fields.deferUntil !== undefined) task.deferUntil = fields.deferUntil
+  if (fields.alarmAt !== undefined) task.alarmAt = fields.alarmAt
+  if (fields.alarmSoundId !== undefined) {
+    if ((await getAlarmSound(fields.alarmSoundId)) === null) {
+      throw Object.assign(new Error('铃声不存在'), { status: 400 })
+    }
+    task.alarmSoundId = fields.alarmSoundId
+  }
   if (fields.projectId !== undefined) {
     if (!validId('projects', fields.projectId) || (await readEntity('projects', fields.projectId)) === null) {
       throw Object.assign(new Error('项目不存在'), { status: 400 })
@@ -2822,6 +2938,29 @@ const server = http.createServer(async (req, res) => {
     }
     if (method === 'GET' && pathname === '/api/trash') {
       send(res, 200, { items: await readTrash() })
+      return
+    }
+    // 闹铃铃声库（任务闹铃）：列表 / 上传 / 读取 / 删除
+    if (method === 'GET' && pathname === '/api/alarm/sounds') {
+      send(res, 200, { sounds: (await listAlarmSounds()).map(publicAlarmSound) })
+      return
+    }
+    const alarmSoundFileMatch = /^\/api\/alarm\/sounds\/([^/]+)\/file$/.exec(pathname)
+    if (method === 'GET' && alarmSoundFileMatch !== null) {
+      const id = decodeURIComponent(alarmSoundFileMatch[1])
+      if (!/^as-\d{4}$/.test(id)) return fail(res, 400, '铃声 id 格式不正确')
+      await serveAlarmSound(res, id)
+      return
+    }
+    const alarmSoundRemoveMatch = /^\/api\/alarm\/sounds\/([^/]+)\/remove$/.exec(pathname)
+    if (method === 'POST' && alarmSoundRemoveMatch !== null) {
+      const id = decodeURIComponent(alarmSoundRemoveMatch[1])
+      if (!/^as-\d{4}$/.test(id)) return fail(res, 400, '铃声 id 格式不正确')
+      send(res, 200, await removeAlarmSoundEntry(id))
+      return
+    }
+    if (method === 'POST' && pathname === '/api/alarm/sounds') {
+      send(res, 201, await uploadAlarmSound(req, url))
       return
     }
     const filesMatch = FILES_RE.exec(pathname)

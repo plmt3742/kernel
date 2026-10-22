@@ -6,6 +6,7 @@ import { Skeleton } from '@/components/Skeleton'
 import { RailNav } from '@/components/shell/RailNav'
 import { TopBar } from '@/components/shell/TopBar'
 import { StatusBar } from '@/components/shell/StatusBar'
+import { TaskAlarmWatcher } from '@/components/TaskAlarmWatcher'
 import { CommandPalette } from '@/components/CommandPalette'
 import { usePalette } from '@/context/PaletteContext'
 import { navByPath } from '@/lib/nav'
@@ -140,6 +141,7 @@ export function AppLayout() {
           </motion.div>
         </main>
       </div>
+      <TaskAlarmWatcher />
       <StatusBar />
       <CommandPalette />
     </div>

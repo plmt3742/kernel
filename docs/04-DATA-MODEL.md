@@ -92,6 +92,8 @@
 | importance | 0 到 3 | 决策输入，非硬排名 |
 | dueAt? | ISO | |
 | deferUntil? | ISO | 「推迟至」；未来值为软推迟（默认从活跃列表隐藏，见下注） |
+| alarmAt? | ISO | 任务闹铃时间（页面打开时响铃，ADR-0047） |
+| alarmSoundId? | string | 全局铃声库 id（缺省内置提示音；ADR-0047） |
 | projectId? | string | |
 | areaId? | string | |
 | parentTaskId? | string | |
@@ -101,6 +103,8 @@
 | updatedAt | ISO | |
 | doneAt? | ISO | |
 | sourceInboxId? | string | |
+
+> **任务闹铃（v0.5 · ADR-0047）**：`alarmAt` 与 `dueAt` 解耦；`alarmSoundId` 指向 `data/meta/alarm-sounds.json` 的铃声；任务详情弹窗编辑。客户端 `TaskAlarmWatcher` 在页面打开时 15s 轮询并响铃；去重 / 稍后提醒只存 localStorage，不写 `data/`。页面关闭不响铃为 Phase 1 边界。
 
 > **子任务 / `parentTaskId` 语义（v0.5 · Slice R3）**：`parentTaskId` 指向 `data/tasks/` 中另一任务，构成父子层级（一任务至多一个父、可有多个子）；派生展示不落盘。服务端写入护栏（`server/index.mjs` `assertValidParentTask`）：① 父任务必须真实存在（否则 400）；② 不得指向自身（400）；③ **不得成环**——沿 `parentTaskId` 祖先链上溯，命中自身即 400（`A→B→A` 被拒，且拒绝后不写半成品）。创建（`POST /api/tasks` 可选 `parentTaskId`）与编辑（`POST /api/tasks/:id/update`；`parentTaskId:null` 清除）均支持，审计 `task.create` / `task.update`（`detail.fields` 含 `parentTaskId`）。UI 路径：任务详情「子任务」区块列出直接子任务（点击就地打开其详情，可逐级返回）+ 安静 quick-add（回车即建，**继承父任务 `projectId`**，其余字段走默认，toast 可撤销）；项目详情的任务行可就地打开、并提供「添加任务到本项目」（草稿确认、`projectId` 预填）。系统**不自动生成子任务**——一律用户显式创建 / 编辑。
 
@@ -319,6 +323,19 @@
 > **个人资料（v0.5 · 个人页切片，见 ADR-0039）**：资料在 `config` 内扩展，不新增实体文件——`owner` 复用为**显示名**，新增可选 `bio`（≤160）与 `avatarPath`。更新经 `POST /api/config { owner?, bio?, aiAutomation? }`（白名单 + Zod；三键均可选、至少一键，非法 / 空补丁 400；原子写 + 审计 `config.update`）。头像为本地图片文件 `data/files/profile-avatar-<YYYYMMDDHHmmss-mmm>.<ext>`（`data/files/` 已 gitignore、不随安装包分发；png / jpeg / webp / gif，≤2 MB）：`POST /api/profile/avatar`（RAW body 流式落盘；超限 413、类型非法 / 空文件 400；写 `config.avatarPath`（绝对路径）并清理旧头像；审计 `profile.avatar`）、`POST /api/profile/avatar/remove`（清 `avatarPath` + 删文件，幂等）、`GET /api/profile/avatar`（按扩展名流式返回 + `nosniff` + `no-store`；无头像 / 文件缺失 404）。头像**不进快照字节**（快照只带 `avatarPath`），前端以 `/api/profile/avatar?v=<文件名>` 渲染。
 >
 > **活跃摘要（只读派生，不落盘）**：`GET /api/activity/summary?days=N`（默认 140、clamp 7..400）读取 `data/activity.jsonl`，按**本地日**聚合每个动作的条数并**零填充**缺失日（返回 `days / total / span`）；排除 `config.update`、`ai.key.update` 两类设置噪音，其余真实写入（含 `habit.checkin`）均计入。个人页「活跃日历」消费该端点；无对应存储字段。
+
+**`data/meta/alarm-sounds.json`**
+
+| 字段 | 类型 |
+|---|---|
+| sounds[].id | `as-0001` |
+| sounds[].name | string（显示名） |
+| sounds[].mime | string（白名单音频 MIME） |
+| sounds[].size | number（字节） |
+| sounds[].fileName | string（`alarm-<id>.<ext>`；音频在 `data/files`） |
+| sounds[].createdAt | ISO |
+
+> **任务闹铃铃声库（v0.5 · ADR-0047）**：上传 / 删除 / 读取经 `/api/alarm/sounds`；音频只在 `data/files`，不提交；元数据只存内部文件名，不存本机绝对路径。被未完成任务引用时删除 409。
 
 **`data/meta/term.json`**
 

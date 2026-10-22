@@ -141,6 +141,15 @@ export interface InboxItem {
   }
 }
 
+/** 全局铃声库条目（data/meta/alarm-sounds.json；音频文件在 data/files） */
+export interface AlarmSound {
+  id: string
+  name: string
+  mime: string
+  size: number
+  createdAt: string
+}
+
 /** 任务 · t- */
 export interface Task {
   id: string
@@ -155,6 +164,10 @@ export interface Task {
   importance: number
   dueAt?: string
   deferUntil?: string
+  /** 任务闹铃时间（ISO 8601 带偏移；页面打开时响铃） */
+  alarmAt?: string
+  /** 闹铃铃声 id（全局铃声库；缺省用内置提示音） */
+  alarmSoundId?: string
   projectId?: string
   areaId?: string
   parentTaskId?: string

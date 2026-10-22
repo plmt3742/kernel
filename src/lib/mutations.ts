@@ -6,6 +6,7 @@ import { getTaskById, removeEntity, replaceSnapshot, setDataSource, upsertEntity
 import { toISODateTime } from '@/lib/date'
 import { sliceImageForAi } from '@/lib/imagePreview'
 import type {
+  AlarmSound,
   AppConfig,
   Area,
   CalendarEvent,
@@ -99,6 +100,8 @@ export interface TaskCreateInput {
   dueAt?: string
   /** 软推迟（v0.5）：未来时刻前不出现在活跃工作列表；ISO 8601 带偏移 */
   deferUntil?: string
+  alarmAt?: string
+  alarmSoundId?: string
   projectId?: string
   areaId?: string
   /** Slice R3：父任务（生成子任务）；服务端校验存在且不成环 */
@@ -1332,6 +1335,52 @@ export async function fetchActivity(limit = 200): Promise<ActivityEntry[]> {
 export async function setAiKey(apiKey: string): Promise<boolean> {
   const res = await api.post<{ ok: true; hasKey: boolean }>('/api/ai/key', { apiKey })
   return res.hasKey
+}
+
+export async function getAlarmSounds(): Promise<AlarmSound[]> {
+  const res = await api.get<{ sounds: AlarmSound[] }>('/api/alarm/sounds')
+  return res.sounds
+}
+
+export async function uploadAlarmSound(file: File): Promise<AlarmSound> {
+  if (file.size <= 0) throw new Error('铃声文件为空')
+  if (file.size > 10 * 1024 * 1024) throw new Error('铃声文件不能超过 10MB')
+  const params = new URLSearchParams({ name: file.name })
+  if (file.type !== '') params.set('type', file.type)
+  let response: Response
+  try {
+    response = await fetch(`/api/alarm/sounds?${params.toString()}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/octet-stream' },
+      body: file,
+    })
+  } catch {
+    throw new Error('数据服务不可用（确认 npm run dev 已启动数据服务）')
+  }
+  const text = await response.text()
+  let data: unknown = null
+  if (text !== '') {
+    try {
+      data = JSON.parse(text)
+    } catch {
+      data = null
+    }
+  }
+  if (!response.ok) {
+    const message =
+      data !== null &&
+      typeof data === 'object' &&
+      'error' in data &&
+      typeof (data as { error: unknown }).error === 'string'
+        ? (data as { error: string }).error
+        : `上传失败（HTTP ${response.status}）`
+    throw new Error(message)
+  }
+  return (data as { sound: AlarmSound }).sound
+}
+
+export async function removeAlarmSound(id: string): Promise<void> {
+  await api.post<{ removed: { id: string } }>(`/api/alarm/sounds/${id}/remove`)
 }
 
 /* ---------------------------------------------------------------------------

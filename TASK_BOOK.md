@@ -14,6 +14,7 @@ KERNEL 的任务台账与迭代记录。记录当前迭代目标、未来待办�
 |---|---|---|---|---|
 | `MOBILE-P0`（#5）移动端界面全量重设计（设计稿） | M（@MTB111-prog） | `feat/mobile-p0-design` | `design-drafts/mobile-v1/**`、`docs/decisions/0045-mobile-platform-split.md`（仅追加 §6 设计评审结论）、`TASK_BOOK.md`（本工单区块） | 2026-10-21 |
 | `ENG-AUDIT`（#6）工程文件全量检阅与版本同步 | W（@WZ147） | `chore/eng-audit` | `package.json`（仅 `engines` / `scripts` / 版本元数据，**不加依赖**）、`.github/**`、`docs/**`（**不含** `docs/decisions/0045-*`）、`README.md`、`.env.example`、`scripts/**`（仅失效引用）、`.qa/w-audit/**` | 2026-10-21 |
+| `TASK-ALARM`（#12）任务闹铃与本地铃声库 | W（@WZ147） | `feat/task-alarm` | `server/{index,schemas,alarms}.mjs`、`src/components/{TaskAlarmWatcher,TaskDetailModal,TaskDetail}.tsx`、`src/components/shell/AppLayout.tsx`、`src/views/Settings.tsx`、`src/lib/mutations.ts`、`src/types.ts`、`docs/decisions/0047-*`、`docs/{02,04,05,README}*`、`README.md`、`public/guide.html`、`CHANGELOG.md`、`TASK_BOOK.md`（本工单区块）、`.qa/alarm-v1/**` | 2026-10-22 |
 
 **互斥**：M 不碰 `src/**`、`server/**`、`data/**`、`package.json`（P0 只出设计稿）；W 不碰 `src/**`、`server/**`、`data/**`、`design-drafts/**`、`docs/decisions/0045-*`。`CHANGELOG.md` / `TASK_BOOK.md` 只追加各自区块。
 

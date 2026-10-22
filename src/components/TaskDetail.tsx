@@ -66,6 +66,12 @@ export function TaskDetail({ task, onOpenTask }: TaskDetailProps) {
             </dd>
           </>
         )}
+        {task.alarmAt !== undefined && (
+          <>
+            <dt>闹铃</dt>
+            <dd>{formatDateTime(task.alarmAt)}</dd>
+          </>
+        )}
         <dt>预估</dt>
         <dd>{task.estimateMin !== undefined ? `${task.estimateMin} 分钟` : '—'}</dd>
         <dt>创建</dt>

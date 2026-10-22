@@ -14,10 +14,18 @@ import { useToast } from '@/context/ToastContext'
 import { getConfig, getSnapshot } from '@/lib/data'
 import { getDataRecordCount } from '@/lib/derive'
 import { useAiHealth, useDataRevision, useDataSource } from '@/lib/hooks'
-import { hydrateFromServer, setAiKey, updateAiAutomation } from '@/lib/mutations'
+import {
+  getAlarmSounds,
+  hydrateFromServer,
+  removeAlarmSound,
+  setAiKey,
+  updateAiAutomation,
+  uploadAlarmSound,
+} from '@/lib/mutations'
 import { api, errorText } from '@/lib/api'
 import { formatTime } from '@/lib/date'
-import type { AiAutomation } from '@/types'
+import { humanSize } from '@/lib/format'
+import type { AiAutomation, AlarmSound } from '@/types'
 
 interface ActivityEntry {
   ts: string
@@ -31,6 +39,7 @@ type SectionId =
   | 'appearance'
   | 'ai'
   | 'automation'
+  | 'alarm'
   | 'tags'
   | 'areas'
   | 'goals'
@@ -43,6 +52,7 @@ const SECTIONS: Array<{ id: SectionId; cn: string; en: string }> = [
   { id: 'appearance', cn: '外观', en: 'APPEARANCE' },
   { id: 'ai', cn: 'AI 集成', en: 'OPENCODE' },
   { id: 'automation', cn: 'AI 自动化', en: 'AUTOMATION' },
+  { id: 'alarm', cn: '闹铃', en: 'ALARM' },
   { id: 'tags', cn: '标签管理', en: 'TAGS' },
   { id: 'areas', cn: '区域', en: 'AREAS' },
   { id: 'goals', cn: '目标', en: 'GOALS' },
@@ -99,6 +109,72 @@ export function Settings() {
   useEffect(() => {
     setKeyOverride(null)
   }, [ai.hasKey])
+
+  const [alarmSounds, setAlarmSounds] = useState<AlarmSound[]>([])
+  const [alarmBusy, setAlarmBusy] = useState(false)
+  const [alarmDeleting, setAlarmDeleting] = useState<AlarmSound | null>(null)
+  const [notificationPermission, setNotificationPermission] = useState<
+    NotificationPermission | 'unsupported'
+  >(() =>
+    typeof Notification === 'undefined' ? 'unsupported' : Notification.permission,
+  )
+
+  useEffect(() => {
+    if (section !== 'alarm') return
+    let cancelled = false
+    getAlarmSounds()
+      .then((sounds) => {
+        if (!cancelled) setAlarmSounds(sounds)
+      })
+      .catch((err) => {
+        if (!cancelled) toast(`读取铃声失败：${errorText(err)}`, { tone: 'error' })
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [section])
+
+  const importAlarm = (file: File | undefined, input: HTMLInputElement): void => {
+    if (file === undefined || alarmBusy) return
+    setAlarmBusy(true)
+    void (async () => {
+      try {
+        const sound = await uploadAlarmSound(file)
+        setAlarmSounds((prev) => [sound, ...prev])
+        toast('铃声已导入')
+      } catch (err) {
+        toast(`导入失败：${errorText(err)}`, { tone: 'error' })
+      } finally {
+        setAlarmBusy(false)
+        input.value = ''
+      }
+    })()
+  }
+
+  const confirmRemoveAlarm = (): void => {
+    if (alarmDeleting === null || alarmBusy) return
+    const sound = alarmDeleting
+    setAlarmBusy(true)
+    void (async () => {
+      try {
+        await removeAlarmSound(sound.id)
+        setAlarmSounds((prev) => prev.filter((item) => item.id !== sound.id))
+        setAlarmDeleting(null)
+        toast('铃声已删除')
+      } catch (err) {
+        toast(`删除失败：${errorText(err)}`, { tone: 'error' })
+      } finally {
+        setAlarmBusy(false)
+      }
+    })()
+  }
+
+  const requestNotifications = (): void => {
+    if (typeof Notification === 'undefined') return
+    void Notification.requestPermission().then((permission) => {
+      setNotificationPermission(permission)
+    })
+  }
 
   const saveKey = (): void => {
     const value = keyDraft.trim()
@@ -191,6 +267,14 @@ export function Settings() {
 
   const snapshot = getSnapshot()
   const total = getDataRecordCount(snapshot)
+  const notificationLabel =
+    notificationPermission === 'granted'
+      ? '已开启'
+      : notificationPermission === 'denied'
+        ? '已拒绝'
+        : notificationPermission === 'unsupported'
+          ? '浏览器不支持'
+          : '未开启'
 
   const rows: Array<{ label: string; value: number }> = [
     { label: '收件箱 INBOX', value: snapshot.inbox.length },
@@ -228,7 +312,7 @@ export function Settings() {
   return (
     <div className="k-view">
       <p className="k-view__intro">
-        按分类浏览设置：外观、AI 集成、AI 自动化、标签管理、区域、目标、数据统计、回收站、数据服务、关于。左侧选中分类决定右侧面板内容。
+        按分类浏览设置：外观、AI 集成、AI 自动化、闹铃、标签管理、区域、目标、数据统计、回收站、数据服务、关于。左侧选中分类决定右侧面板内容。
       </p>
 
       <div className="k-settings__grid">
@@ -418,6 +502,95 @@ export function Settings() {
             </Panel>
           )}
 
+          {section === 'alarm' && (
+            <Panel
+              title="闹铃"
+              en="ALARM"
+              actions={<span className="k-pill">{alarmSounds.length} 个铃声</span>}
+            >
+              <p className="k-view__intro">
+                任务详情里设置闹铃时间；KERNEL 页面打开时到点响铃。Phase 1 不支持页面关闭后的系统级响铃。
+              </p>
+              <div className="k-between">
+                <span className="k-panel__cn">浏览器通知</span>
+                <span className="u-label k-muted">{notificationLabel}</span>
+              </div>
+              <div className="k-view__actions">
+                <button
+                  type="button"
+                  className="k-btn k-btn--sm"
+                  onClick={requestNotifications}
+                  disabled={
+                    notificationPermission === 'granted' ||
+                    notificationPermission === 'unsupported'
+                  }
+                >
+                  请求通知权限
+                </button>
+              </div>
+              <p className="k-view__intro k-muted">
+                未授权时仍会在应用内弹出闹铃；浏览器通知只作辅助提醒。
+              </p>
+
+              <div className="k-settings__divider" aria-hidden />
+
+              <div className="k-between">
+                <span className="k-panel__cn">铃声库</span>
+                <span className="u-label k-muted">
+                  {alarmSounds.length > 0 ? `${alarmSounds.length} 个可用` : '尚未导入'}
+                </span>
+              </div>
+              <p className="k-view__intro">
+                导入 mp3 / wav / ogg / webm / m4a / aac（≤10MB）。铃声只存本机{' '}
+                <code>data/files</code>，不入库、不上传。
+              </p>
+              <div className="k-view__actions">
+                <label className={alarmBusy ? 'k-btn is-solid is-disabled' : 'k-btn is-solid'}>
+                  {alarmBusy ? '处理中…' : '导入铃声'}
+                  <input
+                    type="file"
+                    accept="audio/*,.mp3,.wav,.ogg,.webm,.m4a,.aac"
+                    hidden
+                    disabled={alarmBusy}
+                    onChange={(event) => {
+                      const input = event.currentTarget
+                      importAlarm(input.files?.[0], input)
+                    }}
+                  />
+                </label>
+              </div>
+
+              {alarmSounds.length === 0 ? (
+                <p className="k-settings__empty">
+                  还没有铃声。导入后，任务详情里可以为每个任务选择铃声。
+                </p>
+              ) : (
+                alarmSounds.map((sound) => (
+                  <div className="k-field" key={sound.id}>
+                    <div className="k-between">
+                      <span className="k-panel__cn">{sound.name}</span>
+                      <span className="u-label k-muted">{humanSize(sound.size)}</span>
+                    </div>
+                    <audio controls preload="none" src={`/api/alarm/sounds/${sound.id}/file`} />
+                    <div className="k-view__actions">
+                      <button
+                        type="button"
+                        className="k-btn k-btn--sm is-danger"
+                        onClick={() => setAlarmDeleting(sound)}
+                        disabled={alarmBusy}
+                      >
+                        删除
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+              <p className="k-view__intro k-muted">
+                删除正在被未完成任务使用的铃声会被服务端拒绝；请先在任务详情里换掉。
+              </p>
+            </Panel>
+          )}
+
           {section === 'tags' && <TagManager />}
 
           {section === 'areas' && <AreaManager focusId={focusArea} />}
@@ -575,6 +748,39 @@ export function Settings() {
       </div>
 
       {/* 示例数据 / 清空确认弹窗（自适应 portal 到 body；确认前零写入） */}
+      <Modal
+        open={alarmDeleting !== null}
+        onClose={() => {
+          if (!alarmBusy) setAlarmDeleting(null)
+        }}
+        kicker="ALARM"
+        title="删除铃声"
+        footer={
+          <div className="k-modal__foot-actions">
+            <button
+              type="button"
+              className="k-btn"
+              onClick={() => setAlarmDeleting(null)}
+              disabled={alarmBusy}
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              className="k-btn is-danger"
+              onClick={confirmRemoveAlarm}
+              disabled={alarmBusy}
+            >
+              {alarmBusy ? '删除中…' : '确认删除'}
+            </button>
+          </div>
+        }
+      >
+        <p className="k-view__intro">
+          确定删除「{alarmDeleting?.name ?? ''}」？若仍有未完成任务使用它，服务端会拒绝删除。
+        </p>
+      </Modal>
+
       <Modal
         open={seedOpen}
         onClose={closeSeed}

@@ -44,7 +44,7 @@ kernel/
 │  ├─ 07-DEPLOYMENT.md          # 运行与部署
 │  ├─ 08-MATH-SYSTEM.md         # 数理自适应系统（流体公式 / 容器地图 / 复算方法）
 │  ├─ 09-RISK-REGISTER.md       # 风险台账（等级 / 影响 / 缓解 / 触发信号 / 负责人）
-│  └─ decisions/                # 架构决策记录（ADR，0001–0044；含历史重复编号 0031，完整清单见 docs/README.md）
+│  └─ decisions/                # 架构决策记录（ADR，0001–0047；含历史重复编号 0031，完整清单见 docs/README.md）
 │
 ├─ data/                        # 数据源（一记录一文件；v0.4 起写入经数据服务）
 │  ├─ activity.jsonl            # 审计日志（每次变更追加；服务创建）
@@ -53,7 +53,8 @@ kernel/
 │  ├─ meta/
 │  │  ├─ config.json            # 全局配置
 │  │  ├─ tags.json              # 标签命名空间
-│  │  └─ term.json              # 学期信息（第 1 周周一 / 总周数；缺失 = 未设置）
+│  │  ├─ term.json              # 学期信息（第 1 周周一 / 总周数；缺失 = 未设置）
+│  │  └─ alarm-sounds.json      # 全局铃声库元数据（音频在 data/files）
 │  ├─ inbox/                    # i-*.json
 │  ├─ tasks/                    # t-*.json
 │  ├─ projects/                 # p-*.json
@@ -70,13 +71,14 @@ kernel/
 │  ├─ index.mjs                 # HTTP 入口与路由
 │  ├─ ai.mjs                    # AI 代理（opencode 接入：解析 / 挂接建议 / SSE 过程流 / 回顾草稿 / 读库对话）
 │  ├─ store.mjs                 # 存储层（读快照 / 串行写队列 / nextId / activity.jsonl）
-│  └─ schemas.mjs               # Zod schema（写入前校验的唯一事实源）
+│  ├─ schemas.mjs               # Zod schema（写入前校验的唯一事实源）
+│  └─ alarms.mjs                # 任务闹铃铃声库（元数据索引 + 文件路径）
 │
 ├─ src/                         # 前端应用
 │  ├─ main.tsx                  # 挂载入口（样式导入、字体自托管）
 │  ├─ App.tsx                   # 应用壳与路由
 │  ├─ views/                    # 视图（Overview/Inbox/Tasks/Calendar/Timetable/Projects/Habits/Library/Review/Settings/Trash/Profile；NotFound）
-│  ├─ components/               # 通用组件（Panel / Modal / Toast / EntityEditForm / CommandPalette / TaskDetail / TaskDetailModal / ProjectDetail / ProjectDetailModal / OverviewChat / StartHereCard（首启「开始使用」清单卡）/ AiSuggestionForm / TaskDraftModal / OrganizeProposalCard（项目 AI 整理建议卡）/ HabitHeatmap（习惯热力图）/ ActivityCalendar（活跃贡献日历）…）
+│  ├─ components/               # 通用组件（Panel / Modal / Toast / EntityEditForm / CommandPalette / TaskDetail / TaskDetailModal / ProjectDetail / ProjectDetailModal / OverviewChat / StartHereCard（首启「开始使用」清单卡）/ AiSuggestionForm / TaskDraftModal / OrganizeProposalCard（项目 AI 整理建议卡）/ HabitHeatmap（习惯热力图）/ ActivityCalendar（活跃贡献日历）/ TaskAlarmWatcher（任务闹铃轮询与弹窗）…）
 │  │  ├─ shell/                 # 应用壳（RailNav / TopBar / StatusBar / AppLayout）
 │  │  └─ charts/                # 图表（TrendLine / EnergyBars）
 │  ├─ context/                  # React Context（Theme / Toast / Palette）

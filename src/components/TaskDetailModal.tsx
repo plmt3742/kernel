@@ -12,7 +12,14 @@ import {
 } from '@/components/EntityEditForm'
 import { useToast } from '@/context/ToastContext'
 import { getAreas, getProjectById, getSnapshot, getTags, getTaskById } from '@/lib/data'
-import { isTaskDone, restoreEntity, trashEntity, undoPatchOf, updateEntity } from '@/lib/mutations'
+import {
+  getAlarmSounds,
+  isTaskDone,
+  restoreEntity,
+  trashEntity,
+  undoPatchOf,
+  updateEntity,
+} from '@/lib/mutations'
 import { errorText } from '@/lib/api'
 import {
   ENERGY_LABEL,
@@ -22,7 +29,7 @@ import {
   TASK_STATUS_LABEL,
 } from '@/lib/format'
 import { useDataRevision, useUndoableToggle } from '@/lib/hooks'
-import type { Task } from '@/types'
+import type { AlarmSound, Task } from '@/types'
 
 interface TaskDetailModalProps {
   /** 目标任务 id；null 时弹窗关闭 */
@@ -73,10 +80,26 @@ export function TaskDetailModal({ taskId, onClose, onToggled }: TaskDetailModalP
   const [saving, setSaving] = useState(false)
   // 子任务导航栈（Slice R3）：在当前弹窗内打开子任务，可逐级返回；切换根目标时清空
   const [navStack, setNavStack] = useState<string[]>([])
+  const [alarmSounds, setAlarmSounds] = useState<AlarmSound[]>([])
 
   useEffect(() => {
     setEditing(false)
     setNavStack([])
+  }, [taskId])
+
+  useEffect(() => {
+    if (taskId === null) return
+    let cancelled = false
+    getAlarmSounds()
+      .then((sounds) => {
+        if (!cancelled) setAlarmSounds(sounds)
+      })
+      .catch(() => {
+        if (!cancelled) setAlarmSounds([])
+      })
+    return () => {
+      cancelled = true
+    }
   }, [taskId])
 
   const activeId = navStack.length > 0 ? navStack[navStack.length - 1] : taskId
@@ -125,6 +148,23 @@ export function TaskDetailModal({ taskId, onClose, onToggled }: TaskDetailModalP
     { key: 'estimateMin', label: '预估（分钟）', type: 'number', clearable: true },
     { key: 'dueAt', label: '截止', type: 'datetime' },
     { key: 'deferUntil', label: '推迟至', type: 'datetime' },
+    {
+      key: 'alarmAt',
+      label: '闹铃（页面打开时响）',
+      type: 'datetime',
+      hint: '留空 = 不提醒；到点需 KERNEL 页面打开',
+    },
+    {
+      key: 'alarmSoundId',
+      label: '铃声',
+      type: 'select',
+      clearable: true,
+      hint:
+        alarmSounds.length > 0
+          ? '不选则使用内置提示音；铃声在设置 → 闹铃导入'
+          : '还没有导入铃声；不选则使用内置提示音',
+      options: alarmSounds.map((sound) => ({ value: sound.id, label: sound.name })),
+    },
     {
       key: 'projectId',
       label: '项目',

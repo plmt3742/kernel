@@ -36,6 +36,10 @@ export const taskSchema = z
     importance: z.number().int().min(0).max(3),
     dueAt: iso.optional(),
     deferUntil: iso.optional(),
+    /** 任务闹铃时间（ISO 8601 带偏移；页面打开时响铃） */
+    alarmAt: iso.optional(),
+    /** 闹铃铃声 id（data/meta/alarm-sounds.json；缺省用内置提示音） */
+    alarmSoundId: z.string().min(1).optional(),
     projectId: z.string().optional(),
     areaId: z.string().optional(),
     parentTaskId: z.string().optional(),
@@ -675,8 +679,10 @@ export const taskCreateFieldsSchema = z.object({
   importance: z.number().int().min(0).max(3).optional(),
   estimateMin: z.number().int().min(1).max(600).optional(),
   dueAt: iso.optional(),
-  // 软推迟（v0.5）：未来时刻前不出现在活跃工作列表；缺省无推迟（与 dueAt 同 ISO 校验口径）
+  // 软推迟（v0.5）：未到时间前不出现在活跃任务列表；缺省不落该键，与 dueAt 同 ISO 校验口径
   deferUntil: iso.optional(),
+  alarmAt: iso.optional(),
+  alarmSoundId: z.string().min(1).optional(),
   tags: z.array(z.string().min(1)).max(8).optional(),
   projectId: z.string().min(1).optional(),
   areaId: z.string().min(1).optional(),

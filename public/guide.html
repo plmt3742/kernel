@@ -1023,6 +1023,7 @@ body.demo-locked { overflow: hidden; }
               <li><strong>推迟至</strong>：快速新建弹窗与编辑表单都能给任务设一个「推迟至」时间；推到未来的任务默认从列表隐藏（头部提示「N 项已推迟」），打开「含已推迟」开关才显示，行上标「推迟至 9月30日 09:00」</li>
               <li class="signal">详情弹窗与总览就地弹窗共用同一份详情；可标记完成 / 查看项目 / 编辑 / 删除（撤销进回收站）</li>
               <li>子任务：详情弹窗「子任务」区块列出直接子任务，点击就地打开；输入标题回车即建（继承父任务的项目）</li>
+              <li><strong>闹铃</strong>：详情弹窗里设置日期时间与铃声；到点需 KERNEL 页面打开才会响（可停止 / 10 分钟后提醒）</li>
             </ul>
             <button class="demo-trigger" type="button" data-demo-open aria-haspopup="dialog">点开看：任务详情面板</button>
           </article>
@@ -1133,6 +1134,7 @@ body.demo-locked { overflow: hidden; }
             <ul>
               <li>外观（亮 / 暗）</li>
               <li>AI 集成：显示 opencode 在线状态，并可填入你自己的 <strong>DeepSeek API Key</strong>（密码型、不回显，可保存 / 清除）；Key 只存在本机、<strong>不会进入仓库</strong>，填好后<strong>重启启动器后生效</strong></li>
+              <li><strong>闹铃</strong>：全局铃声库，可导入 / 试听 / 删除 mp3、wav、ogg、webm、m4a、aac（≤10MB）；铃声只存本机，任务详情里选择</li>
               <li>标签管理：列出全部标签（来源 / 使用计数 / 登记时间），可重命名（级联）、合并、删除（使用中会拦下并给出计数）；可一键「扫描并登记」历史未注册标签</li>
               <li>区域 / 目标：两张管理表，可新建、编辑、删除（进回收站可恢复）。被任务 / 项目 / 笔记 / 资料 / 日程 / 目标 / 习惯引用时，删除会被拦下并给出「被几条记录引用」的计数（<strong>习惯已迁到「习惯」页管理，不再在这里</strong>）</li>
               <li>数据统计</li>
@@ -1347,6 +1349,11 @@ body.demo-locked { overflow: hidden; }
           <article class="qa">
             <h3>日程页看不到已经过完的安排？</h3>
             <p>默认隐藏已结束的日程。打开日程页的<strong>「含已结束」</strong>开关，就会出现「已结束」分组，可点开看详情；这个选择会被记住，下次进来照旧。</p>
+          </article>
+
+          <article class="qa">
+            <h3>闹铃在页面关闭后会响吗？</h3>
+            <p>Phase 1 不会。闹铃由页面内的轮询播放，KERNEL 页面保持打开才会响；页面关闭 / 浏览器退出后不响。需要系统级后台响铃时再走后续能力。</p>
           </article>
 
           <article class="qa">
