@@ -18,6 +18,7 @@ import {
   ExternalLink,
   FileText,
   FolderOpen,
+  MessageCircle,
   Mic,
   Paperclip,
   PenLine,
@@ -202,6 +203,7 @@ const SOURCE_ICON = {
   file: FileText,
   notification: Bell,
   voice: Mic,
+  wechat: MessageCircle,
 } as const
 
 const CLARIFY_TARGETS: Array<{ key: ClarifyTarget; label: string }> = [

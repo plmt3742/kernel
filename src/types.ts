@@ -7,7 +7,7 @@
  * ------------------------------------------------------------------------- */
 
 /** 收件箱来源 */
-export type InboxSource = 'manual' | 'file' | 'notification' | 'voice'
+export type InboxSource = 'manual' | 'file' | 'notification' | 'voice' | 'wechat'
 /** 收件箱澄清状态 */
 export type InboxStatus = 'unprocessed' | 'clarified' | 'discarded'
 
@@ -403,6 +403,24 @@ export interface AppConfig {
   bio?: string
   /** 头像文件名（服务端 `GET /api/profile/avatar` 提供字节；旧配置缺省） */
   avatarPath?: string
+  /** 微信通知：每日简报时间（HH:mm，默认 08:00） */
+  notifyDailyDigestTime?: string
+  /** 微信通知：到期提醒提前分钟数（1..1440，默认 30） */
+  notifyDueReminderMinutes?: number
+}
+
+/** 微信通知状态（GET /api/notify/status；绝不含 webhook / token 明文） */
+export interface NotifyStatus {
+  configured: boolean
+  webhookHost: string
+  hasInboundToken: boolean
+  dailyDigestTime: string
+  dueReminderMinutes: number
+  lastDigestAt: string | null
+  lastSendAt: string | null
+  lastError: string | null
+  pendingFailures: number
+  failedKeys: number
 }
 
 /* ---------------------------------------------------------------------------

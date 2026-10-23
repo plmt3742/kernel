@@ -4,13 +4,23 @@
 
 ## [Unreleased]
 
+### 微信通道 Phase 1 · 企业微信群机器人（2026-10-22）
+
+- **通道**：Phase 1 企业微信群机器人 webhook 仅出站；个人微信非官方协议不接入（ADR-0046）。
+- **服务端**：新增 `server/notify/{index,wecom}.mjs`；每日简报（默认 08:00）/ 到期提醒（默认提前 30 分钟）/ 测试推送；服务端 30s 定时器；`digest:<date>` / `due:<taskId>|<dueAt>` 去重；失败 1/5/15 分钟退避，3 次后标记失败。
+- **配置**：webhook URL / 入站 token 只存 `data/meta/secrets.json`（gitignore，不回显）；简报时间 / 分钟数存 `data/meta/config.json`；去重 / 退避状态存 `data/meta/notify-state.json`。
+- **入站预留**：`POST /api/wechat/inbound`（Bearer token + 仅本机 + msgId 幂等 → 收件箱；`source:'wechat'`；审计 `wechat.inbound`）。
+- **设置页**：新增「通知」分区（webhook / token / 简报时间 / 提前分钟 / 测试推送 / 状态）。
+- **文档**：ADR-0046、`docs/02` 端点、`docs/04` config / inbox source、`docs/05` 目录、`docs/README`、`README`、`public/guide.html`。
+- **验证**：`npm run build` 0；`check:syntax` **20/20**；`check:docs` / `check:privacy` **19 files / 0**；本地 mock webhook 收到测试推送 / 简报 / 到期提醒（tick 1 发送 2 条，tick 2 发送 0 条，去重有效）；入站无 token → 401、带 token 写入收件箱、重复 `msgId` → `duplicate: true`；设置页保存 08:30 生效；证据 `.qa/wechat-v1/`（截图 / `received.jsonl` / `tick-*.json` / `inbound-*.json`）。
+
 ### 工程文件全量审计 · ENG-AUDIT #6（2026-10-22）
 
 按 #6 对全仓工程文件做版本 / 依赖 / 目录 / 路线图 / CI 口径核对；本 PR 同时承接 PR #3 已验证的 README / docs/07 / docs/README / guide 修订（#3 已关闭，由 #6 收口）。
 
 - **版本与依赖**：`package.json` 增 `engines.node`（`^20.19.0 || >=22.12.0`），`verify` 纳入 privacy / docs；README 依赖清单补 `remark-gfm`，开发运行时改为 CI 基线口径；docs/02 补 Vite 7 / React 19 / TypeScript 5.x 与 `@opencode-ai/sdk` 白名单。
 - **目录与架构**：docs/02 修正 `server.host` / `preview.host` 为 `false`、补 `/traces` 路由、安装目录改中性写法；docs/05 补 `data/traces` / `data/meta/secrets.json` / `server/{refs,secrets}.mjs` / `scripts/{launcher,refs-repair}.mjs` 与 `scripts/assets/welcome.html`（实际存在，补齐引用），回收站实体 9→10。
-- **路线图**：docs/06 标记 v0.5.0 已完成（2026-10-19）、v0.6 范围并入 v0.5（待发布门禁），并登记 ENG-AUDIT #6。
+- **路线图**：docs/06 标记 v0.5.0 范围于 2026-10-19 收尾（tag `v0.5.0` 指向 2026-10-05 的 `885a3ea`）、v0.6 范围并入 v0.5（待发布门禁），并登记 ENG-AUDIT #6。
 - **CI / 模板 / 台账**：CI 改用 `npm run check:*`；PR 模板补 privacy / docs；docs/09 R3/R11 更新；docs/README 更新索引与 0031 历史项说明。
 - **协作规则同步**：main 已新增 `CONTRIBUTING.md` §4.1（在途认领 / 文件互斥）与 `TASK_BOOK.md`「在途认领」；本 PR 在 rebase 后登记 `#10`（微信 Phase 1），并把 PR `#3` / `#4` 标记为「已关闭」。
 

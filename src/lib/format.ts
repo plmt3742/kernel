@@ -165,12 +165,14 @@ export const INBOX_SOURCE_LABEL: Record<InboxSource, string> = {
   file: '文件',
   notification: '通知',
   voice: '语音',
+  wechat: '微信',
 }
 export const INBOX_SOURCE_EN: Record<InboxSource, string> = {
   manual: 'MANUAL',
   file: 'FILE',
   notification: 'NOTIFY',
   voice: 'VOICE',
+  wechat: 'WECHAT',
 }
 
 export const GOAL_STATUS_LABEL: Record<GoalStatus, string> = {

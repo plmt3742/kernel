@@ -58,7 +58,7 @@
 |---|---|---|
 | id | string | |
 | content | string | 原始内容 |
-| source | `manual` \| `file` \| `notification` \| `voice` | 来源 |
+| source | `manual` \| `file` \| `notification` \| `voice` \| `wechat` | 来源（`wechat` = 本机入站预留，ADR-0046） |
 | capturedAt | ISO | |
 | status | `unprocessed` \| `clarified` \| `discarded` | |
 | linkedId? | string | 澄清 / 应用后指向新实体（深链用；一揽子应用为**首个**产物，通常是新项目） |
@@ -313,6 +313,10 @@
 | aiAutomation | `'confirm'` \| `'auto'`（可选；Slice R2 起可写，缺省视作 `confirm`） |
 | bio | string ≤160（可选；个人页简介，v0.5 个人页切片） |
 | avatarPath | string（可选；头像文件绝对路径，见下注） |
+| notifyDailyDigestTime | `HH:mm`（可选；微信每日简报时间，缺省 `08:00`，ADR-0046） |
+| notifyDueReminderMinutes | int 1..1440（可选；任务到期提前分钟，缺省 `30`，ADR-0046） |
+
+> **微信通知（v0.5 · ADR-0046）**：`POST /api/notify/config` 写配置；webhook URL 与入站 token 只存 `data/meta/secrets.json`（gitignore，不回显、不入审计），时间 / 分钟数写 `config.json`。调度去重与退避状态存 `data/meta/notify-state.json`（非密钥）；入站条目 `source:'wechat'`，见 §4.1。
 
 > **AI 自动化档位（v0.5 · Slice R2，见 ADR-0016）**：`aiAutomation` 经 `POST /api/config { aiAutomation }` 更新（白名单 + Zod + 原子写 + 审计 `config.update`）。`'confirm'`（默认）= 先确认后写入；`'auto'` = 自动解析完成后自动应用本次**创建类低风险动作**（`task`/`note`/`resource`/`project`），可一键撤销；**永不**删除 / 完成 / 归档 / 修改既有实体（能力边界见 ADR-0016 §2.3）。旧配置缺省时前端视作 `'confirm'`。
 

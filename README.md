@@ -53,6 +53,14 @@ npm run installer            # 打 Windows 安装包（见下）
 
 安装包由 `scripts/build-installer.mjs` 打包（用仓库内置的 Inno Setup 编译器，不用另外装），脚本在 `installer/KERNEL.iss`。
 
+## 微信通知（Phase 1）
+
+设置 → 通知：填入企业微信群机器人 webhook，保存后可「测试推送」。数据服务会在后台定时发送每日简报（默认 08:00）与任务到期提醒（默认提前 30 分钟）；失败按 1 / 5 / 15 分钟退避，状态在设置页可查。
+
+- webhook URL 与入站 token 只存本机 `data/meta/secrets.json`（gitignore，不回显、不入库）。
+- 入站预留 `POST /api/wechat/inbound`（`Authorization: Bearer <token>`、仅 `127.0.0.1`、`msgId` 幂等），Phase 2 中继直接调用。
+- 个人微信非官方协议（itchat / wechaty / PC 注入）有封号风险，明确不接入；详见 [ADR-0046](docs/decisions/0046-wechat-channel.md)。
+
 ## 能做什么
 
 - **收件箱**：把一句话、一张截图、一个文件丢进去。AI 先读一遍，给出「这该变成什么」的建议——任务、日程、笔记还是资料——你确认后才写库，它不会自作主张。
@@ -60,6 +68,7 @@ npm run installer            # 打 Windows 安装包（见下）
 - **日程 / 课表**：日程按天排，也能翻已结束的；课表是单独一页，支持单双周、连堂合并、按周切换。
 - **资料 / 笔记**：笔记用 Markdown，可以逐层「蒸馏」成更短的版本；投进来的文件会自动附一句简介。
 - **踪迹**：随手记一句「我刚刚做了什么」（可配图），按时间排成动态流或时间线；也能让 AI 从收件箱、对话里替你识别入账。
+- **微信通知（Phase 1）**：企业微信群机器人 webhook 仅出站；每日简报 / 任务到期提醒 / 测试推送，设置 → 通知配置；webhook 与 token 只存本机。
 
 ![资料与笔记](docs/assets/library.png)
 

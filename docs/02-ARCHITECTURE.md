@@ -136,7 +136,7 @@ v0.5 增补（桌面启动器 v2，见 ADR-0037）：**原生 WPF 启动器**。
 
 派生值纪律在数据服务阶段依然适用：进度、计数、聚合必须运行时计算，不落盘。
 
-## 4. opencode 集成（v0.5，已交付）
+## 4. 外部集成（opencode + 微信通知；v0.5 已交付）
 
 ### 4.1 事实基础（已调研）
 
@@ -166,6 +166,14 @@ v0.5 增补（桌面启动器 v2，见 ADR-0037）：**原生 WPF 启动器**。
 - AI 端点清单（均经本地 Node 服务代理，前端不直连 opencode）：`POST /api/ai/inbox/:id/parse`（同步）+ `…/parse-stream`（SSE 过程可视）；`POST /api/ai/review/draft`（周 / 月回顾草稿：七段结构正文 + 环比 + 数字落地护栏；Slice L 起**生成即自动归档**一条 `review`，审计 `review.create` · `auto`，响应附 `reviewId`，见 ADR-0013）；`POST /api/ai/chat`（Slice G · 总览 AI 对话：读库摘要 + 有界历史，自然语言回答，**不落盘**，见 ADR-0010）；`POST /api/ai/task/draft`（Slice H · 任务快速新建补全：只填标题 → 建议 `contexts/energy/importance/estimateMin/dueAt/projectId/areaId/tags`，**不落盘**；Slice O 改为**先确认后写入**——弹窗内编辑后经扩展的 `POST /api/tasks` 一次性创建，见 ADR-0011 §6）。Slice T（见 ADR-0014）起，收件箱解析与任务补全**可提议新标签**（优先已有注册名，仅在确无合适标签时提议 `topic:名称` ≤12 字、≤3 个），`postValidate` 规格化保留（不再过滤注册表外名），标签在应用 / 创建落盘时才登记（`origin:'ai'`）。配套通用创建 `POST /api/notes`（「清空对话」归档为 `type:'memo'` 笔记，审计 `note.create`）。Slice R1（见 ADR-0015）：`POST /api/ai/inbox/:id/parse` / `…/parse-stream` 返回**动作数组** `actions`（兼容旧单建议形状），并新增 `POST /api/ai/project/draft`（项目快速新建补全，不落盘）；应用 / 撤销走 `POST /api/inbox/:id/apply` / `…/unapply`。Slice R2（见 ADR-0016）：新增 `POST /api/ai/cluster/draft`（连续累积相似任务 → 0–3 个新项目提案，只读不落盘）与写入端点 `POST /api/projects/cluster-apply` / `…/cluster-unapply`（一次建项 + 归入 / 精确撤销）；配置 `POST /api/config { aiAutomation }`（默认 `confirm`；`auto` 时前端自动应用低风险动作）。Slice M（见 ADR-0020）：新增 `POST /api/ai/note/distill { id, targetLevel? }`（把笔记压缩到目标层级：缺省 = 当前 `distillLevel + 1`，clamp 1–3 封顶 L3；返回 `{ text, targetLevel, model, ms }`，**不落盘**、无审计）；应用经既有 `POST /api/notes/:id/update` 一次写 `{ body（追加 `## 蒸馏 → Lx` 小节）, distillLevel }`，撤销往返精确还原。Slice N8（见 ADR-0032）：新增 `POST /api/ai/organize/draft`（项目「AI 整理」：无归属任务 + 未澄清收件箱 → 归并已有项目 / 新项目两段提案，只读不落盘）与写入端点 `POST /api/projects/organize-apply` / `…/organize-unapply`（一次归并 / 建项 + 精确撤销；归并只写任务文件）；前端 `useOrganizeScheduler` 中午 12:00 后每日一次、只出草案绝不自动应用。Slice N9（见 ADR-0033）：收件箱解析支持**模型请求式联网检索**（顶层 `searchQueries` ≤2）——服务端经 Sogou→360→Bing 链检索（**相关性过滤 + 首条结果页摘录**）后**回喂同会话**补全时间与事实；响应含 `searched`；不落盘、失败保守。QA v73（见 ADR-0035 / ADR-0036）：`POST /api/ai/chat` 响应增 `focused`（已查阅实体 ≤6）与 `edits`（修改提案：kind/id/fields 白名单校验后下发；**只读建议，应用经既有 `POST /api/<kind>/:id/update`**）；新增 `POST /api/inbox/:id/ai-preview?index=1..6`（长图分片 RAW 上传 → `data/files/<id>-ai-<n>.jpg`，派生辅助资源、**无审计**、随条目删除清理）。
 - 回顾写入路径：`POST /api/reviews`（手工保存 / 回退创建）、`POST /api/reviews/:id/update`（Slice L · 编辑归档报告，白名单 `summary` / `decisions`，审计 `review.update`）、`POST /api/reviews/:id/remove`（审计 `review.remove`）。
 - 本地服务与 opencode 之间使用 `OPENCODE_SERVER_PASSWORD` 保护（本机场景下的纵深防御）。
+
+### 4.4 微信通知（Phase 1）
+
+- 出站：数据服务内 `server/notify/` 定时器 → 企业微信群机器人 webhook；每日简报（默认 08:00）/ 到期提醒（默认提前 30 分钟）/ 测试推送；`digest:<date>` 与 `due:<taskId>|<dueAt>` 去重，失败按 1 / 5 / 15 分钟退避，3 次后标记失败。
+- 密钥：webhook URL / 入站 token 只存本机 `data/meta/secrets.json`，不回显、不入日志 / 审计；每日简报时间与提前分钟数存 `data/meta/config.json`。
+- 入站预留：`POST /api/wechat/inbound`（`Authorization: Bearer <token>` + 仅 `127.0.0.1` + `msgId` 幂等 → 收件箱，审计 `wechat.inbound`）。
+- 管理端点：`GET /api/notify/status`、`POST /api/notify/config`、`POST /api/notify/test`；测试时钟 `POST /api/notify/tick` 仅在 `KERNEL_NOTIFY_TEST=1` 时可用。
+- 详见 ADR-0046。
 
 ## 5. 托管拓扑（局域网）
 
