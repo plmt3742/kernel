@@ -25,13 +25,13 @@
 
 ### 2.1 选定栈
 
-- **Vite + React 19 + TypeScript（strict）+ 原生 CSS（CSS 变量 token 体系）**
+- **Vite 7 + React 19 + TypeScript 5.x（strict）+ 原生 CSS（CSS 变量 token 体系）**
 - 路由：`react-router-dom`（使用 `viewTransition` 能力）
 - 动效：**Motion**（组件状态 / 布局 / layoutId 共享元素 / 手势）+ **View Transitions API**（路由级变形）
 - 命令面板：**cmdk**
 - 其他白名单依赖：`date-fns`、`clsx`、`lucide-react`、`react-markdown`、`remark-gfm`（P2-1：助手回复 GFM 表格）
 - 字体：`@fontsource-variable/inter`、`@fontsource/jetbrains-mono`（自托管，离线可用）
-- 数据服务（`server/`，仅服务端）：`zod`、`write-file-atomic`（见 ADR-0004）
+- 数据服务（`server/`，仅服务端）：`zod`、`write-file-atomic`（见 ADR-0004）；AI SDK：`@opencode-ai/sdk`（见 ADR-0005）
 
 前端依赖白名单（宪法 §6.1）：
 
@@ -43,7 +43,7 @@ lucide-react  react-markdown  remark-gfm  @fontsource-variable/inter  @fontsourc
 ### 2.2 状态与路由
 
 - 状态管理：React 内置（Context + hooks）；数据读取为模块级可变快照（`src/lib/data.ts`，挂载后经 `/api/snapshot` 水合），写入经 `src/lib/mutations.ts` → 数据服务 API（v0.4 起，localStorage 原型层已退役）。主题与轨道折叠等纯 UI 偏好仍存 localStorage。
-- 路由：`/` 总览 · `/inbox` · `/tasks` · `/calendar` · `/timetable`（课表，Slice H2）· `/projects` · `/habits`（习惯，个人页切片）· `/library` · `/review` · `/settings` · `/trash`（回收站）；`/profile`（个人页，顶栏头像进入，不占一级导航）。
+- 路由：`/` 总览 · `/inbox` · `/tasks` · `/calendar` · `/timetable`（课表，Slice H2）· `/projects` · `/habits`（习惯，个人页切片）· `/traces`（踪迹，ADR-0040）· `/library` · `/review` · `/settings` · `/trash`（回收站）；`/profile`（个人页，顶栏头像进入，不占一级导航）。
 
 ### 2.3 为什么不用 UI 框架 / Tailwind
 
@@ -136,7 +136,7 @@ v0.5 增补（桌面启动器 v2，见 ADR-0037）：**原生 WPF 启动器**。
 
 派生值纪律在数据服务阶段依然适用：进度、计数、聚合必须运行时计算，不落盘。
 
-## 4. opencode 集成计划（v0.5）
+## 4. opencode 集成（v0.5，已交付）
 
 ### 4.1 事实基础（已调研）
 
@@ -173,13 +173,13 @@ v0.5 增补（桌面启动器 v2，见 ADR-0037）：**原生 WPF 启动器**。
 - 生产预览：`npm run build && npm run preview -- --host`。
 - 手机同 WiFi 访问：`http://<局域网IP>:5173`（dev）或 `http://<局域网IP>:4173`（preview）。
 - 数据服务仅监听 `127.0.0.1:4097`，由上述启动器一并拉起；浏览器与手机均经 Vite 的 `/api` 代理写入，数据服务本身不暴露到局域网。
-- `vite.config` 中设置 `server.host: true` 与 `preview.host: true`，以便开箱即用。
-- 安全含义：这会让 Vite 监听所有网卡，同一局域网的任何设备都能访问（含写入 API）。仅应在可信 WiFi 下使用，使用后关闭。
+- `vite.config.ts` 中设置 `server.host: false` 与 `preview.host: false`（与宪法 §6 / `docs/07` 一致）；需要局域网时显式传 `--host`。
+- 安全含义：显式传入 `--host` 才会让 Vite 监听所有网卡，同一局域网的任何设备都能访问该服务（含 `/api` 写入代理）。仅应在可信 WiFi 下使用，使用后关闭。
 - Windows 防火墙需放行 Node（专用网络）。
 - 纯 HTTP 局域网 IP 不是安全上下文（无 PWA、摄像头等能力），本项目不需要这些能力，因此可接受。
 - WSL 需端口转发；本项目直接跑 Windows 侧，规避该问题。
 
-**Windows 分发**：桌面用户可经安装包（`installer/KERNEL.iss`，由 `scripts/build-installer.mjs` 调用仓库内置 Inno Setup 编译器构建，无需系统安装）一键安装——向导可选安装目录（如 `D:\KERNEL`），开始菜单与可选桌面快捷方式启动；安装包内置运行时，目标机无需另装 Node.js。数据位于**安装目录下的 `data\`**（`<安装目录>\data`，与程序同目录），安装时植入空白骨架并标记 `uninsneveruninstall`，**卸载后用户数据保留**。
+**Windows 分发**：桌面用户可经安装包（`installer/KERNEL.iss`，由 `scripts/build-installer.mjs` 调用仓库内置 Inno Setup 编译器构建，无需系统安装）一键安装——向导可选安装目录（如 `<安装目录>`），开始菜单与可选桌面快捷方式启动；安装包内置运行时，目标机无需另装 Node.js。数据位于**安装目录下的 `data\`**（`<安装目录>\data`，与程序同目录），安装时植入空白骨架并标记 `uninsneveruninstall`，**卸载后用户数据保留**。
 
 详见 `07-DEPLOYMENT.md`。
 
@@ -199,5 +199,5 @@ v0.5 增补（桌面启动器 v2，见 ADR-0037）：**原生 WPF 启动器**。
 
 ## 7. 与宪法的一致性
 
-- 依赖白名单、路由、数据规范、opencode 事实、托管方式均以宪法 §6 为准，本文件不引入白名单外的前端依赖；服务端依赖（zod / write-file-atomic）经 ADR-0004 记录。
-- v0.4 数据服务已实现（ADR-0004）；v0.5 及其后内容仍是规划，实现时若需偏离，应开新 ADR。
+- 依赖白名单、路由、数据规范、opencode 事实、托管方式均以宪法 §6 为准，本文件不引入白名单外的前端依赖；服务端依赖（zod / write-file-atomic）经 ADR-0004 记录，AI SDK（@opencode-ai/sdk）经 ADR-0005 记录。
+- v0.4 数据服务已实现（ADR-0004）；v0.5 已交付（ADR-0005 等）；v0.6 范围已并入 v0.5，待发布门禁收口。

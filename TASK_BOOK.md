@@ -13,11 +13,11 @@ KERNEL 的任务台账与迭代记录。记录当前迭代目标、未来待办�
 | 工单 | 负责人 | 分支 | 文件范围 | 开始 |
 |---|---|---|---|---|
 | `MOBILE-P0`（#5）移动端界面全量重设计（设计稿） | M（@MTB111-prog） | `feat/mobile-p0-design` | `design-drafts/mobile-v1/**`、`docs/decisions/0045-mobile-platform-split.md`（仅追加 §6 设计评审结论）、`TASK_BOOK.md`（本工单区块） | 2026-10-21 |
-| `ENG-AUDIT`（#6）工程文件全量检阅与版本同步 | W（@WZ147） | `chore/eng-audit` | `package.json`（仅 `engines` / `scripts` / 版本元数据，**不加依赖**）、`.github/**`、`docs/**`（**不含** `docs/decisions/0045-*`）、`README.md`、`.env.example`、`scripts/**`（仅失效引用）、`.qa/w-audit/**` | 2026-10-21 |
+| `WECHAT-BOT`（#10）企业微信通道 Phase 1 | W（@WZ147） | `feat/wechat-bot` | `server/notify/**`、`server/index.mjs`（仅通知 / 入站路由）、`src/views/Settings.tsx`、`src/components/**`（仅通知分区组件）、`src/lib/**`（通知 API 客户端）、`docs/decisions/0046-*`、`docs/{02,04,README}*`、`README.md`、`public/guide.html`、`TASK_BOOK.md`（本工单区块）、`.qa/wechat-v1/**` | 2026-10-22 |
 
-**互斥**：M 不碰 `src/**`、`server/**`、`data/**`、`package.json`（P0 只出设计稿）；W 不碰 `src/**`、`server/**`、`data/**`、`design-drafts/**`、`docs/decisions/0045-*`。`CHANGELOG.md` / `TASK_BOOK.md` 只追加各自区块。
+**互斥**：M 不碰 `src/**`、`server/**`、`data/**`、`package.json`（P0 只出设计稿）；W 的 #6 不碰 `src/**`、`server/**`、`data/**`；#10 按工单范围仅改 `server/notify/**`、`server/index.mjs`（通知 / 入站路由）与 `src/**`（通知分区与 API 客户端）。双方均不碰 `design-drafts/**` 与 `docs/decisions/0045-*`；`CHANGELOG.md` / `TASK_BOOK.md` 只追加各自区块。
 
-**GitHub 委派（2026-10-21）**：`#5` → @MTB111-prog（M）；`#6` → @WZ147（W）。旧 `#1` / `#2` 已由 `#5` / `#6` 吸收；PR `#3`（docs，M）/ `#4`（手机适配，M）**已暂停**，去留待所有者裁决。
+**GitHub 委派（2026-10-22）**：`#5` → @MTB111-prog（M）；`#6` → @WZ147（W）；`#10` → @WZ147（W，微信 Phase 1）。旧 `#1` / `#2` 已由 `#5` / `#6` 吸收；PR `#3`（docs，M）/ `#4`（手机适配，M）**已关闭**。
 
 ---
 
@@ -54,6 +54,10 @@ KERNEL 的任务台账与迭代记录。记录当前迭代目标、未来待办�
 | 优先级 | P1 |
 
 ---
+
+## ENG-AUDIT #6 收口（2026-10-22）
+
+负责人 WZ147 / 分支 `chore/eng-audit`。已完成版本 / 依赖 / 目录 / 路线图 / CI 口径核对，并承接 PR #3 的已验证文档修订。证据 `.qa/w-audit/REPORT.md`（本地，gitignored）；门禁见 CHANGELOG；PR #7。
 
 ## 下一会话待办（遗留待办）
 

@@ -2,6 +2,8 @@
 
 KERNEL 的完整文档集。本文件是导航中心，说明每份文档的职责与推荐阅读顺序。
 
+最后更新：2026-10-22。ENG-AUDIT #6：工程文件全量核对；同步版本 / 依赖 / 目录 / 路线图状态。
+
 事实源是 `docs/00-DESIGN-BRIEF.md`（项目宪法）。其余文档都是对它的展开，冲突时以宪法为准。
 
 ---
@@ -46,8 +48,8 @@ KERNEL 的完整文档集。本文件是导航中心，说明每份文档的职�
 | `03-DESIGN-SYSTEM.md` | 规范 | 设计 token 与组件规范 |
 | `04-DATA-MODEL.md` | 规范 | 实体字段、ID、状态流 |
 | `05-FILE-TREE.md` | 规范 | 目录树与职责 |
-| `06-ROADMAP.md` | 计划 | 版本里程碑 |
-| `07-DEPLOYMENT.md` | 操作 | 运行、局域网、FAQ |
+| `06-ROADMAP.md` | 计划 | 版本里程碑与当前状态 |
+| `07-DEPLOYMENT.md` | 操作 | 源码与安装包运行、服务启动条件、局域网、AI 出网与 FAQ |
 | `08-MATH-SYSTEM.md` | 规范 | 数理自适应：流体公式、容器地图、复算方法 |
 | `09-RISK-REGISTER.md` | 台账 | 风险登记：等级、影响、缓解、触发信号、负责人 |
 | `decisions/0001-naming-kernel.md` | ADR | 命名决策：KERNEL |
@@ -81,7 +83,7 @@ KERNEL 的完整文档集。本文件是导航中心，说明每份文档的职�
 | `decisions/0029-source-summary.md` | ADR | 来源摘要：一句话摘要 + 引用人话化（Slice N4）：收件箱解析增顶层 `summary`（≤40 字、单行、多要点「 · 」分隔、不引入原文外信息；服务端确定性清洗折叠 / 去引号 / 硬截断 40；**解析仍零写入、不落盘**）；`POST /api/inbox/:id/apply { actions, summary? }` 的 `summary` 可选（≤100），提供且非空时写入条目 `summary`（`inboxItemSchema.summary` 可选、≤200 防御），只在 apply 落档；引用人话化：关联区块来源标题 `summary` 优先 / 原文截断 ~90 字兜底、来源芯片可见编号入 tooltip、已澄清区产物引用显示产物标题；历史条目无 `summary` 展示自动降级、不回填；无新增依赖 / 写入面 |
 | `decisions/0030-ai-key-local.md` | ADR | AI Key 本地配置 + 双击启动器（Slice N5）：设置页「AI 集成」填 DeepSeek API Key（密码型、不回显；保存 / 清除 + 状态 pill「已配置 / 未配置」）；存储 `data/meta/secrets.json`（**已 gitignore**，git 跟踪的 `config.json` 刻意不放）；`POST /api/ai/key`（空串 = 清除；审计 `ai.key.update` 仅 `detail.hasKey` 布尔、绝无明文）；`GET /api/ai/health` 增 `hasKey`；`scripts/dev.mjs` 托管拉起 opencode serve 时注入 `DEEPSEEK_API_KEY`（已在运行则下次生效，日志只报「已注入」）；启动器 `启动.cmd` + `scripts/launcher.mjs`（Node 18 自检 / 依赖自动装 / 轮询 5173 自动开浏览器 / 错误按回车退出）；无新增依赖 |
 | `decisions/0031-installer-distribution.md` | ADR | Windows 安装包分发：`installer/KERNEL.iss`（Inno Setup 6；每用户安装 `PrivilegesRequired=lowest`、自选安装目录、开始菜单 + 可选桌面快捷方式、标准卸载程序）+ `scripts/build-installer.mjs`（白名单组装载荷 + 仓库内置 Inno Setup 编译器 → `KERNEL-Setup-<version>.exe`，位于仓库之外）；数据位于 `<安装目录>\data` 并以 `uninsneveruninstall` 标记——覆盖安装不清空、**卸载保留用户数据**；无新增依赖 |
-| `decisions/0031-friend-release-package.md` | ADR | 历史记录：朋友版分发包（便携目录 + 压缩包 + 内置运行时）。与上一条同为 `0031`（历史重复编号），保留原名与内容，不重编号；新 ADR 按当前最大编号递增（现为 `0045`） |
+| `decisions/0031-friend-release-package.md` | ADR | 历史记录：朋友版分发包（便携目录 + 压缩包 + 内置运行时）。与上一条同为 `0031`（历史重复编号），保留原名与内容，不重编号；**该文件本地保留、未入库（.gitignore）**，索引保留历史记录；新 ADR 按当前最大编号递增（现为 `0045`）。 |
 | `decisions/0032-ai-organize-projects.md` | ADR | 项目「AI 整理」+ 每日调度（Slice N8）：项目页两段提案（归并到已有项目 / 建议新项目）——`POST /api/ai/organize/draft`（只读，候选 = 无 projectId 未完成任务 + 未澄清收件箱 ≤50；确定性预分组 + AI **按候选编号引用**（不可编造 id）+ 后校验 + 确定性兜底簇）+ `POST /api/projects/organize-apply`（201；服务端重校验；归并**只写任务文件**、逐簇建项、单簇失败不中止、审计 `via:'organize'`）+ `POST /api/projects/organize-unapply`（精确复原）；`src/lib/organize.ts` 每日调度（12:00 后每日一次、30s tick + focus 补跑、跨标签锁 TTL 120s + 会话守卫；**只出草案、绝不自动应用**）+ `OrganizeProposalCard`（两段提案、逐行勾选）；无 schema 变更、无新增依赖 |
 | `decisions/0033-web-search.md` | ADR | 收件箱 AI 联网检索（Slice N9 / N9.1）：模型请求式两阶段检索（searchQueries ≤2）→ Sogou→360→Bing 链 + 相关性过滤 + 首条结果页摘录 → 回喂补全 dueAt；固定主机、不落盘、失败保守；证据 .qa/v68 |
 | `decisions/0034-inbox-ai-event-actions.md` | ADR | 收件箱 AI 事件识别（Slice N10）：第 5 类动作 event——定点安排（面试 / 会议 / 考试 / 约谈）产日程（startAt 必填 + endAt/allDay/location），动作仍产 task；确认后一次应用、撤销经 linkedIds；证据 .qa/v71 |
