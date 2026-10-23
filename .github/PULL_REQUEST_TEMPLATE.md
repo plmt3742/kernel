@@ -24,6 +24,7 @@ git diff --stat 输出
 
 - [ ] `npm run build` 退出 0
 - [ ] `npm run check:syntax` 退出 0
+- [ ] `npm run check:privacy` / `check:docs` 退出 0（PR 使用 `--range`）
 - [ ] 行为已在真实入口复现
 
 证据路径 / 截图 / 探针：
