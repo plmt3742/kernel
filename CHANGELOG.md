@@ -9,7 +9,7 @@
 按 #6 对全仓工程文件做版本 / 依赖 / 目录 / 路线图 / CI 口径核对；本 PR 同时承接 PR #3 已验证的 README / docs/07 / docs/README / guide 修订（#3 已关闭，由 #6 收口）。
 
 - **版本与依赖**：`package.json` 增 `engines.node`（`^20.19.0 || >=22.12.0`），`verify` 纳入 privacy / docs；README 依赖清单补 `remark-gfm`，开发运行时改为 CI 基线口径；docs/02 补 Vite 7 / React 19 / TypeScript 5.x 与 `@opencode-ai/sdk` 白名单。
-- **目录与架构**：docs/02 修正 `server.host` / `preview.host` 为 `false`、补 `/traces` 路由、安装目录改中性写法；docs/05 补 `data/traces` / `data/meta/secrets.json` / `server/{refs,secrets}.mjs` / `scripts/{launcher,refs-repair}.mjs`，移除不存在的 `scripts/assets/welcome.html`，回收站实体 9→10。
+- **目录与架构**：docs/02 修正 `server.host` / `preview.host` 为 `false`、补 `/traces` 路由、安装目录改中性写法；docs/05 补 `data/traces` / `data/meta/secrets.json` / `server/{refs,secrets}.mjs` / `scripts/{launcher,refs-repair}.mjs` 与 `scripts/assets/welcome.html`（实际存在，补齐引用），回收站实体 9→10。
 - **路线图**：docs/06 标记 v0.5.0 已完成（2026-10-19）、v0.6 范围并入 v0.5（待发布门禁），并登记 ENG-AUDIT #6。
 - **CI / 模板 / 台账**：CI 改用 `npm run check:*`；PR 模板补 privacy / docs；docs/09 R3/R11 更新；docs/README 更新索引与 0031 历史项说明。
 - **协作规则同步**：main 已新增 `CONTRIBUTING.md` §4.1（在途认领 / 文件互斥）与 `TASK_BOOK.md`「在途认领」；本 PR 在 rebase 后登记 `#10`（微信 Phase 1），并把 PR `#3` / `#4` 标记为「已关闭」。

@@ -105,6 +105,8 @@ kernel/
 │  ├─ check-privacy.mjs         # 隐私门禁：密钥 / 本机路径 / data/ / .qa/
 │  ├─ check-docs.mjs            # 文档义务门禁：CHANGELOG / TASK_BOOK / docs/04 / docs/05 / ADR 索引
 │  ├─ make-icon.ps1             # 生成本机启动器图标 kernel.ico（System.Drawing，可重跑）
+│  ├─ assets/
+│  │  └─ welcome.html           # 朋友版启动页（自包含单文件；file:// 打开后探活本机，就绪自动跳转）
 │  ├─ seed.mjs                  # 种子数据生成
 │  ├─ reset.mjs                 # 数据清零（预演 / --yes：备份到 .qa/backups/ 后清空；保留 config）
 │  ├─ refs-repair.mjs           # 存量悬空外键修复（默认预演，--apply 落盘）
@@ -126,7 +128,7 @@ kernel/
 | `data/` | 数据源，一记录一文件 JSON + 附件二进制 `data/files/` + 回收站 `data/trash/`；v0.4 起写入一律经 `server/` 数据服务（单写者） | 数据服务（唯一写者） |
 | `server/` | 数据服务：Zod 校验 + 原子写 + 审计日志；仅监听 127.0.0.1:4097 | 数据层实现方 |
 | `src/` | React + TypeScript 前端应用（只读数据经水合，写入经 API） | 前端实现方 |
-| `scripts/` | 开发启动器（`dev.mjs`）、双击启动器（`launcher.mjs`）、后台安全启动器（`spawn-bg.mjs`）、安装版实时同步（`sync-install.mjs`：源码白名单镜像到安装目录，供其 Vite dev 热更新）、Windows 安装包构建器（`build-installer.mjs`：白名单组装载荷 + 内置 Inno Setup 编译器）、启动器图标生成（`make-icon.ps1`）、种子数据生成（`seed.mjs`）、数据清零（`reset.mjs`）、存量引用修复（`refs-repair.mjs`）、资料原文回填（`resource-content-repair.mjs`）、质量门禁（`check-syntax.mjs` / `check-privacy.mjs` / `check-docs.mjs`） | 工程 |
+| `scripts/` | 开发启动器（`dev.mjs`）、双击启动器（`launcher.mjs`）、后台安全启动器（`spawn-bg.mjs`）、启动页（`assets/welcome.html`）、安装版实时同步（`sync-install.mjs`：源码白名单镜像到安装目录，供其 Vite dev 热更新）、Windows 安装包构建器（`build-installer.mjs`：白名单组装载荷 + 内置 Inno Setup 编译器）、启动器图标生成（`make-icon.ps1`）、种子数据生成（`seed.mjs`）、数据清零（`reset.mjs`）、存量引用修复（`refs-repair.mjs`）、资料原文回填（`resource-content-repair.mjs`）、质量门禁（`check-syntax.mjs` / `check-privacy.mjs` / `check-docs.mjs`） | 工程 |
 | `.github/` | 协作配置：CODEOWNERS、PR / Issue 模板、CI（构建 + 语法 + 隐私 + 文档义务）；不参与运行时 | 所有者 |
 | `installer/` | Windows 安装包脚本（`KERNEL.iss`：安装向导 / 空白数据骨架 `uninsneveruninstall` / 卸载保留数据）与启动页（`welcome.html`） | 工程 |
 | `public/` | 静态资源：`favicon.svg`、自包含使用指南 `guide.html`（`/guide.html`，亦可 file:// 双击打开）；字体由 `@fontsource` 依赖自托管 | 前端实现方 |
