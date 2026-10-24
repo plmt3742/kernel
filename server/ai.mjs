@@ -28,8 +28,52 @@ const HEALTH_TIMEOUT_MS = 3_000
 const PROMPT_TIMEOUT_MS = 180_000
 const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
 
-/** SDK 返回解包：{ data, error } → data（与探针 pick() 一致） */
-const pick = (r) => (r && typeof r === 'object' && 'data' in r ? r.data : r)
+/** 从 SDK 错误包提取底层原因（网络错误码 / 服务端 message / 错误名） */
+function sdkErrorDetail(error) {
+  if (error instanceof Error) {
+    const code = error.cause?.code ?? error.code
+    if (typeof code === 'string' && code !== '') return code
+    return error.message
+  }
+  if (error !== null && typeof error === 'object') {
+    const message = error.data?.message
+    if (typeof message === 'string' && message !== '') return message
+    if (typeof error.name === 'string' && error.name !== '') return error.name
+  }
+  return ''
+}
+
+/** SDK 错误包 → 中文可读错误（HTTP 状态 / 网络错误码；鉴权失败给出配置提示） */
+function describeSdkFailure(result) {
+  const status = typeof result?.response?.status === 'number' ? result.response.status : 0
+  const detail = sdkErrorDetail(result?.error)
+  if (status === 401 || status === 403) {
+    return `opencode 鉴权失败（HTTP ${status}）——数据服务与 opencode 的 OPENCODE_SERVER_PASSWORD 不一致`
+  }
+  if (status > 0) {
+    return `opencode 请求失败（HTTP ${status}${detail === '' ? '' : ` · ${detail}`}）`
+  }
+  if (detail === 'ECONNREFUSED' || detail === 'ENOTFOUND') {
+    return `opencode 服务未就绪（${OPENCODE_URL} 未监听）`
+  }
+  return `opencode 服务不可用（${detail === '' ? OPENCODE_URL : detail}）`
+}
+
+/**
+ * SDK 返回解包：成功 { data, request, response } → data。
+ * 关键：@opencode-ai/sdk 在 4xx/5xx 与网络失败时**不 reject**，而是 resolve 一个没有 data
+ * 的错误包 { error, request, response }。旧实现把它原样返回，导致：
+ *   · 健康检查 config.get() 误判「在线」（available:true、model:null）；
+ *   · 各 AI 功能在会话创建处报出与根因无关的「无法创建 opencode 会话」。
+ * 故此处显式识别错误包并抛可读错误（HTTP 状态 / 网络错误码 / 服务端 message）。
+ */
+const pick = (r) => {
+  if (r !== null && typeof r === 'object') {
+    if ('data' in r) return r.data
+    if ('error' in r && r.error !== undefined) throw new Error(describeSdkFailure(r))
+  }
+  return r
+}
 
 let client = null
 
@@ -74,7 +118,9 @@ function withTimeout(promise, ms, timeoutMessage) {
 export async function getAiHealth() {
   try {
     const cfg = pick(await withTimeout(getClient().config.get(), HEALTH_TIMEOUT_MS, '健康检查超时'))
-    return { available: true, model: cfg?.model ?? null, url: OPENCODE_URL }
+    // SDK 失败已由 pick 抛错；此处再兜一层「200 但响应体异常」，绝不把空响应当作在线
+    if (cfg === null || typeof cfg !== 'object') throw new Error('opencode 配置响应为空')
+    return { available: true, model: cfg.model ?? null, url: OPENCODE_URL }
   } catch {
     return { available: false, model: null, url: OPENCODE_URL }
   }
@@ -4109,10 +4155,11 @@ export async function draftClusters(snapshot) {
   }
   const system = buildClusterSystem()
   const digest = buildClusterDigest(snapshot, groups)
-  const sessionID = await createSession('kernel:cluster-draft')
   let raw = []
   let model = null
   try {
+    // 会话创建也在 try 内：opencode 中途掉线时回退确定性命名，绝不抛错
+    const sessionID = await createSession('kernel:cluster-draft')
     const result = await promptClusterWithRetry(sessionID, system, digest)
     raw = result.proposals
     model = modelOf(result.res)
@@ -4357,7 +4404,7 @@ export function postValidateOrganize(raw, candidates, snapshot) {
     clusterTitles.add(title)
     clusters.push(item)
   }
-  return { assignments, clusters }
+  return { assignments: assignments.filter((item) => item.taskIds.length > 0), clusters }
 }
 
 /** 确定性命名：组内最高频标签的可读后缀；无标签则取首条标题前 16 字 */
@@ -4425,10 +4472,11 @@ export async function draftOrganize(snapshot) {
   const groups = pregroupCandidates(candidates)
   const system = buildOrganizeSystem()
   const digest = buildOrganizeDigest(snapshot, candidates, groups)
-  const sessionID = await createSession('kernel:organize-draft')
   let raw = { assignments: [], clusters: [] }
   let model = null
   try {
+    // 会话创建也在 try 内：opencode 中途掉线时按本文档约定降级为确定性兜底，绝不抛错
+    const sessionID = await createSession('kernel:organize-draft')
     const result = await promptOrganizeWithRetry(sessionID, system, digest)
     raw = result.draft
     model = modelOf(result.res)
