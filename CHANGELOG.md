@@ -4,6 +4,17 @@
 
 ## [Unreleased]
 
+### AI 健康检查与 SDK 错误解包修复（2026-10-23）
+
+答 owner 截图「项目页『AI 整理』→ 整理失败：无法创建 opencode 会话」。**根因**：`@opencode-ai/sdk`（1.18.x）在 4xx/5xx 与网络失败时**不 reject**，而是 resolve 一个没有 `data` 的错误包 `{ error, request, response }`；`server/ai.mjs` 的 `pick()` 原样返回该包裹对象，于是 —— ① `getAiHealth()` 的 `config.get()` 永不抛错，健康检查**误报在线**（`available:true, model:null`，状态条显示「AI: 在线」）；② `createSession()` 取不到 `created.id`，抛出与根因无关的「无法创建 opencode 会话」。实机复现：4096 未监听时 `/api/ai/health` 仍 200 `available:true`，`POST /api/ai/organize/draft` → 502 上述文案。
+
+- **修复**：`pick()` 识别 SDK 错误包并抛出**可读错误**——401/403 → 「opencode 鉴权失败（HTTP n）——数据服务与 opencode 的 OPENCODE_SERVER_PASSWORD 不一致」；其他状态码 → 「opencode 请求失败（HTTP n · 服务端 message）」；`ECONNREFUSED`/`ENOTFOUND` → 「opencode 服务未就绪（URL 未监听）」。`getAiHealth()` 增加空 / 非对象响应兜底（绝不把空响应当在线）。
+- **降级对齐文档契约**：`draftOrganize()` 与 `draftClusters()` 把**会话创建移入 try**——opencode 在健康检查与会话创建之间掉线时，各自降级为确定性兜底 / 确定性命名，不再抛错。
+- **空归并行过滤**：`postValidateOrganize()` 丢弃 `taskIds` 为空的归并行（模型把收件箱条目指向既有项目时会产出「0 项任务」空行，UI 会渲染无成员的空卡）。
+- **验证**：三态探针 `.qa/probe-ai-unwrap.mjs` —— 离线 → `health.available=false` + organize / cluster 均返回兜底提案且无异常；口令不一致（401）→ `available=false` + 日志「opencode 鉴权失败（HTTP 401）…」+ 兜底；在线 → `available=true, model=deepseek/deepseek-flash`，organize 10.4s / cluster 3.2s 出真实提案。安装版（`<安装目录>`）同步 + 重启整栈后实机复验：三端口监听、`/api/ai/health` → `available:true, model=deepseek/deepseek-flash`、`POST /api/ai/organize/draft` → **200**（10.5s，1 个新项目提案 + 1 条未纳入）。`node --check` 0。
+- **修改**：`server/ai.mjs`
+- **运维备忘**：opencode 由外部实例（非 `scripts/dev.mjs` 拉起）提供时会自行退出，dev.mjs 不会自动重启；本次已重启整栈恢复。是否增加守护（端口空闲时自动拉起）待所有者拍板。
+
 ### 微信通道 Phase 1 · 企业微信群机器人（2026-10-22）
 
 - **通道**：Phase 1 企业微信群机器人 webhook 仅出站；个人微信非官方协议不接入（ADR-0046）。
