@@ -42,7 +42,7 @@ AppPublisher={#AppPublisher}
 PrivilegesRequired=lowest
 DefaultDirName={localappdata}\Programs\KERNEL
 DefaultGroupName={#AppName}
-; 允许用户选择安装目录（如 D:\KERNEL）。
+; 允许用户选择安装目录。
 DisableDirPage=no
 ; 不显示程序组选择页（每用户安装）。
 DisableProgramGroupPage=yes

@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   verify:
-    name: Build · Syntax · Privacy · Docs
+    name: Build · Syntax · Privacy
     runs-on: windows-latest
     timeout-minutes: 25
 
@@ -43,7 +43,3 @@ jobs:
       - name: Privacy check
         if: github.event_name == 'pull_request'
         run: npm run check:privacy -- --range origin/${{ github.base_ref }}...HEAD
-
-      - name: Docs obligations
-        if: github.event_name == 'pull_request'
-        run: npm run check:docs -- --range origin/${{ github.base_ref }}...HEAD

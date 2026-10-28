@@ -48,6 +48,17 @@ data/
 scripts/package.mjs
 scripts/assets/
 public/showcase.html
-docs/decisions/0031-friend-release-package.md
 design-drafts/previews/
 design-drafts/v2/previews/
+
+# 工程过程文件：仅本机保留（公开仓库只保留源代码）
+AGENTS.md
+TASK_BOOK.md
+CHANGELOG.md
+CONTRIBUTING.md
+docs/
+design-drafts/
+.github/CODEOWNERS
+.github/ISSUE_TEMPLATE/
+.github/PULL_REQUEST_TEMPLATE.md
+scripts/check-docs.mjs

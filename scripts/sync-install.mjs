@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 // KERNEL · 安装版实时同步
-// 把工作区源码白名单镜像到安装目录（D:\KERNEL），供其自带 Vite dev 热更新即时生效。
+// 把工作区源码白名单镜像到安装目录（默认仓库同级 kernel-install，可用参数或 KERNEL_SYNC_DEST 覆盖），供其自带 Vite dev 热更新即时生效。
 //
 // 用法：
-//   node scripts/sync-install.mjs [destRoot]      # 默认 D:/KERNEL（可用 KERNEL_SYNC_DEST 覆盖）
+//   node scripts/sync-install.mjs [destRoot]      # 默认 ../kernel-install（可用 KERNEL_SYNC_DEST 覆盖）
 //   node scripts/sync-install.mjs --once          # 只同步一次后退出
 //
 // 纪律：只同步「代码 / 配置」白名单；绝不触碰 data / logs / runtime / node_modules /
@@ -16,7 +16,7 @@ const SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const args = process.argv.slice(2)
 const ONCE = args.includes('--once')
 const DEST = path.resolve(
-  args.find((a) => !a.startsWith('--')) ?? process.env.KERNEL_SYNC_DEST ?? 'D:/KERNEL',
+  args.find((a) => !a.startsWith('--')) ?? process.env.KERNEL_SYNC_DEST ?? path.join(SRC, '..', 'kernel-install'),
 )
 
 /** 白名单：整目录同步 */

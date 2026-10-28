@@ -16,8 +16,7 @@
     "installer": "node scripts/build-installer.mjs",
     "check:syntax": "node scripts/check-syntax.mjs",
     "check:privacy": "node scripts/check-privacy.mjs",
-    "check:docs": "node scripts/check-docs.mjs",
-    "verify": "npm run build && npm run check:syntax && npm run check:privacy && npm run check:docs"
+    "verify": "npm run build && npm run check:syntax && npm run check:privacy"
   },
   "dependencies": {
     "@fontsource-variable/inter": "^5.1.0",

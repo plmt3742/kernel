@@ -4,11 +4,11 @@
 
 KERNEL 是一个本地优先的个人事务工具：课表、任务、日程、项目、资料、笔记和复盘收在一个地方。数据是你自己电脑上的 JSON 文件；AI 由本机 opencode 代理，但模型请求会发往 DeepSeek（内容会出网，Key 只存本机）。
 
-![KERNEL 总览](docs/assets/overview.png)
+![KERNEL 总览](assets/overview.png)
 
 项目名来自操作系统内核：进程对应任务 / 项目，内存对应资料，I/O 对应收件箱，调度器对应日程，GC 对应回顾。
 
-系统不按身份分区——学生、助理、竞赛负责人这些身份都只是标签，在视图里筛。一级导航只有一套通用循环：捕捉 → 澄清 → 组织 → 执行 → 回顾。为什么这么设计，见 [ADR-0002](docs/decisions/0002-no-role-silos.md)。
+系统不按身份分区——学生、助理、竞赛负责人这些身份都只是标签，在视图里筛。一级导航只有一套通用循环：捕捉 → 澄清 → 组织 → 执行 → 回顾。
 
 ## 快速开始
 
@@ -39,7 +39,7 @@ npm run server               # 只开数据服务
 npm run installer            # 打 Windows 安装包（见下）
 ```
 
-手机上用：连同一个 WiFi，`npm run dev -- --host`，然后手机打开 `http://<电脑局域网IP>:5173`。防火墙和常见问题见 [docs/07-DEPLOYMENT.md](docs/07-DEPLOYMENT.md)。
+手机上用：连同一个 WiFi，`npm run dev -- --host`，然后手机打开 `http://<电脑局域网IP>:5173`。前端与数据服务默认只监听本机，局域网访问需显式 `--host`，并确认防火墙放行 5173。
 
 ## Windows 安装包
 
@@ -59,7 +59,7 @@ npm run installer            # 打 Windows 安装包（见下）
 
 - webhook URL 与入站 token 只存本机 `data/meta/secrets.json`（gitignore，不回显、不入库）。
 - 入站预留 `POST /api/wechat/inbound`（`Authorization: Bearer <token>`、仅 `127.0.0.1`、`msgId` 幂等），Phase 2 中继直接调用。
-- 个人微信非官方协议（itchat / wechaty / PC 注入）有封号风险，明确不接入；详见 [ADR-0046](docs/decisions/0046-wechat-channel.md)。
+- 个人微信非官方协议（itchat / wechaty / PC 注入）有封号风险，明确不接入。
 
 ## 能做什么
 
@@ -70,7 +70,7 @@ npm run installer            # 打 Windows 安装包（见下）
 - **踪迹**：随手记一句「我刚刚做了什么」（可配图），按时间排成动态流或时间线；也能让 AI 从收件箱、对话里替你识别入账。
 - **微信通知（Phase 1）**：企业微信群机器人 webhook 仅出站；每日简报 / 任务到期提醒 / 测试推送，设置 → 通知配置；webhook 与 token 只存本机。
 
-![资料与笔记](docs/assets/library.png)
+![资料与笔记](assets/library.png)
 
 - **回顾**：每周 / 每月出一份复盘报告，AI 写、自动归档，可翻历史。
 - **总览**：直接问库里的日程、任务、笔记；也能让它改某个日程的时间——改之前先给你看新旧对照，点「应用」才写。
@@ -107,38 +107,33 @@ npm run installer            # 打 Windows 安装包（见下）
 
 Key 也可以不写环境变量，直接在应用里填：设置 → AI 集成。它存在本机 `data/meta/secrets.json`（已 gitignore，不进版本库）。
 
-## 开发环境（AI 协作）
+## AI 实现
 
-KERNEL 的代码主要是在 AI 编码代理的协作下写出来的——这套环境本身也是项目的一部分。
+- **编码代理**：opencode（本机 `127.0.0.1:4096`），负责收件箱解析、回顾草稿、总览对话等结构化任务。
+- **模型**：DeepSeek（默认 `deepseek/deepseek-flash`），走 DeepSeek API；Key 只存本机（环境变量，或「设置 → AI 集成」）。
+- **链路**：浏览器 → 本机数据服务 → opencode serve → DeepSeek。模型请求会出网，业务数据仍只落本机。
+- **确认后写入**：AI 只产出结构化提案，用户确认后才经唯一写入口落盘；对话与草稿默认不落库。
 
-- **编码代理**：[opencode](https://opencode.ai)（本机运行，端口 4096）。根目录的 [`AGENTS.md`](AGENTS.md) 就是给它的操作手册：速览、命令、数据纪律、文档义务都写在那里。
-- **模型**：DeepSeek Flash（`deepseek/deepseek-flash`），走 DeepSeek API；Key 只存本机（环境变量，或「设置 → AI 集成」）。
-- **插件**：`oh-my-openagent`（多智能体编排——`oracle` 复核、`librarian` 查文档与开源实现、`explore` 搜代码、`metis` 预规划、`momus` 计划评审、`sisyphus` 编排派发等）与 `ecc-universal`，另有一个本地守卫插件。
-- **MCP**：GitHub（GitHub Copilot MCP）；另接入 Context7 查库文档。
-- **技能**：按需加载的 60+ 个 skill（前端设计、调试、去 AI 味、图表、文档格式、端到端测试等）。
-- **运行时**：Node.js 22 LTS（CI 基线；本地可更高）· npm 10 · Python 3.13。
-- **协作留痕**：[`docs/ai-worklog/`](docs/ai-worklog/) 按时间记录核心协作（日期 / 提交 / Prompt / 结果），并附 [`COMMITS-MAP.md`](docs/ai-worklog/COMMITS-MAP.md) 提交对照。
+## 质量门禁
 
-## 协作
+```bash
+npm run build          # TypeScript + Vite 生产构建
+npm run check:syntax   # server/ 与 scripts/ 语法检查
+npm run check:privacy  # 密钥 / 本机路径 / 私有数据扫描
+npm run verify         # 上述三项
+```
 
-协作者先读 [CONTRIBUTING.md](CONTRIBUTING.md)：角色与决策权、工单九要素、通道与文件所有权、分支与提交、PR 与合并、DoD 五条门禁、数据与隐私红线。
+## 项目结构
 
-`main` 受保护：不能直推，必须开 PR 并由所有者合并；CI 会跑构建、语法、隐私与文档义务检查。
-
-## 文档
-
-- [CONTRIBUTING.md](CONTRIBUTING.md) — 协作规范
-- [docs/00-DESIGN-BRIEF.md](docs/00-DESIGN-BRIEF.md) — 项目宪法（事实源）
-- [docs/01-PROJECT-BRIEF.md](docs/01-PROJECT-BRIEF.md) — 背景、用户画像、设计立场
-- [docs/02-ARCHITECTURE.md](docs/02-ARCHITECTURE.md) — 技术选型与架构
-- [docs/03-DESIGN-SYSTEM.md](docs/03-DESIGN-SYSTEM.md) — 设计 token 与组件规范
-- [docs/04-DATA-MODEL.md](docs/04-DATA-MODEL.md) — 数据模型
-- [docs/05-FILE-TREE.md](docs/05-FILE-TREE.md) — 目录结构
-- [docs/06-ROADMAP.md](docs/06-ROADMAP.md) — 版本路线
-- [docs/07-DEPLOYMENT.md](docs/07-DEPLOYMENT.md) — 源码 / 安装包运行、AI 出网、局域网、FAQ
-- [docs/09-RISK-REGISTER.md](docs/09-RISK-REGISTER.md) — 风险台账
-- [docs/decisions/](docs/decisions/) — 决策记录（ADR）
-- [CHANGELOG.md](CHANGELOG.md) · [TASK_BOOK.md](TASK_BOOK.md) — 变更日志与任务台账
+```text
+src/            React 19 + TypeScript 前端（视图 / 组件 / 派生逻辑）
+server/         本机数据服务（唯一写入口 / Zod / 原子写 / 审计 / AI 代理 / 通知）
+scripts/        开发、种子数据、打包与检查脚本
+public/         静态资源与使用指南
+installer/      Windows 安装包定义与启动页
+assets/         README 截图
+data/           运行时数据（gitignore，不入库）
+```
 
 ## 团队信息
 
