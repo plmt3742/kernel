@@ -1,10 +1,10 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="dark">
-<meta name="description" content="KERNEL 启动中 · 本地优先的个人事务内核">
+<meta name="description" content="KERNEL 启动中 · 本地优先的个人事务系统">
 <title>KERNEL · 启动中</title>
 <style>
 /* =============================================================================
@@ -16,15 +16,15 @@
 :root {
   /* 表面阶 */
   --bg: #0f0f10;
-  --surface: #1a1a1c;
-  --surface-elevated: #212124;
-  --surface-hover: #232327;
-  --surface-sunken: #141416;
+  --surface: #121218;
+  --surface-elevated: #16161E;
+  --surface-hover: #1E1A2A;
+  --surface-sunken: #101016;
 
   /* 文字 */
   --ink: #f4f4f5;
-  --ink-2: #a1a1aa;
-  --muted: #929298;
+  --ink-2: #B7B0C9;
+  --muted: #8E879F;
 
   /* 边缘 / 填充 */
   --outline: rgba(255, 255, 255, 0.06);
@@ -34,12 +34,12 @@
   --fill-secondary: rgba(255, 255, 255, 0.08);
 
   /* 强调色：仅信号 / 焦点 / 激活 */
-  --accent: #ff5a52;
+  --accent: #CDBBFF;
   --accent-ink: #0f0f10;
 
   /* 语义色（克制，必伴随文字） */
-  --success: #4caf7d;
-  --warning: #d08a2b;
+  --success: #BEFFE1;
+  --warning: #FFD6AA;
 
   /* 柔影悬浮 */
   --shadow-card: 0 16px 40px rgba(0, 0, 0, 0.45);
@@ -85,7 +85,7 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 
 body {
   background-color: var(--bg);
-  background-image: radial-gradient(900px 460px at 50% -12%, rgba(255, 90, 82, 0.045), transparent 62%);
+  background-image: radial-gradient(900px 460px at 50% -12%, rgba(205, 187, 255, 0.045), transparent 62%);
   background-repeat: no-repeat;
   color: var(--ink);
   font-family: var(--font-sans);
@@ -274,7 +274,7 @@ body[data-state="ready"] .btn--primary {
   border-color: transparent;
   color: var(--accent-ink);
   font-weight: 600;
-  box-shadow: 0 10px 28px rgba(255, 90, 82, 0.28);
+  box-shadow: 0 10px 28px rgba(205, 187, 255, 0.28);
 }
 body[data-state="ready"] .btn--primary:hover {
   background: var(--accent);
@@ -367,7 +367,7 @@ body[data-state="ready"] .btn--primary:hover {
         <span class="brand__ver mono">v0.5.0</span>
       </span>
     </header>
-    <p class="tagline">个人事务内核 · 本地优先</p>
+    <p class="tagline">个人事务系统 · 本地优先</p>
 
     <div class="status">
       <div class="status__head">

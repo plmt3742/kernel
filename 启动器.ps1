@@ -172,7 +172,7 @@ try {
         Opacity="0">
   <Window.Resources>
     <Style x:Key="TitleButton" TargetType="Button">
-      <Setter Property="Foreground" Value="#929298"/>
+      <Setter Property="Foreground" Value="#8E879F"/>
       <Setter Property="Background" Value="Transparent"/>
       <Setter Property="Width" Value="28"/>
       <Setter Property="Height" Value="28"/>
@@ -186,7 +186,7 @@ try {
             </Border>
             <ControlTemplate.Triggers>
               <Trigger Property="IsMouseOver" Value="True">
-                <Setter TargetName="bg" Property="Background" Value="#14FFFFFF"/>
+                <Setter TargetName="bg" Property="Background" Value="#16CDBBFF"/>
                 <Setter Property="Foreground" Value="#F4F4F5"/>
               </Trigger>
             </ControlTemplate.Triggers>
@@ -195,9 +195,9 @@ try {
       </Setter>
     </Style>
     <Style x:Key="SecondaryButton" TargetType="Button">
-      <Setter Property="Foreground" Value="#A1A1AA"/>
-      <Setter Property="Background" Value="#14FFFFFF"/>
-      <Setter Property="BorderBrush" Value="#1FFFFFFF"/>
+      <Setter Property="Foreground" Value="#B7B0C9"/>
+      <Setter Property="Background" Value="#16CDBBFF"/>
+      <Setter Property="BorderBrush" Value="#2ACDBBFF"/>
       <Setter Property="FontSize" Value="13"/>
       <Setter Property="Height" Value="40"/>
       <Setter Property="Cursor" Value="Hand"/>
@@ -210,7 +210,7 @@ try {
             </Border>
             <ControlTemplate.Triggers>
               <Trigger Property="IsMouseOver" Value="True">
-                <Setter TargetName="bg" Property="Background" Value="#232327"/>
+                <Setter TargetName="bg" Property="Background" Value="#1E1A2A"/>
                 <Setter Property="Foreground" Value="#F4F4F5"/>
               </Trigger>
               <Trigger Property="IsEnabled" Value="False">
@@ -223,8 +223,8 @@ try {
     </Style>
     <Style x:Key="PrimaryButton" TargetType="Button">
       <Setter Property="Foreground" Value="#0F0F10"/>
-      <Setter Property="Background" Value="#FF5A52"/>
-      <Setter Property="BorderBrush" Value="#FF5A52"/>
+      <Setter Property="Background" Value="#CDBBFF"/>
+      <Setter Property="BorderBrush" Value="#CDBBFF"/>
       <Setter Property="FontSize" Value="13"/>
       <Setter Property="FontWeight" Value="SemiBold"/>
       <Setter Property="Height" Value="40"/>
@@ -238,7 +238,7 @@ try {
             </Border>
             <ControlTemplate.Triggers>
               <Trigger Property="IsMouseOver" Value="True">
-                <Setter TargetName="bg" Property="Background" Value="#FF6D66"/>
+                <Setter TargetName="bg" Property="Background" Value="#A9ECFF"/>
               </Trigger>
               <Trigger Property="IsEnabled" Value="False">
                 <Setter Property="Opacity" Value="0.5"/>
@@ -250,23 +250,23 @@ try {
     </Style>
   </Window.Resources>
   <Grid Margin="20">
-    <Border x:Name="card" Width="436" CornerRadius="16" Background="#1A1A1C" BorderBrush="#0FFFFFFF" BorderThickness="1">
+    <Border x:Name="card" Width="436" CornerRadius="16" Background="#121218" BorderBrush="#18CDBBFF" BorderThickness="1">
       <Border.Effect>
-        <DropShadowEffect Color="Black" BlurRadius="26" ShadowDepth="0" Direction="270" Opacity="0.55"/>
+        <DropShadowEffect Color="#CDBBFF" BlurRadius="34" ShadowDepth="0" Direction="270" Opacity="0.26"/>
       </Border.Effect>
       <Grid>
         <Border CornerRadius="16" IsHitTestVisible="False">
           <Border.Background>
             <RadialGradientBrush Center="0.5,0.02" GradientOrigin="0.5,0.02" RadiusX="0.85" RadiusY="0.5">
-              <GradientStop Color="#0DFF5A52" Offset="0"/>
-              <GradientStop Color="#00FF5A52" Offset="1"/>
+              <GradientStop Color="#22CDBBFF" Offset="0"/>
+              <GradientStop Color="#00CDBBFF" Offset="1"/>
             </RadialGradientBrush>
           </Border.Background>
         </Border>
         <StackPanel Margin="24,22,24,22">
           <Grid>
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
-              <Border Width="34" Height="34" CornerRadius="10" Background="#212124" BorderBrush="#1FFFFFFF" BorderThickness="1">
+              <Border Width="34" Height="34" CornerRadius="10" Background="#16161E" BorderBrush="#2ACDBBFF" BorderThickness="1">
                 <Viewbox Width="18" Height="18" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center">
                   <Canvas Width="64" Height="64">
                     <Path Stroke="#F4F4F5" StrokeThickness="5" StrokeStartLineCap="Square" StrokeEndLineCap="Square" StrokeLineJoin="Miter" Data="M20,14 V50 M20,33 L44,14 M20,33 L44,50"/>
@@ -276,7 +276,7 @@ try {
               <StackPanel Margin="12,0,0,0" VerticalAlignment="Center">
                 <StackPanel Orientation="Horizontal">
                   <TextBlock Text="KERNEL" FontSize="17" FontWeight="SemiBold" Foreground="#F4F4F5"/>
-                  <TextBlock Text="v0.5.0" FontSize="11" Foreground="#929298" Margin="8,0,0,2" VerticalAlignment="Bottom"/>
+                  <TextBlock Text="v0.5.0" FontSize="11" Foreground="#8E879F" Margin="8,0,0,2" VerticalAlignment="Bottom"/>
                 </StackPanel>
               </StackPanel>
             </StackPanel>
@@ -285,7 +285,7 @@ try {
               <Button x:Name="closeBtn" Style="{StaticResource TitleButton}" Content="✕" Margin="2,0,0,0"/>
             </StackPanel>
           </Grid>
-          <TextBlock x:Name="tagline" Text="个人事务内核 · 本地优先" FontSize="13" Foreground="#A1A1AA" Margin="0,12,0,0"/>
+          <TextBlock x:Name="tagline" Text="个人事务系统 · 本地优先" FontSize="13" Foreground="#B7B0C9" Margin="0,12,0,0"/>
           <Grid x:Name="statusHead" Margin="0,22,0,0">
             <Grid.ColumnDefinitions>
               <ColumnDefinition Width="Auto"/>
@@ -293,20 +293,20 @@ try {
               <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
             <Canvas Grid.Column="0" Width="11" Height="11" VerticalAlignment="Center" Margin="1,0,0,0">
-              <Ellipse x:Name="ring" Width="11" Height="11" Canvas.Left="0" Canvas.Top="0" Fill="#FF5A52" Opacity="0.5" RenderTransformOrigin="0.5,0.5">
+              <Ellipse x:Name="ring" Width="11" Height="11" Canvas.Left="0" Canvas.Top="0" Fill="#CDBBFF" Opacity="0.5" RenderTransformOrigin="0.5,0.5">
                 <Ellipse.RenderTransform>
                   <ScaleTransform ScaleX="1" ScaleY="1"/>
                 </Ellipse.RenderTransform>
               </Ellipse>
-              <Ellipse x:Name="core" Width="11" Height="11" Canvas.Left="0" Canvas.Top="0" Fill="#FF5A52"/>
+              <Ellipse x:Name="core" Width="11" Height="11" Canvas.Left="0" Canvas.Top="0" Fill="#CDBBFF"/>
             </Canvas>
             <TextBlock x:Name="statusText" Grid.Column="1" Margin="12,0,0,0" FontSize="14" Foreground="#F4F4F5" VerticalAlignment="Center"/>
-            <TextBlock x:Name="dots" Grid.Column="2" Margin="2,0,0,0" FontSize="14" Foreground="#A1A1AA" VerticalAlignment="Center"/>
+            <TextBlock x:Name="dots" Grid.Column="2" Margin="2,0,0,0" FontSize="14" Foreground="#B7B0C9" VerticalAlignment="Center"/>
           </Grid>
-          <TextBlock x:Name="statusHint" Margin="0,8,0,0" FontSize="12" Foreground="#929298" TextWrapping="Wrap" Visibility="Collapsed"/>
-          <Border x:Name="track" Height="3" CornerRadius="1.5" Background="#0DFFFFFF" Margin="0,14,0,0">
+          <TextBlock x:Name="statusHint" Margin="0,8,0,0" FontSize="12" Foreground="#8E879F" TextWrapping="Wrap" Visibility="Collapsed"/>
+          <Border x:Name="track" Height="3" CornerRadius="1.5" Background="#18CDBBFF" Margin="0,14,0,0">
             <Grid x:Name="trackClip" ClipToBounds="True">
-              <Border x:Name="trackBar" Height="3" CornerRadius="1.5" HorizontalAlignment="Left" Background="#FF5A52" Width="131"/>
+              <Border x:Name="trackBar" Height="3" CornerRadius="1.5" HorizontalAlignment="Left" Background="#CDBBFF" Width="131"/>
             </Grid>
           </Border>
           <StackPanel x:Name="actions" Margin="0,22,0,0">
@@ -315,10 +315,10 @@ try {
             <Button x:Name="logBtn" Style="{StaticResource SecondaryButton}" Content="用 启动.cmd 查看日志" Margin="0,12,0,0" Visibility="Collapsed"/>
           </StackPanel>
           <Grid x:Name="foot" Margin="0,18,0,0">
-            <Border Height="1" VerticalAlignment="Top" Background="#0FFFFFFF"/>
+            <Border Height="1" VerticalAlignment="Top" Background="#18CDBBFF"/>
             <Grid Margin="0,14,0,0">
-              <TextBlock x:Name="footAddr" HorizontalAlignment="Left" FontSize="11.5" Foreground="#929298" FontFamily="Consolas, Microsoft YaHei" Text="127.0.0.1:5173"/>
-              <TextBlock x:Name="deskLink" HorizontalAlignment="Right" FontSize="11.5" Foreground="#A1A1AA" Background="Transparent" Cursor="Hand" Text="创建桌面快捷方式">
+              <TextBlock x:Name="footAddr" HorizontalAlignment="Left" FontSize="11.5" Foreground="#8E879F" FontFamily="Consolas, Microsoft YaHei" Text="127.0.0.1:5173"/>
+              <TextBlock x:Name="deskLink" HorizontalAlignment="Right" FontSize="11.5" Foreground="#B7B0C9" Background="Transparent" Cursor="Hand" Text="创建桌面快捷方式">
                 <TextBlock.Style>
                   <Style TargetType="TextBlock">
                     <Style.Triggers>
@@ -487,21 +487,21 @@ try {
       $mainBtn.Content = '启动中…'
       $mainBtn.IsEnabled = $false
       Start-Dots
-      Set-Pulse '#FF5A52' $true
-      Set-Track 'starting' '#FF5A52'
+      Set-Pulse '#CDBBFF' $true
+      Set-Track 'starting' '#CDBBFF'
     } elseif ($phase -eq 'stopping' -and $online) {
       $statusText.Text = '停止中…'
       $mainBtn.Content = '打开 KERNEL'
       $mainBtn.IsEnabled = $false
       Start-Dots
-      Set-Pulse '#FF5A52' $true
-      Set-Track 'starting' '#FF5A52'
+      Set-Pulse '#CDBBFF' $true
+      Set-Track 'starting' '#CDBBFF'
     } elseif ($online) {
       $statusText.Text = '已就绪'
       $mainBtn.Content = '打开 KERNEL'
       Stop-Dots
-      Set-Pulse '#4CAF7D' $false
-      Set-Track 'ready' '#4CAF7D'
+      Set-Pulse '#BEFFE1' $false
+      Set-Track 'ready' '#BEFFE1'
       if ($script:weStarted) {
         $stopBtn.Visibility = 'Visible'
         $stopBtn.Content = '停止服务'
@@ -515,14 +515,14 @@ try {
       $logBtn.Visibility = 'Visible'
       $logBtn.Content = '用 启动.cmd 查看日志'
       Stop-Dots
-      Set-Pulse '#D08A2B' $false
-      Set-Track 'timeout' '#D08A2B'
+      Set-Pulse '#FFD6AA' $false
+      Set-Track 'timeout' '#FFD6AA'
     } else {
       $statusText.Text = '未启动'
       $mainBtn.Content = '启动 KERNEL'
       Stop-Dots
-      Set-Pulse '#FF5A52' $true
-      Set-Track 'idle' '#FF5A52'
+      Set-Pulse '#CDBBFF' $true
+      Set-Track 'idle' '#CDBBFF'
     }
   }
 
