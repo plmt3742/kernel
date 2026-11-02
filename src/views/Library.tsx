@@ -1,16 +1,15 @@
 // KERNEL · 资料 LIBRARY（P1）：笔记 + 资料混合流 / 类型与标签筛选 / Markdown 阅读抽屉
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import { clsx } from 'clsx'
-import { Sparkles } from 'lucide-react'
-import { Panel } from '@/components/Panel'
+import { ArrowRight, Search, Sparkles } from 'lucide-react'
 import { Modal } from '@/components/Modal'
+import { PageHeader } from '@/components/shell/PageHeader'
 import { EntityEditForm, type EditFieldSpec } from '@/components/EntityEditForm'
 import { NoteComposeModal } from '@/components/NoteComposeModal'
 import { ResourceDraftModal } from '@/components/ResourceDraftModal'
 import { TagPill } from '@/components/TagPill'
-import { EmptyState } from '@/components/EmptyState'
 import { Relations } from '@/components/Relations'
 import { useToast } from '@/context/ToastContext'
 import {
@@ -105,8 +104,35 @@ interface DrawerTarget {
   id: string
 }
 
+interface LibraryRowData {
+  kind: 'note' | 'resource'
+  id: string
+  title: string
+  sub: string
+  mid: string
+  at: number
+  time: string
+}
+
+interface RecentEntry {
+  kind: 'note' | 'resource'
+  title: string
+  meta: string
+  at: string
+}
+
+function rowTagText(tags: string[]): string {
+  if (tags.length === 0) return '—'
+  const head = tags
+    .slice(0, 2)
+    .map((item) => tagLabel(item))
+    .join(' · ')
+  return tags.length > 2 ? `${head} +${tags.length - 2}` : head
+}
+
 export function Library() {
   const now = useNow()
+  const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   // 界面状态（Slice Z · F28）：来自模块级 store（跨路由 + 刷新保留）
   const libraryUi = useUiStore(libraryUiStore)
@@ -537,233 +563,297 @@ export function Library() {
     })()
   }
 
-  return (
-    <div className="k-view">
-      <div className="k-tabs k-lib__tabs">
-        {(
-          [
-            ['all', '全部 ALL'],
-            ['notes', '笔记 NOTES'],
-            ['resources', '资料 RESOURCES'],
-          ] as const
-        ).map(([value, label]) => (
-          <button
-            type="button"
-            key={value}
-            className={tab === value ? 'k-tab is-active' : 'k-tab'}
-            onClick={() => setTab(value)}
-          >
-            {label}
-          </button>
-        ))}
-        <span className="u-label k-muted k-lib__tabs-count">
-          笔记 {notes.length} · 资料 {resources.length}
-        </span>
-      </div>
+  const tagsTotal = getTags().length
+  const unreadCount = resources.filter((resource) => resource.status === 'unread').length
 
-      <div className="k-lib__filters">
-        <div className="k-lib__fgroup k-lib__search" role="search">
-          <span className="k-lib__flabel u-label">搜索</span>
+  const handleShowUnread = (): void => {
+    if (tab === 'resources' && resourceStatus === 'unread') {
+      setResourceStatus('')
+      return
+    }
+    setTab('resources')
+    setResourceStatus('unread')
+  }
+
+  const rows: LibraryRowData[] = []
+  if (showNotes) {
+    for (const note of filteredNotes) {
+      const area = note.areaId !== undefined ? getAreaById(note.areaId) : undefined
+      rows.push({
+        kind: 'note',
+        id: note.id,
+        title: note.title,
+        sub: [
+          NOTE_TYPE_LABEL[note.type],
+          area?.title ?? '未分区',
+          note.distillLevel > 0 ? `L${note.distillLevel}` : '',
+        ]
+          .filter((part) => part !== '')
+          .join(' · '),
+        mid: rowTagText(note.tags),
+        at: new Date(note.updatedAt).getTime(),
+        time: formatRelative(note.updatedAt, now),
+      })
+    }
+  }
+  if (showResources) {
+    for (const resource of filteredResources) {
+      const area = resource.areaId !== undefined ? getAreaById(resource.areaId) : undefined
+      rows.push({
+        kind: 'resource',
+        id: resource.id,
+        title: resource.title,
+        sub: [
+          RESOURCE_KIND_LABEL[resource.kind],
+          RESOURCE_STATUS_LABEL[resource.status],
+          area?.title ?? '未分区',
+        ].join(' · '),
+        mid: rowTagText(resource.tags),
+        at: new Date(resource.addedAt).getTime(),
+        time: formatRelative(resource.addedAt, now),
+      })
+    }
+  }
+  rows.sort((a, b) => b.at - a.at)
+
+  const latestCandidates: RecentEntry[] = [
+    ...notes.map((note) => {
+      const area = note.areaId !== undefined ? getAreaById(note.areaId) : undefined
+      return {
+        kind: 'note' as const,
+        title: note.title,
+        meta: [NOTE_TYPE_LABEL[note.type], area?.title ?? '未分区'].join(' · '),
+        at: note.updatedAt,
+      }
+    }),
+    ...resources.map((resource) => ({
+      kind: 'resource' as const,
+      title: resource.title,
+      meta: `${RESOURCE_KIND_LABEL[resource.kind]} · ${RESOURCE_STATUS_LABEL[resource.status]}`,
+      at: resource.addedAt,
+    })),
+  ]
+  const latest = latestCandidates.sort(
+    (a, b) => new Date(b.at).getTime() - new Date(a.at).getTime(),
+  )[0]
+
+  return (
+    <div className="gh-page">
+      <PageHeader
+        breadcrumb={[{ label: 'KERNEL', to: '/' }, { label: '资料' }]}
+        title="资料"
+        description="笔记与资料共用一张索引：写下来的、收进来的，都按最近更新排开。"
+        meta={
+          <>
+            <b>
+              {notes.length} 笔记 · {resources.length} 资料
+            </b>
+            <span>{tagsTotal} 标签</span>
+          </>
+        }
+        actions={
+          <>
+            <button type="button" className="gh-btn" onClick={() => setComposing(true)}>
+              新建笔记
+            </button>
+            <button
+              type="button"
+              className="gh-btn gh-btn--primary"
+              onClick={() => setComposingResource(true)}
+            >
+              新建资料
+            </button>
+          </>
+        }
+        tabs={
+          <>
+            {(
+              [
+                ['all', '全部', notes.length + resources.length],
+                ['notes', '笔记', notes.length],
+                ['resources', '资料', resources.length],
+              ] as const
+            ).map(([value, label, count]) => (
+              <button
+                key={value}
+                type="button"
+                className={clsx('gh-tab', tab === value && 'is-active')}
+                aria-pressed={tab === value}
+                onClick={() => setTab(value)}
+              >
+                {label}
+                <span className="gh-tab__count">{count}</span>
+              </button>
+            ))}
+          </>
+        }
+      />
+
+      <div className="gh-toolbar">
+        <label className="gh-search-input">
+          <Search size={14} strokeWidth={1.8} aria-hidden />
           <input
-            className="k-input"
             type="search"
             value={q}
-            aria-label="搜索笔记与资料"
-            placeholder="标题 / 正文 / 标签"
             onChange={(event) => setQ(event.target.value)}
+            placeholder="搜索标题 / 正文 / 标签…"
+            aria-label="搜索笔记与资料"
           />
-        </div>
-        {showNotes && (
-          <div className="k-lib__fgroup" role="group" aria-label="笔记类型">
-            <span className="k-lib__flabel u-label">笔记类型</span>
-            <div className="k-lib__seg">
-              <TagPill selected={noteType === ''} onClick={() => setNoteType('')}>
-                全部
-              </TagPill>
-              {NOTE_TYPES.map((type) => (
-                <TagPill
-                  key={type}
-                  selected={noteType === type}
-                  onClick={() => setNoteType(noteType === type ? '' : type)}
-                >
-                  {NOTE_TYPE_LABEL[type]}
-                </TagPill>
-              ))}
-            </div>
-          </div>
-        )}
-        {showResources && (
-          <>
-            <div className="k-lib__fgroup" role="group" aria-label="资料类型">
-              <span className="k-lib__flabel u-label">资料类型</span>
-              <div className="k-lib__seg">
-                <TagPill selected={resourceKind === ''} onClick={() => setResourceKind('')}>
-                  全部
-                </TagPill>
-                {RESOURCE_KINDS.map((kind) => (
-                  <TagPill
-                    key={kind}
-                    selected={resourceKind === kind}
-                    onClick={() => setResourceKind(resourceKind === kind ? '' : kind)}
-                  >
-                    {RESOURCE_KIND_LABEL[kind]}
-                  </TagPill>
-                ))}
-              </div>
-            </div>
-            <div className="k-lib__fgroup" role="group" aria-label="状态">
-              <span className="k-lib__flabel u-label">状态</span>
-              <div className="k-lib__seg">
-                <TagPill selected={resourceStatus === ''} onClick={() => setResourceStatus('')}>
-                  全部
-                </TagPill>
-                {RESOURCE_STATUSES.map((status) => (
-                  <TagPill
-                    key={status}
-                    selected={resourceStatus === status}
-                    onClick={() => setResourceStatus(resourceStatus === status ? '' : status)}
-                  >
-                    {RESOURCE_STATUS_LABEL[status]}
-                  </TagPill>
-                ))}
-              </div>
-            </div>
-          </>
-        )}
-        <div className="k-lib__fgroup" role="group" aria-label="标签">
-          <span className="k-lib__flabel u-label">标签</span>
-          <div className="k-lib__seg">
-            <TagPill selected={tag === ''} onClick={() => setTag('')}>
-              全部
-            </TagPill>
-            {topicTags.map((item) => (
-              <TagPill
-                key={item.id}
-                selected={tag === item.name}
-                onClick={() => setTag(tag === item.name ? '' : item.name)}
+        </label>
+        <div className="gh-toolbar__group">
+          {showNotes && (
+            <label className="gh-filter-select">
+              <span>笔记</span>
+              <select
+                value={noteType}
+                aria-label="笔记类型"
+                onChange={(event) => setNoteType(event.target.value as NoteType | '')}
               >
-                {item.label}
-              </TagPill>
-            ))}
-          </div>
+                <option value="">全部类型</option>
+                {NOTE_TYPES.map((type) => (
+                  <option key={type} value={type}>
+                    {NOTE_TYPE_LABEL[type]}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          {showResources && (
+            <>
+              <label className="gh-filter-select">
+                <span>资料</span>
+                <select
+                  value={resourceKind}
+                  aria-label="资料类型"
+                  onChange={(event) => setResourceKind(event.target.value as ResourceKind | '')}
+                >
+                  <option value="">全部类型</option>
+                  {RESOURCE_KINDS.map((kind) => (
+                    <option key={kind} value={kind}>
+                      {RESOURCE_KIND_LABEL[kind]}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="gh-filter-select">
+                <span>状态</span>
+                <select
+                  value={resourceStatus}
+                  aria-label="资料状态"
+                  onChange={(event) => setResourceStatus(event.target.value as ResourceStatus | '')}
+                >
+                  <option value="">全部状态</option>
+                  {RESOURCE_STATUSES.map((status) => (
+                    <option key={status} value={status}>
+                      {RESOURCE_STATUS_LABEL[status]}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </>
+          )}
         </div>
       </div>
 
-      {showNotes && (
-        <Panel
-          index="01"
-          title="笔记"
-          en="NOTES"
-          actions={
-            <div className="k-lib__head-actions">
-              <span className="u-label k-muted">{filteredNotes.length}</span>
-              <button
-                type="button"
-                className="k-btn k-btn--sm"
-                onClick={() => setComposing(true)}
-              >
-                新建笔记
-              </button>
-            </div>
-          }
-        >
-          {filteredNotes.length === 0 ? (
-            <EmptyState
-              index="01"
-              title="没有匹配的笔记"
-              hint={
-                searchNeedle !== ''
-                  ? `没有匹配「${q.trim()}」的记录`
-                  : '调整类型或标签筛选。'
-              }
-            />
-          ) : (
-            filteredNotes.map((note) => (
-              <button
-                type="button"
-                className="k-lib-row"
-                key={note.id}
-                onClick={() => setTarget({ kind: 'note', id: note.id })}
-              >
-                <span className="k-lib-row__kind u-label">
-                  {NOTE_TYPE_LABEL[note.type]}
-                  <span className="k-muted"> {NOTE_TYPE_EN[note.type]}</span>
-                </span>
-                <span className="k-lib-row__title">{note.title}</span>
-                <span className="k-lib-row__meta">
-                  <span className="k-distill" aria-label={`蒸馏层级 ${note.distillLevel}`}>
-                    <span className="k-distill__label u-label">D</span>
-                    {[0, 1, 2, 3].map((level) => (
-                      <span
-                        key={level}
-                        className={clsx('k-distill__cell', level < note.distillLevel && 'is-on')}
-                      />
-                    ))}
-                  </span>
-                  <span className="k-mono k-lib__time">{formatRelative(note.updatedAt, now)}</span>
-                </span>
-              </button>
-            ))
-          )}
-        </Panel>
-      )}
+      <div className="gh-tagstrip">
+        <span className="gh-tagstrip__label">标签</span>
+        <div className="gh-tagstrip__items">
+          <button
+            type="button"
+            className={clsx('gh-tag', tag === '' && 'is-on')}
+            onClick={() => setTag('')}
+          >
+            全部
+          </button>
+          {topicTags.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              className={clsx('gh-tag', tag === item.name && 'is-on')}
+              onClick={() => setTag(tag === item.name ? '' : item.name)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      </div>
 
-      {showResources && (
-        <Panel
-          index="02"
-          title="资料"
-          en="RESOURCES"
-          actions={
-            <div className="k-lib__head-actions">
-              <span className="u-label k-muted">{filteredResources.length}</span>
+      <div className="gh-lib-grid">
+        <section className="gh-card">
+          <div className="gh-card__head">
+            <span>{tab === 'notes' ? '笔记' : tab === 'resources' ? '资料' : '全部索引'}</span>
+            <span className="gh-card__muted">
+              {searchNeedle !== ''
+                ? `搜索「${q.trim()}」 · ${rows.length} 条`
+                : tag !== ''
+                  ? `标签 ${tagLabel(tag)} · ${rows.length} 条`
+                  : `共 ${rows.length} 条`}
+            </span>
+          </div>
+          {rows.length === 0 ? (
+            <div className="gh-empty gh-empty--inset">
+              <b>没有匹配的记录</b>
+              <span>调整搜索、类型、状态或标签筛选。</span>
+            </div>
+          ) : (
+            <div>
+              {rows.map((row) => (
+                <LibraryRow
+                  key={`${row.kind}-${row.id}`}
+                  row={row}
+                  onOpen={(target) =>
+                    navigate(`/library/${target.kind === 'note' ? 'notes' : 'resources'}/${target.id}`)
+                  }
+                />
+              ))}
+            </div>
+          )}
+        </section>
+
+        <aside className="gh-lib-side" aria-label="资料构成">
+          <section className="gh-card">
+            <div className="gh-card__head">构成</div>
+            <div className="gh-status-list">
+              <button type="button" className="gh-status-row" onClick={() => setTab('notes')}>
+                <span>笔记</span>
+                <b>{notes.length}</b>
+              </button>
+              <button type="button" className="gh-status-row" onClick={() => setTab('resources')}>
+                <span>资料</span>
+                <b>{resources.length}</b>
+              </button>
+              <div className="gh-status-row">
+                <span>标签</span>
+                <b>{tagsTotal}</b>
+              </div>
               <button
                 type="button"
-                className="k-btn k-btn--sm"
-                onClick={() => setComposingResource(true)}
+                className={clsx('gh-status-row', resourceStatus === 'unread' && 'is-active')}
+                onClick={handleShowUnread}
               >
-                新建资料
+                <span>待读</span>
+                <b>{unreadCount}</b>
               </button>
             </div>
-          }
-        >
-          {filteredResources.length === 0 ? (
-            <EmptyState
-              index="02"
-              title="没有匹配的资料"
-              hint={
-                searchNeedle !== ''
-                  ? `没有匹配「${q.trim()}」的记录`
-                  : '调整类型、状态或标签筛选。'
-              }
-            />
-          ) : (
-            filteredResources.map((resource) => {
-              const area = resource.areaId !== undefined ? getAreaById(resource.areaId) : undefined
-              return (
-                <button
-                  type="button"
-                  className="k-lib-row"
-                  key={resource.id}
-                  onClick={() => setTarget({ kind: 'resource', id: resource.id })}
-                >
-                  <span className="k-lib-row__kind u-label">
-                    {RESOURCE_KIND_LABEL[resource.kind]}
-                    <span className="k-muted"> {RESOURCE_KIND_EN[resource.kind]}</span>
-                  </span>
-                  <span className="k-lib-row__title">{resource.title}</span>
-                  <span className="k-lib-row__meta">
-                    <span>{RESOURCE_STATUS_LABEL[resource.status]}</span>
-                    {area !== undefined && <span className="k-mono">{area.title}</span>}
-                    <span className="k-mono k-lib__time">
-                      {formatRelative(resource.addedAt, now)}
-                    </span>
-                  </span>
-                </button>
-              )
-            })
-          )}
-        </Panel>
-      )}
+          </section>
+
+          <section className="gh-card">
+            <div className="gh-card__head">最近更新</div>
+            <div className="gh-card__body">
+              {latest === undefined ? (
+                <span className="gh-card__muted">还没有笔记或资料。</span>
+              ) : (
+                <>
+                  <b className="gh-lib-latest__title">{latest.title}</b>
+                  <p className="gh-card__muted gh-lib-latest__meta">
+                    {latest.meta} · {formatRelative(latest.at, now)}
+                  </p>
+                </>
+              )}
+            </div>
+          </section>
+        </aside>
+      </div>
 
       <Modal
         open={selectedNote !== undefined || selectedResource !== undefined}
@@ -776,7 +866,7 @@ export function Library() {
               : ''
         }
         title={selectedNote?.title ?? selectedResource?.title ?? ''}
-        className={selectedNote !== undefined ? 'k-modal--note' : 'k-modal--detail'}
+        className={clsx('w4-modal', selectedNote !== undefined ? 'k-modal--note' : 'k-modal--detail')}
         footer={
           (selectedNote !== undefined || selectedResource !== undefined) && !editing ? (
             <div className="k-modal__foot-actions">
@@ -1053,6 +1143,32 @@ export function Library() {
         onCreated={handleResourceCreated}
       />
     </div>
+  )
+}
+
+function LibraryRow({
+  row,
+  onOpen,
+}: {
+  row: LibraryRowData
+  onOpen: (target: DrawerTarget) => void
+}) {
+  return (
+    <button
+      type="button"
+      className="gh-lib-row"
+      onClick={() => onOpen({ kind: row.kind, id: row.id })}
+      title={`${row.title} · ${row.sub}`}
+    >
+      <span className="gh-lib-row__kind">{row.kind === 'note' ? '笔记' : '资料'}</span>
+      <span className="gh-lib-row__main">
+        <span className="gh-lib-row__title">{row.title}</span>
+        <span className="gh-lib-row__sub">{row.sub}</span>
+      </span>
+      <span className="gh-lib-row__tags">{row.mid}</span>
+      <span className="gh-lib-row__time">{row.time}</span>
+      <ArrowRight size={13} strokeWidth={1.6} aria-hidden />
+    </button>
   )
 }
 

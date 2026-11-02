@@ -1,0 +1,180 @@
+/* KERNEL · 动效与交互反馈
+   原则：短、可预期、只回应动作；减少动效时全部退化为静态。
+   微交互 140–180ms；页面进入 220ms；不使用循环装饰动画。 */
+
+@media (prefers-reduced-motion: no-preference) {
+  .gh-page,
+  .k-view {
+    animation: gh-page-in 220ms var(--ease-enter) both;
+  }
+
+  .gh-tab {
+    transition: color 160ms var(--ease-standard), border-color 160ms var(--ease-standard),
+      background-color 160ms var(--ease-standard);
+  }
+
+  .gh-issue-row,
+  .gh-project-row,
+  .gh-card {
+    transition: background-color 160ms var(--ease-standard),
+      border-color 160ms var(--ease-standard), box-shadow 160ms var(--ease-standard);
+  }
+
+  .gh-btn,
+  .k-btn {
+    transition: background-color 140ms var(--ease-standard),
+      border-color 140ms var(--ease-standard), color 140ms var(--ease-standard),
+      box-shadow 140ms var(--ease-standard), transform 120ms var(--ease-standard);
+  }
+
+  .gh-btn:active,
+  .k-btn:active,
+  .gh-tab:active,
+  .gh-project-row:active {
+    transform: translateY(1px);
+  }
+}
+
+@keyframes gh-page-in {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.gh-issue-row {
+  cursor: pointer;
+}
+
+.gh-issue-row:hover {
+  background: var(--gh-bg-subtle);
+}
+
+.gh-tab {
+  position: relative;
+}
+
+.gh-tab::after {
+  content: '';
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: -1px;
+  height: 2px;
+  background: var(--gh-accent);
+  transform: scaleX(0);
+  transform-origin: center;
+  transition: transform 180ms var(--ease-standard);
+}
+
+.gh-tab.is-active {
+  border-bottom-color: transparent;
+}
+
+.gh-tab.is-active::after {
+  transform: scaleX(1);
+}
+
+.k-review__tabs {
+  margin-bottom: 20px;
+}
+
+.k-review__cycles.is-single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.k-review__cycles.is-single .k-cycle__summary {
+  max-width: 88ch;
+}
+
+.k-review__archive {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.k-cal-c__group.is-overdue .k-cal-c__grouphd h3 {
+  color: var(--gh-danger);
+}
+
+.k-app .k-settings__nav-item.is-active {
+  background: var(--gh-bg-subtle);
+  box-shadow: inset 0 0 0 1px var(--gh-border);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gh-page,
+  .k-view {
+    animation: none;
+  }
+
+  .gh-btn,
+  .k-btn,
+  .gh-tab,
+  .gh-project-row {
+    transform: none !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .gh-tab::after {
+    transition: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .k-review__metrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .k-review__metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .gh-btn:hover,
+  .gh-quick:hover,
+  .gh-stat:hover {
+    will-change: transform;
+    transform: perspective(900px) rotateX(var(--lrx, 0deg)) rotateY(var(--lry, 0deg))
+      translate3d(0, -2px, 6px);
+  }
+
+  .gh-btn:active,
+  .k-btn:active,
+  .gh-quick:active,
+  .gh-stat:active {
+    transform: perspective(900px) rotateX(var(--lrx, 0deg)) rotateY(var(--lry, 0deg))
+      translate3d(0, 2px, -4px) scale(0.985) !important;
+    box-shadow: inset 0 10px 24px rgb(0 0 0 / 0.28), 0 0 24px -16px rgb(169 236 255 / 0.55);
+  }
+
+  [data-theme='light'] .gh-btn:active,
+  [data-theme='light'] .k-btn:active,
+  [data-theme='light'] .gh-quick:active,
+  [data-theme='light'] .gh-stat:active {
+    box-shadow: inset 0 10px 22px rgb(0 0 0 / 0.08), 0 0 20px -16px rgb(60 40 120 / 0.3);
+  }
+
+  .gh-card {
+    transition: background-color 160ms var(--ease-standard),
+      border-color 160ms var(--ease-standard), box-shadow 160ms var(--ease-standard),
+      transform 160ms var(--ease-standard);
+  }
+
+  .gh-card:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 12px 34px -28px rgb(205 187 255 / 0.55);
+  }
+
+  .gh-issue-row:active,
+  .gh-project-row:active {
+    box-shadow: inset 0 8px 20px rgb(0 0 0 / 0.18);
+  }
+}

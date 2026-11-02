@@ -34,6 +34,7 @@ import {
   isFuture,
   isSameDay,
   isToday,
+  startOfDay,
   startOfWeek,
   toDate,
   toISODateTime,
@@ -52,7 +53,7 @@ import type { CalendarEvent, Task } from '@/types'
  * 事件前置过滤：status !== 'cancelled' 且 end ≥ now（尚未结束），按开始时间升序。
  * 任务前置过滤：有 dueAt、未完成、未丢弃，按截止时间升序——无截止任务永不进入日程。
  * ------------------------------------------------------------------------- */
-type BucketKey = 'today' | 'tomorrow' | 'thisWeek' | 'nextWeek' | 'later'
+type BucketKey = 'overdue' | 'today' | 'tomorrow' | 'thisWeek' | 'nextWeek' | 'later'
 
 interface Bucket {
   key: BucketKey
@@ -62,6 +63,7 @@ interface Bucket {
 }
 
 const BUCKET_LABEL: Record<BucketKey, string> = {
+  overdue: '已逾期',
   today: '今天',
   tomorrow: '明天',
   thisWeek: '本周',
@@ -69,7 +71,7 @@ const BUCKET_LABEL: Record<BucketKey, string> = {
   later: '更远',
 }
 
-const BUCKET_ORDER: BucketKey[] = ['today', 'tomorrow', 'thisWeek', 'nextWeek', 'later']
+const BUCKET_ORDER: BucketKey[] = ['overdue', 'today', 'tomorrow', 'thisWeek', 'nextWeek', 'later']
 
 /** 迷你月历星期表头（周一为一周起点） */
 const WEEKDAY_HEADER = ['一', '二', '三', '四', '五', '六', '日']
@@ -99,7 +101,18 @@ function groupMeta(bucket: Bucket): string {
   const count =
     `${bucket.events.length} 场` +
     (bucket.tasks.length > 0 ? ` · ${bucket.tasks.length} 截止` : '')
-  if (bucket.key === 'today' || bucket.key === 'tomorrow') {
+  if (bucket.key === 'overdue') {
+    const range = isSameDay(first, last)
+      ? `${formatMonthDay(first)}`
+      : `${formatMonthDay(first)} – ${formatMonthDay(last)}`
+    return `${range} · ${bucket.tasks.length} 项已逾期`
+  }
+  if (bucket.key === 'today') {
+    const todayStart = startOfDay(new Date())
+    const overdue = dates.some((date) => date.getTime() < todayStart.getTime())
+    return `${overdue ? '含逾期 · ' : ''}${count}`
+  }
+  if (bucket.key === 'tomorrow') {
     return `${formatWeekdayShort(first)} ${formatMonthDay(first)} · ${count}`
   }
   if (bucket.key === 'thisWeek') {
@@ -222,6 +235,7 @@ export function Calendar() {
   // 课程 / 任务详情弹窗（聚合自「今日课程」与任务截止行）：null = 关闭
   const [courseId, setCourseId] = useState<string | null>(null)
   const [taskId, setTaskId] = useState<string | null>(null)
+  const [overdueOpen, setOverdueOpen] = useState(false)
   // 周视图日区块滚动目标（本切片 · 0–6）：跨周定位需等新的一周挂载后再滚动
   const [weekScrollTarget, setWeekScrollTarget] = useState<number | null>(null)
   // 迷你月历选中日 / 显示月（Slice Z · F29）：来自模块级 store（跨路由 + 刷新保留）
@@ -381,6 +395,7 @@ export function Calendar() {
 
   const buckets = useMemo(() => {
     const map: Record<BucketKey, { events: CalendarEvent[]; tasks: Task[] }> = {
+      overdue: { events: [], tasks: [] },
       today: { events: [], tasks: [] },
       tomorrow: { events: [], tasks: [] },
       thisWeek: { events: [], tasks: [] },
@@ -388,8 +403,12 @@ export function Calendar() {
       later: { events: [], tasks: [] },
     }
     for (const event of upcoming) map[bucketKeyOfDate(event.startAt, now)].events.push(event)
-    // 逾期任务（offset ≤ 0）归入「今天」桶
-    for (const task of dueTasks) map[bucketKeyOfDate(task.dueAt as string, now)].tasks.push(task)
+    // 逾期任务单独成组，避免「今天」被几十条旧任务淹没
+    for (const task of dueTasks) {
+      const dueAt = task.dueAt as string
+      const key = daysFromToday(dueAt, now) < 0 ? 'overdue' : bucketKeyOfDate(dueAt, now)
+      map[key].tasks.push(task)
+    }
     return BUCKET_ORDER.map((key) => ({
       key,
       label: BUCKET_LABEL[key],
@@ -404,11 +423,25 @@ export function Calendar() {
     [buckets],
   )
 
-  /** 今天桶内的任务数（含逾期）——用于状态条摘要与空态判断 */
+  /** 今天桶内的任务数（不含逾期）——用于状态条摘要与空态判断 */
   const todayTaskCount = useMemo(() => {
     const bucket = buckets.find((item) => item.key === 'today')
     return bucket !== undefined ? bucket.tasks.length : 0
   }, [buckets])
+
+  /** 逾期任务数——单独提示，避免被「今天」掩盖 */
+  const overdueTaskCount = useMemo(() => {
+    const bucket = buckets.find((item) => item.key === 'overdue')
+    return bucket !== undefined ? bucket.tasks.length : 0
+  }, [buckets])
+
+  const todaySummary = useMemo(() => {
+    const parts: string[] = []
+    if (overdueTaskCount > 0) parts.push(`${overdueTaskCount} 项任务已逾期`)
+    if (todayRuns.length > 0) parts.push(`${todayRuns.length} 节课`)
+    if (todayTaskCount > 0) parts.push(`${todayTaskCount} 项今天截止`)
+    return parts.length > 0 ? `接下来没有事件；${parts.join(' · ')}。` : '接下来没有安排。'
+  }, [todayRuns.length, todayTaskCount, overdueTaskCount])
 
   /* --- 迷你月历（显示月由 monthCursor 控制） --- */
   const year = monthCursor.getFullYear()
@@ -674,7 +707,7 @@ export function Calendar() {
             <span className="k-cal-c__next-kicker u-label">下一项 · NEXT</span>
             <h2 className="k-cal-c__next-title">{next.title}</h2>
             <span className="k-cal-c__next-meta">
-              {relativeDay(next.startAt, now)} · {formatFullDate(next.startAt)} ·{' '}
+              {relativeDay(next.startAt, now)} · {formatMonthDay(next.startAt)} ·{' '}
               {rowRange(next)}
               {next.location !== undefined ? ` · ${next.location}` : ''}
             </span>
@@ -691,11 +724,7 @@ export function Calendar() {
         </section>
       ) : (
         <p className="k-cal__quiet">
-          {todayRuns.length + todayTaskCount > 0
-            ? `接下来没有事件；今天有 ${todayRuns.length > 0 ? `${todayRuns.length} 节课` : ''}${
-                todayRuns.length > 0 && todayTaskCount > 0 ? ' · ' : ''
-              }${todayTaskCount > 0 ? `${todayTaskCount} 项截止` : ''}。`
-            : '接下来没有安排。'}
+          {todaySummary}
         </p>
       )}
 
@@ -725,7 +754,7 @@ export function Calendar() {
                         if (el !== null) weekDayRefs.current.set(index, el)
                         else weekDayRefs.current.delete(index)
                       }}
-                      className="k-cal-c__group"
+                    className="k-cal-c__group"
                     >
                       <div className="k-cal-c__grouphd">
                         <h3>
@@ -808,11 +837,11 @@ export function Calendar() {
             ) : (
               <EmptyState
                 title="这一周没有安排"
-                hint="空档适合安排深工作或休息。用上方箭头浏览其它周，或点「回到本周」。"
+                hint="没有安排的时候，先休息，或者挑一件想推进的事。用上方箭头看其它周。"
               />
             )
           ) : !hasStream && todayRuns.length === 0 && !hasPastShown ? (
-            <EmptyState title="接下来没有安排" hint="空档适合安排深工作或休息。可点「新建日程」添加一场。" />
+            <EmptyState title="接下来没有安排" hint="没有安排的时候，先休息，或者新建一场日程。" />
           ) : (
             <>
               {/* 已结束（本切片）：仅「含已结束」开关打开时出现，置于议程流首组（含过去 50 项） */}
@@ -869,11 +898,23 @@ export function Calendar() {
                     key={bucket.key}
                     // 今日课程块已占用 todayRef 时不再重复挂载
                     ref={todayRuns.length === 0 && bucket.key === 'today' ? todayRef : undefined}
-                    className="k-cal-c__group"
+                    className={
+                      bucket.key === 'overdue' ? 'k-cal-c__group is-overdue' : 'k-cal-c__group'
+                    }
                   >
                     <div className="k-cal-c__grouphd">
                       <h3>{bucket.label}</h3>
                       <span className="k-mono">{groupMeta(bucket)}</span>
+                      {bucket.key === 'overdue' && (
+                        <button
+                          type="button"
+                          className="k-btn k-btn--sm"
+                          aria-expanded={overdueOpen}
+                          onClick={() => setOverdueOpen((prev) => !prev)}
+                        >
+                          {overdueOpen ? '收起' : '展开'}
+                        </button>
+                      )}
                     </div>
                     {bucket.events.map((event) => (
                       <button
@@ -895,8 +936,9 @@ export function Calendar() {
                         </span>
                       </button>
                     ))}
-                    {/* 任务截止行：事件之后；逾期归「今天」；无截止任务从不出现 */}
-                    {bucket.tasks.map((task) => (
+                    {/* 任务截止行：逾期单独成组，默认收起，点「展开」再看 */}
+                    {(bucket.key !== 'overdue' || overdueOpen) &&
+                      bucket.tasks.map((task) => (
                       <button
                         type="button"
                         key={task.id}

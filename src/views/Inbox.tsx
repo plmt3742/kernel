@@ -10,11 +10,10 @@ import {
   type DragEvent as ReactDragEvent,
 } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useParams, Link } from 'react-router-dom'
 import {
   ArrowUp,
   Bell,
-  ChevronRight,
   ExternalLink,
   FileText,
   FolderOpen,
@@ -25,6 +24,7 @@ import {
   Sparkles,
 } from 'lucide-react'
 import { Panel } from '@/components/Panel'
+import { PageHeader } from '@/components/shell/PageHeader'
 import { MeterBar } from '@/components/MeterBar'
 import { TagPill } from '@/components/TagPill'
 import { Checkbox } from '@/components/Checkbox'
@@ -97,6 +97,10 @@ import type { InboxItem } from '@/types'
 
 const WATER_MAX = 12
 const WATER_THRESHOLD = 8
+
+function pad2(value: number): string {
+  return String(value).padStart(2, '0')
+}
 
 /** 多文件上传的受限并发上限（Slice Y · F33）：文件上传可并行；解析并发见 AI_PARSE_CONCURRENCY */
 const UPLOAD_CONCURRENCY = 3
@@ -295,11 +299,14 @@ export function Inbox() {
   const revision = useDataRevision()
   const { toast } = useToast()
   const navigate = useNavigate()
+  const params = useParams()
+  const viewParam = params.view
+  const view: 'unprocessed' | 'clarified' | 'discarded' =
+    viewParam === 'clarified' || viewParam === 'discarded' ? viewParam : 'unprocessed'
+  const isUnprocessed = view === 'unprocessed'
   const now = useNow()
   const reduce = useReducedMotion()
   const inputRef = useRef<HTMLInputElement>(null)
-  const [showClarified, setShowClarified] = useState(false)
-  const [showDiscarded, setShowDiscarded] = useState(false)
   // 界面状态（Slice Z · F27）：选中 / 展开 / 捕捉草稿来自模块级 store（跨路由 + 刷新保留）
   const inboxUi = useUiStore(inboxUiStore)
   const draft = inboxUi.draft
@@ -1022,9 +1029,65 @@ export function Inbox() {
   }
 
   return (
-    <div className="k-view">
-      <div
-        className={dragOver ? 'ic-composer is-dragover' : 'ic-composer'}
+    <div className="k-view w4-inbox">
+      <PageHeader
+        breadcrumb={[
+          { label: 'KERNEL', to: '/' },
+          { label: '收件箱', to: '/inbox' },
+          {
+            label:
+              view === 'clarified' ? '已澄清' : view === 'discarded' ? '已丢弃' : '待澄清',
+          },
+        ]}
+        title="收件箱"
+        description="先把东西放进来，稍后再整理。AI 只提建议，确认后才保存。"
+        meta={
+          <>
+            <b>{pad2(unprocessed.length)} 待澄清</b>
+            <span>{pad2(clarified.length)} 已澄清 · {pad2(discarded.length)} 已丢弃</span>
+          </>
+        }
+        tabs={
+          <>
+            <Link
+              to="/inbox"
+              className={view === 'unprocessed' ? 'gh-tab is-active' : 'gh-tab'}
+              aria-current={view === 'unprocessed' ? 'page' : undefined}
+            >
+              待澄清
+              <span className="gh-tab__count">{unprocessed.length}</span>
+            </Link>
+            <Link
+              to="/inbox/clarified"
+              className={view === 'clarified' ? 'gh-tab is-active' : 'gh-tab'}
+              aria-current={view === 'clarified' ? 'page' : undefined}
+            >
+              已澄清
+              <span className="gh-tab__count">{clarified.length}</span>
+            </Link>
+            <Link
+              to="/inbox/discarded"
+              className={view === 'discarded' ? 'gh-tab is-active' : 'gh-tab'}
+              aria-current={view === 'discarded' ? 'page' : undefined}
+            >
+              已丢弃
+              <span className="gh-tab__count">{discarded.length}</span>
+            </Link>
+          </>
+        }
+      />
+
+      {isUnprocessed && (
+      <div className="w4-inbox__hero">
+        <div className="w4-inbox__kicker">
+          <div>
+            <p className="w4-lab">收件箱 <span>先收下，稍后再整理</span></p>
+            <h2>想到什么，先放进来</h2>
+          </div>
+          <span className="w4-note">文字 · 文件 · 截图 · 链接</span>
+        </div>
+        <div
+          className={dragOver ? 'ic-composer is-dragover' : 'ic-composer'}
         onDragEnter={onDragEnter}
         onDragOver={(event) => event.preventDefault()}
         onDragLeave={onDragLeave}
@@ -1069,7 +1132,7 @@ export function Inbox() {
           onKeyDown={(event) => {
             if (event.key === 'Enter') send()
           }}
-          placeholder="捕捉任何事…或拖入一个文件，AI 会先读一遍"
+          placeholder="记一句话，或拖入文件"
           aria-label="快速捕捉"
         />
         <div className="ic-composer__foot">
@@ -1104,14 +1167,19 @@ export function Inbox() {
             <span className="ic-composer__veil-text">松开：放入收件箱</span>
           </div>
         )}
+        </div>
       </div>
+      )}
 
-      <Panel className="ic-head">
+      <div className={isUnprocessed ? 'w4-inbox__grid' : 'w4-inbox__grid is-single'}>
+        <div className="w4-inbox__main">
+          {isUnprocessed && (<>
+          <Panel className="ic-head">
         <MeterBar
           value={unprocessed.length}
           max={WATER_MAX}
           threshold={WATER_THRESHOLD}
-          label="水位 · 收件箱存量"
+          label="收件箱 · 待处理"
           caption={`${unprocessed.length} / ${WATER_MAX}`}
           suffix={unprocessed.length > WATER_THRESHOLD ? '· 超阈' : '· 健康'}
         />
@@ -1333,7 +1401,7 @@ export function Inbox() {
                                   }}
                                   disabled={isParsingThis || running}
                                   aria-busy={isParsingThis}
-                                  title="让本地 AI 解析为结构化建议（仅建议，确认后写入）"
+                                  title="让本机 AI 先读一遍，给你建议；确认后才保存"
                                 >
                                   <Sparkles size={12} strokeWidth={1.5} aria-hidden />
                                   AI 解析
@@ -1518,19 +1586,22 @@ export function Inbox() {
         </>
       )}
 
-      {clarified.length > 0 && (
-        <div>
-          <button
-            type="button"
-            className="k-collapse-head"
-            aria-expanded={showClarified}
-            onClick={() => setShowClarified((prev) => !prev)}
-          >
-            <ChevronRight size={14} strokeWidth={1.5} className="k-collapse-head__caret" aria-hidden />
-            <span className="u-label">已澄清 CLARIFIED · {clarified.length}</span>
-          </button>
-          {showClarified && (
-            <div>
+      </>)}
+
+      {view === 'clarified' && (
+        <section className="gh-card">
+          <div className="gh-card__head">
+            <span>已澄清</span>
+            <span className="gh-card__muted">{clarified.length} 条</span>
+          </div>
+          <div>
+            {clarified.length === 0 ? (
+              <div className="gh-empty gh-empty--inset">
+                <b>暂无已澄清条目</b>
+                <span>在待澄清页应用建议后，这里会留下记录。</span>
+              </div>
+            ) : (
+              <>
               {/* 生命周期闭合（Slice V · F37）：查看产物深链 + 撤回（删除产物并回到未澄清，二次确认） */}
               {clarified.map((item) => {
                 // 深链仅在产物仍存在于快照时才可点（产物被删除 / 移入回收站 → 悬挂，禁用入口）
@@ -1600,24 +1671,26 @@ export function Inbox() {
                   </div>
                 )
               })}
-            </div>
-          )}
-        </div>
+              </>
+            )}
+          </div>
+        </section>
       )}
 
-      {discarded.length > 0 && (
-        <div>
-          <button
-            type="button"
-            className="k-collapse-head"
-            aria-expanded={showDiscarded}
-            onClick={() => setShowDiscarded((prev) => !prev)}
-          >
-            <ChevronRight size={14} strokeWidth={1.5} className="k-collapse-head__caret" aria-hidden />
-            <span className="u-label">已丢弃 DISCARDED · {discarded.length}</span>
-          </button>
-          {showDiscarded && (
-            <div>
+      {view === 'discarded' && (
+        <section className="gh-card">
+          <div className="gh-card__head">
+            <span>已丢弃</span>
+            <span className="gh-card__muted">{discarded.length} 条</span>
+          </div>
+          <div>
+            {discarded.length === 0 ? (
+              <div className="gh-empty gh-empty--inset">
+                <b>暂无已丢弃条目</b>
+                <span>被你丢弃的条目会留在这里。</span>
+              </div>
+            ) : (
+              <>
               {/* 生命周期闭合（Slice V · F15）：恢复（回到未澄清，安全操作）+ 删除（二次确认） */}
               {discarded.map((item) => (
                 <div className="k-inbox-item" key={item.id}>
@@ -1668,13 +1741,55 @@ export function Inbox() {
                   </span>
                 </div>
               ))}
-            </div>
-          )}
-        </div>
+              </>
+            )}
+          </div>
+        </section>
       )}
+        </div>
+        {isUnprocessed && (<aside className="w4-inbox__side" aria-label="收件箱管道">
+          <section className="k-panel">
+            <div className="w4-phead">
+              <p className="w4-lab">管道 <span>PIPELINE</span></p>
+              <span className="w4-count">{pad2(unprocessed.length + clarified.length + discarded.length)} 条</span>
+            </div>
+            <div className="ic-pipeline">
+              <div className="ic-pipeline__row">
+                <span>待澄清</span>
+                <b>{pad2(unprocessed.length)}</b>
+                <em>UNPROCESSED</em>
+              </div>
+              <div className="ic-pipeline__row">
+                <span>解析队列</span>
+                <b>{pad2(jobs.size)}</b>
+                <em>JOBS</em>
+              </div>
+              <div className="ic-pipeline__row">
+                <span>已澄清</span>
+                <b>{pad2(clarified.length)}</b>
+                <em>CLARIFIED</em>
+              </div>
+              <div className="ic-pipeline__row">
+                <span>已丢弃</span>
+                <b>{pad2(discarded.length)}</b>
+                <em>DISCARDED</em>
+              </div>
+            </div>
+          </section>
+          <section className="k-panel">
+            <p className="w4-lab">原则 <span>RULES</span></p>
+            <p className="w4-note w4-note--box">
+              AI 只负责读与建议；所有任务、日程、笔记和资料都要你确认后才写入。
+            </p>
+            <p className="w4-note" style={{ marginTop: 10 }}>
+              Enter 捕捉 · Ctrl+V 粘贴截图 · 拖入文件 · Shift+Enter 换行
+            </p>
+          </section>
+        </aside>)}
+      </div>
 
       {/* 批量条侧挂 dock（Slice E2.5）：内联批量条滚出视口时的右侧浮动镜像 */}
-      {unprocessed.length > 0 && (
+      {isUnprocessed && unprocessed.length > 0 && (
         <div className="ic-dock">
           <AnimatePresence>
             {!barVisible && (

@@ -1,0 +1,873 @@
+/* KERNEL · 启动菜单（第一层导航页）与独立页全宽壳
+   4:6 游戏开始菜单式入口；内页不使用 4:6，全部内容独立成页。
+   视觉语言：W4 近黑玻璃 + 发丝 + 克制边缘光 + 鼠标 3D。 */
+
+.gh-header__menu {
+  display: inline-flex;
+}
+
+.gh-main {
+  padding: var(--gh-header-h) 0 0;
+}
+
+.gh-launch {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: minmax(0, 4fr) minmax(0, 6fr);
+  gap: clamp(18px, 2.2vw, 32px);
+  max-width: 1680px;
+  margin: 0 auto;
+  padding: clamp(16px, 2.2vw, 32px);
+  background: var(--gh-bg);
+}
+
+.gh-launch__menu {
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100vh - clamp(32px, 4.4vw, 64px));
+  max-height: calc(100vh - clamp(32px, 4.4vw, 64px));
+  padding: clamp(18px, 1.8vw, 28px);
+  overflow: auto;
+  border: 1px solid var(--gh-border);
+  border-radius: 16px;
+  background:
+    radial-gradient(100% 30% at 50% 100%, rgb(205 187 255 / 0.17), transparent 72%),
+    radial-gradient(62% 42% at 18% 108%, rgb(205 187 255 / 0.10), transparent 72%),
+    radial-gradient(58% 40% at 84% 110%, rgb(169 236 255 / 0.07), transparent 70%),
+    linear-gradient(180deg, rgb(255 255 255 / 0.035), transparent 38%),
+    var(--gh-bg-inset);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.05), 0 24px 80px -60px rgb(0 0 0 / 0.9);
+}
+
+.gh-launch__brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--gh-border);
+}
+
+.gh-launch__mark {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--gh-border);
+  border-radius: 11px;
+  background: var(--gh-bg-subtle);
+  color: var(--gh-fg);
+  font-family: var(--gh-mono);
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.gh-launch__brand b {
+  display: block;
+  font-family: 'Smiley Sans', var(--gh-font);
+  font-size: 24px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  line-height: 1.1;
+}
+
+.gh-launch__brand em {
+  display: block;
+  margin-top: 4px;
+  color: var(--gh-fg-subtle);
+  font-family: var(--gh-mono);
+  font-size: 9px;
+  font-style: normal;
+  letter-spacing: 0.18em;
+}
+
+.gh-launch__menuhead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 16px;
+  padding-bottom: 8px;
+  color: var(--gh-fg-subtle);
+  font-family: var(--gh-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.16em;
+}
+
+.gh-launch-start {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 66px;
+  margin-top: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--gh-border);
+  border-radius: 10px;
+  background: var(--gh-bg-subtle);
+  color: var(--gh-fg);
+  text-align: left;
+  cursor: pointer;
+}
+
+.gh-launch-start--primary {
+  border-color: rgb(255 255 255 / 0.72);
+  background: var(--gh-fg);
+  color: var(--gh-bg);
+}
+
+.gh-launch-start--primary b {
+  color: inherit;
+}
+
+.gh-launch-start__n {
+  color: var(--gh-fg-subtle);
+  font-family: var(--gh-mono);
+  font-size: 10px;
+}
+
+.gh-launch-start--primary .gh-launch-start__n {
+  color: currentColor;
+  opacity: 0.55;
+}
+
+.gh-launch-start b {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.gh-launch-start em {
+  display: block;
+  margin-top: 3px;
+  color: var(--gh-fg-muted);
+  font-family: var(--gh-mono);
+  font-size: 8.5px;
+  font-style: normal;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.gh-launch-start--primary em {
+  color: currentColor;
+  opacity: 0.62;
+}
+
+.gh-launch-start__go {
+  color: inherit;
+  font-size: 16px;
+  opacity: 0.6;
+}
+
+.gh-launch__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 16px;
+}
+
+.gh-launch-item {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 7px 9px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--gh-fg-muted);
+  text-align: left;
+  cursor: pointer;
+}
+
+.gh-launch-item:hover,
+.gh-launch-item:focus-visible {
+  border-color: var(--gh-border);
+  background: var(--gh-bg-subtle);
+  color: var(--gh-fg);
+}
+
+.gh-launch-item svg {
+  color: var(--gh-fg-subtle);
+}
+
+.gh-launch-item b {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.gh-launch-item em {
+  display: block;
+  margin-top: 2px;
+  color: var(--gh-fg-subtle);
+  font-family: var(--gh-mono);
+  font-size: 8px;
+  font-style: normal;
+  letter-spacing: 0.1em;
+}
+
+.gh-launch-item__count {
+  color: var(--gh-fg-subtle);
+  font-family: var(--gh-mono);
+  font-size: 10px;
+}
+
+.gh-launch__foot {
+  margin-top: auto;
+  padding-top: 16px;
+  border-top: 1px solid var(--gh-border);
+}
+
+.gh-launch__date,
+.gh-launch__status,
+.gh-launch__utils {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.gh-launch__date {
+  justify-content: space-between;
+  color: var(--gh-fg-subtle);
+  font-family: var(--gh-mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+}
+
+.gh-launch__status {
+  margin-top: 10px;
+  color: var(--gh-fg-muted);
+  font-family: var(--gh-mono);
+  font-size: 9px;
+}
+
+.gh-launch__status span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.gh-launch__status i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--gh-success);
+  box-shadow: 0 0 8px rgb(63 185 80 / 0.45);
+}
+
+.gh-launch__utils {
+  margin-top: 12px;
+}
+
+.gh-launch__utils button,
+.gh-launch__user {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 4px 8px;
+  border: 1px solid var(--gh-border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--gh-fg-muted);
+  font-family: var(--gh-mono);
+  font-size: 9px;
+  cursor: pointer;
+}
+
+.gh-launch__utils button:hover,
+.gh-launch__user:hover {
+  border-color: var(--gh-fg-muted);
+  color: var(--gh-fg);
+}
+
+.gh-launch__user {
+  margin-left: auto;
+  border-color: transparent;
+}
+
+.gh-launch__user b {
+  font-family: var(--gh-font);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.gh-launch__info {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(22px, 2.6vw, 34px);
+  min-width: 0;
+  max-height: calc(100vh - clamp(32px, 4.4vw, 64px));
+  overflow: auto;
+  padding: clamp(6px, 1vw, 16px) clamp(0px, 1vw, 12px);
+}
+
+.gh-launch__intro {
+  padding-top: clamp(6px, 2vh, 28px);
+}
+
+.gh-launch__kicker {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--gh-fg-subtle);
+  font-family: var(--gh-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.16em;
+}
+
+.gh-launch__kicker i {
+  width: 18px;
+  height: 1px;
+  background: var(--gh-fg-subtle);
+}
+
+.gh-launch h1 {
+  margin: 16px 0 0;
+  font-family: 'Smiley Sans', var(--gh-font);
+  font-size: clamp(46px, 5.6vw, 84px);
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  line-height: 0.98;
+}
+
+.gh-launch h1 span {
+  display: block;
+  margin-top: 12px;
+  color: var(--gh-fg-muted);
+  font-family: var(--gh-font);
+  font-size: clamp(14px, 1.1vw, 17px);
+  font-weight: 400;
+  letter-spacing: 0;
+  line-height: 1.7;
+}
+
+.gh-launch__sectionhead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+  color: var(--gh-fg-subtle);
+  font-family: var(--gh-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.14em;
+}
+
+.gh-launch__sectionhead em {
+  font-style: normal;
+  opacity: 0.55;
+}
+
+.gh-launch__flowgrid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.gh-launch-flow {
+  display: block;
+  min-height: 112px;
+  padding: 12px 11px;
+  border: 1px solid var(--gh-border);
+  border-radius: 8px;
+  background: var(--gh-bg-inset);
+}
+
+.gh-launch-flow__n {
+  color: var(--gh-fg-subtle);
+  font-family: var(--gh-mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+}
+
+.gh-launch-flow b {
+  display: block;
+  margin-top: 14px;
+  font-family: 'Smiley Sans', var(--gh-font);
+  font-size: 21px;
+  font-weight: 500;
+}
+
+.gh-launch-flow em {
+  display: block;
+  margin-top: 4px;
+  color: var(--gh-fg-subtle);
+  font-family: var(--gh-mono);
+  font-size: 8px;
+  font-style: normal;
+  letter-spacing: 0.1em;
+}
+
+.gh-launch-flow span {
+  display: block;
+  margin-top: 8px;
+  color: var(--gh-fg-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.gh-launch__stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.gh-launch-stat {
+  padding: 12px;
+  border: 1px solid var(--gh-border);
+  border-radius: 8px;
+  background: var(--gh-bg-inset);
+}
+
+.gh-launch-stat span {
+  color: var(--gh-fg-subtle);
+  font-family: var(--gh-mono);
+  font-size: 8.5px;
+  letter-spacing: 0.1em;
+}
+
+.gh-launch-stat b {
+  display: block;
+  margin-top: 8px;
+  font-family: 'Smiley Sans', var(--gh-font);
+  font-size: 34px;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.gh-launch-stat em {
+  display: block;
+  margin-top: 5px;
+  color: var(--gh-fg-subtle);
+  font-family: var(--gh-mono);
+  font-size: 8px;
+  font-style: normal;
+}
+
+.gh-launch__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.gh-launch__next {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 10px 14px;
+  border: 1px solid var(--gh-border);
+  border-radius: 8px;
+  background: var(--gh-bg-inset);
+  color: var(--gh-fg-muted);
+  font-family: var(--gh-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+}
+
+.gh-launch__next b {
+  color: var(--gh-fg);
+  font-family: var(--gh-font);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+.gh-launch__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  color: var(--gh-fg-subtle);
+  font-size: 11px;
+}
+
+.gh-launch__legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.gh-launch__legend i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--gh-fg-subtle);
+}
+
+/* 指针 3D + 边缘光（克制：最大 2.4°，1px 虹彩边，仅悬停增强） */
+.gh-launch [data-launch-surface] {
+  position: relative;
+  transform-style: preserve-3d;
+  transform: perspective(1000px) rotateX(var(--lrx, 0deg)) rotateY(var(--lry, 0deg));
+  transition: transform 160ms ease, border-color 160ms ease, background-color 160ms ease;
+}
+
+.gh-launch [data-launch-surface]::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  border-radius: inherit;
+  padding: 1px;
+  background:
+    radial-gradient(
+      240px circle at var(--mx, 50%) var(--my, 50%),
+      rgb(255 255 255 / 0.92),
+      rgb(205 187 255 / 0.52) 18%,
+      rgb(205 187 255 / 0.38) 32%,
+      rgb(169 236 255 / 0.2) 48%,
+      transparent 72%
+    ),
+    radial-gradient(
+      280px circle at var(--mx2, 50%) var(--my2, 50%),
+      rgb(169 236 255 / 0.16),
+      transparent 62%
+    ),
+    conic-gradient(
+      from var(--angle, 180deg),
+      transparent 0deg 34deg,
+      rgb(255 255 255 / 0.68) 46deg,
+      rgb(205 187 255 / 0.52) 60deg,
+      rgb(205 187 255 / 0.38) 76deg,
+      transparent 104deg
+    ),
+    conic-gradient(
+      from 180deg,
+      rgb(169 236 255 / 0.28),
+      rgb(205 187 255 / 0.22),
+      rgb(169 236 255 / 0.18),
+      rgb(190 255 225 / 0.14),
+      rgb(255 214 170 / 0.16),
+      rgb(169 236 255 / 0.28)
+    );
+  background-blend-mode: screen, screen, normal, normal;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  opacity: 0.28;
+  pointer-events: none;
+}
+
+.gh-launch [data-launch-surface]:hover::after,
+.gh-launch [data-launch-surface]:focus-visible::after {
+  opacity: 0.92;
+}
+
+.gh-launch [data-launch-surface]:hover {
+  border-color: rgb(190 255 225 / 0.34);
+  box-shadow: 0 0 32px -16px rgb(169 236 255 / 0.55), 0 0 54px -32px rgb(169 236 255 / 0.5);
+}
+
+.gh-launch-start--primary:hover {
+  box-shadow: 0 0 38px -14px rgb(169 236 255 / 0.58), 0 0 0 1px rgb(205 187 255 / 0.18),
+    0 0 58px -30px rgb(169 236 255 / 0.46);
+}
+
+[data-theme='light'] .gh-launch [data-launch-surface]::after {
+  background:
+    radial-gradient(
+      220px circle at var(--mx, 50%) var(--my, 50%),
+      rgb(60 40 120 / 0.5),
+      rgb(120 90 200 / 0.3) 18%,
+      rgb(120 90 200 / 0.2) 34%,
+      rgb(60 140 180 / 0.14) 50%,
+      transparent 72%
+    ),
+    conic-gradient(
+      from 180deg,
+      rgb(120 90 200 / 0.22),
+      rgb(120 90 200 / 0.18),
+      rgb(60 140 180 / 0.14),
+      rgb(60 150 130 / 0.12),
+      rgb(120 90 200 / 0.22)
+    );
+  background-blend-mode: multiply, normal;
+}
+
+[data-theme='light'] .gh-launch [data-launch-surface]:hover {
+  border-color: rgb(0 0 0 / 0.22);
+  box-shadow: 0 0 24px -18px rgb(80 60 140 / 0.3);
+}
+
+@media (max-width: 1200px) and (min-width: 901px) {
+  .gh-launch__flowgrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  .gh-launch {
+    grid-template-columns: 1fr;
+    min-height: auto;
+  }
+
+  .gh-launch__menu,
+  .gh-launch__info {
+    min-height: auto;
+    max-height: none;
+  }
+
+  .gh-launch__grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .gh-launch__flowgrid {
+    grid-template-columns: repeat(5, minmax(120px, 1fr));
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+}
+
+@media (max-width: 767px) {
+  .gh-launch {
+    padding: 12px;
+    gap: 14px;
+  }
+
+  .gh-launch__menu {
+    padding: 16px;
+  }
+
+  .gh-launch__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .gh-launch h1 {
+    font-size: 44px;
+  }
+
+  .gh-launch__stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .gh-launch__flowgrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    overflow: visible;
+  }
+
+  .gh-launch-flow {
+    min-height: 104px;
+  }
+
+  .gh-launch__user b {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gh-launch [data-launch-surface],
+  .gh-launch [data-launch-surface]::after {
+    transform: none !important;
+    transition: none !important;
+  }
+
+  .gh-launch [data-launch-surface]::after {
+    display: none;
+  }
+}
+
+.gh-boot {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  background: var(--gh-bg);
+  color: var(--gh-fg-subtle);
+  font-family: var(--gh-mono);
+  font-size: 11px;
+  letter-spacing: 0.32em;
+}
+
+.gh-launch__shortcuts {
+  margin-top: auto;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--gh-border);
+  border-radius: 10px;
+  background:
+    radial-gradient(80% 120% at 50% 130%, rgb(205 187 255 / 0.12), transparent 70%),
+    var(--gh-bg-subtle);
+  box-shadow: 0 0 30px -22px rgb(205 187 255 / 0.7), inset 0 1px 0 rgb(255 255 255 / 0.05);
+  color: var(--gh-fg-muted);
+  font-family: var(--gh-mono);
+  font-size: 9px;
+  letter-spacing: 0.04em;
+}
+
+.gh-launch__shortcuts-k {
+  color: var(--gh-fg-subtle);
+  letter-spacing: 0.12em;
+}
+
+.gh-launch__shortcuts span:not(.gh-launch__shortcuts-k) {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.gh-launch__shortcuts kbd {
+  min-width: 18px;
+  padding: 2px 4px;
+  border: 1px solid var(--gh-border);
+  border-radius: 4px;
+  color: var(--gh-fg);
+  font-family: var(--gh-mono);
+  font-size: 8px;
+  text-align: center;
+}
+
+.gh-launch__shortcuts + .gh-launch__foot {
+  margin-top: 0;
+}
+
+[data-theme='light'] .gh-launch__shortcuts {
+  background:
+    radial-gradient(80% 120% at 50% 130%, rgb(120 90 200 / 0.08), transparent 70%),
+    rgb(255 255 255 / 0.55);
+  box-shadow: 0 8px 26px -24px rgb(60 40 120 / 0.4), inset 0 1px 0 rgb(255 255 255 / 0.8);
+}
+
+[data-theme='light'] .gh-launch__menu {
+  background:
+    radial-gradient(100% 24% at 50% 100%, rgb(120 90 200 / 0.035), transparent 72%),
+    linear-gradient(180deg, rgb(255 255 255 / 0.55), transparent 38%),
+    var(--gh-bg-inset);
+}
+
+.gh-launch [data-launch-surface]:hover {
+  will-change: transform;
+  transform: perspective(1000px) rotateX(var(--lrx, 0deg)) rotateY(var(--lry, 0deg))
+    translate3d(0, -2px, 10px);
+}
+
+.gh-launch [data-launch-surface]:active {
+  transform: perspective(1000px) rotateX(var(--lrx, 0deg)) rotateY(var(--lry, 0deg))
+    translate3d(0, 2px, -6px) scale(0.985);
+  box-shadow: inset 0 12px 28px rgb(0 0 0 / 0.32), 0 0 26px -18px rgb(169 236 255 / 0.65);
+  transition-duration: 70ms;
+}
+
+[data-theme='light'] .gh-launch [data-launch-surface]:active {
+  box-shadow: inset 0 10px 22px rgb(0 0 0 / 0.1), 0 0 24px -18px rgb(60 40 120 / 0.35);
+}
+
+.gh-launch [data-launch-surface]::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background:
+    radial-gradient(360px circle at var(--mx, 50%) var(--my, 50%),
+      rgb(255 255 255 / 0.14),
+      rgb(205 187 255 / 0.10) 28%,
+      rgba(205, 187, 255, 0.08) 48%,
+      transparent 68%),
+    radial-gradient(280px circle at var(--mx2, 50%) var(--my2, 50%),
+      rgb(169 236 255 / 0.08),
+      transparent 64%),
+    linear-gradient(115deg,
+      transparent 30%,
+      rgb(255 255 255 / 0.08) 47%,
+      transparent 62%);
+  filter: blur(12px);
+  mix-blend-mode: screen;
+  opacity: 0;
+  transition: opacity 240ms var(--ease-enter);
+}
+.gh-launch [data-launch-surface]:hover::before {
+  opacity: 0.9;
+}
+[data-theme='light'] .gh-launch [data-launch-surface]::before {
+  background:
+    radial-gradient(360px circle at var(--mx, 50%) var(--my, 50%),
+      rgb(255 255 255 / 0.5),
+      rgb(120 90 200 / 0.08) 28%,
+      transparent 68%),
+    radial-gradient(280px circle at var(--mx2, 50%) var(--my2, 50%),
+      rgb(60 140 180 / 0.06),
+      transparent 64%);
+  mix-blend-mode: soft-light;
+}
+@media (prefers-reduced-motion: reduce) {
+  .gh-launch [data-launch-surface]::before { display: none; }
+}
+
+/* PEARL RIM · 方案 01：只走边，不铺彩色球 */
+.gh-launch [data-launch-surface]::before {
+  display: none !important;
+}
+
+.gh-launch [data-launch-surface]::after {
+  padding: 1px;
+  background:
+    radial-gradient(240px circle at var(--mx, 50%) var(--my, 50%),
+      rgb(255 255 255 / 0.92),
+      rgb(205 187 255 / 0.45) 22%,
+      rgb(169 236 255 / 0.30) 44%,
+      rgb(190 255 225 / 0.18) 62%,
+      transparent 76%),
+    conic-gradient(from var(--angle, 140deg),
+      transparent 0deg 34deg,
+      rgb(255 255 255 / 0.72) 46deg,
+      rgb(205 187 255 / 0.44) 62deg,
+      rgb(169 236 255 / 0.30) 78deg,
+      rgb(255 214 170 / 0.18) 92deg,
+      transparent 116deg),
+    conic-gradient(from 140deg,
+      rgb(205 187 255 / 0.14),
+      rgb(169 236 255 / 0.12),
+      rgb(190 255 225 / 0.1),
+      rgb(255 214 170 / 0.1),
+      rgb(205 187 255 / 0.14));
+  background-blend-mode: screen, normal, normal;
+  opacity: 0.24;
+}
+
+.gh-launch [data-launch-surface]:hover::after,
+.gh-launch [data-launch-surface]:focus-visible::after {
+  opacity: 0.9;
+}
+
+[data-theme='light'] .gh-launch [data-launch-surface]::before {
+  display: none !important;
+}
+
+[data-theme='light'] .gh-launch [data-launch-surface]::after {
+  background:
+    radial-gradient(220px circle at var(--mx, 50%) var(--my, 50%),
+      rgb(60 40 120 / 0.55),
+      rgb(120 90 200 / 0.34) 24%,
+      rgb(60 140 180 / 0.24) 46%,
+      transparent 76%),
+    conic-gradient(from var(--angle, 140deg),
+      transparent 0deg 34deg,
+      rgb(60 40 120 / 0.5) 48deg,
+      rgb(120 90 200 / 0.34) 64deg,
+      rgb(60 140 180 / 0.24) 82deg,
+      transparent 112deg);
+}
+
+.gh-launch [data-launch-surface]:hover {
+  border-color: rgb(205 187 255 / 0.32);
+  box-shadow: 0 0 28px -18px rgb(205 187 255 / 0.42), 0 0 44px -30px rgb(169 236 255 / 0.34);
+}
+
+.gh-launch-start--primary:hover {
+  box-shadow: 0 0 32px -18px rgb(205 187 255 / 0.42), 0 0 0 1px rgb(205 187 255 / 0.16),
+    0 0 48px -30px rgb(169 236 255 / 0.3);
+}
+
+.gh-profile-hero__aura {
+  opacity: 0.28;
+  animation: none;
+}

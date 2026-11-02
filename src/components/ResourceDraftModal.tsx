@@ -83,7 +83,7 @@ export function ResourceDraftModal({ open, onClose, onCreated }: ResourceDraftMo
       onClose={onClose}
       kicker="新建 · 资料"
       title="新建资料"
-      className="k-modal--detail"
+      className="k-modal--detail w4-modal"
       footer={
         <>
           <button type="button" className="k-btn is-solid" disabled={!canCreate} onClick={submit}>

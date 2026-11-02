@@ -14,7 +14,7 @@ import {
   type FormEvent,
   type ReactNode,
 } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Paperclip } from 'lucide-react'
 import { useToast } from '@/context/ToastContext'
 import { EmptyState } from '@/components/EmptyState'
@@ -154,6 +154,7 @@ export function Traces(): ReactNode {
   const [saving, setSaving] = useState(false)
   const [hit, setHit] = useState<string | null>(null)
   const [detailId, setDetailId] = useState<string | null>(null)
+  const navigate = useNavigate()
   const [lightbox, setLightbox] = useState<TraceLightboxTarget | null>(null)
   const fileRef = useRef<HTMLInputElement | null>(null)
   // 使卸载清理能拿到最新附件（避免闭包过期）
@@ -465,6 +466,8 @@ export function Traces(): ReactNode {
         </div>
       </form>
 
+      <div className="w4-split">
+        <div className="w4-split__main">
       {traces.length === 0 ? (
         <EmptyState title="还没有踪迹" hint="干完一件事，上来记一笔。" guide />
       ) : filtered.length === 0 ? (
@@ -510,7 +513,7 @@ export function Traces(): ReactNode {
                           <button
                             type="button"
                             className="k-trace__open"
-                            onClick={() => setDetailId(trace.id)}
+                            onClick={() => navigate(`/traces/${trace.id}`)}
                           >
                             {trace.title}
                           </button>
@@ -571,7 +574,7 @@ export function Traces(): ReactNode {
                     <button
                       type="button"
                       className="k-trace__open"
-                      onClick={() => setDetailId(trace.id)}
+                      onClick={() => navigate(`/traces/${trace.id}`)}
                     >
                       {trace.title}
                     </button>
@@ -592,6 +595,38 @@ export function Traces(): ReactNode {
           ))}
         </div>
       )}
+        </div>
+        <aside className="w4-split__side w4-traces__side" aria-label="踪迹统计">
+          <section className="k-panel">
+            <div className="w4-phead">
+              <p className="w4-lab">统计 <span>STATS</span></p>
+              <span className="w4-count">{traces.length} 条</span>
+            </div>
+            <div className="w4-ctxrow">
+              <span>当前显示</span>
+              <b>{filtered.length}</b>
+            </div>
+            <div className="w4-ctxrow">
+              <span>标签</span>
+              <b>{allTags.length}</b>
+            </div>
+            <div className="w4-ctxrow">
+              <span>视图</span>
+              <b>{view === 'feed' ? '动态' : '时间线'}</b>
+            </div>
+            <div className="w4-ctxrow">
+              <span>筛选标签</span>
+              <b>{ui.tag === '' ? '全部' : tagLabel(ui.tag)}</b>
+            </div>
+          </section>
+          <section className="k-panel">
+            <p className="w4-lab">原则 <span>RULES</span></p>
+            <p className="w4-note w4-note--box">
+              踪迹是你自己记下的「做过什么」；系统自动记录的动作在个人页。回车即记，可附图片。
+            </p>
+          </section>
+        </aside>
+      </div>
 
       <TraceDetailModal traceId={detailId} onClose={() => setDetailId(null)} />
       <TraceLightbox target={lightbox} onClose={() => setLightbox(null)} />

@@ -1682,7 +1682,7 @@ button.k-pill.is-danger:hover {
 /* 指标瓦片（回顾卡 / 弹窗共用）：5 列 */
 .k-review__metrics {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: var(--space-4);
 }
 .k-met {

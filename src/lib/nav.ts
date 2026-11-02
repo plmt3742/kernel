@@ -12,6 +12,7 @@ import {
   Repeat,
   Settings,
   SlidersHorizontal,
+  Sparkles,
   Table2,
   Trash2,
   UserRound,
@@ -36,17 +37,18 @@ export interface NavItem {
 }
 
 export const NAV_ITEMS: NavItem[] = [
-  { index: '01', path: '/', en: 'OVERVIEW', cn: '总览', icon: LayoutGrid, group: 'home', mobile: true },
-  { index: '02', path: '/inbox', en: 'INBOX', cn: '收件箱', icon: SlidersHorizontal, group: 'action', mobile: true },
-  { index: '03', path: '/tasks', en: 'TASKS', cn: '任务', icon: ListChecks, group: 'action', mobile: true },
-  { index: '04', path: '/projects', en: 'PROJECTS', cn: '项目', icon: FolderKanban, group: 'action', mobile: true },
-  { index: '05', path: '/review', en: 'REVIEW', cn: '回顾', icon: RefreshCw, group: 'action', mobile: false },
-  { index: '06', path: '/calendar', en: 'CALENDAR', cn: '日程', icon: CalendarDays, group: 'time', mobile: true },
-  { index: '07', path: '/timetable', en: 'TIMETABLE', cn: '课表', icon: Table2, group: 'time', mobile: false },
-  { index: '08', path: '/library', en: 'LIBRARY', cn: '资料', icon: Library, group: 'record', mobile: false },
-  { index: '09', path: '/habits', en: 'HABITS', cn: '习惯', icon: Repeat, group: 'record', mobile: false },
-  { index: '10', path: '/traces', en: 'TRACES', cn: '踪迹', icon: Footprints, group: 'record', mobile: false },
-  { index: '11', path: '/settings', en: 'SETTINGS', cn: '设置', icon: Settings, group: 'system', mobile: false },
+  { index: '01', path: '/today', en: 'TODAY', cn: '今天', icon: LayoutGrid, group: 'home', mobile: true },
+  { index: '02', path: '/assistant', en: 'ASSISTANT', cn: '助手', icon: Sparkles, group: 'home', mobile: true },
+  { index: '03', path: '/inbox', en: 'INBOX', cn: '收件箱', icon: SlidersHorizontal, group: 'action', mobile: true },
+  { index: '04', path: '/tasks', en: 'TASKS', cn: '任务', icon: ListChecks, group: 'action', mobile: true },
+  { index: '05', path: '/projects', en: 'PROJECTS', cn: '项目', icon: FolderKanban, group: 'action', mobile: true },
+  { index: '06', path: '/review', en: 'REVIEW', cn: '回顾', icon: RefreshCw, group: 'action', mobile: false },
+  { index: '07', path: '/calendar', en: 'CALENDAR', cn: '日程', icon: CalendarDays, group: 'time', mobile: true },
+  { index: '08', path: '/timetable', en: 'TIMETABLE', cn: '课表', icon: Table2, group: 'time', mobile: false },
+  { index: '09', path: '/library', en: 'LIBRARY', cn: '资料', icon: Library, group: 'record', mobile: false },
+  { index: '10', path: '/habits', en: 'HABITS', cn: '习惯', icon: Repeat, group: 'record', mobile: false },
+  { index: '11', path: '/traces', en: 'TRACES', cn: '踪迹', icon: Footprints, group: 'record', mobile: false },
+  { index: '12', path: '/settings', en: 'SETTINGS', cn: '设置', icon: Settings, group: 'system', mobile: false },
 ]
 
 /** 分层导航分组标签（'home' 组不显示标题；轨道渲染为双行 cn/en，命令面板渲染为合并串） */

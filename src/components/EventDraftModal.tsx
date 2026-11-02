@@ -134,7 +134,7 @@ export function EventDraftModal({
     <Modal
       open={open}
       onClose={onClose}
-      kicker="新建日程 · 先确认后写入"
+      kicker="新建日程 · 先确认再保存"
       title="新建日程"
       className="k-modal--compose"
     >

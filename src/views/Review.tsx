@@ -5,6 +5,7 @@
 // 语义：AI 只出草稿；生成即自动归档（审计 review.create · auto），编辑确认后更新同一条
 // （审计 review.update）；报告可删除（review.remove）。见 ADR-0013。
 import { useRef, useState } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
 import type { ReactNode } from 'react'
 import { Panel } from '@/components/Panel'
 import { Modal } from '@/components/Modal'
@@ -43,7 +44,7 @@ const METRIC_LABELS: Array<{
 }> = [
   { key: 'captured', label: '捕获', foot: '进入收件箱' },
   { key: 'created', label: '新增', foot: '转任务 / 项目' },
-  { key: 'completed', label: '完成', foot: '本期闭环' },
+  { key: 'completed', label: '完成', foot: '本期完成' },
   { key: 'overdue', label: '逾期', foot: '需前置处理', accent: true },
 ]
 
@@ -189,6 +190,7 @@ function DecisionsList({ decisions }: { decisions: string[] }): ReactNode {
 
 export function Review() {
   const { toast } = useToast()
+  const [searchParams] = useSearchParams()
   useDataRevision()
   // 运行态（Slice Z · F29）：来自模块级 store（跨路由保留；刷新即重置）
   const runtimes = useUiStore(reviewRuntimeStore)
@@ -703,126 +705,190 @@ export function Review() {
     )
   }
 
-  return (
-    <div className="k-view">
-      {/* 顶栏：周期说明 + 当前周期胶囊 */}
-      <div className="k-review__top">
-        <p className="k-view__intro">
-          周回顾是系统的心跳：短、可视、可自动化。当前周期 {currentKey.weekly} · {currentKey.monthly}。
-        </p>
-        <div className="k-review__periods">
-          <span className="k-pill">{currentKey.weekly}</span>
-          <span className="k-pill is-ghost">{currentKey.monthly}</span>
-        </div>
-      </div>
+  const reviewTab = (() => {
+    const tab = searchParams.get('tab')
+    return tab === 'month' || tab === 'archive' || tab === 'activity' ? tab : 'week'
+  })()
 
-      {/* 栏 1：周 / 月回顾卡并列（位于能量分析之上）；点击卡片弹窗查阅 / 编辑 */}
-      <section className="k-review__cycles" aria-label="回顾周期">
-        {renderCycle('weekly')}
-        {renderCycle('monthly')}
-      </section>
+  const tabs = [
+    { id: 'week', label: '本周', meta: currentKey.weekly },
+    { id: 'month', label: '本月', meta: currentKey.monthly },
+    { id: 'archive', label: '归档', meta: String(sortedReviews.length) },
+    { id: 'activity', label: '动作', meta: '' },
+  ] as const
 
-      {/* 栏 2：能量分析（前）与本周期完成（后） */}
-      <div className="k-review__charts">
-        <Panel
-          title="能量分析"
-          en="ENERGY"
-          actions={<span className="u-label k-muted">未完成 {energyTotal}</span>}
-        >
-          <EnergyBars data={energy} />
-          <p className="k-view__intro">
-            单色 + 图案区分：高能量为唯一强调序列，低能量为斜纹填充。
-          </p>
-        </Panel>
-
-        <Panel
-          title="本周完成"
-          en="COMPLETION"
-          actions={<span className="u-label k-muted">周一 → 周日</span>}
-        >
-          <TrendLine data={weeklySeries} />
-        </Panel>
-      </div>
-
-      {/* 栏 2.5：动作记录（Slice S）：审计日志时间线，按天分组 + 语义过滤 */}
-      <ActivityTimeline />
-
-      {/* 栏 3：报告历史（Slice L）：每次生成自动归档，按时间倒序可查阅 */}
+  const charts = (
+    <div className="k-review__charts">
       <Panel
-        title="报告历史"
-        en="REPORT ARCHIVE"
-        actions={<span className="u-label k-muted">{sortedReviews.length}</span>}
+        title="能量分析"
+        en="ENERGY"
+        actions={<span className="u-label k-muted">未完成 {energyTotal}</span>}
       >
-        {sortedReviews.length === 0 ? (
-          <EmptyState
-            title="暂无归档报告"
-            hint="在周 / 月卡点「AI 解析」，生成的报告会自动归档到这里。"
-          />
-        ) : (
-          <div className="k-archive">
-            {sortedReviews.map((review) => (
-              <button
-                type="button"
-                className="k-archive__row"
-                key={review.id}
-                onClick={() => openView(review.id)}
-                aria-label={`查看归档报告：${SCOPE_LABEL[review.type]} ${review.periodKey}`}
-              >
-                <span className="k-archive__period">
-                  {SCOPE_LABEL[review.type]} · {review.periodKey}
-                </span>
-                <span className="k-archive__meta k-mono">
-                  {formatDateTime(review.date)}
-                  {review.source === 'ai' ? ' · AI 归档' : ''}
-                </span>
-              </button>
-            ))}
-          </div>
-        )}
+        <EnergyBars data={energy} />
+        <p className="k-view__intro">高能量用一种颜色，低能量用斜纹；一眼看出这周把力气花在了哪里。</p>
       </Panel>
 
-      {/* 栏 4：停滞项目（独立一栏） */}
       <Panel
-        title="停滞项目"
-        en="STALE · ≥14 天未更新"
-        actions={<span className="u-label k-muted">{staleProjects.length}</span>}
+        title="本周完成"
+        en="COMPLETION"
+        actions={<span className="u-label k-muted">周一 → 周日</span>}
       >
-        {staleProjects.length === 0 ? (
-          <EmptyState title="无停滞项目" hint="所有活跃项目近期都有更新。" />
-        ) : (
-          <div className="k-stale">
-            {staleProjects.map((project) => {
-              const staleDays = Math.abs(daysFromToday(project.updatedAt))
-              return (
-                <div className="k-stale__row" key={project.id}>
-                  <div>
-                    <div>{project.title}</div>
-                    <div className="k-stale__meta k-mono">
-                      {project.id} · 已停滞 {staleDays} 天 · {project.outcome}
-                    </div>
-                  </div>
-                  <div className="k-view__actions">
-                    <button
-                      type="button"
-                      className="k-btn k-btn--sm"
-                      onClick={() => migrateProject(project)}
-                    >
-                      迁移
-                    </button>
-                    <button
-                      type="button"
-                      className="k-btn k-btn--sm"
-                      onClick={() => archiveProject(project)}
-                    >
-                      归档
-                    </button>
+        <TrendLine data={weeklySeries} />
+      </Panel>
+    </div>
+  )
+
+  const archivePanel = (
+    <Panel
+      title="报告历史"
+      en="REPORT ARCHIVE"
+      actions={<span className="u-label k-muted">{sortedReviews.length}</span>}
+    >
+      {sortedReviews.length === 0 ? (
+        <EmptyState
+          title="还没有归档"
+          hint="点本周或本月卡里的「AI 解析」，生成的报告会自动留在这里。"
+        />
+      ) : (
+        <div className="k-archive">
+          {sortedReviews.map((review) => (
+            <button
+              type="button"
+              className="k-archive__row"
+              key={review.id}
+              onClick={() => openView(review.id)}
+              aria-label={`查看归档报告：${SCOPE_LABEL[review.type]} ${review.periodKey}`}
+            >
+              <span className="k-archive__period">
+                {SCOPE_LABEL[review.type]} · {review.periodKey}
+              </span>
+              <span className="k-archive__meta k-mono">
+                {formatDateTime(review.date)}
+                {review.source === 'ai' ? ' · AI 归档' : ''}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </Panel>
+  )
+
+  const monthlyHistory = sortedReviews.filter((review) => review.type === 'monthly')
+  const monthlyHistoryPanel = (
+    <Panel
+      title="往月回顾"
+      en="MONTHLY HISTORY"
+      actions={<span className="u-label k-muted">{monthlyHistory.length}</span>}
+    >
+      {monthlyHistory.length === 0 ? (
+        <EmptyState title="还没有往月回顾" hint="生成一次月回顾后，会按月份留在这里。" />
+      ) : (
+        <div className="k-archive">
+          {monthlyHistory.map((review) => (
+            <button
+              type="button"
+              className="k-archive__row"
+              key={review.id}
+              onClick={() => openView(review.id)}
+              aria-label={`查看月回顾：${review.periodKey}`}
+            >
+              <span className="k-archive__period">月回顾 · {review.periodKey}</span>
+              <span className="k-archive__meta k-mono">{formatDateTime(review.date)}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </Panel>
+  )
+
+  const stalePanel = (
+    <Panel
+      title="停滞项目"
+      en="STALE · ≥14 天未更新"
+      actions={<span className="u-label k-muted">{staleProjects.length}</span>}
+    >
+      {staleProjects.length === 0 ? (
+        <EmptyState title="没有停滞项目" hint="最近两周，所有活跃项目都有更新。" />
+      ) : (
+        <div className="k-stale">
+          {staleProjects.map((project) => {
+            const staleDays = Math.abs(daysFromToday(project.updatedAt))
+            return (
+              <div className="k-stale__row" key={project.id}>
+                <div>
+                  <div>{project.title}</div>
+                  <div className="k-stale__meta k-mono">
+                    {project.id} · 已停滞 {staleDays} 天 · {project.outcome}
                   </div>
                 </div>
-              )
-            })}
+                <div className="k-view__actions">
+                  <button type="button" className="k-btn k-btn--sm" onClick={() => migrateProject(project)}>
+                    迁移
+                  </button>
+                  <button type="button" className="k-btn k-btn--sm" onClick={() => archiveProject(project)}>
+                    归档
+                  </button>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </Panel>
+  )
+
+  return (
+    <div className="k-view">
+      <nav className="gh-tabs k-review__tabs" aria-label="回顾视图">
+        {tabs.map((tab) => (
+          <Link
+            key={tab.id}
+            to={`/review?tab=${tab.id}`}
+            className={reviewTab === tab.id ? 'gh-tab is-active' : 'gh-tab'}
+            aria-current={reviewTab === tab.id ? 'page' : undefined}
+          >
+            {tab.label}
+            {tab.meta !== '' && <span className="gh-tab__count">{tab.meta}</span>}
+          </Link>
+        ))}
+      </nav>
+
+      {reviewTab === 'week' && (
+        <>
+          <p className="k-view__intro">本周先看完成了什么，再看卡在哪里；下周只挑一件最重要的事。</p>
+          <section className="k-review__cycles is-single" aria-label="本周回顾">
+            {renderCycle('weekly')}
+          </section>
+          {charts}
+        </>
+      )}
+
+      {reviewTab === 'month' && (
+        <>
+          <p className="k-view__intro">这个月整体怎么样？先看数字，再决定下个月往哪走。</p>
+          <section className="k-review__cycles is-single" aria-label="本月回顾">
+            {renderCycle('monthly')}
+          </section>
+          {monthlyHistoryPanel}
+        </>
+      )}
+
+      {reviewTab === 'archive' && (
+        <>
+          <p className="k-view__intro">每次生成的报告都会留档；点一行可以重新查看。</p>
+          <div className="k-review__archive">
+            {archivePanel}
+            {stalePanel}
           </div>
-        )}
-      </Panel>
+        </>
+      )}
+
+      {reviewTab === 'activity' && (
+        <>
+          <p className="k-view__intro">系统记下的新增、完成、打卡、删除与恢复，按时间排列。</p>
+          <ActivityTimeline />
+        </>
+      )}
 
       {renderModal()}
     </div>

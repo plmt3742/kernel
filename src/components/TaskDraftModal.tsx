@@ -138,7 +138,7 @@ export function TaskDraftModal({
     <Modal
       open={open}
       onClose={onClose}
-      kicker="快速新建 · 先确认后写入"
+      kicker="快速新建 · 先确认再保存"
       title="确认并创建任务"
       className="k-modal--compose"
       footer={

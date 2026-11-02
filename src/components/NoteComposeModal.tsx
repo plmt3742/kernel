@@ -59,7 +59,7 @@ export function NoteComposeModal({ open, onClose, onCreated }: NoteComposeModalP
       onClose={onClose}
       kicker="撰写"
       title="新建笔记"
-      className="k-modal--note"
+      className="k-modal--note w4-modal"
       footer={
         <>
           <button type="button" className="k-btn is-solid" disabled={!canCreate} onClick={submit}>

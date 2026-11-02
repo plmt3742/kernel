@@ -29,6 +29,7 @@ export default defineConfig({
           'react-vendor': ['react', 'react-dom', 'react-router-dom'],
           'motion-vendor': ['motion'],
           'markdown-vendor': ['react-markdown'],
+          'ui-vendor': ['lucide-react', 'cmdk', 'clsx', 'date-fns'],
         },
       },
     },

@@ -3,7 +3,7 @@
 // 视觉：token-only；打卡开关复用 .k-streak__toggle；热力图复用既有 HabitHeatmap（不改动）。
 // 深链：/habits?habit=<id> 打开对应习惯的编辑表单（与 Projects / Library 同款 useSearchParams 读取）。
 import { useEffect, useState, type ReactNode } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { clsx } from 'clsx'
 import { Check, Plus } from 'lucide-react'
 import { Modal } from '@/components/Modal'
@@ -183,6 +183,9 @@ function HabitCard({ habit, now, onEdit, onDelete }: HabitCardProps): ReactNode 
       )}
 
       <div className="k-habit__ops">
+        <Link to={`/habits/${habit.id}`} className="k-btn k-btn--sm">
+          详情
+        </Link>
         <button type="button" className="k-btn k-btn--sm" onClick={() => onEdit(habit)}>
           编辑
         </button>
@@ -206,6 +209,10 @@ export function Habits() {
 
   const habits = getHabits()
   const areas = getSnapshot().areas
+  const habitStats = habits.map((habit) => getHabitStats(habit.id, now))
+  const hitToday = habits.filter((habit) => isHabitHitToday(habit.id, now)).length
+  const longestStreak = habitStats.reduce((max, stats) => Math.max(max, stats.longest), 0)
+  const totalHits = habitStats.reduce((sum, stats) => sum + stats.total, 0)
 
   const [creating, setCreating] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -335,8 +342,23 @@ export function Habits() {
         习惯按「节奏 + 度量 + 目标值」定义；这里每日打卡、查看近 16 周热力图，并管理习惯定义本身。打卡记录（log）不在此编辑。
       </p>
 
-      <div className="k-habits__toolbar">
-        <span className="u-label k-muted">共 {habits.length} 个习惯</span>
+      <div className="k-tasks__toolbar k-habits__toolbar">
+        <div className="k-tasks__counts">
+          <div className="k-count">
+            <span className="k-count__num">
+              {hitToday}/{habits.length}
+            </span>
+            <span className="u-label k-muted">今日打卡 TODAY</span>
+          </div>
+          <div className="k-count">
+            <span className="k-count__num">{longestStreak}</span>
+            <span className="u-label k-muted">最长连续 BEST</span>
+          </div>
+          <div className="k-count">
+            <span className="k-count__num">{totalHits}</span>
+            <span className="u-label k-muted">累计打卡 TOTAL</span>
+          </div>
+        </div>
         <button
           type="button"
           className="k-btn k-btn--sm is-solid"
@@ -372,7 +394,6 @@ export function Habits() {
           ))}
         </div>
       )}
-
       {creating && (
         <Modal
           open

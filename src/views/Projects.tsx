@@ -1,13 +1,11 @@
-// KERNEL · 项目 PROJECTS（P1）：状态分组纵向列表 + 行内进度 + 详情抽屉
+// KERNEL · 项目列表（GitHub 式：过滤 tabs + 项目行 + 右侧进度；点击进入项目页）
 import { useEffect, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
-import { Plus, Sparkles } from 'lucide-react'
-import { ProjectDetailModal } from '@/components/ProjectDetailModal'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Plus, Search, Sparkles } from 'lucide-react'
+import { clsx } from 'clsx'
+import { PageHeader } from '@/components/shell/PageHeader'
 import { ProjectDraftModal } from '@/components/ProjectDraftModal'
 import { OrganizeProposalCard } from '@/components/OrganizeProposalCard'
-import { MeterBar } from '@/components/MeterBar'
-import { TagPill } from '@/components/TagPill'
-import { EmptyState } from '@/components/EmptyState'
 import { useToast } from '@/context/ToastContext'
 import { getAreaById, getProjectProgress, getSnapshot, getTaskById } from '@/lib/data'
 import { trashEntity, type OrganizeAssignment, type OrganizeCluster } from '@/lib/mutations'
@@ -21,86 +19,59 @@ import {
 } from '@/lib/organize'
 import { errorText } from '@/lib/api'
 import { useDataRevision } from '@/lib/hooks'
-import { createUiStore, str, useUiStore } from '@/lib/uiState'
-import { PROJECT_STATUS_EN, PROJECT_STATUS_LABEL, tagLabel } from '@/lib/format'
+import { PROJECT_STATUS_LABEL, tagLabel } from '@/lib/format'
 import { humanizeDay } from '@/lib/date'
 import type { Project } from '@/types'
 
-/** 行密度：active 完整；onHold/someday 紧凑（隐藏下一步）；done 最紧凑 */
-type RowVariant = 'active' | 'compact' | 'done'
-
-interface ProjectGroupSpec {
-  status: Project['status']
-  cn: string
-  en: string
-  variant: RowVariant
-}
-
-const GROUPS: ProjectGroupSpec[] = [
-  { status: 'active', cn: '进行中', en: PROJECT_STATUS_EN.active, variant: 'active' },
-  { status: 'onHold', cn: '暂停', en: PROJECT_STATUS_EN.onHold, variant: 'compact' },
-  { status: 'someday', cn: '将来', en: PROJECT_STATUS_EN.someday, variant: 'compact' },
-  { status: 'done', cn: '已完成', en: PROJECT_STATUS_EN.done, variant: 'done' },
+const STATUS_ORDER: Project['status'][] = ['active', 'onHold', 'someday', 'done', 'archived']
+const STATUS_FILTERS: Array<{ value: Project['status'] | 'all'; label: string }> = [
+  { value: 'all', label: '全部' },
+  { value: 'active', label: '进行中' },
+  { value: 'onHold', label: '暂停' },
+  { value: 'someday', label: '将来' },
+  { value: 'done', label: '已完成' },
+  { value: 'archived', label: '已归档' },
 ]
 
-/* ---------------------------------------------------------------------------
- * 项目页界面状态保留（Slice Z · F29，见 ADR-0022）：快速新建输入草稿持久化。
- * ------------------------------------------------------------------------- */
-interface ProjectUiState {
-  quick: string
+function statusClass(status: Project['status']): string {
+  if (status === 'active') return 'gh-badge--green'
+  if (status === 'done') return 'gh-badge--neutral'
+  return ''
 }
-
-const PROJECT_UI_KEY = 'kernel.ui.projects.v1'
-
-function parseProjectUi(raw: unknown): ProjectUiState | null {
-  if (typeof raw !== 'object' || raw === null) return null
-  return { quick: str((raw as Record<string, unknown>).quick) }
-}
-
-const projectUiStore = createUiStore<ProjectUiState>(PROJECT_UI_KEY, { quick: '' }, {
-  parse: parseProjectUi,
-})
 
 export function Projects() {
   useDataRevision()
+  const navigate = useNavigate()
   const { toast } = useToast()
-  const [searchParams, setSearchParams] = useSearchParams()
-  const [drawerId, setDrawerId] = useState<string | null>(null)
-  // 快速新建输入（Slice Z · F29）：来自模块级 store（跨路由 + 刷新保留）
-  const projectUi = useUiStore(projectUiStore)
-  const quick = projectUi.quick
-  const setQuick = (value: string): void => {
-    projectUiStore.set((state) => ({ ...state, quick: value }))
-  }
-  // 草稿确认弹窗（Slice R1）：回车后打开，AI 补全完成定义 / 区域 / 标签，确认才写入
+  const [searchParams] = useSearchParams()
+  const [query, setQuery] = useState('')
+  const [status, setStatus] = useState<Project['status'] | 'all'>('all')
   const [draftTitle, setDraftTitle] = useState<string | null>(null)
   const projects = getSnapshot().projects
-  // 「AI 整理」模块级状态（跨路由存活）：提案 / 运行态 / 应用态；确认前绝不落盘
   const organize = useOrganizeState()
 
-  // 深链直达项目弹窗：/projects?project=p-0002
   useEffect(() => {
     const id = searchParams.get('project')
     if (id !== null && projects.some((project) => project.id === id)) {
-      setDrawerId(id)
+      navigate(`/projects/${id}`, { replace: true })
     }
-  }, [searchParams, projects])
+  }, [searchParams, projects, navigate])
 
-  const closeDrawer = (): void => {
-    setDrawerId(null)
-    if (searchParams.get('project') !== null) {
-      setSearchParams({}, { replace: true })
-    }
-  }
-
-  // 快速新建项目（Slice R1 · 草稿确认）：回车 → 弹窗（AI 补全完成定义 / 区域 / 标签）→
-  // 点「创建项目」才写入；确认前零落盘。撤销走回收站。
-  const handleQuickAdd = (): void => {
-    const value = quick.trim()
-    if (value === '') return
-    setDraftTitle(value)
-    setQuick('')
-  }
+  const activeCount = projects.filter((project) => project.status === 'active').length
+  const needle = query.trim().toLowerCase()
+  const filtered = projects
+    .filter((project) => status === 'all' || project.status === status)
+    .filter((project) => {
+      if (needle === '') return true
+      return [project.title, project.outcome, ...project.tags]
+        .join(' ')
+        .toLowerCase()
+        .includes(needle)
+    })
+    .sort((a, b) => {
+      const rank = STATUS_ORDER.indexOf(a.status) - STATUS_ORDER.indexOf(b.status)
+      return rank !== 0 ? rank : b.updatedAt.localeCompare(a.updatedAt)
+    })
 
   const handleCreated = (project: Project): void => {
     setDraftTitle(null)
@@ -116,7 +87,6 @@ export function Projects() {
     })
   }
 
-  // AI 整理 · 手动运行（工具条按钮）：忽略时段 / 当日 / 锁；成功即使空也记录今日
   const handleOrganizeRun = async (): Promise<void> => {
     const ok = await runOrganizeNow()
     const state = getOrganizeState()
@@ -127,8 +97,10 @@ export function Projects() {
     }
   }
 
-  // AI 整理 · 应用勾选（归并 + 新项目一次写入）；toast 撤销 → 精确复原
-  const handleOrganizeApply = (assignments: OrganizeAssignment[], clusters: OrganizeCluster[]): void => {
+  const handleOrganizeApply = (
+    assignments: OrganizeAssignment[],
+    clusters: OrganizeCluster[],
+  ): void => {
     void (async () => {
       try {
         const result = await applyOrganizeSelection(assignments, clusters)
@@ -148,54 +120,80 @@ export function Projects() {
     })()
   }
 
-  // 跨分组连续编号（与设计稿一致：进行中 01–09、将来 10 …）
-  const indexById = new Map<string, number>()
-  let seq = 0
-  for (const group of GROUPS) {
-    for (const project of projects) {
-      if (project.status === group.status) {
-        seq += 1
-        indexById.set(project.id, seq)
-      }
-    }
-  }
-
   return (
-    <div className="k-view">
-      <p className="k-view__intro">
-        项目是"需要多个步骤达成"的结果承诺。纵向一览按状态分组，每行内嵌完成定义、下一步行动与任务进度。
-      </p>
+    <div className="gh-page">
+      <PageHeader
+        breadcrumb={[{ label: 'KERNEL', to: '/' }, { label: '项目' }]}
+        title="项目"
+        description="需要多个步骤才能做完的事。看状态、下一步和进度。"
+        meta={
+          <>
+            <b>{activeCount} 进行中</b>
+            <span>共 {projects.length} 个</span>
+          </>
+        }
+        actions={
+          <>
+            <button
+              type="button"
+              className="gh-btn"
+              onClick={() => {
+                void handleOrganizeRun()
+              }}
+              disabled={organize.busy || organize.applying}
+            >
+              <Sparkles size={14} strokeWidth={1.8} aria-hidden />
+              {organize.busy || organize.applying ? '整理中…' : 'AI 整理'}
+            </button>
+            <button
+              type="button"
+              className="gh-btn gh-btn--primary"
+              onClick={() => setDraftTitle('')}
+            >
+              <Plus size={14} strokeWidth={1.8} aria-hidden />
+              新建项目
+            </button>
+          </>
+        }
+        tabs={
+          <>
+            {STATUS_FILTERS.map((item) => (
+              <button
+                key={item.value}
+                type="button"
+                className={clsx('gh-tab', status === item.value && 'is-active')}
+                aria-pressed={status === item.value}
+                onClick={() => setStatus(item.value)}
+              >
+                {item.label}
+                {item.value === 'all' && <span className="gh-tab__count">{projects.length}</span>}
+                {item.value !== 'all' && (
+                  <span className="gh-tab__count">
+                    {projects.filter((project) => project.status === item.value).length}
+                  </span>
+                )}
+              </button>
+            ))}
+          </>
+        }
+      />
 
-      {/* 快速新建（镜像任务页）：回车创建，写入 data/projects；同行右侧「AI 整理」 */}
-      <div className="k-projects__toolbar">
-        <div className="k-quickadd">
-          <Plus size={16} strokeWidth={1.5} className="k-muted" aria-hidden />
+      <div className="gh-toolbar">
+        <label className="gh-search-input">
+          <Search size={14} strokeWidth={1.8} aria-hidden />
           <input
-            className="k-quickadd__input"
-            value={quick}
-            onChange={(event) => setQuick(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') handleQuickAdd()
-            }}
-            placeholder="新建项目，回车创建（写入 data/projects）"
-            aria-label="快速新建项目"
+            type="search"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="搜索项目、完成定义或标签…"
+            aria-label="搜索项目"
           />
-          <span className="u-label k-muted">ENTER</span>
-        </div>
-        <button
-          type="button"
-          className="k-pill is-ghost k-projects__organize"
-          onClick={() => {
-            void handleOrganizeRun()
-          }}
-          disabled={organize.busy || organize.applying}
-        >
-          <Sparkles size={14} strokeWidth={1.5} aria-hidden />
-          {organize.busy || organize.applying ? '整理中…' : 'AI 整理'}
-        </button>
+        </label>
+        <span className="gh-toolbar__count">
+          {filtered.length} / {projects.length}
+        </span>
       </div>
 
-      {/* AI 整理建议卡：两段提案 + 逐行勾选；确认前零落盘 */}
       <OrganizeProposalCard
         assignments={organize.assignments}
         clusters={organize.clusters}
@@ -208,50 +206,23 @@ export function Projects() {
         onDismiss={dismissOrganize}
       />
 
-      {projects.length === 0 ? (
-        <div className="k-plist__empty">
-          <EmptyState title="暂无项目" hint="还没有任何项目。从收件箱澄清，或直接创建一个。" guide />
+      {filtered.length === 0 ? (
+        <div className="gh-empty">
+          <b>没有匹配的项目</b>
+          <span>{needle === '' ? '切换状态标签，或新建一个项目。' : `没有匹配「${query.trim()}」的项目。`}</span>
         </div>
       ) : (
-        <div className="k-plist">
-          {GROUPS.map((group) => {
-            const items = projects.filter((project) => project.status === group.status)
-            return (
-              <section
-                className={`k-group k-plist__group k-plist__group--${group.variant}`}
-                key={group.status}
-              >
-                <header className="k-group__head">
-                  <span className="k-group__title">
-                    {group.cn} <span className="u-label k-muted">{group.en}</span>
-                  </span>
-                  <span className="k-panel__idx u-mono">{String(items.length).padStart(2, '0')}</span>
-                </header>
-                {items.length === 0 ? (
-                  <div className="k-plist__empty">
-                    <EmptyState title="暂无项目" />
-                  </div>
-                ) : (
-                  items.map((project) => (
-                    <ProjectRow
-                      key={project.id}
-                      project={project}
-                      index={indexById.get(project.id) ?? 0}
-                      variant={group.variant}
-                      onOpen={setDrawerId}
-                    />
-                  ))
-                )}
-              </section>
-            )
-          })}
+        <div className="gh-project-list">
+          {filtered.map((project) => (
+            <ProjectRow
+              key={project.id}
+              project={project}
+              onOpen={() => navigate(`/projects/${project.id}`)}
+            />
+          ))}
         </div>
       )}
 
-      {/* 项目详情居中弹窗（Slice K）：与总览就地弹窗共用同一组件，动作一致 */}
-      <ProjectDetailModal projectId={drawerId} onClose={closeDrawer} />
-
-      {/* 新建项目草稿确认弹窗（Slice R1）：确认前零落盘 */}
       <ProjectDraftModal
         open={draftTitle !== null}
         initialTitle={draftTitle ?? ''}
@@ -262,53 +233,47 @@ export function Projects() {
   )
 }
 
-interface ProjectRowProps {
-  project: Project
-  index: number
-  variant: RowVariant
-  onOpen: (id: string) => void
-}
-
-function ProjectRow({ project, index, variant, onOpen }: ProjectRowProps) {
+function ProjectRow({ project, onOpen }: { project: Project; onOpen: () => void }) {
   const progress = getProjectProgress(project.id)
   const area = project.areaId !== undefined ? getAreaById(project.areaId) : undefined
   const nextAction = project.nextActionId !== undefined ? getTaskById(project.nextActionId) : undefined
   const pct = Math.round(progress.ratio * 100)
-  const tag = project.tags[0]
-
   return (
-    <button
-      type="button"
-      className={`k-plist__row k-plist__row--${variant}`}
-      onClick={() => onOpen(project.id)}
-    >
-      <span className="k-plist__idx u-mono">{String(index).padStart(2, '0')}</span>
-      <span className="k-plist__main">
-        <span className="k-plist__titleline">
-          <span className="k-plist__title">{project.title}</span>
-          <TagPill ghost={project.status !== 'active'}>{PROJECT_STATUS_LABEL[project.status]}</TagPill>
-          {area !== undefined && <TagPill ghost>{area.title}</TagPill>}
-          {tag !== undefined && <TagPill ghost>{tagLabel(tag)}</TagPill>}
-        </span>
-        <span className="k-plist__outcome">{project.outcome}</span>
-        {nextAction !== undefined && (
-          <span className="k-plist__next">
-            <span className="u-label k-muted">下一步</span>
-            <span>{nextAction.title}</span>
+    <button type="button" className="gh-project-row" onClick={onOpen}>
+      <span className="gh-project-row__main">
+        <span className="gh-project-row__titleline">
+          <span className="gh-project-row__title">{project.title}</span>
+          <span className={clsx('gh-badge', statusClass(project.status))}>
+            {PROJECT_STATUS_LABEL[project.status]}
           </span>
-        )}
-      </span>
-      <span className="k-plist__side">
-        <span className="k-plist__meter">
-          <MeterBar
-            value={progress.done}
-            max={Math.max(1, progress.total)}
-            label="进度"
-            caption={`${progress.done} / ${progress.total} · ${pct}%`}
-          />
+          {area !== undefined && <span className="gh-badge gh-badge--neutral">{area.title}</span>}
         </span>
-        <span className="k-plist__due u-mono k-muted">
-          {project.dueAt !== undefined ? `截止 ${humanizeDay(project.dueAt)}` : '未设截止'}
+        <span className="gh-project-row__desc">{project.outcome}</span>
+        <span className="gh-project-row__meta">
+          {nextAction !== undefined ? (
+            <>
+              <span>下一步</span>
+              <b>{nextAction.title}</b>
+            </>
+          ) : (
+            <span>未设置下一步</span>
+          )}
+          {project.tags.slice(0, 2).map((tag) => (
+            <span key={tag} className="gh-project-row__tag">
+              {tagLabel(tag)}
+            </span>
+          ))}
+        </span>
+      </span>
+      <span className="gh-project-row__side">
+        <span className="gh-project-row__progress" aria-label={`进度 ${pct}%`}>
+          <i style={{ width: `${pct}%` }} />
+        </span>
+        <span className="gh-project-row__numbers">
+          {progress.done} / {progress.total} · {pct}%
+        </span>
+        <span className="gh-project-row__time">
+          {project.dueAt !== undefined ? `截止 ${humanizeDay(project.dueAt)}` : `更新 ${humanizeDay(project.updatedAt)}`}
         </span>
       </span>
     </button>

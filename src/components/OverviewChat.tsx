@@ -2470,23 +2470,67 @@ export function OverviewChat() {
       )}
 
       {turns.length === 0 && (
-        <div className="k-chat__suggest" aria-label="示例问题">
-          {[
-            '我今天有什么特别紧急需要去做的事情？',
-            '今天有什么课？',
-            '我今天做了什么？',
-            '帮我记一条任务：…',
-          ].map((example) => (
-            <button
-              key={example}
-              type="button"
-              className="k-pill is-ghost"
-              onClick={() => patchChat({ draft: example })}
-            >
-              {example}
-            </button>
-          ))}
-        </div>
+        <>
+          <div className="k-chat__welcome">
+            <div className="k-chat__welcome-head">
+              <span className="k-chat__welcome-mark" aria-hidden>
+                K
+              </span>
+              <div>
+                <b>本机助手</b>
+                <span>先看你的库 · 写入前问你</span>
+              </div>
+            </div>
+            <p>
+              问日程、任务、笔记或资料都行，也可以说「帮我记一条任务」。它会先把结果给你看，确认后才保存。
+            </p>
+            <div className="k-chat__welcome-chips">
+              <span>看库</span>
+              <span>联网检索</span>
+              <span>改前对照</span>
+              <span>确认后保存</span>
+            </div>
+          </div>
+          <div className="k-chat__suggest" aria-label="示例问题">
+            {[
+              '今天最该先做什么？',
+              '今天有什么课？',
+              '我今天做了什么？',
+              '帮我记一条任务：…',
+            ].map((example) => (
+              <button
+                key={example}
+                type="button"
+                className="k-pill is-ghost"
+                onClick={() => patchChat({ draft: example })}
+              >
+                {example}
+              </button>
+            ))}
+          </div>
+          <div className="k-chat__caps" aria-label="助手能力">
+            <p className="k-chat__caps-lab">可以帮你</p>
+            <div className="k-chat__caps-grid">
+              {(
+                [
+                  ['记任务', '先给你看，确认后保存', '帮我记一条任务：明天交作业'],
+                  ['记踪迹', '记录刚刚做完的事', '记一笔：今天完成了…'],
+                  ['做回顾', '整理这一周的进展', '帮我生成这周回顾'],
+                ] as const
+              ).map(([label, desc, example]) => (
+                <button
+                  key={label}
+                  type="button"
+                  className="k-chat__cap"
+                  onClick={() => patchChat({ draft: example })}
+                >
+                  <span className="k-chat__cap-t">{label}</span>
+                  <span className="k-chat__cap-d">{desc}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </>
       )}
 
       {turns.length > 20 && (
@@ -2555,7 +2599,7 @@ export function OverviewChat() {
               send()
             }
           }}
-          placeholder="问 AI：我今天有什么特别紧急需要去做的事情？"
+          placeholder="问 AI：今天有什么安排？"
           aria-label="AI 对话输入"
         />
         <div className="ic-composer__foot">
@@ -2570,7 +2614,7 @@ export function OverviewChat() {
               <Paperclip size={16} strokeWidth={1.5} aria-hidden />
             </button>
             <span className="ic-composer__hint u-label k-muted">
-              读库 · 联网 · 自由回答 · 可附文件 · Enter 发送 · Shift+Enter 换行
+              可以问库里的内容，也可以联网查；Enter 发送，Shift+Enter 换行
             </span>
           </div>
           <div className="k-chat__actions">

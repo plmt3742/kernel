@@ -1,8 +1,9 @@
 // KERNEL · 设置 SETTINGS（P2）：左分类导航 + 右单区面板
 // 结构取自设计稿 v2 · settings-b「侧导航」：导航决定右面板渲染的唯一分区，默认「外观」。
 import { useEffect, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Panel } from '@/components/Panel'
+import { PageHeader } from '@/components/shell/PageHeader'
 import { Modal } from '@/components/Modal'
 import { TagManager } from '@/components/TagManager'
 import { AreaManager, GoalManager } from '@/components/DimensionManagers'
@@ -50,7 +51,7 @@ type SectionId =
 const SECTIONS: Array<{ id: SectionId; cn: string; en: string }> = [
   { id: 'appearance', cn: '外观', en: 'APPEARANCE' },
   { id: 'ai', cn: 'AI 集成', en: 'OPENCODE' },
-  { id: 'automation', cn: 'AI 自动化', en: 'AUTOMATION' },
+  { id: 'automation', cn: '自动处理', en: 'AUTOMATION' },
   { id: 'notify', cn: '通知', en: 'WECHAT' },
   { id: 'tags', cn: '标签管理', en: 'TAGS' },
   { id: 'areas', cn: '区域', en: 'AREAS' },
@@ -62,10 +63,10 @@ const SECTIONS: Array<{ id: SectionId; cn: string; en: string }> = [
 ]
 
 const PHILOSOPHY: Array<{ n: string; text: string }> = [
-  { n: '01', text: '文件即数据库，opencode 即大脑，网页即驾驶舱。' },
-  { n: '02', text: '身份与领域是交叉筛选标签，不是目录分区。' },
-  { n: '03', text: '一切分类有界，迁移即重决策，每个存量都有排泄口。' },
-  { n: '04', text: '周回顾是心跳：短、可视、可自动化。' },
+  { n: '01', text: '数据放在本机文件里，AI 负责理解，界面负责呈现。' },
+  { n: '02', text: '身份和领域都只是标签，不拿它们分目录。' },
+  { n: '03', text: '改动都有记录，迁移前先备份，重要操作可以撤回。' },
+  { n: '04', text: '每周回顾一次：看看进展，调整下一步。' },
 ]
 
 export function Settings() {
@@ -77,10 +78,16 @@ export function Settings() {
   // 深链（Slice X）：?section=areas|goals 直达分区；?area=/?goal= 打开对应编辑弹窗
   // （习惯已迁出为独立页 /habits，?section=habits / ?habit= 不再由设置页处理）
   const [searchParams] = useSearchParams()
-  const [section, setSection] = useState<SectionId>(() => {
-    const raw = searchParams.get('section')
-    return raw !== null && SECTIONS.some((item) => item.id === raw) ? (raw as SectionId) : 'appearance'
-  })
+  const navigate = useNavigate()
+  const params = useParams()
+  const rawSection = params.section ?? searchParams.get('section')
+  const section: SectionId =
+    rawSection !== null && rawSection !== undefined && SECTIONS.some((item) => item.id === rawSection)
+      ? (rawSection as SectionId)
+      : 'appearance'
+  const setSection = (next: SectionId): void => {
+    navigate(`/settings/${next}`)
+  }
   const focusArea = searchParams.get('area') ?? undefined
   const focusGoal = searchParams.get('goal') ?? undefined
   const [activity, setActivity] = useState<ActivityEntry[]>([])
@@ -347,9 +354,21 @@ export function Settings() {
 
   return (
     <div className="k-view">
-      <p className="k-view__intro">
-        按分类浏览设置：外观、AI 集成、AI 自动化、通知、标签管理、区域、目标、数据统计、回收站、数据服务、关于。左侧选中分类决定右侧面板内容。
-      </p>
+      <PageHeader
+        breadcrumb={[
+          { label: 'KERNEL', to: '/' },
+          { label: '设置', to: '/settings' },
+          { label: SECTIONS.find((item) => item.id === section)?.cn ?? '外观' },
+        ]}
+        title="设置"
+        description="外观、AI、通知和数据都在这里。会改动数据的操作，都会先问你。"
+        meta={
+          <>
+            <b>{getDataRecordCount(getSnapshot())} 条记录</b>
+            <span>仅存本机</span>
+          </>
+        }
+      />
 
       <div className="k-settings__grid">
         {/* 左分类导航：按钮原生可获得焦点 / 回车触发；aria-current 标记当前分区 */}
@@ -361,7 +380,7 @@ export function Settings() {
                 type="button"
                 key={item.id}
                 className={active ? 'k-settings__nav-item is-active' : 'k-settings__nav-item'}
-                aria-current={active ? 'true' : undefined}
+                aria-current={active ? 'page' : undefined}
                 onClick={() => setSection(item.id)}
               >
                 <b>{item.cn}</b>
@@ -398,7 +417,7 @@ export function Settings() {
                 </button>
               </div>
               <p className="k-view__intro">
-                默认「柔暗夜色」，可切换亮色；选择后写入 localStorage（键 <code>kernel-theme</code>），首帧前生效以防闪烁。
+                默认使用深色外观。切换后会记住你的选择，下次打开仍然生效。
               </p>
             </Panel>
           )}
@@ -493,7 +512,7 @@ export function Settings() {
 
           {section === 'automation' && (
             <Panel
-              title="AI 自动化"
+              title="自动处理"
               en="AUTOMATION"
               actions={
                 <span className="k-pill">{automation === 'auto' ? '自动模式' : '确认模式'}</span>
@@ -509,7 +528,7 @@ export function Settings() {
                 >
                   <span className="k-automation__label">确认模式（默认）</span>
                   <span className="k-automation__desc">
-                    AI 解析后只出建议；你点「应用」才写入。最稳妥，适合不放心自动落盘时。
+                    AI 只给建议，你点「应用」后才会保存。最稳妥，适合不想让 AI 直接改数据的时候。
                   </span>
                 </button>
                 <button
@@ -527,7 +546,7 @@ export function Settings() {
                 </button>
               </div>
               <p className="k-view__intro">
-                默认「确认模式」（先确认后写入）；「自动模式」需显式开启，仅自动执行创建类低风险动作，可随时撤销或切回确认模式。
+                默认是「先确认」：AI 只出建议，你点了才保存。「自动」只处理新建这类低风险动作，随时可以撤销或切回。
               </p>
               <div className="k-settings__divider" aria-hidden />
               <div className="k-between">

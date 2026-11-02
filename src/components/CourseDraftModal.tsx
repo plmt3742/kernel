@@ -57,7 +57,7 @@ export function CourseDraftModal({ open, preset, onClose, onCreated }: CourseDra
     <Modal
       open={open}
       onClose={onClose}
-      kicker="新建课程 · 先确认后写入"
+      kicker="新建课程 · 先确认再保存"
       title="新建课程"
       className="k-modal--compose"
     >
