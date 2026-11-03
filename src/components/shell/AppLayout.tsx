@@ -1,7 +1,7 @@
 // KERNEL · AppLayout（GitHub 式壳：全局顶栏 + 分组侧栏 + 内容容器）
 import { Suspense, useEffect, useRef } from 'react'
-import { Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { motion, useReducedMotion } from 'motion/react'
+import { useLocation, useNavigate, useOutlet } from 'react-router-dom'
+import { AnimatePresence, motion, useReducedMotion, type Variants } from 'motion/react'
 import { Skeleton } from '@/components/Skeleton'
 import { AppHeader } from '@/components/shell/AppHeader'
 import { RoutePageHeader } from '@/components/shell/PageHeader'
@@ -20,13 +20,67 @@ function rootNav(pathname: string) {
   return navByPath(first === undefined ? '/' : `/${first}`)
 }
 
+type RouteMotionKind = 'forward' | 'back' | 'tab' | 'fade'
+
+const ROUTE_VARIANTS: Record<RouteMotionKind, Variants> = {
+  forward: {
+    initial: { opacity: 0, x: 24 },
+    enter: { opacity: 1, x: 0 },
+    exit: { opacity: 0, x: -14 },
+  },
+  back: {
+    initial: { opacity: 0, x: -20 },
+    enter: { opacity: 1, x: 0 },
+    exit: { opacity: 0, x: 18 },
+  },
+  tab: {
+    initial: { opacity: 0, y: 7 },
+    enter: { opacity: 1, y: 0 },
+    exit: { opacity: 0, y: -4 },
+  },
+  fade: {
+    initial: { opacity: 0, y: 8 },
+    enter: { opacity: 1, y: 0 },
+    exit: { opacity: 0, y: -5 },
+  },
+}
+
+const REDUCED_VARIANTS: Variants = {
+  initial: { opacity: 0 },
+  enter: { opacity: 1 },
+  exit: { opacity: 0 },
+}
+
+function routeMotionKind(previous: string, next: string): RouteMotionKind {
+  const a = previous.split('/').filter(Boolean)
+  const b = next.split('/').filter(Boolean)
+  if (a.join('/') === b.join('/')) return 'fade'
+  const sameRoot = a[0] !== undefined && a[0] === b[0]
+  const tab =
+    sameRoot &&
+    (a[0] === 'inbox' ||
+      a[0] === 'settings' ||
+      ((a[0] === 'tasks' || a[0] === 'projects') && a.length >= 2 && b.length >= 2))
+  if (tab) return 'tab'
+  if (b.length > a.length) return 'forward'
+  if (b.length < a.length) return 'back'
+  return 'fade'
+}
+
 export function AppLayout() {
   const location = useLocation()
   const navigate = useNavigate()
   const { toggle: togglePalette } = usePalette()
   const reduce = useReducedMotion()
   const captureTimerRef = useRef<number | null>(null)
+  const previousPathRef = useRef(location.pathname)
+  const outlet = useOutlet()
+  const motionKind = routeMotionKind(previousPathRef.current, location.pathname)
   const isDetail = location.pathname.split('/').filter(Boolean).length > 1
+
+  useEffect(() => {
+    previousPathRef.current = location.pathname
+  }, [location.pathname])
 
   useRouteScrollMemory()
   useGhSurfaceEffects()
@@ -104,17 +158,23 @@ export function AppLayout() {
       <main className="gh-main">
         <div className="gh-container">
           {!isDetail && <RoutePageHeader pathname={location.pathname} />}
-          <motion.div
-            key={location.pathname}
-            className="gh-route"
-            initial={reduce === true ? { opacity: 0 } : { opacity: 0, y: 4 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: DUR.fast, ease: EASE_ENTER }}
-          >
-            <Suspense fallback={<Skeleton lines={4} />}>
-              <Outlet />
-            </Suspense>
-          </motion.div>
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={location.pathname}
+              className="gh-route"
+              variants={reduce === true ? REDUCED_VARIANTS : ROUTE_VARIANTS[motionKind]}
+              initial="initial"
+              animate="enter"
+              exit="exit"
+              transition={{
+                duration: reduce === true ? 0.01 : motionKind === 'tab' ? DUR.fast : DUR.base,
+                ease: EASE_ENTER,
+              }}
+              style={{ transformOrigin: 'top center' }}
+            >
+              <Suspense fallback={<Skeleton lines={4} />}>{outlet}</Suspense>
+            </motion.div>
+          </AnimatePresence>
         </div>
       </main>
       <CommandPalette />

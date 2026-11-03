@@ -1,8 +1,8 @@
 // KERNEL · 应用根（Provider 链 + 路由 + 全局 reduced-motion）
 // 路由级懒加载（Slice C 清扫）：每个视图独立分包，主包只保留应用壳与共享依赖，
 // 首屏按需下载当前路由，见 docs/05 与 CHANGELOG。AppLayout 内的 Suspense 提供回退。
-import { lazy, Suspense } from 'react'
-import { BrowserRouter, Route, Routes } from 'react-router-dom'
+import { lazy, Suspense, useEffect, useState } from 'react'
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { MotionConfig } from 'motion/react'
 import { ThemeProvider } from '@/context/ThemeContext'
 import { ToastProvider } from '@/context/ToastContext'
@@ -47,6 +47,33 @@ const Review = lazy(() => import('@/views/Review').then((m) => ({ default: m.Rev
 const Trash = lazy(() => import('@/views/Trash').then((m) => ({ default: m.Trash })))
 const Settings = lazy(() => import('@/views/Settings').then((m) => ({ default: m.Settings })))
 const NotFound = lazy(() => import('@/views/NotFound').then((m) => ({ default: m.NotFound })))
+const MobileHome = lazy(() =>
+  import('@/views/MobileHome').then((m) => ({ default: m.MobileHome })),
+)
+
+function RootEntry() {
+  const location = useLocation()
+  const [phone, setPhone] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches,
+  )
+
+  useEffect(() => {
+    const query = window.matchMedia('(max-width: 767px)')
+    const onChange = (): void => setPhone(query.matches)
+    onChange()
+    query.addEventListener('change', onChange)
+    return () => query.removeEventListener('change', onChange)
+  }, [])
+
+  const desktop = new URLSearchParams(location.search).get('desktop') === '1'
+  if (phone && !desktop) return <Navigate to="/m" replace />
+
+  return (
+    <Suspense fallback={<div className="gh-boot">KERNEL</div>}>
+      <StartPage />
+    </Suspense>
+  )
+}
 
 export default function App() {
   return (
@@ -56,11 +83,12 @@ export default function App() {
           <BrowserRouter>
             <PaletteProvider>
               <Routes>
+                <Route path="/" element={<RootEntry />} />
                 <Route
-                  path="/"
+                  path="/m"
                   element={
-                    <Suspense fallback={<div className="gh-boot">KERNEL</div>}>
-                      <StartPage />
+                    <Suspense fallback={<div className="m-boot">KERNEL</div>}>
+                      <MobileHome />
                     </Suspense>
                   }
                 />
