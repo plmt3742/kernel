@@ -197,11 +197,7 @@ export function StartPage() {
       <section className="gh-launch__info">
         <header className="gh-launch__intro">
           <p className="gh-launch__kicker">KERNEL / LOCAL FIRST</p>
-          <h1>
-            把生活
-            <br />
-            当作内核
-          </h1>
+          <h1>今天有着落</h1>
           <p>
             把工作、学习、生活里的待办、资料和临时想法收在一处。每天打开，先看今天，再决定下一步。
           </p>
