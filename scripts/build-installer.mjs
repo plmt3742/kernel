@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// KERNEL · Windows 安装包构建器（v0.5.0）
+// KERNEL · Windows 安装包构建器（版本读取 package.json）
 //
 // 用法：
 //   node scripts/build-installer.mjs
@@ -27,7 +27,7 @@ import { fileURLToPath } from 'node:url'
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(HERE, '..')
 
-const APP_VERSION = '0.5.0'
+const APP_VERSION = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version
 const SETUP_BASENAME = `KERNEL-Setup-${APP_VERSION}`
 const ISS_NAME = 'KERNEL.iss'
 
@@ -264,6 +264,8 @@ const isccArgs = [
   `/DStageDir=${STAGE}`,
   `/DDataDir=${STAGE_DATA}`,
   `/DOutputDir=${OUT_DIR}`,
+  `/DAppVersion=${APP_VERSION}`,
+  `/DSetupBase=${SETUP_BASENAME}`,
 ]
 const r = spawnSync(ISCC, isccArgs, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
 const stdout = String(r.stdout || '')

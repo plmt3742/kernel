@@ -8,6 +8,8 @@
 ; 编译器预处理器变量（由构建脚本以 /D 覆盖）：
 ;   StageDir   安装载荷（payload）目录的绝对路径
 ;   OutputDir  Setup.exe 的输出目录（绝对路径）
+;   AppVersion 版本号（来自 package.json）
+;   SetupBase  Setup.exe 文件名（不含扩展名）
 ;
 ; 数据纪律：应用把数据写在 <安装目录>\data（server/store.mjs 相对根目录解析）。
 ; 安装时植入空白数据骨架，并以 uninsneveruninstall / onlyifdoesntexist 标记，
@@ -27,9 +29,13 @@
 #endif
 
 #define AppName "KERNEL"
-#define AppVersion "0.5.0"
+#ifndef AppVersion
+  #define AppVersion "1.0.0"
+#endif
 #define AppPublisher "KERNEL"
-#define SetupBase "KERNEL-Setup-0.5.0"
+#ifndef SetupBase
+  #define SetupBase "KERNEL-Setup-1.0.0"
+#endif
 
 [Setup]
 ; 固定 AppId：同一产品升级时复用同一安装身份（此处为项目自有 GUID）。
