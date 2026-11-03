@@ -5,6 +5,8 @@
 KERNEL 是一个本地优先的个人事务系统：课表、任务、日程、项目、笔记、资料、习惯、踪迹和回顾，都收在同一个地方。数据是你自己电脑上的 JSON 文件；AI 由本机 opencode 代理，模型请求会发往 DeepSeek（内容会出网，Key 只存本机）。
 
 > 当前发布：**v1.1.0**（本地单用户正式版，Windows 安装包见 [GitHub Releases](https://github.com/plmt3742/kernel/releases)）。
+>
+> 产品介绍站：**https://kernel-intro.pages.dev/**（Cloudflare Pages）。
 
 它面向的不是某一个身份：学生、知识工作者、自由职业者、创作者，都可以把工作、学习和生活里的事务放进来。要解决的不是“再多一个待办”，而是当代年轻人常见的焦虑与失控感：事情散在聊天、文件、截图和多个 App 里，没时间记录，复杂事务又很难持续推进。KERNEL 用一条本地循环把记录、阅读、规划、执行和回顾收回到同一个地方。
 
@@ -176,12 +178,14 @@ server/         本机数据服务（唯一写入口 / Zod / 原子写 / 审计 
 scripts/        开发、种子数据、打包与检查脚本
 public/         静态资源、字体与使用指南
 installer/      Windows 安装包定义与启动页
-site/           产品介绍站（独立静态站，目标 Cloudflare Pages）
+site/           产品介绍站（独立静态站，已部署 Cloudflare Pages）
 assets/         README 截图
 data/           运行时数据（gitignore，不入库）
 ```
 
 ## 产品介绍站
+
+**线上地址：https://kernel-intro.pages.dev/**
 
 `site/` 是一个独立的单页介绍站：结构参考 notion.com，视觉延续 KERNEL 暗色，零构建、零外链，字体与截图全部本地。用任意静态服务器以 `site/` 为根预览：
 
@@ -189,7 +193,7 @@ data/           运行时数据（gitignore，不入库）
 python -m http.server 4177 -d site
 ```
 
-部署到 Cloudflare Pages 时同样以 `site/` 为输出目录，不需要构建命令。介绍站不参与 `npm run dev` 与安装包，也不改变应用路由；应用本身仍只在本机运行。
+已部署到 Cloudflare Pages（https://kernel-intro.pages.dev/），以 `site/` 为输出目录，不需要构建命令。介绍站不参与 `npm run dev` 与安装包，也不改变应用路由；应用本身仍只在本机运行。
 
 ## 团队信息
 
