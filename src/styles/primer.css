@@ -2324,8 +2324,8 @@
   padding: 8px 10px;
 }
 .k-app .k-chat__composer.ic-composer:focus-within {
-  border-color: var(--gh-accent);
-  box-shadow: 0 0 0 3px var(--gh-accent-subtle);
+  border-color: rgb(255 255 255 / 0.18);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.04);
 }
 .k-app .k-chat__input,
 .k-app .k-chat__composer .ic-composer__input {
@@ -2350,7 +2350,7 @@
   height: 30px;
   border-radius: var(--gh-radius);
   background: var(--gh-accent);
-  color: #ffffff;
+  color: var(--gh-bg);
 }
 .k-app .k-chat__composer .ic-send:hover {
   background: var(--gh-accent-hover);
@@ -2963,8 +2963,8 @@
   box-shadow: none;
 }
 .k-app .w4-inbox__hero .ic-composer:focus-within {
-  border-color: var(--gh-accent);
-  box-shadow: 0 0 0 3px var(--gh-accent-subtle);
+  border-color: rgb(255 255 255 / 0.18);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.04);
 }
 .k-app .w4-inbox__hero .ic-composer__input {
   font-size: 13px;
@@ -2988,7 +2988,7 @@
   height: 30px;
   border-radius: var(--gh-radius);
   background: var(--gh-accent);
-  color: #ffffff;
+  color: var(--gh-bg);
 }
 .k-app .w4-inbox__hero .ic-send:disabled {
   background: var(--gh-neutral-subtle);

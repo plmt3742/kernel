@@ -176,6 +176,7 @@ copyDir(path.join(ROOT, 'public'), path.join(STAGE, 'public'), (src) => {
   const base = path.basename(src)
   return base !== 'showcase.html' // 本地展示页含真实数据截图，绝不进安装包
 })
+copyDir(path.join(ROOT, 'site'), path.join(STAGE, 'site'))
 copyDir(path.join(ROOT, 'scripts'), path.join(STAGE, 'scripts'), (src) => {
   const base = path.basename(src)
   return base !== 'assets' && !SCRIPTS_EXCLUDE.has(base)

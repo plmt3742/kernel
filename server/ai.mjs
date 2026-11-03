@@ -2634,6 +2634,14 @@ export function buildChatDigest(snapshot, now = new Date()) {
 function buildChatSystem(digest) {
   return `你是 KERNEL（个人事务内核）的对话助手。用户会用中文问你：他自己的事（如「我今天有什么特别紧急需要去做的事情」）、外部信息（如「今年四级考试是什么时候」）、或一般问题。
 回答要求：
+**输出纪律（最高优先级，覆盖下方所有格式）**：
+- 只输出最终答复；禁止输出思考过程、内心独白、英文分析、草稿、"Final answer"、"I should"、"Let me" 等。
+- 先给结论（1–2 句），再给最多 2 条短依据或行动；总长 ≤220 字（用户明确要求详细展开除外）。
+- 回答正文不要出现任何记录 id（t-0001 / e-0002 / p-0003 / n-0004 / tr-0005 / rev-0006 等）；用标题指代；id 只用于 JSON 提案的 id 字段。
+- 需要建议时只给一个明确推荐；用户明确要求比较 / 备选时再给第 2 个；不要列 3 个以上选项，也不要把决定推回给用户。
+- 用户问「最近需要我做什么 / 最紧急」：只给 1 个任务；不要在同一段列出第二、第三个任务，不要写统计数字。
+- 不要复述【系统现状摘要】的统计 / 清单；只引用与结论直接相关的 1–2 条；除非用户明确问数字，否则不要写逾期天数、任务数量、比例、条数。
+- 数据不足时说「数据里没有」，只问一个最关键的问题。
 - 关于用户自己的事：依据下方【系统现状摘要】中的事实回答；摘要里没有的，直接说「数据里没有」，绝不编造用户的任务 / 日程 / 项目 / 时间。
 - 一般知识与建议：可以直接自由回答（不限于摘要），但不得把猜测写成用户的数据。
 - 需要外部事实才能回答准确时（最新政策 / 未来日期 / 公开资料等），**只输出一个 JSON**（不要任何其他文字）：{"searchQueries":["…","…"]}（≤2 条、中文关键词、含年份，如「2026年下半年 全国大学英语四级考试 时间」）。系统会先检索并把结果发给你，然后你再正式回答。**一次对话最多请求 2 次检索**（每次 ≤2 条）。
@@ -2644,6 +2652,7 @@ function buildChatSystem(digest) {
 - 当用户想**新建待办任务**（如「帮我记一条任务：…」「打算做…」「我需要做…」，指**将来要去完成**的事）时，**只输出一个 JSON**（不要任何其他文字）：{"tasks":[{"title":"≤80 字，一句话任务标题","dueAt":"可选：仅当用户已明确给出日期 / 时间才填 ISO8601 带时区（如 2026-10-07T23:59:00+08:00）；无法确定就省略","importance":可选 0–3 整数,"tags":"可选：≤8 个短标签（每个 ≤12 字，如 学习 / 期末 / 竞赛）","projectId":"可选：仅当用户明确要归入某项目且该项目在【进行中项目】中，填其 id","parentTaskId":"可选：仅当用户明确说这是某任务的子任务且该任务已在【未完成下一步】或【实体记录】中看到时，填其 id"}, …]}（**1–6 条**）。系统会把它们作为「任务」交用户确认后入库。**已做完的事记 trace、不是 task；纯想法 / 感悟走笔记；仅「发生」的定点安排（会议 / 面试 / 考试 / 活动）用 event（见下条），不是 task。**
 - 当用户想**新建日程**，或内容里出现**会在某个明确时刻「发生」的事**（会议 / 面试 / 考试 / 讲座 / 活动，且给出了具体日期或时间）时，**只输出一个 JSON**（不要任何其他文字）：{"events":[{"title":"≤80 字","startAt":"必填 ISO8601 带时区，如 2026-10-09T19:30:00+08:00","endAt":"可选：明确结束时间才填","allDay":"可选 true（只有日期、没有具体时刻）","location":"可选 ≤60 字","tags":"可选：≤8 个短标签（每个 ≤12 字）","projectId":"可选：仅当用户明确要归入某项目且该项目在【进行中项目】中，填其 id"}, …]}（**1–6 条**）。**只要出现「具体日期 / 时刻 + 一件会发生的事」，就必须产出 event**——不要把它降级成一句待办。**时间无法明确推出才不产 event**。
   例：「10月9日（周五）19:30 新生辩论赛初赛，地点 某活动中心报告厅，观众需 19:20 前签到；报名 10月7日 17:00 开启」→ {"events":[{"title":"新生辩论赛初赛（观看）","startAt":"2026-10-09T19:30:00+08:00","endAt":"2026-10-09T21:30:00+08:00","location":"某活动中心报告厅"}],"tasks":[{"title":"报名新生辩论赛初赛","dueAt":"2026-10-07T17:00:00+08:00"}]}
+- 出行计划（如「明天去南京」「周五回家」）本身是 event（有日期/时间就产出；只有日期用 allDay）；买票 / 订酒店 / 收拾行李 / 查路线是关联 task；不要把它们合并成一条任务。
 - 当用户想**开启一个新项目**（如「我想做一个…项目」「帮我建个项目」）时，**只输出一个 JSON**（不要任何其他文字）：{"projects":[{"title":"≤60 字项目名","outcome":"可选：完成定义 ≤200 字","tags":"可选：≤8 个短标签（每个 ≤12 字）"}, …]}（**1–3 条**）。系统会把它们作为「项目」交用户确认后建立。
 - 当用户想**把某段内容存成一条笔记**（如「把刚才说的整理进笔记」「帮我记一条笔记」）时，**只输出一个 JSON**（不要任何其他文字）：{"notes":[{"title":"≤60 字标题","body":"markdown 正文 ≤4000 字"}, …]}（**1–3 条**）。系统会把它们作为「笔记」交用户确认后保存。
 - 当用户想**把一条资料收进资料库**（如「把这篇链接存到资料库」「收录这条资料」）时，**只输出一个 JSON**（不要任何其他文字）：{"resources":[{"title":"≤60 字资料名","url":"可选链接（≤2000 字）","note":"可选简介（≤120 字）","tags":"可选：≤8 个短标签（每个 ≤12 字）"}, …]}（**1–3 条**）。系统会把它们作为「资料」交用户确认后收录。
@@ -2651,8 +2660,8 @@ function buildChatSystem(digest) {
 - **同一段话可同时产出多类提案**：一段内容可同时含「做了什么」（traces）、「接下来做什么」（tasks / events）、「要开启项目」（projects）、「要存笔记」（notes）或「对既有记录的处置」（actions），**在同一个 JSON 里同时给出对应各类**（traces / tasks / events 每类 1–6 条；projects / notes / actions 每类 1–3 条）；各类互不排斥，不要因其中一类就丢掉其他类。
 - **严禁声称已完成写入**：你只能输出上面的 JSON 提案或用文字回答，一切创建 / 修改都要等用户在界面上确认。绝不要写「已记下」「已建立」「已创建」「已保存」「已修改」这类话；提议时用「确认后建立 / 确认后生效」。
 - 若系统发来【实体记录】段落：只可据此回答 / 提出修改，不得编造；若用户要求修改，只输出上面的 edit JSON；否则正常用文字回答。
-- 正式回答用中文 markdown 组织（小标题 / 列表 / 加粗均可），简洁、直接、可执行；不要输出 markdown 代码块包裹整篇。
-- 当被问「最紧急」时，按「逾期 → 今日到期 → 即将开始的日程」排序给出判断与理由。
+- 正式回答用中文，先结论后依据；最多 2 条短 bullet；总长 ≤220 字；不要堆叠小标题，不要输出思考过程 / 英文分析 / "Final answer"；不要用 markdown 代码块包裹整篇。
+- 当被问「最紧急」时，只给 1 个最紧急项 + 1 句理由；不要列其他任务或统计；用户要求备选时再给第 2 个。
 - 当对话记录里含有「用户：」「KERNEL：」标记时，只回答最后一条「用户：」的内容。
 
 【系统现状摘要】
@@ -3536,6 +3545,121 @@ export async function chatWithKernelStream(messages, attachments, emit) {
       /* 忽略关闭错误 */
     }
     if (pump !== null) await pump.catch(() => {})
+  }
+}
+
+const SPLIT_MAX_ITEMS = 6
+
+function splitSystemPrompt(kind) {
+  return `你是 KERNEL 的条目拆分器。把给出的${kind === 'task' ? '任务' : '踪迹'}拆成更小的原子项。只输出一个 JSON：{"items":[...]}，不要解释、不要 markdown 代码块。
+规则：
+- 只拆分确实包含两个以上独立动作的条目；如果已经是单一动作，原样返回 1 条。
+- 每条只做一件事；标题 ≤80 字；不要合并不同事项，也不要编造原文没有的信息。
+- 保留原文的时间、重要性、标签；${kind === 'task' ? '任务字段：title, dueAt?, importance?, tags?, notes?' : '踪迹字段：title, note?, at?, tags?'}。
+- 只返回同类型的条目，不创建任务/日程/笔记等其他类型。`
+}
+
+function cleanSplitItems(kind, raw, original) {
+  const list = Array.isArray(raw?.items) ? raw.items : Array.isArray(raw) ? raw : []
+  const base = original[0] ?? {}
+  const out = []
+  for (const item of list) {
+    if (out.length >= SPLIT_MAX_ITEMS) break
+    if (item === null || typeof item !== 'object') continue
+    const title = typeof item.title === 'string' ? item.title.trim() : ''
+    if (title === '') continue
+    if (kind === 'task') {
+      const row = { title: Array.from(title).slice(0, 80).join('') }
+      const dueAt =
+        typeof item.dueAt === 'string' ? item.dueAt : typeof base.dueAt === 'string' ? base.dueAt : ''
+      if (/^\d{4}-\d{2}-\d{2}T/.test(dueAt)) row.dueAt = dueAt
+      const importance = Number.isInteger(item.importance)
+        ? item.importance
+        : Number.isInteger(base.importance)
+          ? base.importance
+          : null
+      if (importance !== null && importance >= 0 && importance <= 3) row.importance = importance
+      const tags = Array.isArray(item.tags) ? item.tags : Array.isArray(base.tags) ? base.tags : []
+      const cleanTags = tags
+        .filter((tag) => typeof tag === 'string' && tag.trim() !== '')
+        .slice(0, 8)
+        .map((tag) => Array.from(tag.trim()).slice(0, 12).join(''))
+      if (cleanTags.length > 0) row.tags = cleanTags
+      const notes =
+        typeof item.notes === 'string' ? item.notes : typeof item.note === 'string' ? item.note : ''
+      if (notes.trim() !== '') row.notes = Array.from(notes.trim()).slice(0, 500).join('')
+      if (
+        typeof base.projectId === 'string' &&
+        original.every((entry) => entry.projectId === base.projectId)
+      ) {
+        row.projectId = base.projectId
+      }
+      out.push(row)
+    } else {
+      const row = { title: Array.from(title).slice(0, 80).join('') }
+      const at = typeof item.at === 'string' ? item.at : typeof base.at === 'string' ? base.at : ''
+      if (/^\d{4}-\d{2}-\d{2}T/.test(at)) row.at = at
+      if (typeof item.note === 'string' && item.note.trim() !== '') {
+        row.note = Array.from(item.note.trim()).slice(0, 200).join('')
+      }
+      const tags = Array.isArray(item.tags) ? item.tags : Array.isArray(base.tags) ? base.tags : []
+      const cleanTags = tags
+        .filter((tag) => typeof tag === 'string' && tag.trim() !== '')
+        .slice(0, 8)
+        .map((tag) => Array.from(tag.trim()).slice(0, 12).join(''))
+      if (cleanTags.length > 0) row.tags = cleanTags
+      if (
+        typeof base.projectId === 'string' &&
+        original.every((entry) => entry.projectId === base.projectId)
+      ) {
+        row.projectId = base.projectId
+      }
+      out.push(row)
+    }
+  }
+  return out
+}
+
+export async function splitChatItems(kind, items) {
+  const t0 = Date.now()
+  const normalized = (Array.isArray(items) ? items : [])
+    .filter((item) => item !== null && typeof item === 'object')
+    .slice(0, SPLIT_MAX_ITEMS)
+  if (normalized.length === 0) throw new Error('没有可拆分的条目')
+  const sessionID = await createSession('kernel:chat-split')
+  const system = splitSystemPrompt(kind)
+  const input = `类型：${kind}\n条目：${JSON.stringify(normalized)}`
+  let res = await promptOnce(sessionID, system, input)
+  let text = extractText(res)
+    .trim()
+    .replace(/^```(?:json)?/i, '')
+    .replace(/```$/, '')
+    .trim()
+  let parsed = null
+  try {
+    parsed = JSON.parse(text)
+  } catch {
+    res = await promptOnce(
+      sessionID,
+      system,
+      `${input}\n\n上次输出无法解析。请只输出合法 JSON：{"items":[...]}，不要任何解释。`,
+    )
+    text = extractText(res)
+      .trim()
+      .replace(/^```(?:json)?/i, '')
+      .replace(/```$/, '')
+      .trim()
+    try {
+      parsed = JSON.parse(text)
+    } catch {
+      throw new Error('AI 拆分结果不是有效 JSON')
+    }
+  }
+  const cleaned = cleanSplitItems(kind, parsed, normalized)
+  return {
+    items: cleaned.length > 0 ? cleaned : normalized,
+    model: modelOf(res),
+    ms: Date.now() - t0,
   }
 }
 

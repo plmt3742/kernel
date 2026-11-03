@@ -423,6 +423,13 @@ export interface NotifyStatus {
   failedKeys: number
 }
 
+export interface LanStatus {
+  running: boolean
+  port: number
+  urls: string[]
+  startedAt: string | null
+}
+
 /* ---------------------------------------------------------------------------
  * 别名 / 聚合
  * ------------------------------------------------------------------------- */

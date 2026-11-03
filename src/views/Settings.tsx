@@ -3,7 +3,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Panel } from '@/components/Panel'
-import { PageHeader } from '@/components/shell/PageHeader'
 import { Modal } from '@/components/Modal'
 import { TagManager } from '@/components/TagManager'
 import { AreaManager, GoalManager } from '@/components/DimensionManagers'
@@ -16,16 +15,19 @@ import { getConfig, getSnapshot } from '@/lib/data'
 import { getDataRecordCount } from '@/lib/derive'
 import { useAiHealth, useDataRevision, useDataSource } from '@/lib/hooks'
 import {
+  getLanStatus,
   getNotifyStatus,
   hydrateFromServer,
   saveNotifyConfig,
   sendTestNotify,
   setAiKey,
+  startLanAccess,
+  stopLanAccess,
   updateAiAutomation,
 } from '@/lib/mutations'
 import { api, errorText } from '@/lib/api'
 import { formatTime } from '@/lib/date'
-import type { AiAutomation, NotifyStatus } from '@/types'
+import type { AiAutomation, LanStatus, NotifyStatus } from '@/types'
 
 interface ActivityEntry {
   ts: string
@@ -40,6 +42,7 @@ type SectionId =
   | 'ai'
   | 'automation'
   | 'notify'
+  | 'mobile'
   | 'tags'
   | 'areas'
   | 'goals'
@@ -48,26 +51,45 @@ type SectionId =
   | 'service'
   | 'about'
 
-const SECTIONS: Array<{ id: SectionId; cn: string; en: string }> = [
-  { id: 'appearance', cn: '外观', en: 'APPEARANCE' },
-  { id: 'ai', cn: 'AI 集成', en: 'OPENCODE' },
-  { id: 'automation', cn: '自动处理', en: 'AUTOMATION' },
-  { id: 'notify', cn: '通知', en: 'WECHAT' },
-  { id: 'tags', cn: '标签管理', en: 'TAGS' },
-  { id: 'areas', cn: '区域', en: 'AREAS' },
-  { id: 'goals', cn: '目标', en: 'GOALS' },
-  { id: 'data', cn: '数据统计', en: 'DATA' },
-  { id: 'trash', cn: '回收站', en: 'TRASH' },
-  { id: 'service', cn: '数据服务', en: 'SERVICE' },
-  { id: 'about', cn: '关于', en: 'ABOUT' },
+type SectionGroup = 'general' | 'ai' | 'content' | 'data' | 'system'
+
+const GROUPS: Array<{ id: SectionGroup; cn: string; en: string }> = [
+  { id: 'general', cn: '常规', en: 'GENERAL' },
+  { id: 'ai', cn: 'AI', en: 'AI' },
+  { id: 'content', cn: '内容', en: 'CONTENT' },
+  { id: 'data', cn: '数据', en: 'DATA' },
+  { id: 'system', cn: '系统', en: 'SYSTEM' },
 ]
 
-const PHILOSOPHY: Array<{ n: string; text: string }> = [
-  { n: '01', text: '数据放在本机文件里，AI 负责理解，界面负责呈现。' },
-  { n: '02', text: '身份和领域都只是标签，不拿它们分目录。' },
-  { n: '03', text: '改动都有记录，迁移前先备份，重要操作可以撤回。' },
-  { n: '04', text: '每周回顾一次：看看进展，调整下一步。' },
+const SECTIONS: Array<{ id: SectionId; cn: string; en: string; group: SectionGroup }> = [
+  { id: 'appearance', cn: '外观', en: 'APPEARANCE', group: 'general' },
+  { id: 'notify', cn: '通知', en: 'WECHAT', group: 'general' },
+  { id: 'mobile', cn: '手机访问', en: 'LAN', group: 'general' },
+  { id: 'ai', cn: 'AI 集成', en: 'OPENCODE', group: 'ai' },
+  { id: 'automation', cn: '自动处理', en: 'AUTOMATION', group: 'ai' },
+  { id: 'tags', cn: '标签管理', en: 'TAGS', group: 'content' },
+  { id: 'areas', cn: '区域', en: 'AREAS', group: 'content' },
+  { id: 'goals', cn: '目标', en: 'GOALS', group: 'content' },
+  { id: 'data', cn: '数据统计', en: 'DATA', group: 'data' },
+  { id: 'trash', cn: '回收站', en: 'TRASH', group: 'data' },
+  { id: 'service', cn: '数据服务', en: 'SERVICE', group: 'data' },
+  { id: 'about', cn: '关于', en: 'ABOUT', group: 'system' },
 ]
+
+const SECTION_DESC: Record<SectionId, string> = {
+  appearance: '主题、动效与界面偏好。切换会记在本机，下次打开仍然生效。',
+  notify: '企业微信群机器人日报与到期提醒；只出站，不接入个人微信。',
+  mobile: '同一 WiFi 下用手机浏览器打开；按需开启，用完可以关闭。',
+  ai: '本机 opencode、模型与 DeepSeek API Key。AI 只出建议，写入前确认。',
+  automation: 'AI 解析完成后，是否自动应用创建类的低风险动作。',
+  tags: '标签的登记、重命名、合并与清理；写入时自动登记。',
+  areas: '长期责任范围与判断标准；项目、任务、资料可以挂在区域下。',
+  goals: '阶段目标与关键结果；项目可以对齐到目标。',
+  data: '实体计数、数据位置与维护操作。数据是文件，可直接备份。',
+  trash: '已删除的记录；可以恢复，或彻底删除。',
+  service: '本机数据服务的状态与最近写入活动。',
+  about: '版本、产品介绍、使用指南与项目链接。',
+}
 
 export function Settings() {
   useDataRevision()
@@ -88,6 +110,8 @@ export function Settings() {
   const setSection = (next: SectionId): void => {
     navigate(`/settings/${next}`)
   }
+  const currentSection = SECTIONS.find((item) => item.id === section) ?? SECTIONS[0]
+  const currentIndex = SECTIONS.findIndex((item) => item.id === section) + 1
   const focusArea = searchParams.get('area') ?? undefined
   const focusGoal = searchParams.get('goal') ?? undefined
   const [activity, setActivity] = useState<ActivityEntry[]>([])
@@ -124,6 +148,10 @@ export function Settings() {
   const [notifyBusy, setNotifyBusy] = useState(false)
   const [testBusy, setTestBusy] = useState(false)
 
+  const [lanStatus, setLanStatus] = useState<LanStatus | null>(null)
+  const [lanBusy, setLanBusy] = useState(false)
+  const [lanError, setLanError] = useState('')
+
   const applyNotifyStatus = (status: NotifyStatus): void => {
     setNotifyStatus(status)
     setDigestTime(status.dailyDigestTime)
@@ -144,6 +172,51 @@ export function Settings() {
       cancelled = true
     }
   }, [section])
+
+  useEffect(() => {
+    if (section !== 'mobile') return
+    let cancelled = false
+    setLanError('')
+    getLanStatus()
+      .then((status) => {
+        if (!cancelled) setLanStatus(status)
+      })
+      .catch((err) => {
+        if (!cancelled) setLanError(errorText(err))
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [section])
+
+  const toggleLan = (): void => {
+    if (lanBusy || source !== 'server') return
+    setLanBusy(true)
+    setLanError('')
+    const action = lanStatus?.running === true ? stopLanAccess : startLanAccess
+    void action()
+      .then((status) => {
+        setLanStatus(status)
+        toast(status.running ? '手机访问已开启' : '手机访问已关闭')
+      })
+      .catch((err) => {
+        setLanError(errorText(err))
+        toast(`手机访问操作失败：${errorText(err)}`, { tone: 'error' })
+      })
+      .finally(() => setLanBusy(false))
+  }
+
+  const copyLanUrl = (url: string): void => {
+    const clipboard = navigator.clipboard
+    if (clipboard === undefined) {
+      toast('当前环境不支持自动复制，请手动选中地址')
+      return
+    }
+    void clipboard
+      .writeText(url)
+      .then(() => toast('地址已复制'))
+      .catch(() => toast('复制失败，请手动选中地址', { tone: 'error' }))
+  }
 
   const saveNotify = (): void => {
     const minutes = Number(dueMinutes)
@@ -317,6 +390,7 @@ export function Settings() {
 
   const snapshot = getSnapshot()
   const total = getDataRecordCount(snapshot)
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
   const notifyLastError = notifyStatus?.lastError ?? ''
 
   const rows: Array<{ label: string; value: number }> = [
@@ -354,76 +428,167 @@ export function Settings() {
 
   return (
     <div className="k-view">
-      <PageHeader
-        breadcrumb={[
-          { label: 'KERNEL', to: '/' },
-          { label: '设置', to: '/settings' },
-          { label: SECTIONS.find((item) => item.id === section)?.cn ?? '外观' },
-        ]}
-        title="设置"
-        description="外观、AI、通知和数据都在这里。会改动数据的操作，都会先问你。"
-        meta={
-          <>
-            <b>{getDataRecordCount(getSnapshot())} 条记录</b>
+      <header className="set__pagehead">
+        <div className="set__pagehead-main">
+          <p className="set__crumb">
+            <span>KERNEL</span>
+            <i>/</i>
+            <span>设置</span>
+            <i>/</i>
+            <b>{currentSection.cn}</b>
+          </p>
+          <h1 className="set__title">设置</h1>
+          <p className="set__lede">
+            外观、AI、通知、手机访问和数据都在这里。会改动数据的操作，都会先问你。
+          </p>
+        </div>
+        <div className="set__status" aria-label="本机状态">
+          <div className="set__status-row">
+            <span>数据服务</span>
+            <b className={source === 'server' ? 'is-on' : source === 'offline' ? 'is-off' : ''}>
+              <i aria-hidden />
+              {source === 'server' ? '在线' : source === 'offline' ? '离线' : '连接中'}
+            </b>
+          </div>
+          <div className="set__status-row">
+            <span>AI</span>
+            <b className={ai.status === 'online' ? 'is-on' : ai.status === 'offline' ? 'is-off' : ''}>
+              <i aria-hidden />
+              {ai.status === 'online' ? '在线' : ai.status === 'offline' ? '离线' : '检测中'}
+            </b>
+          </div>
+          <div className="set__status-row">
+            <span>版本</span>
+            <b className="set__status-version">v1.1.0</b>
+          </div>
+          <div className="set__status-foot">
+            <span>{total} 条记录</span>
             <span>仅存本机</span>
-          </>
-        }
-      />
+          </div>
+        </div>
+      </header>
 
-      <div className="k-settings__grid">
-        {/* 左分类导航：按钮原生可获得焦点 / 回车触发；aria-current 标记当前分区 */}
-        <nav className="k-settings__nav" aria-label="设置分类">
-          {SECTIONS.map((item) => {
-            const active = section === item.id
-            return (
-              <button
-                type="button"
-                key={item.id}
-                className={active ? 'k-settings__nav-item is-active' : 'k-settings__nav-item'}
-                aria-current={active ? 'page' : undefined}
-                onClick={() => setSection(item.id)}
-              >
-                <b>{item.cn}</b>
-                <span>{item.en}</span>
-              </button>
-            )
-          })}
-        </nav>
+      <div className="set__layout">
+        <aside className="set__rail" aria-label="设置索引">
+          <div className="set__rail-head">
+            <span>设置索引</span>
+            <em>INDEX</em>
+          </div>
+          {GROUPS.map((group) => (
+            <div className="set__nav-group" key={group.id}>
+              <p className="set__nav-label">
+                <span>{group.cn}</span>
+                <em>{group.en}</em>
+              </p>
+              {SECTIONS.filter((item) => item.group === group.id).map((item) => {
+                const index = SECTIONS.findIndex((entry) => entry.id === item.id) + 1
+                const active = section === item.id
+                return (
+                  <button
+                    type="button"
+                    key={item.id}
+                    className={active ? 'set__nav-item is-active' : 'set__nav-item'}
+                    aria-current={active ? 'page' : undefined}
+                    onClick={() => setSection(item.id)}
+                  >
+                    <span className="set__nav-n">{String(index).padStart(2, '0')}</span>
+                    <span className="set__nav-cn">{item.cn}</span>
+                    <span className="set__nav-en">{item.en}</span>
+                  </button>
+                )
+              })}
+            </div>
+          ))}
+          <div className="set__rail-foot">
+            <span>LOCAL ONLY</span>
+            <span>v1.1.0</span>
+          </div>
+        </aside>
 
-        {/* 右内容面板：仅渲染当前选中分区 */}
-        <div className="k-settings__content">
+        <div className="set__mobile-nav">
+          <label htmlFor="set-section">设置分类</label>
+          <select
+            id="set-section"
+            value={section}
+            onChange={(event) => setSection(event.target.value as SectionId)}
+          >
+            {GROUPS.map((group) => (
+              <optgroup label={`${group.cn} / ${group.en}`} key={group.id}>
+                {SECTIONS.filter((item) => item.group === group.id).map((item) => (
+                  <option value={item.id} key={item.id}>
+                    {String(SECTIONS.findIndex((entry) => entry.id === item.id) + 1).padStart(2, '0')} ·{' '}
+                    {item.cn} · {item.en}
+                  </option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+        </div>
+
+        <main className="set__main">
+          <header className="set__sectionhead">
+            <div className="set__sectionhead-top">
+              <span className="set__section-n">{String(currentIndex).padStart(2, '0')}</span>
+              <span className="set__section-en">{currentSection.en}</span>
+            </div>
+            <h2 className="set__section-title">{currentSection.cn}</h2>
+            <p className="set__section-desc">{SECTION_DESC[section]}</p>
+          </header>
+          <div className="set__body" key={section}>
           {section === 'appearance' && (
             <Panel
               title="主题"
               en="THEME"
               actions={<span className="k-pill">当前 · {theme === 'dark' ? '暗' : '亮'}</span>}
             >
-              <div className="k-view__actions">
+              <div className="set__theme-grid">
                 <button
                   type="button"
-                  className={theme === 'light' ? 'k-btn is-solid' : 'k-btn'}
-                  onClick={() => setTheme('light')}
-                  aria-pressed={theme === 'light'}
-                >
-                  亮 · LIGHT
-                </button>
-                <button
-                  type="button"
-                  className={theme === 'dark' ? 'k-btn is-solid' : 'k-btn'}
+                  className={theme === 'dark' ? 'set__theme is-active' : 'set__theme'}
                   onClick={() => setTheme('dark')}
                   aria-pressed={theme === 'dark'}
                 >
-                  暗 · DARK
+                  <span className="set__theme-preview is-dark" aria-hidden="true">
+                    <i />
+                    <i />
+                    <i />
+                  </span>
+                  <span className="set__theme-label">
+                    <b>暗 · DARK</b>
+                    <em>{theme === 'dark' ? '当前' : '选择'}</em>
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className={theme === 'light' ? 'set__theme is-active' : 'set__theme'}
+                  onClick={() => setTheme('light')}
+                  aria-pressed={theme === 'light'}
+                >
+                  <span className="set__theme-preview is-light" aria-hidden="true">
+                    <i />
+                    <i />
+                    <i />
+                  </span>
+                  <span className="set__theme-label">
+                    <b>亮 · LIGHT</b>
+                    <em>{theme === 'light' ? '当前' : '选择'}</em>
+                  </span>
                 </button>
               </div>
               <p className="k-view__intro">
                 默认使用深色外观。切换后会记住你的选择，下次打开仍然生效。
               </p>
+              <dl className="k-dl">
+                <dt>减少动效</dt>
+                <dd>{reducedMotion ? '跟随系统 · 已开启' : '跟随系统'}</dd>
+                <dt>语言</dt>
+                <dd>中文</dd>
+              </dl>
             </Panel>
           )}
 
           {section === 'ai' && (
-            <Panel title="AI 集成" en="OPENCODE">
+            <Panel title="连接与模型" en="CONNECTION">
               <div className="k-between">
                 <span className="k-panel__cn">
                   {ai.status === 'online'
@@ -559,8 +724,8 @@ export function Settings() {
 
           {section === 'notify' && (
             <Panel
-              title="通知"
-              en="WECHAT"
+              title="推送通道"
+              en="CHANNEL"
               actions={
                 <span
                   className={['k-svc-pill', notifyStatus?.configured ? 'is-ok' : '']
@@ -704,6 +869,79 @@ export function Settings() {
             </Panel>
           )}
 
+          {section === 'mobile' && (
+            <Panel
+              title="局域网"
+              en="LAN"
+              actions={
+                <span
+                  className={['k-svc-pill', lanStatus?.running ? 'is-ok' : '']
+                    .filter(Boolean)
+                    .join(' ')}
+                >
+                  {lanStatus?.running ? '已开启' : '未开启'}
+                </span>
+              }
+            >
+              <div className="k-lan__head">
+                <div>
+                  <p className="k-panel__cn">同一 WiFi，一键开启</p>
+                  <p className="k-view__intro">
+                    开启后，手机和电脑连同一个 WiFi，用手机浏览器打开下面的地址。数据服务仍只监听
+                    127.0.0.1；仅建议在可信 WiFi 下临时开启。
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className={lanStatus?.running ? 'k-btn is-danger' : 'k-btn is-solid'}
+                  onClick={toggleLan}
+                  disabled={lanBusy || source !== 'server'}
+                >
+                  {lanBusy ? '处理中…' : lanStatus?.running ? '关闭手机访问' : '一键开启手机访问'}
+                </button>
+              </div>
+              {lanError !== '' && <p className="k-lan__error">{lanError}</p>}
+              {lanStatus?.running === true && (
+                <div className="k-lan">
+                  <p className="k-view__intro">
+                    <b>手机打开</b>（电脑和手机同一 WiFi）：
+                  </p>
+                  <ul className="k-lan__urls">
+                    {lanStatus.urls.map((url) => (
+                      <li key={url}>
+                        <code>{url}</code>
+                        <button type="button" className="k-btn" onClick={() => copyLanUrl(url)}>
+                          复制
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="k-view__intro k-muted">
+                    端口 {lanStatus.port}；手机通过前端代理访问，数据服务 4097
+                    仍只监听本机。首次开启若弹出防火墙提示，请允许 Node.js 的「专用网络」。
+                  </p>
+                </div>
+              )}
+              <div className="k-lan__steps">
+                <p>
+                  <b>连同一个 WiFi</b>
+                  <span>手机和电脑在同一网络；校园网 / 访客网络可能隔离设备。</span>
+                </p>
+                <p>
+                  <b>打不开时</b>
+                  <span>Windows 防火墙允许 Node.js 的「专用网络」；关闭后重新开启。</span>
+                </p>
+                <p>
+                  <b>关闭</b>
+                  <span>点上面的按钮，或退出应用；不会改动任何数据。</span>
+                </p>
+              </div>
+              {source !== 'server' && (
+                <p className="k-lan__error">数据服务离线，无法开启手机访问。</p>
+              )}
+            </Panel>
+          )}
+
           {section === 'tags' && <TagManager />}
 
           {section === 'areas' && <AreaManager focusId={focusArea} />}
@@ -712,32 +950,24 @@ export function Settings() {
 
           {section === 'data' && (
             <Panel
-              title="数据统计"
-              en="DATA"
+              title="实体计数"
+              en="ENTITIES"
               actions={<span className="u-label k-muted">{total} 条记录</span>}
             >
-              <table className="k-table">
-                <thead>
-                  <tr>
-                    <th>实体</th>
-                    <th>数量</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((row) => (
-                    <tr key={row.label}>
-                      <td>{row.label}</td>
-                      <td className="k-mono">{row.value}</td>
-                    </tr>
-                  ))}
-                  <tr>
-                    <td>合计 TOTAL</td>
-                    <td className="k-mono k-accent">{total}</td>
-                  </tr>
-                </tbody>
-              </table>
-              <p className="k-view__intro">
-                合计 = 10 类实体记录 {total - 2} 条 + 配置 1 + 标签注册表 1；均为文件式 JSON（一记录一文件）。
+              <div className="set__stats">
+                {rows.map((row) => (
+                  <div className="set__stat" key={row.label}>
+                    <span>{row.label}</span>
+                    <b>{row.value}</b>
+                  </div>
+                ))}
+                <div className="set__stat is-total">
+                  <span>合计 TOTAL</span>
+                  <b>{total}</b>
+                </div>
+              </div>
+              <p className="set__note">
+                10 类实体记录 {total - 2} 条 + 配置 1 + 标签注册表 1；均为文件式 JSON（一记录一文件）。
               </p>
 
               <div className="k-settings__divider" aria-hidden />
@@ -781,7 +1011,7 @@ export function Settings() {
           {section === 'trash' && <TrashPanel />}
 
           {section === 'service' && (
-            <Panel title="数据服务" en="DATA SERVICE">
+            <Panel title="本机服务" en="SERVICE">
               <div className="k-between">
                 <span className="k-panel__cn">
                   {source === 'server' ? '状态 · ONLINE' : source === 'offline' ? '状态 · OFFLINE' : '状态 · 连接中'}
@@ -825,39 +1055,93 @@ export function Settings() {
           )}
 
           {section === 'about' && (
-            <Panel title="关于 KERNEL" en="ABOUT">
-              <div className="k-philosophy">
-                {PHILOSOPHY.map((line) => (
-                  <p className="k-philosophy__line" key={line.n}>
-                    <span className="k-philosophy__n">{line.n}</span>
-                    {line.text}
-                  </p>
-                ))}
-              </div>
-              <dl className="k-dl">
-                <dt>版本</dt>
-                <dd className="k-mono">v1.0.2</dd>
-                <dt>内核隐喻</dt>
-                <dd>进程 = 任务/项目 · 内存 = 资料/知识 · I/O = 收件箱 · 调度器 = 日程 · 检索 = 命令面板 · GC = 回顾</dd>
-                <dt>数据版本</dt>
-                <dd className="k-mono">{snapshot.config.version}</dd>
-                <dt>所有者</dt>
-                <dd>{snapshot.config.owner}</dd>
-                <dt>使用指南</dt>
-                <dd>
+            <Panel title="产品信息" en="PRODUCT">
+              <div className="k-about__hero">
+                <p className="k-about__kicker">KERNEL / LOCAL FIRST</p>
+                <h3 className="k-about__title">去繁化简</h3>
+                <p className="k-about__lede">
+                  课表、任务、日程、项目、笔记、资料、习惯、踪迹和回顾，都在一处。数据存在本机，AI
+                  只给建议，写入由你确认。
+                </p>
+                <div className="k-view__actions">
                   <a
-                    className="k-empty__guide"
-                    href="/guide.html"
+                    className="k-btn is-solid"
+                    href="/site/index.html"
                     target="_blank"
                     rel="noreferrer"
                   >
-                    打开使用指南 →
+                    产品介绍 →
                   </a>
-                </dd>
-              </dl>
+                  <a className="k-btn" href="/guide.html" target="_blank" rel="noreferrer">
+                    使用指南
+                  </a>
+                </div>
+              </div>
+
+              <div className="k-about__grid">
+                <dl className="k-dl">
+                  <dt>版本</dt>
+                  <dd className="k-mono">v1.1.0</dd>
+                  <dt>记录</dt>
+                  <dd>{total} 条</dd>
+                  <dt>数据位置</dt>
+                  <dd>
+                    <code>data/</code>
+                  </dd>
+                  <dt>所有者</dt>
+                  <dd>{snapshot.config.owner}</dd>
+                </dl>
+                <div className="k-about__principles">
+                  {[
+                    { n: '01', text: '数据放在本机文件里' },
+                    { n: '02', text: 'AI 只建议，写入前确认' },
+                    { n: '03', text: '每周回看一次' },
+                  ].map((line) => (
+                    <p key={line.n}>
+                      <span>{line.n}</span>
+                      {line.text}
+                    </p>
+                  ))}
+                </div>
+              </div>
+
+              <p className="k-about__links">
+                <a
+                  href="https://github.com/plmt3742/kernel"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  GitHub
+                </a>
+                <span>·</span>
+                <a
+                  href="https://github.com/plmt3742/kernel/releases"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  安装包
+                </a>
+                <span>·</span>
+                <a
+                  href="https://github.com/plmt3742/kernel/blob/main/LICENSE"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  MIT License
+                </a>
+                <span>·</span>
+                <button
+                  type="button"
+                  className="k-about__linkbtn"
+                  onClick={() => setSection('mobile')}
+                >
+                  手机访问
+                </button>
+              </p>
             </Panel>
           )}
-        </div>
+          </div>
+        </main>
       </div>
 
       {/* 示例数据 / 清空确认弹窗（自适应 portal 到 body；确认前零写入） */}

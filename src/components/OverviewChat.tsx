@@ -38,6 +38,7 @@ import {
   createTrace,
   reopenTask,
   restoreEntity,
+  splitChatItems,
   trashEntity,
   uncheckinHabit,
   updateEntity,
@@ -1174,6 +1175,8 @@ export function OverviewChat() {
   const [files, setFiles] = useState<File[]>([])
   /** 「存为笔记」进行中（P1-4 防连点） */
   const [savingNote, setSavingNote] = useState(false)
+  /** AI 拆分中的卡片键（`turnId:kind`） */
+  const [splitting, setSplitting] = useState('')
   /** 吸底滚动（P1-4）：用户上滑回看时不再强制拉到底；「回到底部」恢复 */
   const stickBottomRef = useRef(true)
   const [atBottom, setAtBottom] = useState(true)
@@ -1498,6 +1501,36 @@ export function OverviewChat() {
       kind: 'tasks',
       successText: (n) => (n > 1 ? `已建立 ${n} 条任务` : '已建立任务'),
     })
+
+  // AI 拆分：把当前卡片里的任务 / 踪迹交给模型拆成更小的原子项；只读，确认前零写入。
+  const splitTurn = (turn: ChatTurn, kind: 'task' | 'trace'): void => {
+    const items = kind === 'task' ? turn.tasks : turn.traces
+    if (items === undefined || items.length === 0 || splitting !== '') return
+    const key = `${turn.id}:${kind}`
+    setSplitting(key)
+    void splitChatItems<ChatTaskProposal | ChatTraceProposal>(
+      kind,
+      items as unknown as Array<Record<string, unknown>>,
+    )
+      .then((rows: Array<ChatTaskProposal | ChatTraceProposal>) => {
+        const next = Array.isArray(rows)
+          ? rows.filter((row) => row.title.trim() !== '').slice(0, 6)
+          : []
+        if (next.length === 0) {
+          toast('AI 没有找到可拆分的条目')
+          return
+        }
+        if (kind === 'task') patchTurn(turn.id, { tasks: next as ChatTaskProposal[] })
+        else patchTurn(turn.id, { traces: next as ChatTraceProposal[] })
+        toast(
+          next.length === items.length
+            ? 'AI 判断已经是原子项，没有继续拆分'
+            : `AI 已拆成 ${next.length} 条`,
+        )
+      })
+      .catch((err: unknown) => toast(`AI 拆分失败：${errorText(err)}`, { tone: 'error' }))
+      .finally(() => setSplitting(''))
+  }
 
   // 应用「新建日程」提案：逐条经既有 /api/events 落盘（支持 1–N 条）。
   const applyEvent = (turn: ChatTurn): void =>
@@ -1843,7 +1876,7 @@ export function OverviewChat() {
                         </span>
                       ) : (
                         <>
-                          <span className="k-chat__edit-title">记入踪迹（可拆分）</span>
+                          <span className="k-chat__edit-title">记入踪迹</span>
                           <div className="k-chat__rows">
                             {turn.traces.map((trace, index) => (
                               <div className="k-chat__row" key={index}>
@@ -1907,12 +1940,15 @@ export function OverviewChat() {
                             <button
                               type="button"
                               className="k-btn k-btn--sm"
-                              onClick={() =>
-                                patchTurn(turn.id, { traces: [...(turn.traces ?? []), { title: '' }] })
+                              onClick={() => splitTurn(turn, 'trace')}
+                              disabled={
+                                isApplying(`${turn.id}:traces`) ||
+                                splitting === `${turn.id}:trace` ||
+                                turn.traces.length >= 6
                               }
-                              disabled={isApplying(`${turn.id}:traces`) || turn.traces.length >= 6}
+                              title="让 AI 拆成更小的条目"
                             >
-                              拆分
+                              {splitting === `${turn.id}:trace` ? 'AI 拆分中…' : 'AI 拆分'}
                             </button>
                             <button
                               type="button"
@@ -2019,7 +2055,7 @@ export function OverviewChat() {
                         </span>
                       ) : (
                         <>
-                          <span className="k-chat__edit-title">建立任务（可拆分）</span>
+                          <span className="k-chat__edit-title">建立任务</span>
                           <div className="k-chat__rows">
                             {turn.tasks.map((task, index) => (
                               <div className="k-chat__row" key={index}>
@@ -2083,12 +2119,15 @@ export function OverviewChat() {
                             <button
                               type="button"
                               className="k-btn k-btn--sm"
-                              onClick={() =>
-                                patchTurn(turn.id, { tasks: [...(turn.tasks ?? []), { title: '' }] })
+                              onClick={() => splitTurn(turn, 'task')}
+                              disabled={
+                                isApplying(`${turn.id}:tasks`) ||
+                                splitting === `${turn.id}:task` ||
+                                turn.tasks.length >= 6
                               }
-                              disabled={isApplying(`${turn.id}:tasks`) || turn.tasks.length >= 6}
+                              title="让 AI 拆成更小的任务"
                             >
-                              拆分
+                              {splitting === `${turn.id}:task` ? 'AI 拆分中…' : 'AI 拆分'}
                             </button>
                             <button
                               type="button"
@@ -2590,6 +2629,8 @@ export function OverviewChat() {
           className="ic-composer__input k-chat__input"
           value={draft}
           rows={1}
+          spellCheck={false}
+          autoComplete="off"
           onChange={(event) => patchChat({ draft: event.target.value })}
           onKeyDown={(event) => {
             // 中文输入法组合期：Enter 用于确认候选词，不触发发送（与 Traces 同守卫）

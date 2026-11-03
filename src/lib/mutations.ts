@@ -15,6 +15,7 @@ import type {
   Habit,
   InboxItem,
   KernelSnapshot,
+  LanStatus,
   Note,
   NotifyStatus,
   Project,
@@ -1954,4 +1955,23 @@ export async function backfillTags(): Promise<{ created: TagItem[]; scanned: num
   const result = await api.post<{ created: TagItem[]; scanned: number }>('/api/tags/backfill')
   await hydrateFromServer()
   return result
+}
+
+/** 手机访问：读取 / 开启 / 关闭 LAN Vite 实例（数据服务仍只监听 127.0.0.1） */
+export async function getLanStatus(): Promise<LanStatus> {
+  return api.get<LanStatus>('/api/lan/status')
+}
+
+export async function startLanAccess(): Promise<LanStatus> {
+  return api.post<LanStatus>('/api/lan/start')
+}
+
+export async function stopLanAccess(): Promise<LanStatus> {
+  return api.post<LanStatus>('/api/lan/stop')
+}
+
+/** AI 拆分：只读，把对话创建卡里的任务 / 踪迹拆成更小的原子项，确认前零写入 */
+export async function splitChatItems<T>(kind: 'task' | 'trace', items: Array<Record<string, unknown>>): Promise<T[]> {
+  const result = await api.post<{ items?: T[] }>('/api/ai/split', { kind, items })
+  return Array.isArray(result.items) ? result.items : []
 }

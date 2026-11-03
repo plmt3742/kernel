@@ -72,8 +72,8 @@ export function TagManager(): ReactNode {
 
   return (
     <Panel
-      title="标签管理"
-      en="TAGS"
+      title="标签注册表"
+      en="REGISTRY"
       actions={
         <div className="k-tagmgr__actions">
           <span className="u-label k-muted">共 {tags.length}</span>

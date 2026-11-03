@@ -91,6 +91,7 @@ import {
   parseInboxItem,
   parseInboxItemStream,
   PROJECT_DRAFT_MAX_TITLE_CHARS,
+  splitChatItems,
   staleProjects,
   TASK_DRAFT_MAX_TITLE_CHARS,
 } from './ai.mjs'
@@ -105,17 +106,20 @@ import {
   startNotifyScheduler,
 } from './notify/index.mjs'
 import { normalizeWebhookUrl } from './notify/wecom.mjs'
+import { createLanManager } from './lan.mjs'
 
 const HOST = '127.0.0.1'
 const PORT = 4097
 const BODY_LIMIT = 256 * 1024
-const SERVICE_VERSION = '1.0.2'
+const SERVICE_VERSION = '1.1.0'
 /** 文件投递单文件上限（RAW body；超出即 413 并中断请求） */
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 /** 长截图 AI 分片上限（RAW body；每片为前端切好的 JPEG） */
 const MAX_PREVIEW_BYTES = 4 * 1024 * 1024
 /** 仓库根（DATA_DIR = <ROOT>/data）；示例数据 / 清空维护脚本从此定位（ADR-0041 Phase 3） */
 const ROOT = path.dirname(DATA_DIR)
+/** 手机访问：按需启动一个监听 0.0.0.0 的 Vite 实例（/api 仍代理回 127.0.0.1:4097） */
+const lan = createLanManager({ root: ROOT })
 /** 维护脚本执行（示例数据 / 清空）：promisify execFile；输出上限 16MB */
 const execFile = promisify(execFileCb)
 const MAINTENANCE_MAX_BUFFER = 16 * 1024 * 1024
@@ -439,8 +443,22 @@ function sanitizeChatAttachments(raw) {
  * 把对话引擎输出收口为路由响应契约：校验 edits（字段白名单）与 actions（实时存在性 + op-kind），
  * 全部只读、零写入零审计。chat 已不再有「创建抑制修改」的排他逻辑，各类可共存。
  */
+const RECORD_ID_RE = /\b(?:rev|tr|t|e|p|n|r|a|g|h|c|i)-\d{4}\b/g
+
+function stripRecordIds(value) {
+  if (typeof value !== 'string' || value === '') return value
+  return value
+    .replace(/`\s*(?:rev|tr|t|e|p|n|r|a|g|h|c|i)-\d{4}\s*`/g, '')
+    .replace(RECORD_ID_RE, '')
+    .replace(/\*\*\s*[·：:]\s*/g, '**')
+    .replace(/[（(]\s*[)）]/g, '')
+    .replace(/(^|\n)\s*[·：:]\s*/g, '$1')
+    .replace(/\s{2,}/g, ' ')
+    .trim()
+}
+
 async function finalizeChatResult(result) {
-  let reply = result.reply
+  let reply = stripRecordIds(result.reply)
   let edits = []
   const editRequests = Array.isArray(result.editRequests) ? result.editRequests : []
   if (editRequests.length > 0) {
@@ -449,7 +467,10 @@ async function finalizeChatResult(result) {
       reply = '我没能确认这条记录的修改（找不到记录或字段不合法），请换一种说法再试。'
     }
   }
-  const actions = await buildChatActions(result.actionRequests ?? [])
+  const actions = (await buildChatActions(result.actionRequests ?? [])).map((action) => ({
+    ...action,
+    ...(typeof action.label === 'string' ? { label: stripRecordIds(action.label) } : {}),
+  }))
   // 命中实体引用（P1-2）：kind/id/title ≤6，供前端「已查阅」渲染可点深链
   const focusedRefs = (Array.isArray(result.focusedRefs) ? result.focusedRefs : [])
     .filter(
@@ -477,8 +498,10 @@ async function finalizeChatResult(result) {
   const askRaw = result.askRequest
   let ask = null
   if (askRaw !== null && askRaw !== undefined && typeof askRaw === 'object') {
-    const text =
-      typeof askRaw.text === 'string' ? Array.from(askRaw.text.trim()).slice(0, 200).join('') : ''
+      const text =
+        typeof askRaw.text === 'string'
+          ? stripRecordIds(Array.from(askRaw.text.trim()).slice(0, 200).join(''))
+          : ''
     if (text !== '') {
       const options = (Array.isArray(askRaw.options) ? askRaw.options : [])
         .filter((o) => typeof o === 'string' && o.trim() !== '')
@@ -2871,6 +2894,22 @@ const server = http.createServer(async (req, res) => {
       send(res, 200, { ok: true, service: 'kernel-data', version: SERVICE_VERSION, time: nowIso() })
       return
     }
+    if (method === 'GET' && pathname === '/api/lan/status') {
+      send(res, 200, lan.status())
+      return
+    }
+    if (method === 'POST' && pathname === '/api/lan/start') {
+      try {
+        send(res, 200, await lan.start())
+      } catch (err) {
+        fail(res, 503, err instanceof Error ? err.message : '手机访问开启失败')
+      }
+      return
+    }
+    if (method === 'POST' && pathname === '/api/lan/stop') {
+      send(res, 200, await lan.stop())
+      return
+    }
     if (method === 'GET' && pathname === '/api/snapshot') {
       send(res, 200, await readSnapshot())
       return
@@ -3145,6 +3184,27 @@ const server = http.createServer(async (req, res) => {
         emit({ kind: 'error', message: err?.message ?? 'AI 调用失败' })
       } finally {
         if (!sseClosed && !res.writableEnded) res.end()
+      }
+      return
+    }
+    // AI 拆分（只读）：把对话创建卡里的一条/多条任务或踪迹拆成更小的原子项，确认前零写入。
+    if (method === 'POST' && pathname === '/api/ai/split') {
+      const body = await readBody(req)
+      const kind = body.kind === 'trace' ? 'trace' : body.kind === 'task' ? 'task' : ''
+      if (kind === '') return fail(res, 400, '拆分类型不正确')
+      const items = (Array.isArray(body.items) ? body.items : [])
+        .filter((item) => item !== null && typeof item === 'object')
+        .slice(0, 6)
+      if (items.length === 0) return fail(res, 400, '没有可拆分的条目')
+      const health = await getAiHealth()
+      if (health.available === false) {
+        return fail(res, 503, 'opencode 服务未就绪（127.0.0.1:4096）')
+      }
+      try {
+        send(res, 200, await splitChatItems(kind, items))
+      } catch (err) {
+        console.error('[ai] split 失败：', err?.message ?? err)
+        return fail(res, 502, err?.message ?? 'AI 拆分失败')
       }
       return
     }
