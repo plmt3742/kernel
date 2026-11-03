@@ -30,11 +30,11 @@
 
 #define AppName "KERNEL"
 #ifndef AppVersion
-  #define AppVersion "1.0.1"
+  #define AppVersion "1.0.2"
 #endif
 #define AppPublisher "KERNEL"
 #ifndef SetupBase
-  #define SetupBase "KERNEL-Setup-1.0.1"
+  #define SetupBase "KERNEL-Setup-1.0.2"
 #endif
 
 [Setup]

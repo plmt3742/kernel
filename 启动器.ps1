@@ -276,7 +276,7 @@ try {
               <StackPanel Margin="12,0,0,0" VerticalAlignment="Center">
                 <StackPanel Orientation="Horizontal">
                   <TextBlock Text="KERNEL" FontSize="17" FontWeight="SemiBold" Foreground="#F4F4F5"/>
-                  <TextBlock Text="v1.0.1" FontSize="11" Foreground="#737373" Margin="8,0,0,2" VerticalAlignment="Bottom"/>
+                  <TextBlock Text="v1.0.2" FontSize="11" Foreground="#737373" Margin="8,0,0,2" VerticalAlignment="Bottom"/>
                 </StackPanel>
               </StackPanel>
             </StackPanel>

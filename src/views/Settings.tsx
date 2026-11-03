@@ -836,7 +836,7 @@ export function Settings() {
               </div>
               <dl className="k-dl">
                 <dt>版本</dt>
-                <dd className="k-mono">v1.0.1</dd>
+                <dd className="k-mono">v1.0.2</dd>
                 <dt>内核隐喻</dt>
                 <dd>进程 = 任务/项目 · 内存 = 资料/知识 · I/O = 收件箱 · 调度器 = 日程 · 检索 = 命令面板 · GC = 回顾</dd>
                 <dt>数据版本</dt>
