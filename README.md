@@ -54,6 +54,10 @@ KERNEL 的第一层不是常驻侧栏，而是一个 4:6 的开始菜单：左�
 
 ![KERNEL 资料](assets/library.png)
 
+![KERNEL 助手](assets/assistant.png)
+
+> README 截图使用本地演示数据，人物昵称「林澈」为演示占位，不对应真实个人。
+
 ## 技术架构
 
 浏览器里是 Vite + React 19 + TypeScript，样式用原生 CSS 变量，没有 UI 框架，没有 Tailwind。真正动数据的是一个本机 Node 进程（`server/`）：
