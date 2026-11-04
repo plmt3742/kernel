@@ -2996,8 +2996,8 @@
 }
 .k-app .w4-inbox__grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 280px;
-  gap: 24px;
+  grid-template-columns: minmax(0, 1fr) 264px;
+  gap: 16px;
   align-items: start;
 }
 .k-app .w4-inbox__main,
@@ -3010,6 +3010,10 @@
 .k-app .w4-inbox__side {
   position: sticky;
   top: calc(var(--gh-header-h) + 16px);
+  max-height: calc(100vh - var(--gh-header-h) - 32px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
 }
 .k-app .w4-inbox__main .ic-head {
   padding: 14px 16px;
@@ -3120,12 +3124,148 @@
   color: var(--gh-fg-muted);
 }
 
+/* Inbox inspector：紧凑管道 + 选中条目预览 / 批量动作 */
+.k-app .w4-inbox__side .ic-pipeline {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  overflow: hidden;
+  border-radius: 6px;
+  background: var(--gh-border);
+}
+.k-app .w4-inbox__side .ic-pipeline__row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  padding: 8px 10px;
+  border: 0;
+  background: var(--gh-bg-subtle);
+}
+.k-app .w4-inbox__side .ic-pipeline__row > span {
+  grid-row: auto;
+  font-size: 11px;
+  color: var(--gh-fg-muted);
+}
+.k-app .w4-inbox__side .ic-pipeline__row b {
+  grid-column: auto;
+  grid-row: auto;
+  justify-self: auto;
+  font-size: 18px;
+  line-height: 1.1;
+  color: var(--gh-fg);
+}
+.k-app .w4-inbox__side .ic-pipeline__row em {
+  grid-column: auto;
+  grid-row: auto;
+  justify-self: auto;
+  font-size: 9px;
+  color: var(--gh-fg-subtle);
+}
+.k-app .w4-inbox__side .ic-pipeline__all {
+  width: 100%;
+  justify-content: center;
+  margin-top: 10px;
+}
+.k-app .w4-inbox__side .ic-selected {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.k-app .w4-inbox__side .ic-selected__preview {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--gh-border);
+  border-radius: 6px;
+  background: var(--gh-bg);
+}
+.k-app .w4-inbox__side .ic-selected__preview .k-source-icon {
+  flex: none;
+  margin-top: 1px;
+}
+.k-app .w4-inbox__side .ic-selected__body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.k-app .w4-inbox__side .ic-selected__title {
+  display: -webkit-box;
+  overflow: hidden;
+  margin: 0;
+  color: var(--gh-fg);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.k-app .w4-inbox__side .ic-selected__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  color: var(--gh-fg-muted);
+  font-size: 10px;
+}
+.k-app .w4-inbox__side .ic-selected__status-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.k-app .w4-inbox__side .ic-selected__status {
+  color: var(--gh-fg-muted);
+}
+.k-app .w4-inbox__side .ic-selected__status.is-running {
+  color: var(--gh-accent);
+}
+.k-app .w4-inbox__side .ic-selected__status.is-ready {
+  color: var(--gh-success);
+}
+.k-app .w4-inbox__side .ic-selected__status.is-error {
+  color: var(--gh-danger);
+}
+.k-app .w4-inbox__side .ic-selected__progress {
+  color: var(--gh-accent);
+}
+.k-app .w4-inbox__side .ic-selected__actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+.k-app .w4-inbox__side .ic-selected__actions .k-btn {
+  width: 100%;
+  justify-content: center;
+}
+.k-app .w4-inbox__side .ic-inspector__rule {
+  margin: 0;
+  padding: 0 2px;
+  color: var(--gh-fg-subtle);
+  font-size: 10.5px;
+  line-height: 1.6;
+}
+@media (min-width: 1024px) {
+  .k-app .w4-inbox__main .ic-batchbar-wrap {
+    display: none;
+  }
+  .ic-dock {
+    display: none;
+  }
+}
+
 @media (max-width: 1023px) {
   .k-app .w4-inbox__grid {
     grid-template-columns: minmax(0, 1fr);
   }
   .k-app .w4-inbox__side {
     position: static;
+    max-height: none;
+    overflow: visible;
+  }
+  .k-app .w4-inbox__side .ic-selected {
+    display: none;
   }
 }
 @media (max-width: 767px) {

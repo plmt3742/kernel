@@ -493,6 +493,19 @@ export function Inbox() {
   }
 
   const allSelected = unprocessed.length > 0 && unprocessed.every((item) => selected.has(item.id))
+  const selectedItems = useMemo(
+    () => unprocessed.filter((item) => selected.has(item.id)),
+    [unprocessed, selected],
+  )
+  const selectedPreview = selectedItems[0]
+  const selectedPreviewJob = selectedPreview ? jobs.get(selectedPreview.id) : undefined
+  const selectedPreviewCached = selectedPreview ? getCachedSuggestion(selectedPreview.id) : undefined
+  const selectedPreviewPhase = selectedPreviewJob?.phase
+  const SelectedPreviewIcon = selectedPreview
+    ? selectedPreview.file !== undefined
+      ? FileText
+      : SOURCE_ICON[selectedPreview.source]
+    : null
 
   const captureText = (): void => {
     const value = draft.trim()
@@ -1216,8 +1229,8 @@ export function Inbox() {
         </Panel>
       ) : (
         <>
-          {/* 批量操作条（观察其可见性 → 侧挂 dock） */}
-          <div ref={batchBarRef}>
+          {/* 批量操作条（移动端使用；桌面端由右侧检查器接管） */}
+          <div className="ic-batchbar-wrap" ref={batchBarRef}>
           <Panel className="ic-batchbar">
             <Checkbox
               checked={allSelected}
@@ -1747,7 +1760,7 @@ export function Inbox() {
         </section>
       )}
         </div>
-        {isUnprocessed && (<aside className="w4-inbox__side" aria-label="收件箱管道">
+        {isUnprocessed && (<aside className="w4-inbox__side" aria-label="收件箱检查器">
           <section className="k-panel">
             <div className="w4-phead">
               <p className="w4-lab">管道 <span>PIPELINE</span></p>
@@ -1775,16 +1788,112 @@ export function Inbox() {
                 <em>DISCARDED</em>
               </div>
             </div>
+            <button
+              type="button"
+              className="k-btn k-btn--sm ic-pipeline__all"
+              onClick={toggleAll}
+              disabled={running || unprocessed.length === 0}
+            >
+              {allSelected ? '取消全选' : '全选'}
+            </button>
           </section>
-          <section className="k-panel">
-            <p className="w4-lab">原则 <span>RULES</span></p>
-            <p className="w4-note w4-note--box">
-              AI 只负责读与建议；所有任务、日程、笔记和资料都要你确认后才写入。
-            </p>
-            <p className="w4-note" style={{ marginTop: 10 }}>
-              Enter 捕捉 · Ctrl+V 粘贴截图 · 拖入文件 · Shift+Enter 换行
-            </p>
-          </section>
+
+          {selected.size > 0 && (
+            <section className="k-panel ic-selected" aria-label="已选条目">
+              <div className="w4-phead">
+                <p className="w4-lab">已选 <span>SELECTED</span></p>
+                <span className="w4-count">{pad2(selected.size)} 项</span>
+              </div>
+
+              {selectedPreview && (
+                <div className="ic-selected__preview">
+                  <span className="k-source-icon" title={INBOX_SOURCE_LABEL[selectedPreview.source]}>
+                    {SelectedPreviewIcon && (
+                      <SelectedPreviewIcon size={13} strokeWidth={1.5} aria-hidden />
+                    )}
+                  </span>
+                  <div className="ic-selected__body">
+                    <p className="ic-selected__title" title={selectedPreview.content}>
+                      {selectedPreview.content}
+                    </p>
+                    <p className="ic-selected__meta">
+                      <span>{INBOX_SOURCE_LABEL[selectedPreview.source]}</span>
+                      <span className="k-mono">{formatRelative(selectedPreview.capturedAt, now)}</span>
+                      <span className="k-mono">{selectedPreview.id}</span>
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              <div className="ic-selected__status-row">
+                <span
+                  className={`ic-selected__status u-label ${
+                    selectedPreviewPhase === 'parsing'
+                      ? 'is-running'
+                      : selectedPreviewPhase === 'error'
+                        ? 'is-error'
+                        : selectedPreviewCached !== undefined || selectedPreviewPhase === 'ready'
+                          ? 'is-ready'
+                          : ''
+                  }`}
+                >
+                  {selectedPreviewPhase === 'parsing'
+                    ? 'AI 解析中…'
+                    : selectedPreviewPhase === 'error'
+                      ? '解析失败'
+                      : selectedPreviewCached !== undefined || selectedPreviewPhase === 'ready'
+                        ? 'AI 建议就绪'
+                        : '未解析'}
+                </span>
+                {selected.size > 1 && (
+                  <span className="u-label k-muted">另 {selected.size - 1} 项</span>
+                )}
+              </div>
+
+              {running && (
+                <span className="ic-selected__progress u-label" role="status" aria-live="polite">
+                  AI 解析中 · 已完成 {done}/{total}…
+                </span>
+              )}
+
+              <div className="ic-selected__actions">
+                <button
+                  type="button"
+                  className="k-btn k-btn--sm"
+                  disabled={running}
+                  onClick={runBatchAi}
+                >
+                  AI 解析
+                </button>
+                <button
+                  type="button"
+                  className="k-btn k-btn--sm is-solid"
+                  disabled={running}
+                  onClick={() => runBatch('task', '澄清', (n) => `已批量创建 ${n} 条任务`)}
+                >
+                  → 任务
+                </button>
+                <button
+                  type="button"
+                  className="k-btn k-btn--sm"
+                  disabled={running}
+                  onClick={() => runBatch('discard', '丢弃', (n) => `已批量丢弃 ${n} 条`)}
+                >
+                  丢弃
+                </button>
+                <button
+                  type="button"
+                  className="k-btn k-btn--sm"
+                  disabled={running}
+                  onClick={() => setSelected(new Set())}
+                >
+                  取消
+                </button>
+              </div>
+            </section>
+          )}
+
+          <p className="ic-inspector__rule">AI 只负责读与建议，写入前需要你确认。</p>
         </aside>)}
       </div>
 
