@@ -81,6 +81,7 @@ import {
   draftTask,
   draftTimetable,
   draftTimetableStream,
+  extractOfficeText,
   generateReviewDraft,
   getAiHealth,
   isImageFile,
@@ -692,6 +693,115 @@ async function serveFile(res, id) {
     'X-Content-Type-Options': 'nosniff',
   })
   createReadStream(filePath).pipe(res)
+}
+
+/* ---------------------------------------------------------------------------
+ * 资料文件预览（只读）：仅允许读取 resources 记录里 path 指向的真实文件；
+ * 图片 / PDF 走 /file 内联流，文本 / OOXML 走 /text 提取。禁止内联 HTML / SVG，
+ * 避免本机文件在数据服务源内执行脚本。
+ * ------------------------------------------------------------------------- */
+
+const RESOURCE_INLINE_MIME = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.avif': 'image/avif',
+  '.pdf': 'application/pdf',
+}
+const RESOURCE_TEXT_EXTS = new Set([
+  '.txt',
+  '.md',
+  '.markdown',
+  '.json',
+  '.csv',
+  '.log',
+  '.docx',
+  '.pptx',
+  '.xlsx',
+])
+const RESOURCE_OFFICE_EXTS = new Set(['.docx', '.pptx', '.xlsx'])
+const RESOURCE_PREVIEW_MAX_BYTES = 20 * 1024 * 1024
+const RESOURCE_PREVIEW_MAX_CHARS = 200_000
+
+async function resolveResourceFile(id) {
+  if (!validId('resources', id)) {
+    throw Object.assign(new Error('资料 id 格式不正确'), { status: 400 })
+  }
+  const record = await readEntity('resources', id)
+  if (record === null || typeof record.path !== 'string' || record.path.trim() === '') {
+    throw Object.assign(new Error('文件不存在'), { status: 404 })
+  }
+  const resolved = path.resolve(record.path)
+  let stat
+  try {
+    stat = await fs.stat(resolved)
+  } catch {
+    throw Object.assign(new Error('文件不存在'), { status: 404 })
+  }
+  if (!stat.isFile()) {
+    throw Object.assign(new Error('文件不存在'), { status: 404 })
+  }
+  return { resolved, stat }
+}
+
+async function serveResourceFile(res, id) {
+  let resolved
+  let stat
+  try {
+    ({ resolved, stat } = await resolveResourceFile(id))
+  } catch (err) {
+    return fail(res, err.status ?? 500, err.message)
+  }
+  const ext = path.extname(resolved).toLowerCase()
+  const mime = RESOURCE_INLINE_MIME[ext]
+  if (mime === undefined) {
+    return fail(res, 415, '该文件格式暂不支持在浏览器中预览')
+  }
+  res.writeHead(200, {
+    'Content-Type': mime,
+    'Content-Length': stat.size,
+    'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(path.basename(resolved))}`,
+    'X-Content-Type-Options': 'nosniff',
+    'Cache-Control': 'no-store',
+  })
+  createReadStream(resolved).pipe(res)
+}
+
+async function serveResourceText(res, id) {
+  let resolved
+  let stat
+  try {
+    ({ resolved, stat } = await resolveResourceFile(id))
+  } catch (err) {
+    return fail(res, err.status ?? 500, err.message)
+  }
+  const ext = path.extname(resolved).toLowerCase()
+  if (!RESOURCE_TEXT_EXTS.has(ext)) {
+    return fail(res, 415, '该文件格式暂不支持在浏览器中预览')
+  }
+  if (stat.size > RESOURCE_PREVIEW_MAX_BYTES) {
+    return fail(res, 413, '文件过大，暂不支持预览')
+  }
+  let buf
+  try {
+    buf = await fs.readFile(resolved)
+  } catch {
+    return fail(res, 404, '文件不存在')
+  }
+  let text
+  try {
+    text = RESOURCE_OFFICE_EXTS.has(ext) ? extractOfficeText(ext, buf) : buf.toString('utf8')
+  } catch {
+    return fail(res, 422, '无法解析该文件，请打开查看')
+  }
+  const truncated = text.length > RESOURCE_PREVIEW_MAX_CHARS
+  send(res, 200, {
+    text: truncated ? text.slice(0, RESOURCE_PREVIEW_MAX_CHARS) : text,
+    ext,
+    truncated,
+  })
 }
 
 /* ---------------------------------------------------------------------------
@@ -2816,6 +2926,8 @@ const INBOX_FILE_ACTION_RE = /^\/api\/inbox\/([^/]+)\/(open|reveal)$/
 const INBOX_APPLY_RE = /^\/api\/inbox\/([^/]+)\/apply$/
 const INBOX_UNAPPLY_RE = /^\/api\/inbox\/([^/]+)\/unapply$/
 const FILES_RE = /^\/api\/files\/([^/]+)$/
+const RESOURCE_FILE_RE = /^\/api\/resources\/([^/]+)\/file$/
+const RESOURCE_TEXT_RE = /^\/api\/resources\/([^/]+)\/text$/
 const AI_INBOX_PARSE_RE = /^\/api\/ai\/inbox\/([^/]+)\/parse$/
 const AI_INBOX_PARSE_STREAM_RE = /^\/api\/ai\/inbox\/([^/]+)\/parse-stream$/
 const REVIEW_REMOVE_RE = /^\/api\/reviews\/([^/]+)\/remove$/
@@ -2943,6 +3055,16 @@ const server = http.createServer(async (req, res) => {
       const id = decodeURIComponent(filesMatch[1])
       if (!validId('inbox', id)) return fail(res, 400, '收件箱 id 格式不正确')
       await serveFile(res, id)
+      return
+    }
+    const resourceFileMatch = RESOURCE_FILE_RE.exec(pathname)
+    if (method === 'GET' && resourceFileMatch !== null) {
+      await serveResourceFile(res, decodeURIComponent(resourceFileMatch[1]))
+      return
+    }
+    const resourceTextMatch = RESOURCE_TEXT_RE.exec(pathname)
+    if (method === 'GET' && resourceTextMatch !== null) {
+      await serveResourceText(res, decodeURIComponent(resourceTextMatch[1]))
       return
     }
     if (method === 'GET' && pathname === '/api/ai/health') {
