@@ -8,6 +8,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import {
+  ArrowUp,
   BookOpen,
   Check,
   ChevronRight,
@@ -714,19 +715,19 @@ export function MobileHome() {
               transition={{ duration: reduce === true ? 0.01 : 0.2 }}
             >
               <header className="m-pagehead">
-                <p className="m-crumbs">KERNEL / 查阅 / LOOKUP</p>
-                <div className="m-pagehead__row">
-                  <div className="m-pagehead__main">
-                    <h1 className="m-title">今天</h1>
-                    <p className="m-lede">先看今天，或者搜一条记录。</p>
-                  </div>
-                  <div className="m-pagehead__meta">
-                    <b>{todayCount} 项今天</b>
-                    <span>
-                      {overdueCount} 逾期 · {unprocessed.length} 待整理
-                    </span>
-                  </div>
-                </div>
+                <p className="m-kicker">
+                  <span className="m-kicker__dot" aria-hidden />
+                  {formatMonthDay(now)} · {formatWeekdayShort(now)}
+                </p>
+                <h1 className="m-title">今天</h1>
+                <p className="m-lede">先看今天，或者搜一条记录。</p>
+                {(overdueCount > 0 || unprocessed.length > 0) && (
+                  <p className="m-submeta">
+                    {overdueCount > 0 ? `${overdueCount} 逾期` : ''}
+                    {overdueCount > 0 && unprocessed.length > 0 ? ' · ' : ''}
+                    {unprocessed.length > 0 ? `${unprocessed.length} 待整理` : ''}
+                  </p>
+                )}
               </header>
 
               <div className="m-search">
@@ -754,13 +755,13 @@ export function MobileHome() {
               </div>
 
               {query.trim() !== '' ? (
-                <section className="m-panel m-panel--search" aria-labelledby="m-results-title">
-                  <div className="m-panel__head">
+                <section className="m-section" aria-labelledby="m-results-title">
+                  <div className="m-section__head">
                     <h2 id="m-results-title">查阅结果</h2>
                     <span>{results.length}</span>
                   </div>
                   {results.length === 0 ? (
-                    <EmptyBlock title="没有找到。" hint="换个关键词试试，或者去完整版搜索。" />
+                    <EmptyBlock title="没有找到。" hint="换个关键词试试。" />
                   ) : (
                     <ul className="m-list">
                       {results.map((result) => (
@@ -771,12 +772,8 @@ export function MobileHome() {
                 </section>
               ) : (
                 <>
-                  <section className="m-panel" aria-labelledby="m-today-title">
-                    <div className="m-panel__head">
-                      <h2 id="m-today-title">今天</h2>
-                      <span>{todayCount}</span>
-                    </div>
-                    {todayCount === 0 ? (
+                  {todayCount === 0 ? (
+                    <section className="m-section" aria-label="今天">
                       <EmptyBlock
                         title="今天空着。"
                         hint="先记一件事，稍后再整理。"
@@ -786,41 +783,62 @@ export function MobileHome() {
                           </button>
                         }
                       />
-                    ) : (
-                      <ul className="m-list">
-                        {todayEvents.map((event) => (
-                          <EventRow
-                            key={event.id}
-                            event={event}
-                            onOpen={(value) => openSelection({ kind: 'event', value })}
-                          />
-                        ))}
-                        {visibleTodayTasks.map((task) => (
-                          <TaskRow
-                            key={task.id}
-                            task={task}
-                            now={now}
-                            onOpen={(value) => openSelection({ kind: 'task', value })}
-                            onToggle={toggleTask}
-                          />
-                        ))}
-                      </ul>
-                    )}
-                    {todayHiddenCount > 0 && (
-                      <button
-                        type="button"
-                        className="m-panel__more"
-                        onClick={() => setShowAllToday((value) => !value)}
-                        aria-expanded={showAllToday}
-                      >
-                        {showAllToday ? '收起' : `展开全部 ${todayTasks.length} 项`}
-                      </button>
-                    )}
-                  </section>
+                    </section>
+                  ) : (
+                    <>
+                      {todayEvents.length > 0 && (
+                        <section className="m-section" aria-labelledby="m-events-title">
+                          <div className="m-section__head">
+                            <h2 id="m-events-title">日程</h2>
+                            <span>{todayEvents.length}</span>
+                          </div>
+                          <ul className="m-list">
+                            {todayEvents.map((event) => (
+                              <EventRow
+                                key={event.id}
+                                event={event}
+                                onOpen={(value) => openSelection({ kind: 'event', value })}
+                              />
+                            ))}
+                          </ul>
+                        </section>
+                      )}
+
+                      {todayTasks.length > 0 && (
+                        <section className="m-section" aria-labelledby="m-tasks-title">
+                          <div className="m-section__head">
+                            <h2 id="m-tasks-title">任务</h2>
+                            <span>{todayTasks.length}</span>
+                          </div>
+                          <ul className="m-list">
+                            {visibleTodayTasks.map((task) => (
+                              <TaskRow
+                                key={task.id}
+                                task={task}
+                                now={now}
+                                onOpen={(value) => openSelection({ kind: 'task', value })}
+                                onToggle={toggleTask}
+                              />
+                            ))}
+                          </ul>
+                          {todayHiddenCount > 0 && (
+                            <button
+                              type="button"
+                              className="m-more"
+                              onClick={() => setShowAllToday((value) => !value)}
+                              aria-expanded={showAllToday}
+                            >
+                              {showAllToday ? '收起' : `展开全部 ${todayTasks.length} 项`}
+                            </button>
+                          )}
+                        </section>
+                      )}
+                    </>
+                  )}
 
                   {upcoming.length > 0 && (
-                    <section className="m-panel" aria-labelledby="m-upcoming-title">
-                      <div className="m-panel__head">
+                    <section className="m-section" aria-labelledby="m-upcoming-title">
+                      <div className="m-section__head">
                         <h2 id="m-upcoming-title">接下来</h2>
                         <span>7 天</span>
                       </div>
@@ -863,7 +881,7 @@ export function MobileHome() {
                             {dayHiddenCount > 0 && (
                               <button
                                 type="button"
-                                className="m-panel__more"
+                                className="m-more"
                                 onClick={() =>
                                   setExpandedDays((previous) => ({
                                     ...previous,
@@ -881,7 +899,7 @@ export function MobileHome() {
                       {upcomingHiddenCount > 0 && (
                         <button
                           type="button"
-                          className="m-panel__more"
+                          className="m-more"
                           onClick={() => setShowAllUpcoming((value) => !value)}
                           aria-expanded={showAllUpcoming}
                         >
@@ -900,17 +918,12 @@ export function MobileHome() {
               transition={{ duration: reduce === true ? 0.01 : 0.2 }}
             >
               <header className="m-pagehead">
-                <p className="m-crumbs">KERNEL / 记录 / CAPTURE</p>
-                <div className="m-pagehead__row">
-                  <div className="m-pagehead__main">
-                    <h1 className="m-title">记录</h1>
-                    <p className="m-lede">先收进来，整理可以晚点做。</p>
-                  </div>
-                  <div className="m-pagehead__meta">
-                    <b>{unprocessed.length} 条待整理</b>
-                    <span>本机保存</span>
-                  </div>
-                </div>
+                <p className="m-kicker">
+                  <span className="m-kicker__dot" aria-hidden />
+                  CAPTURE
+                </p>
+                <h1 className="m-title">记录</h1>
+                <p className="m-lede">先收进来，整理可以晚点做。</p>
               </header>
 
               <section className="m-capture" aria-label="记录一件事">
@@ -919,7 +932,7 @@ export function MobileHome() {
                   rows={3}
                   value={draft}
                   onChange={(event) => setDraft(event.target.value)}
-                  placeholder="记一件事…"
+                  placeholder="记下此刻…"
                   aria-label="记录内容"
                 />
                 <div className="m-capture__actions">
@@ -940,8 +953,10 @@ export function MobileHome() {
                     className="m-submit"
                     onClick={submitText}
                     disabled={busy || fileBusy || draft.trim() === ''}
+                    aria-label={busy ? '正在收' : '收下'}
+                    title={busy ? '正在收' : '收下'}
                   >
-                    {busy ? '收…' : '收下'}
+                    {busy ? '…' : <ArrowUp size={18} strokeWidth={2.1} aria-hidden />}
                   </button>
                 </div>
                 <input
@@ -953,8 +968,8 @@ export function MobileHome() {
                 />
               </section>
 
-              <section className="m-panel" aria-labelledby="m-inbox-title">
-                <div className="m-panel__head">
+              <section className="m-section" aria-labelledby="m-inbox-title">
+                <div className="m-section__head">
                   <h2 id="m-inbox-title">待整理</h2>
                   <span>{unprocessed.length}</span>
                 </div>
@@ -975,7 +990,7 @@ export function MobileHome() {
                 {inboxHiddenCount > 0 && (
                   <button
                     type="button"
-                    className="m-panel__more"
+                    className="m-more"
                     onClick={() => setShowAllInbox((value) => !value)}
                     aria-expanded={showAllInbox}
                   >

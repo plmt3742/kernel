@@ -1,8 +1,7 @@
 /* =============================================================================
  * KERNEL · MOBILE /m
- * 视觉基准 = 桌面 W4：近黑平面、玻璃发丝面板、Smiley Sans 展示字、
- * 等宽索引、8/12px 圆角、单色主按钮。手机端只承载「查阅 + 记录」两件事。
- * 不引入新的强调色；状态色只用于逾期 / 危险。
+ * 手机端独立一版：单列编辑式排版，不堆卡片；近黑画布 + 极淡暖光，
+ * Smiley Sans 标题 / 等宽索引 / 发丝分隔 / 悬浮 dock。
  * ========================================================================== */
 
 .m-boot {
@@ -16,7 +15,6 @@
   letter-spacing: 0.28em;
 }
 
-/* 手机入口是独立平面，不继承桌面 body 的氛围光 */
 body:has(.m-app) {
   background-color: var(--gh-bg);
   background-image: none;
@@ -29,13 +27,51 @@ body:has(.m-app) {
   min-height: 100dvh;
   margin-inline: auto;
   overflow-x: clip;
-  padding-bottom: calc(78px + env(safe-area-inset-bottom));
+  padding-bottom: calc(112px + env(safe-area-inset-bottom));
   background: var(--gh-bg);
   color: var(--gh-fg);
   font-family: var(--gh-font);
   font-size: 15px;
   line-height: 1.6;
   -webkit-tap-highlight-color: transparent;
+}
+
+.m-app::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  z-index: 0;
+  height: 380px;
+  pointer-events: none;
+  background:
+    radial-gradient(120% 70% at 50% 0%, color-mix(in srgb, var(--gh-fg) 5%, transparent), transparent 68%),
+    radial-gradient(70% 50% at 100% 0%, color-mix(in srgb, var(--gh-attention) 6%, transparent), transparent 72%);
+}
+
+[data-theme='light'] .m-app::before {
+  background:
+    radial-gradient(120% 70% at 50% 0%, rgb(232 219 199 / 0.34), transparent 70%),
+    radial-gradient(70% 50% at 100% 0%, rgb(216 195 165 / 0.2), transparent 72%);
+}
+
+.m-app::after {
+  content: '';
+  position: fixed;
+  bottom: 0;
+  left: 50%;
+  z-index: 35;
+  width: min(100%, 560px);
+  height: 116px;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    color-mix(in srgb, var(--gh-bg) 82%, transparent) 52%,
+    var(--gh-bg) 100%
+  );
+  transform: translateX(-50%);
 }
 
 .m-app *,
@@ -67,7 +103,7 @@ body:has(.m-app) {
 }
 
 /* -----------------------------------------------------------------------------
- * 顶栏：与桌面同一条 1px 发丝缝
+ * 顶栏
  * -------------------------------------------------------------------------- */
 .m-topbar {
   position: sticky;
@@ -77,19 +113,19 @@ body:has(.m-app) {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  min-height: 52px;
-  padding: calc(6px + env(safe-area-inset-top)) 16px 6px;
-  border-bottom: 1px solid var(--gh-border);
-  background: color-mix(in srgb, var(--gh-bg) 92%, transparent);
-  -webkit-backdrop-filter: blur(14px) saturate(1.02);
-  backdrop-filter: blur(14px) saturate(1.02);
+  min-height: 56px;
+  padding: calc(8px + env(safe-area-inset-top)) 18px 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--gh-fg) 6%, transparent);
+  background: color-mix(in srgb, var(--gh-bg) 86%, transparent);
+  -webkit-backdrop-filter: blur(18px) saturate(1.08);
+  backdrop-filter: blur(18px) saturate(1.08);
 }
 
 .m-brand {
   display: inline-flex;
   min-width: 0;
   align-items: center;
-  gap: 9px;
+  gap: 10px;
   color: var(--gh-fg);
   text-decoration: none;
 }
@@ -104,10 +140,10 @@ body:has(.m-app) {
   height: 28px;
   flex: none;
   place-items: center;
-  border: 1px solid var(--gh-border);
+  border: 1px solid color-mix(in srgb, var(--gh-fg) 9%, transparent);
   border-radius: 8px;
   background: color-mix(in srgb, var(--gh-fg) 5.5%, transparent);
-  box-shadow: var(--gh-hairline);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--gh-fg) 6%, transparent);
   color: var(--gh-fg);
   font-family: var(--gh-display);
   font-size: 15px;
@@ -123,7 +159,7 @@ body:has(.m-app) {
 
 .m-brand__text b {
   font-family: var(--gh-display);
-  font-size: 17px;
+  font-size: 16px;
   font-weight: 400;
   letter-spacing: 0.04em;
   line-height: 1.05;
@@ -142,7 +178,7 @@ body:has(.m-app) {
   display: flex;
   flex: none;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
 }
 
 .m-iconbtn {
@@ -168,94 +204,85 @@ body:has(.m-app) {
 }
 
 /* -----------------------------------------------------------------------------
- * 页面头：面包屑 / Smiley 标题 / 单行导语 / 等宽计数
+ * 编辑式页头：小日期 + 大标题 + 单行导语
  * -------------------------------------------------------------------------- */
 .m-main {
-  padding: 22px 16px 28px;
+  position: relative;
+  z-index: 1;
+  padding: 30px 18px 24px;
 }
 
 .m-pagehead {
-  margin-bottom: 18px;
+  margin-bottom: 20px;
 }
 
-.m-crumbs {
-  color: var(--gh-fg-subtle);
+.m-kicker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--gh-fg-muted);
   font-family: var(--gh-mono);
   font-size: 9.5px;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.12em;
   line-height: 1.4;
   text-transform: uppercase;
 }
 
-.m-pagehead__row {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 14px;
-  flex-wrap: wrap;
-  margin-top: 10px;
-}
-
-.m-pagehead__main {
-  min-width: 0;
+.m-kicker__dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--gh-attention);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--gh-attention) 50%, transparent);
 }
 
 .m-title {
+  margin-top: 13px;
   color: var(--gh-fg);
   font-family: var(--gh-display);
-  font-size: 40px;
+  font-size: 44px;
   font-weight: 400;
   letter-spacing: 0.01em;
-  line-height: 1;
+  line-height: 0.98;
 }
 
 .m-lede {
-  margin-top: 9px;
+  margin-top: 12px;
+  max-width: 30ch;
   color: var(--gh-fg-muted);
-  font-size: 13px;
-  line-height: 1.6;
+  font-size: 13.5px;
+  line-height: 1.65;
 }
 
-.m-pagehead__meta {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 3px;
+.m-submeta {
+  margin-top: 8px;
   color: var(--gh-fg-muted);
   font-family: var(--gh-mono);
   font-size: 9.5px;
   letter-spacing: 0.03em;
-  line-height: 1.45;
-  text-align: right;
-}
-
-.m-pagehead__meta b {
-  color: var(--gh-fg);
-  font-family: var(--gh-mono);
-  font-weight: 400;
+  line-height: 1.5;
 }
 
 /* -----------------------------------------------------------------------------
- * 查阅输入
+ * 查阅输入：无重边框，只保留极淡填充
  * -------------------------------------------------------------------------- */
 .m-search {
   display: flex;
-  height: 44px;
+  height: 42px;
   align-items: center;
-  gap: 9px;
-  margin-top: 16px;
-  padding: 0 12px;
-  border: 1px solid var(--gh-border);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--gh-fg) 2.5%, transparent);
+  gap: 10px;
+  margin-top: 22px;
+  padding: 0 13px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--gh-fg) 4%, transparent);
   color: var(--gh-fg-subtle);
-  transition: border-color 160ms var(--ease-standard), box-shadow 160ms var(--ease-standard);
+  transition: background-color 180ms var(--ease-standard), border-color 180ms var(--ease-standard);
 }
 
 .m-search:focus-within {
-  border-color: color-mix(in srgb, var(--gh-fg) 45%, transparent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--gh-fg) 8%, transparent);
+  border-color: color-mix(in srgb, var(--gh-fg) 14%, transparent);
+  background: color-mix(in srgb, var(--gh-fg) 6%, transparent);
 }
 
 .m-search input {
@@ -268,14 +295,15 @@ body:has(.m-app) {
 }
 
 /* 输入框自身不画焦点环，由外层 .m-search:focus-within 统一表达 */
-.m-search input:focus,
-.m-search input:focus-visible {
+.m-app .m-search input:focus,
+.m-app .m-search input:focus-visible {
   outline: none;
   box-shadow: none;
 }
 
 .m-search input::placeholder {
   color: var(--gh-fg-subtle);
+  font-size: 13.5px;
 }
 
 .m-search__clear {
@@ -294,62 +322,35 @@ body:has(.m-app) {
 }
 
 /* -----------------------------------------------------------------------------
- * 面板 / 列表：玻璃 + 发丝，与桌面 gh-card 同源
+ * 段落：没有卡片，只有章节标签与发丝行
  * -------------------------------------------------------------------------- */
-.m-panel {
-  overflow: hidden;
-  margin-top: 16px;
-  border: 1px solid var(--gh-border);
-  border-radius: 12px;
-  background: var(--gh-panel);
-  box-shadow: var(--gh-hairline);
+.m-section {
+  margin-top: 30px;
 }
 
-.m-panel--search {
-  margin-top: 12px;
-}
-
-.m-panel__head {
+.m-section__head {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
   gap: 12px;
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--gh-border-muted);
+  padding-bottom: 10px;
 }
 
-.m-panel__head h2 {
-  color: var(--gh-fg);
-  font-family: var(--gh-font);
-  font-size: 12.5px;
-  font-weight: 500;
-  letter-spacing: 0.01em;
+.m-section__head h2 {
+  color: var(--gh-fg-muted);
+  font-family: var(--gh-mono);
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0.16em;
   line-height: 1.4;
+  text-transform: uppercase;
 }
 
-.m-panel__head > span {
-  color: var(--gh-fg-muted);
+.m-section__head > span {
+  color: var(--gh-fg-subtle);
   font-family: var(--gh-mono);
   font-size: 9.5px;
-  letter-spacing: 0.06em;
-}
-
-.m-panel__more {
-  width: 100%;
-  padding: 10px 14px;
-  border-top: 1px solid var(--gh-border-muted);
-  background: transparent;
-  color: var(--gh-fg-muted);
-  font-family: var(--gh-mono);
-  font-size: 9.5px;
-  letter-spacing: 0.02em;
-  line-height: 1.6;
-  text-align: left;
-}
-
-.m-panel__more:hover {
-  background: color-mix(in srgb, var(--gh-fg) 3.5%, transparent);
-  color: var(--gh-fg);
+  letter-spacing: 0.04em;
 }
 
 .m-list {
@@ -369,26 +370,33 @@ body:has(.m-app) {
   display: grid;
   width: 100%;
   align-items: center;
-  gap: 10px;
-  padding: 11px 14px;
+  gap: 12px;
+  padding: 13px 0;
   background: transparent;
   color: var(--gh-fg);
   text-align: left;
-  transition: background-color 140ms var(--ease-standard);
+  transition: opacity 160ms var(--ease-standard);
 }
 
-.m-row:hover {
-  background: color-mix(in srgb, var(--gh-fg) 3.5%, transparent);
+.m-row:hover,
+.m-task:hover {
+  opacity: 0.78;
+}
+
+.m-row:active,
+.m-task:active {
+  opacity: 0.6;
 }
 
 .m-row__go {
   flex: none;
   color: var(--gh-fg-subtle);
+  opacity: 0.72;
 }
 
-/* 日程行 */
+/* 日程 */
 .m-event {
-  grid-template-columns: 52px minmax(0, 1fr) 16px;
+  grid-template-columns: 48px minmax(0, 1fr) 14px;
 }
 
 .m-event__time {
@@ -399,46 +407,40 @@ body:has(.m-app) {
   line-height: 1.4;
 }
 
-/* 任务行 */
+/* 任务 */
 .m-task {
   display: grid;
-  grid-template-columns: 24px minmax(0, 1fr) 16px;
+  grid-template-columns: 22px minmax(0, 1fr) 14px;
   align-items: center;
-  gap: 10px;
-  padding: 11px 14px;
-  transition: background-color 140ms var(--ease-standard);
+  gap: 12px;
+  padding: 13px 0;
+  transition: opacity 160ms var(--ease-standard);
 }
 
 .m-task--plain {
-  grid-template-columns: minmax(0, 1fr) 16px;
-}
-
-.m-task:hover {
-  background: color-mix(in srgb, var(--gh-fg) 3.5%, transparent);
+  grid-template-columns: minmax(0, 1fr) 14px;
 }
 
 .m-check {
   display: grid;
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
   place-items: center;
-  border: 1px solid var(--gh-border);
+  border: 1px solid color-mix(in srgb, var(--gh-fg) 18%, transparent);
   border-radius: 50%;
   background: transparent;
   color: transparent;
-  transition: border-color 140ms var(--ease-standard), color 140ms var(--ease-standard),
-    background-color 140ms var(--ease-standard);
+  transition: border-color 140ms var(--ease-standard), color 140ms var(--ease-standard);
 }
 
 .m-check:hover {
   border-color: var(--gh-fg-muted);
-  background: color-mix(in srgb, var(--gh-fg) 5%, transparent);
   color: var(--gh-fg-muted);
 }
 
 /* 查阅结果 */
 .m-result {
-  grid-template-columns: 46px minmax(0, 1fr) 16px;
+  grid-template-columns: 46px minmax(0, 1fr) 14px;
 }
 
 .m-result__kind {
@@ -448,12 +450,11 @@ body:has(.m-app) {
   letter-spacing: 0.06em;
 }
 
-/* 待整理条目 */
+/* 待整理 */
 .m-inbox {
-  grid-template-columns: minmax(0, 1fr) 16px;
+  grid-template-columns: minmax(0, 1fr) 14px;
 }
 
-/* 共享文本槽 */
 .m-event__body,
 .m-task__body,
 .m-result__body,
@@ -471,7 +472,7 @@ body:has(.m-app) {
 .m-inbox__title {
   overflow: hidden;
   color: var(--gh-fg);
-  font-size: 14px;
+  font-size: 14.5px;
   font-weight: 400;
   line-height: 1.45;
   text-overflow: ellipsis;
@@ -519,9 +520,11 @@ body:has(.m-app) {
   color: var(--gh-danger);
 }
 
-/* 未来日期分组 */
+/* 未来日期 */
 .m-daygroup + .m-daygroup {
-  border-top: 1px solid var(--gh-border);
+  margin-top: 20px;
+  padding-top: 18px;
+  border-top: 1px solid var(--gh-border-muted);
 }
 
 .m-daygroup__head {
@@ -529,33 +532,52 @@ body:has(.m-app) {
   align-items: baseline;
   justify-content: space-between;
   gap: 12px;
-  padding: 9px 14px;
-  border-bottom: 1px solid var(--gh-border-muted);
-  background: color-mix(in srgb, var(--gh-fg) 1.8%, transparent);
+  padding-bottom: 5px;
 }
 
 .m-daygroup__head > span:first-child {
   color: var(--gh-fg);
-  font-size: 12px;
+  font-size: 12.5px;
   line-height: 1.4;
 }
 
 .m-daygroup__head > span:last-child {
-  color: var(--gh-fg-muted);
+  color: var(--gh-fg-subtle);
   font-family: var(--gh-mono);
   font-size: 9px;
   letter-spacing: 0.03em;
 }
 
+/* 展开 / 收起 */
+.m-more {
+  width: 100%;
+  padding: 12px 0 0;
+  border: 0;
+  border-top: 1px solid var(--gh-border-muted);
+  background: none;
+  color: var(--gh-fg-subtle);
+  font-family: var(--gh-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.04em;
+  line-height: 1.6;
+  text-align: left;
+  transition: color 140ms var(--ease-standard);
+}
+
+.m-more:hover {
+  color: var(--gh-fg);
+}
+
 /* -----------------------------------------------------------------------------
- * 空态 / 页脚
+ * 空态
  * -------------------------------------------------------------------------- */
 .m-empty {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 4px;
-  padding: 20px 14px;
+  gap: 5px;
+  padding: 20px 0 22px;
+  border-top: 1px solid var(--gh-border-muted);
   color: var(--gh-fg-muted);
   font-size: 12.5px;
   line-height: 1.6;
@@ -578,39 +600,39 @@ body:has(.m-app) {
   text-underline-offset: 3px;
 }
 
-.m-empty__action:hover {
-  color: var(--gh-fg);
-}
-
 /* -----------------------------------------------------------------------------
- * 记录输入
+ * 记录输入：一块软纸，不留硬边
  * -------------------------------------------------------------------------- */
 .m-capture {
   overflow: hidden;
-  border: 1px solid var(--gh-border);
-  border-radius: 12px;
-  background: var(--gh-panel);
-  box-shadow: var(--gh-hairline);
-  transition: border-color 160ms var(--ease-standard), box-shadow 160ms var(--ease-standard);
+  margin-top: 4px;
+  border: 1px solid transparent;
+  border-radius: 16px;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--gh-fg) 4.5%, transparent),
+    color-mix(in srgb, var(--gh-fg) 1.5%, transparent)
+  );
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--gh-fg) 5%, transparent);
+  transition: border-color 180ms var(--ease-standard);
 }
 
 .m-capture:focus-within {
-  border-color: color-mix(in srgb, var(--gh-fg) 32%, transparent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--gh-fg) 5%, transparent);
+  border-color: color-mix(in srgb, var(--gh-fg) 12%, transparent);
 }
 
 .m-capture textarea {
   display: block;
   width: 100%;
-  min-height: 108px;
-  padding: 16px 16px 10px;
+  min-height: 104px;
+  padding: 16px 16px 6px;
   resize: none;
   border: 0;
   outline: none;
   background: transparent;
   color: var(--gh-fg);
   font-size: 16px;
-  line-height: 1.65;
+  line-height: 1.7;
 }
 
 .m-capture textarea::placeholder {
@@ -627,8 +649,7 @@ body:has(.m-app) {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 10px;
-  border-top: 1px solid var(--gh-border-muted);
+  padding: 8px 10px 10px;
 }
 
 .m-capture__hint {
@@ -644,22 +665,25 @@ body:has(.m-app) {
 }
 
 .m-iconbtn--file {
-  width: 40px;
-  height: 40px;
-  border: 1px solid var(--gh-border);
-  background: color-mix(in srgb, var(--gh-fg) 2.5%, transparent);
+  border: 0;
+  background: transparent;
+}
+
+.m-iconbtn--file:hover {
+  background: color-mix(in srgb, var(--gh-fg) 5%, transparent);
 }
 
 .m-submit {
-  min-width: 72px;
-  height: 40px;
-  padding: 0 16px;
+  display: grid;
+  width: 44px;
+  height: 44px;
+  flex: none;
+  place-items: center;
   border: 1px solid var(--gh-fg);
-  border-radius: 8px;
+  border-radius: 50%;
   background: var(--gh-fg);
   color: var(--gh-bg);
-  font-size: 12.5px;
-  font-weight: 500;
+  font-size: 15px;
   transition: filter 160ms var(--ease-standard), opacity 160ms var(--ease-standard);
 }
 
@@ -669,67 +693,64 @@ body:has(.m-app) {
 
 .m-submit:disabled {
   cursor: default;
-  opacity: 0.42;
+  opacity: 0.35;
 }
 
 /* -----------------------------------------------------------------------------
- * 底部导航：两条发丝 + 2px 当前项信号线
+ * 悬浮 dock：两项，当前项用一层极淡填充
  * -------------------------------------------------------------------------- */
 .m-tabbar {
   position: fixed;
-  right: 0;
-  bottom: 0;
-  left: 0;
+  bottom: calc(12px + env(safe-area-inset-bottom));
+  left: 50%;
   z-index: 40;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  width: min(100%, 560px);
-  margin-inline: auto;
-  padding: 6px 16px calc(6px + env(safe-area-inset-bottom));
-  border-top: 1px solid var(--gh-border);
-  background: color-mix(in srgb, var(--gh-bg) 92%, transparent);
-  -webkit-backdrop-filter: blur(14px) saturate(1.02);
-  backdrop-filter: blur(14px) saturate(1.02);
+  gap: 4px;
+  width: min(calc(100% - 32px), 520px);
+  padding: 5px;
+  border: 1px solid var(--gh-border);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--gh-bg) 90%, transparent);
+  box-shadow:
+    0 18px 50px -26px rgb(0 0 0 / 0.9),
+    inset 0 1px 0 color-mix(in srgb, var(--gh-fg) 6%, transparent);
+  -webkit-backdrop-filter: blur(20px) saturate(1.1);
+  backdrop-filter: blur(20px) saturate(1.1);
+  transform: translateX(-50%);
+}
+
+[data-theme='light'] .m-tabbar {
+  box-shadow:
+    0 18px 50px -28px rgb(28 25 23 / 0.28),
+    inset 0 1px 0 rgb(255 255 255 / 0.9);
 }
 
 .m-tab {
-  position: relative;
   display: flex;
   min-height: 48px;
   align-items: center;
   justify-content: center;
   gap: 7px;
-  border-radius: 8px;
+  border-radius: 12px;
   color: var(--gh-fg-subtle);
   font-family: var(--gh-mono);
   font-size: 10px;
   letter-spacing: 0.06em;
-  transition: background-color 160ms var(--ease-standard), color 160ms var(--ease-standard);
+  transition: background-color 180ms var(--ease-standard), color 180ms var(--ease-standard);
 }
 
 .m-tab:hover {
-  background: color-mix(in srgb, var(--gh-fg) 3.5%, transparent);
   color: var(--gh-fg);
 }
 
 .m-tab.is-active {
+  background: color-mix(in srgb, var(--gh-fg) 7%, transparent);
   color: var(--gh-fg);
 }
 
-.m-tab.is-active::before {
-  content: '';
-  position: absolute;
-  top: -6px;
-  left: 50%;
-  width: 22px;
-  height: 2px;
-  border-radius: 2px;
-  background: var(--gh-fg);
-  transform: translateX(-50%);
-}
-
 /* -----------------------------------------------------------------------------
- * 详情 sheet：与桌面 Modal 同源的黑玻璃 / 发丝 / 反色主按钮
+ * 详情 sheet
  * -------------------------------------------------------------------------- */
 .m-sheet-scrim {
   position: fixed;
@@ -752,21 +773,21 @@ body:has(.m-app) {
   margin-inline: auto;
   overflow: auto;
   overscroll-behavior: contain;
-  padding: 8px 18px calc(20px + env(safe-area-inset-bottom));
+  padding: 10px 20px calc(22px + env(safe-area-inset-bottom));
   border: 1px solid var(--gh-border);
   border-bottom: 0;
-  border-radius: 12px 12px 0 0;
+  border-radius: 16px 16px 0 0;
   background: var(--gh-bg-overlay);
   box-shadow: 0 -28px 90px -60px rgb(0 0 0 / 0.9);
 }
 
 .m-sheet__handle {
   display: block;
-  width: 36px;
+  width: 32px;
   height: 3px;
   margin: 0 auto 12px;
   border-radius: 2px;
-  background: color-mix(in srgb, var(--gh-fg) 18%, transparent);
+  background: color-mix(in srgb, var(--gh-fg) 16%, transparent);
 }
 
 .m-sheet__head {
@@ -835,7 +856,7 @@ body:has(.m-app) {
   margin-top: 12px;
   padding: 13px 14px;
   border: 1px solid var(--gh-border-muted);
-  border-radius: 8px;
+  border-radius: 10px;
   background: color-mix(in srgb, var(--gh-fg) 3%, transparent);
   color: var(--gh-fg-muted);
   font-size: 13.5px;
@@ -1039,13 +1060,17 @@ body:has(.m-app) {
 }
 
 @media (max-width: 380px) {
-  .m-title {
-    font-size: 36px;
+  .m-main {
+    padding: 26px 16px 20px;
   }
 
-  .m-pagehead__meta {
-    align-items: flex-start;
-    text-align: left;
+  .m-topbar {
+    padding-right: 16px;
+    padding-left: 16px;
+  }
+
+  .m-title {
+    font-size: 40px;
   }
 }
 
