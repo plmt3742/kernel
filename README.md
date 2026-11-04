@@ -187,13 +187,13 @@ data/           运行时数据（gitignore，不入库）
 
 **线上地址：https://kernel-intro.pages.dev/**
 
-`site/` 是一个独立的单页介绍站：结构参考 notion.com，视觉延续 KERNEL 暗色，零构建、零外链，字体与截图全部本地。用任意静态服务器以 `site/` 为根预览：
+`site/` 是一个独立的单页介绍站：章节式阅读动线（00–06）+ 粘性五步循环结构演示 + 本机数据流图 + 动效与高级交互组件；暖灰近黑 + 哑光黄铜的暗色，2–4px 圆角，零构建、零外链，字体与截图全部本地。用任意静态服务器以 `site/` 为根预览：
 
 ```bash
 python -m http.server 4177 -d site
 ```
 
-已部署到 Cloudflare Pages（https://kernel-intro.pages.dev/），以 `site/` 为输出目录，不需要构建命令。介绍站不参与 `npm run dev` 与安装包，也不改变应用路由；应用本身仍只在本机运行。
+已部署到 Cloudflare Pages（https://kernel-intro.pages.dev/），以 `site/` 为输出目录，不需要构建命令。介绍站不参与 `npm run dev`，但会随安装包一起分发（应用「关于 → 产品介绍」可离线打开）；不改变应用路由，应用本身仍只在本机运行。
 
 ## 团队信息
 

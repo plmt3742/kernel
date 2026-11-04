@@ -4,14 +4,14 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
-  <meta name="theme-color" content="#0a0a0a">
+  <meta name="theme-color" content="#0b0b0a">
   <title>KERNEL · 个人事务内核 · 本地优先</title>
-  <meta name="description" content="KERNEL 是一个本地优先的个人事务内核：课表、任务、日程、项目、笔记、资料、习惯、踪迹和回顾收在一个地方，数据保存在你自己的电脑上。">
+  <meta name="description" content="KERNEL 是一个本地优先的个人事务工具：课表、任务、日程、项目、笔记、资料、习惯、踪迹和回顾放在同一处。数据是你电脑上的文件，AI 只给建议。">
   <meta property="og:title" content="KERNEL · 个人事务内核 · 本地优先">
-  <meta property="og:description" content="课表、任务、日程、项目、笔记、资料、习惯、踪迹和回顾，都收在一个地方。数据是你自己电脑上的文件，AI 只给建议，写入由你确认。">
+  <meta property="og:description" content="课表、任务、日程、项目、笔记、资料、习惯、踪迹和回顾，都放在同一个地方。数据是你电脑上的文件，AI 只给建议，写不写由你决定。">
   <meta property="og:type" content="website">
   <meta property="og:image" content="./assets/start.png">
-  <meta property="og:image:alt" content="KERNEL 开始菜单：左侧页面入口，右侧是产品说明、每天怎么用的五个步骤与真实计数">
+  <meta property="og:image:alt" content="KERNEL 开始菜单截图（使用演示数据）：左侧是页面入口，右侧是产品说明、每天怎么用的五个步骤和真实计数。">
   <meta property="og:locale" content="zh_CN">
   <meta property="og:site_name" content="KERNEL">
   <meta name="twitter:card" content="summary_large_image">
@@ -21,6 +21,14 @@
   <link rel="preload" href="./assets/fonts/jetbrains-mono-400.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="./assets/start.png" as="image">
   <link rel="stylesheet" href="./styles.css">
+  <noscript>
+    <style>
+      .loop__scrolly { height: auto; margin-top: 44px; }
+      .loop__stage { position: static; display: block; height: auto; }
+      .loop__left { display: block; }
+      .loop__panel { display: none; }
+    </style>
+  </noscript>
   <script src="./app.js" defer></script>
 </head>
 <body>
@@ -30,21 +38,21 @@
     <div class="shell site-header__inner">
       <a class="brand" href="#top" aria-label="KERNEL 首页">
         <span class="brand__mark" aria-hidden="true">
-          <svg viewBox="0 0 64 64" width="22" height="22" fill="none">
+          <svg viewBox="0 0 64 64" width="21" height="21" fill="none">
             <path d="M20 14v36M20 33l24-19M20 33l24 17" stroke="currentColor" stroke-width="5" stroke-linecap="square"/>
           </svg>
         </span>
         <span class="brand__text">
           <span class="brand__name">KERNEL</span>
-          <span class="brand__sub">PERSONAL KERNEL</span>
+          <span class="brand__sub">个人事务内核</span>
         </span>
       </a>
 
       <nav class="nav" aria-label="主导航">
-        <a class="nav__link" href="#modules">功能</a>
-        <a class="nav__link" href="#loop">工作方式</a>
-        <a class="nav__link" href="#local">本地优先</a>
-        <a class="nav__link" href="#faq">常见问题</a>
+        <a class="nav__link" href="#loop" data-nav-link>工作方式</a>
+        <a class="nav__link" href="#modules" data-nav-link>功能</a>
+        <a class="nav__link" href="#local" data-nav-link>本地优先</a>
+        <a class="nav__link" href="#faq" data-nav-link>常见问题</a>
       </nav>
 
       <div class="site-header__actions">
@@ -57,12 +65,14 @@
       </div>
     </div>
 
+    <div class="header-progress" aria-hidden="true"><span data-progress></span></div>
+
     <div class="mobile-nav" id="mobile-nav" hidden>
       <nav class="mobile-nav__inner shell" aria-label="移动端导航">
-        <a class="mobile-nav__link" href="#modules">功能<span class="mono">FEATURES</span></a>
-        <a class="mobile-nav__link" href="#loop">工作方式<span class="mono">THE LOOP</span></a>
-        <a class="mobile-nav__link" href="#local">本地优先<span class="mono">LOCAL FIRST</span></a>
-        <a class="mobile-nav__link" href="#faq">常见问题<span class="mono">FAQ</span></a>
+        <a class="mobile-nav__link" href="#loop">工作方式<span class="mono">五步循环</span></a>
+        <a class="mobile-nav__link" href="#modules">功能<span class="mono">九个模块</span></a>
+        <a class="mobile-nav__link" href="#local">本地优先<span class="mono">数据在本机</span></a>
+        <a class="mobile-nav__link" href="#faq">常见问题<span class="mono">六个回答</span></a>
         <a class="mobile-nav__ghost" href="https://github.com/plmt3742/kernel" target="_blank" rel="noopener noreferrer">GitHub</a>
         <a class="btn btn--primary mobile-nav__cta" href="https://github.com/plmt3742/kernel/releases" target="_blank" rel="noopener noreferrer">下载 Windows 版</a>
       </nav>
@@ -71,53 +81,97 @@
 
   <div class="nav-backdrop" data-nav-backdrop hidden></div>
 
+  <nav class="chapter-rail" aria-label="章节导航" data-rail>
+    <a class="rail__link" href="#loop" data-rail-link aria-label="01 工作方式">
+      <span class="rail__num mono">01</span><span class="rail__dot" aria-hidden="true"></span><span class="rail__label" aria-hidden="true">工作方式</span>
+    </a>
+    <a class="rail__link" href="#modules" data-rail-link aria-label="02 功能模块">
+      <span class="rail__num mono">02</span><span class="rail__dot" aria-hidden="true"></span><span class="rail__label" aria-hidden="true">功能模块</span>
+    </a>
+    <a class="rail__link" href="#local" data-rail-link aria-label="03 本地优先">
+      <span class="rail__num mono">03</span><span class="rail__dot" aria-hidden="true"></span><span class="rail__label" aria-hidden="true">本地优先</span>
+    </a>
+    <a class="rail__link" href="#personas" data-rail-link aria-label="04 适合谁">
+      <span class="rail__num mono">04</span><span class="rail__dot" aria-hidden="true"></span><span class="rail__label" aria-hidden="true">适合谁</span>
+    </a>
+    <a class="rail__link" href="#faq" data-rail-link aria-label="05 常见问题">
+      <span class="rail__num mono">05</span><span class="rail__dot" aria-hidden="true"></span><span class="rail__label" aria-hidden="true">常见问题</span>
+    </a>
+    <a class="rail__link" href="#download" data-rail-link aria-label="06 下载">
+      <span class="rail__num mono">06</span><span class="rail__dot" aria-hidden="true"></span><span class="rail__label" aria-hidden="true">下载</span>
+    </a>
+  </nav>
+
   <main id="main">
+    <!-- ================= HERO ================= -->
     <section class="hero" id="top" aria-labelledby="hero-title">
-      <div class="hero__glow" aria-hidden="true"></div>
+      <div class="hero__aurora" aria-hidden="true"><span></span><span></span></div>
+
       <div class="shell">
-        <div class="hero__inner">
-          <p class="eyebrow eyebrow--hero"><span class="live-dot" aria-hidden="true"></span>KERNEL / LOCAL FIRST</p>
-          <h1 class="hero__title" id="hero-title">去繁<em>化简</em></h1>
-          <p class="hero__sub">课表、任务、日程、项目、笔记、资料、习惯、踪迹和回顾，都收在一个地方。数据是你自己电脑上的文件，AI 只给建议，写入由你确认。</p>
-          <div class="hero__cta">
-            <a class="btn btn--primary btn--lg" href="https://github.com/plmt3742/kernel/releases" target="_blank" rel="noopener noreferrer">
-              下载 Windows 版
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" aria-hidden="true">
-                <path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
-            </a>
-            <a class="btn btn--ghost btn--lg" href="#loop">看看它怎么用</a>
+        <div class="hero__head">
+          <div class="hero__kicker">
+            <p class="eyebrow eyebrow--hero"><span class="live-dot" aria-hidden="true"></span>KERNEL / 本地优先</p>
+            <h1 class="hero__title" id="hero-title">
+              <span class="sr-only">去繁化简</span>
+              <span class="hero__line" aria-hidden="true"><span class="hero__char">去</span><span class="hero__char">繁</span></span>
+              <span class="hero__line hero__line--accent" aria-hidden="true"><span class="hero__char">化</span><span class="hero__char">简</span></span>
+            </h1>
           </div>
-          <p class="hero__micro mono">Windows 10 / 11 · 免安装 Node.js · 数据留在本机</p>
+
+          <div class="hero__aside">
+            <p class="hero__sub">课表、任务、日程、项目、笔记、资料、习惯、踪迹和回顾，都放在同一个地方。数据是你电脑上的文件。AI 只给建议，写不写由你决定。</p>
+            <div class="hero__cta">
+              <a class="btn btn--primary btn--lg" href="https://github.com/plmt3742/kernel/releases" target="_blank" rel="noopener noreferrer">
+                下载 Windows 版
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" aria-hidden="true">
+                  <path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </a>
+              <a class="btn btn--ghost btn--lg" href="#loop">看看五步循环</a>
+            </div>
+            <p class="hero__micro mono">Windows 10 / 11 · 不用装 Node.js · 数据留在本机</p>
+          </div>
         </div>
 
-        <div class="hero__visual">
-          <figure class="app-window" data-surface>
-            <div class="app-window__bar">
-              <span class="window-dots" aria-hidden="true"><span></span><span></span><span></span></span>
-              <span class="app-window__label mono">KERNEL — 开始菜单</span>
-              <span class="app-window__badge mono">LOCAL</span>
+        <div class="hero__visual" data-hero-visual>
+          <div class="hero__stage" data-hero-stage>
+            <div class="hero__tilt" data-hero-tilt>
+              <figure class="app-window" data-surface>
+                <div class="app-window__bar">
+                  <span class="window-dots" aria-hidden="true"><span></span><span></span><span></span></span>
+                  <span class="app-window__label mono">KERNEL · 开始菜单</span>
+                  <span class="app-window__badge mono">本机 · 演示</span>
+                </div>
+                <div class="app-window__body">
+                  <img src="./assets/start.png" width="1440" height="900" alt="KERNEL 开始菜单界面（使用演示数据）：左侧是页面入口，右侧是产品说明、每天怎么用的五个步骤和真实计数。" fetchpriority="high" decoding="async">
+                </div>
+              </figure>
+
+              <span class="float-chip float-chip--a" aria-hidden="true"><span class="float-chip__dot"></span>27 条待处理 · 演示</span>
+              <span class="float-chip float-chip--b" aria-hidden="true"><span class="float-chip__dot float-chip__dot--pearl"></span>AI 只给建议</span>
+              <span class="float-chip float-chip--c mono" aria-hidden="true">data/tasks/t-0012.json</span>
             </div>
-            <div class="app-window__body" data-parallax>
-              <img src="./assets/start.png" width="1440" height="900" alt="KERNEL 开始菜单界面：左侧是页面入口，右侧是产品说明、每天怎么用的五个步骤与真实计数" fetchpriority="high" decoding="async">
-            </div>
-          </figure>
+          </div>
+
+          <a class="scroll-cue" href="#why">
+            <span class="scroll-cue__track" aria-hidden="true"><span class="scroll-cue__dot"></span></span>
+            <span class="scroll-cue__label mono">往下读</span>
+          </a>
         </div>
       </div>
     </section>
 
-    <section class="modules" id="modules" aria-labelledby="modules-title">
-      <div class="shell">
-        <div class="modules__head" data-reveal>
-          <div class="modules__intro">
-            <p class="eyebrow">ONE PLACE / 九个模块</p>
-            <p class="modules__line" id="modules-title">收件箱、任务、日程、课表、项目、笔记、资料、习惯、踪迹</p>
-          </div>
-          <p class="modules__meta mono">09 MODULES</p>
+    <!-- ================= MODULE BAND ================= -->
+    <section class="module-band" id="modules-intro" aria-labelledby="modules-band-title">
+      <div class="shell module-band__head" data-reveal>
+        <div class="module-band__copy">
+          <p class="eyebrow">九个模块</p>
+          <h2 class="module-band__title" id="modules-band-title">收件箱、任务、日程、课表、项目、笔记、资料、习惯、踪迹</h2>
         </div>
+        <p class="module-band__meta mono"><span data-count="9" data-pad="2">09</span> 个模块</p>
       </div>
 
-      <div class="marquee" data-reveal tabindex="0" role="region" aria-label="九个模块横向滚动，聚焦后暂停">
+      <div class="marquee marquee--chips" data-reveal tabindex="0" role="region" aria-label="九个模块横向滚动，聚焦后暂停">
         <div class="marquee__track">
           <ul class="marquee__group">
             <li class="module-chip">
@@ -160,262 +214,555 @@
 
           <ul class="marquee__group" aria-hidden="true">
             <li class="module-chip">
-              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 13.5 6.2 5.8a1.5 1.5 0 0 1 1.5-1.1h8.6a1.5 1.5 0 0 1 1.5 1.1L20 13.5"/><path d="M4 13.5h3.8l1.2 2.3h6l1.2-2.3H20v4a1.7 1.7 0 0 1-1.7 1.7H5.7A1.7 1.7 0 0 1 4 17.5z"/></svg>
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 13.5 6.2 5.8a1.5 1.5 0 0 1 1.5-1.1h8.6a1.5 1.5 0 0 1 1.5 1.1L20 13.5"/><path d="M4 13.5h3.8l1.2 2.3h6l1.2-2.3H20v4a1.7 1.7 0 0 1-1.7 1.7H5.7A1.7 1.7 0 0 1 4 17.5z"/></svg>
               <span class="module-chip__cn">收件箱</span><span class="module-chip__en mono">INBOX</span>
             </li>
             <li class="module-chip">
-              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 6.5h10M10 12h10M10 17.5h6"/><path d="m3.5 6 1.3 1.3L7.2 4.9M3.5 11.5l1.3 1.3 2.4-2.4M3.5 17l1.3 1.3 2.4-2.4"/></svg>
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10 6.5h10M10 12h10M10 17.5h6"/><path d="m3.5 6 1.3 1.3L7.2 4.9M3.5 11.5l1.3 1.3 2.4-2.4M3.5 17l1.3 1.3 2.4-2.4"/></svg>
               <span class="module-chip__cn">任务</span><span class="module-chip__en mono">TASKS</span>
             </li>
             <li class="module-chip">
-              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M8 3.5v3M16 3.5v3M3.5 9.5h17"/><path d="M8 13.5h.01M12 13.5h.01M16 13.5h.01M8 17h.01M12 17h.01"/></svg>
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M8 3.5v3M16 3.5v3M3.5 9.5h17"/><path d="M8 13.5h.01M12 13.5h.01M16 13.5h.01M8 17h.01M12 17h.01"/></svg>
               <span class="module-chip__cn">日程</span><span class="module-chip__en mono">CALENDAR</span>
             </li>
             <li class="module-chip">
-              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M3.5 9.5h17M9.2 9.5v10M14.8 9.5v10M3.5 14.5h17"/></svg>
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M3.5 9.5h17M9.2 9.5v10M14.8 9.5v10M3.5 14.5h17"/></svg>
               <span class="module-chip__cn">课表</span><span class="module-chip__en mono">TIMETABLE</span>
             </li>
             <li class="module-chip">
-              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3.8 8 4.2-8 4.2L4 8z"/><path d="m4 12 8 4.2 8-4.2M4 16l8 4.2 8-4.2"/></svg>
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3.8 8 4.2-8 4.2L4 8z"/><path d="m4 12 8 4.2 8-4.2M4 16l8 4.2 8-4.2"/></svg>
               <span class="module-chip__cn">项目</span><span class="module-chip__en mono">PROJECTS</span>
             </li>
             <li class="module-chip">
-              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3.5h8.5L19 8v12.5H6z"/><path d="M14.5 3.5V8H19M9 11.5h6.5M9 15h6.5M9 18.5h4"/></svg>
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3.5h8.5L19 8v12.5H6z"/><path d="M14.5 3.5V8H19M9 11.5h6.5M9 15h6.5M9 18.5h4"/></svg>
               <span class="module-chip__cn">笔记</span><span class="module-chip__en mono">NOTES</span>
             </li>
             <li class="module-chip">
-              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H10v16H5.5A1.5 1.5 0 0 1 4 18.5z"/><path d="M10 4h4.5A1.5 1.5 0 0 1 16 5.5v13a1.5 1.5 0 0 1-1.5 1.5H10"/><path d="M16 7h2.5A1.5 1.5 0 0 1 20 8.5v11"/></svg>
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H10v16H5.5A1.5 1.5 0 0 1 4 18.5z"/><path d="M10 4h4.5A1.5 1.5 0 0 1 16 5.5v13a1.5 1.5 0 0 1-1.5 1.5H10"/><path d="M16 7h2.5A1.5 1.5 0 0 1 20 8.5v11"/></svg>
               <span class="module-chip__cn">资料</span><span class="module-chip__en mono">LIBRARY</span>
             </li>
             <li class="module-chip">
-              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="m8.2 12.2 2.6 2.6 5-5"/></svg>
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="m8.2 12.2 2.6 2.6 5-5"/></svg>
               <span class="module-chip__cn">习惯</span><span class="module-chip__en mono">HABITS</span>
             </li>
             <li class="module-chip">
-              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 12h3.7l2.2-5.4 3.6 10.8 2.2-5.4h5.3"/></svg>
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 12h3.7l2.2-5.4 3.6 10.8 2.2-5.4h5.3"/></svg>
               <span class="module-chip__cn">踪迹</span><span class="module-chip__en mono">TRACES</span>
             </li>
           </ul>
         </div>
       </div>
+
+      <div class="wordband" tabindex="0" role="region" aria-label="五步循环：捕捉、澄清、组织、执行、回顾">
+        <div class="wordband__track">
+          <div class="wordband__group">
+            <span class="wordband__word">CAPTURE</span><span class="wordband__sep" aria-hidden="true">·</span>
+            <span class="wordband__word">CLARIFY</span><span class="wordband__sep" aria-hidden="true">·</span>
+            <span class="wordband__word">ORGANIZE</span><span class="wordband__sep" aria-hidden="true">·</span>
+            <span class="wordband__word">EXECUTE</span><span class="wordband__sep" aria-hidden="true">·</span>
+            <span class="wordband__word">REVIEW</span><span class="wordband__sep" aria-hidden="true">·</span>
+          </div>
+          <div class="wordband__group" aria-hidden="true">
+            <span class="wordband__word">CAPTURE</span><span class="wordband__sep">·</span>
+            <span class="wordband__word">CLARIFY</span><span class="wordband__sep">·</span>
+            <span class="wordband__word">ORGANIZE</span><span class="wordband__sep">·</span>
+            <span class="wordband__word">EXECUTE</span><span class="wordband__sep">·</span>
+            <span class="wordband__word">REVIEW</span><span class="wordband__sep">·</span>
+          </div>
+        </div>
+      </div>
     </section>
 
-    <section class="features" aria-label="功能">
+    <!-- ================= WHY · 00 ================= -->
+    <section class="section why" id="why" aria-labelledby="why-title">
       <div class="shell">
+        <div class="chapter" data-reveal>
+          <span class="chapter__num" aria-hidden="true">00</span>
+          <div class="chapter__body">
+            <p class="eyebrow">为什么</p>
+            <h2 class="chapter__title display" id="why-title" data-split>事情没有变多，只是散开了。</h2>
+            <p class="chapter__lede">聊天里的约定、相册里的截图、下载文件夹里的 PDF、收藏夹里的链接、课表上的教室，还有突然想到的一件事。它们都重要，只是不在同一个地方。</p>
+          </div>
+        </div>
+
+        <div class="why__body">
+          <div class="why__copy" data-reveal>
+            <p class="why__paragraph">很多时候不是记不住，是入口太多。多一个 App，就多一次切换、一次重复录入、一次「回头再整理」。真要找的时候，往往只剩一个模糊的印象。</p>
+            <p class="why__paragraph">KERNEL 想做的事很简单：把收进来、想清楚、放好、做掉、回头看这五步放回一条线上。身份和领域只是标签，事情还是按时间、项目和区域来放。</p>
+
+            <div class="why__stats">
+              <div class="stat">
+                <span class="stat__num mono" data-count="6" data-pad="2">06</span>
+                <span class="stat__label mono">种来源</span>
+                <span class="stat__desc">从聊天到课堂</span>
+              </div>
+              <div class="stat">
+                <span class="stat__num mono" data-count="9" data-pad="2">09</span>
+                <span class="stat__label mono">个模块</span>
+                <span class="stat__desc">共用一套数据</span>
+              </div>
+              <div class="stat">
+                <span class="stat__num mono" data-count="5" data-pad="2">05</span>
+                <span class="stat__label mono">步循环</span>
+                <span class="stat__desc">一天走一遍</span>
+              </div>
+            </div>
+          </div>
+
+          <figure class="orbit-wrap" data-reveal>
+            <div class="orbit" role="img" aria-label="六个来源，聊天、截图、文件、链接、课堂、灵感，从四周汇入中央的 KERNEL 内核" tabindex="0" data-orbit>
+              <span class="orbit__ring orbit__ring--outer" aria-hidden="true"></span>
+              <span class="orbit__ring orbit__ring--inner" aria-hidden="true"></span>
+              <span class="orbit__core">
+                <span class="orbit__mark" aria-hidden="true">
+                  <svg viewBox="0 0 64 64" width="28" height="28" fill="none">
+                    <path d="M20 14v36M20 33l24-19M20 33l24 17" stroke="currentColor" stroke-width="5" stroke-linecap="square"/>
+                  </svg>
+                </span>
+                <span class="orbit__core-dot" aria-hidden="true"></span>
+                <span class="orbit__core-label mono">KERNEL</span>
+              </span>
+              <span class="orbit__label orbit__label--chat"><span class="orbit__label-dot" aria-hidden="true"></span>聊天</span>
+              <span class="orbit__label orbit__label--shot"><span class="orbit__label-dot" aria-hidden="true"></span>截图</span>
+              <span class="orbit__label orbit__label--file"><span class="orbit__label-dot" aria-hidden="true"></span>文件</span>
+              <span class="orbit__label orbit__label--link"><span class="orbit__label-dot" aria-hidden="true"></span>链接</span>
+              <span class="orbit__label orbit__label--class"><span class="orbit__label-dot" aria-hidden="true"></span>课堂</span>
+              <span class="orbit__label orbit__label--idea"><span class="orbit__label-dot" aria-hidden="true"></span>灵感</span>
+            </div>
+            <figcaption class="orbit__caption mono">六个入口 → 一个内核</figcaption>
+          </figure>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= LOOP · 01 ================= -->
+    <section class="section loop" id="loop" aria-labelledby="loop-title">
+      <div class="shell">
+        <div class="chapter" data-reveal>
+          <span class="chapter__num" aria-hidden="true">01</span>
+          <div class="chapter__body">
+            <p class="eyebrow">五步循环</p>
+            <h2 class="chapter__title display" id="loop-title" data-split>一天的事，走五步。</h2>
+            <p class="chapter__lede">先收下，再想清楚，放进项目或日程。做完之后，每周、每月回头看一次。五步都在同一套数据上发生。</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="loop__scrolly" data-loop>
+        <div class="loop__stage shell">
+          <div class="loop__left">
+            <p class="loop__eyebrow mono"><span class="loop__eyebrow-desktop">往下滚，步骤会跟着变</span><span class="loop__eyebrow-mobile">点一下，切换步骤</span></p>
+            <div class="loop__tabs" role="tablist" aria-orientation="vertical" aria-label="五步循环">
+              <button class="loop-step" id="loop-tab-1" type="button" role="tab" aria-selected="true" aria-controls="loop-panel-1" tabindex="0" data-loop-step="0">
+                <span class="loop-step__num mono">01</span>
+                <span class="loop-step__body">
+                  <span class="loop-step__title">捕捉</span>
+                  <span class="loop-step__en mono">CAPTURE</span>
+                  <span class="loop-step__desc">一句话、一张截图、一个文件、一个链接，先收进来。</span>
+                </span>
+                <span class="loop-step__dot" aria-hidden="true"></span>
+              </button>
+              <button class="loop-step" id="loop-tab-2" type="button" role="tab" aria-selected="false" aria-controls="loop-panel-2" tabindex="-1" data-loop-step="1">
+                <span class="loop-step__num mono">02</span>
+                <span class="loop-step__body">
+                  <span class="loop-step__title">澄清</span>
+                  <span class="loop-step__en mono">CLARIFY</span>
+                  <span class="loop-step__desc">AI 先读一遍，告诉你它更像任务、日程、笔记还是资料。</span>
+                </span>
+                <span class="loop-step__dot" aria-hidden="true"></span>
+              </button>
+              <button class="loop-step" id="loop-tab-3" type="button" role="tab" aria-selected="false" aria-controls="loop-panel-3" tabindex="-1" data-loop-step="2">
+                <span class="loop-step__num mono">03</span>
+                <span class="loop-step__body">
+                  <span class="loop-step__title">组织</span>
+                  <span class="loop-step__en mono">ORGANIZE</span>
+                  <span class="loop-step__desc">放进对应的项目、区域和截止日期，不另建一套目录。</span>
+                </span>
+                <span class="loop-step__dot" aria-hidden="true"></span>
+              </button>
+              <button class="loop-step" id="loop-tab-4" type="button" role="tab" aria-selected="false" aria-controls="loop-panel-4" tabindex="-1" data-loop-step="3">
+                <span class="loop-step__num mono">04</span>
+                <span class="loop-step__body">
+                  <span class="loop-step__title">执行</span>
+                  <span class="loop-step__en mono">EXECUTE</span>
+                  <span class="loop-step__desc">今天页只回答一件事：现在先做哪一件。</span>
+                </span>
+                <span class="loop-step__dot" aria-hidden="true"></span>
+              </button>
+              <button class="loop-step" id="loop-tab-5" type="button" role="tab" aria-selected="false" aria-controls="loop-panel-5" tabindex="-1" data-loop-step="4">
+                <span class="loop-step__num mono">05</span>
+                <span class="loop-step__body">
+                  <span class="loop-step__title">回顾</span>
+                  <span class="loop-step__en mono">REVIEW</span>
+                  <span class="loop-step__desc">每周、每月回看一次，完成的留下，卡住的移走。</span>
+                </span>
+                <span class="loop-step__dot" aria-hidden="true"></span>
+              </button>
+            </div>
+            <p class="loop__hint mono">五步 · 一套数据</p>
+          </div>
+
+          <div class="loop__panel" data-loop-panel>
+            <div class="loop__panel-head">
+              <span class="window-dots" aria-hidden="true"><span></span><span></span><span></span></span>
+              <span class="mono">结构示意</span>
+              <span class="loop__panel-tag mono">演示</span>
+            </div>
+            <div class="loop__progress" aria-hidden="true"><span data-loop-progress></span></div>
+
+            <div class="loop__scenes">
+              <div class="loop-scene is-active" id="loop-panel-1" role="tabpanel" aria-labelledby="loop-tab-1" aria-hidden="false" data-loop-scene="0">
+                <div class="demo demo--capture">
+                  <div class="demo__body">
+                    <div class="demo-composer">
+                      <p class="demo-composer__label mono">收件箱 · 先收下</p>
+                      <p class="demo-composer__text"><span class="demo-type">周五前把竞赛报名表发给队里</span><span class="demo-caret" aria-hidden="true"></span></p>
+                      <div class="demo-composer__chips">
+                        <span class="demo-chip"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M6 3.5h8.5L19 8v12.5H6z"/><path d="M14.5 3.5V8H19"/></svg>报名表.pdf</span>
+                        <span class="demo-chip"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="m3.5 15 5-5 4 4 3-3 5 5"/></svg>群聊截图.png</span>
+                      </div>
+                      <div class="demo-composer__foot">
+                        <span class="mono">回车记下 · Shift + 回车换行</span>
+                        <span class="demo-send" aria-hidden="true"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 12h14M13 6l6 6-6 6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+                      </div>
+                    </div>
+                    <div class="demo-queue">
+                      <div class="demo-queue__head mono">待处理 <span>03</span></div>
+                      <div class="demo-queue__row"><span class="demo-queue__dot" aria-hidden="true"></span>周五前交报名表<span class="mono">任务？</span></div>
+                      <div class="demo-queue__row"><span class="demo-queue__dot" aria-hidden="true"></span>群聊截图 · 三张<span class="mono">资料？</span></div>
+                      <div class="demo-queue__row"><span class="demo-queue__dot" aria-hidden="true"></span>「下周约模拟赛」<span class="mono">日程？</span></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="loop-scene" id="loop-panel-2" role="tabpanel" aria-labelledby="loop-tab-2" aria-hidden="true" data-loop-scene="1">
+                <div class="demo demo--clarify">
+                  <div class="demo__body">
+                    <div class="demo-ai">
+                      <div class="demo-ai__head"><span class="live-dot" aria-hidden="true"></span><span class="mono">AI 建议 · 还没保存</span></div>
+                      <p class="demo-ai__title">竞赛报名 · 截止任务</p>
+                      <p class="demo-ai__quote">「周五前把竞赛报名表发给队里」</p>
+                      <div class="demo-ai__grid">
+                        <div class="demo-field"><span class="mono">类型</span><strong>任务</strong></div>
+                        <div class="demo-field"><span class="mono">截止</span><strong>周五 18:00</strong></div>
+                        <div class="demo-field"><span class="mono">项目</span><strong>算法竞赛</strong></div>
+                        <div class="demo-field"><span class="mono">标签</span><strong>topic:竞赛</strong></div>
+                      </div>
+                      <div class="demo-ai__actions">
+                        <span class="demo-btn demo-btn--primary">确认保存</span>
+                        <span class="demo-btn">改写</span>
+                        <span class="demo-ai__note mono">确认前不改文件，保存后可以撤回</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="loop-scene" id="loop-panel-3" role="tabpanel" aria-labelledby="loop-tab-3" aria-hidden="true" data-loop-scene="2">
+                <div class="demo demo--organize">
+                  <div class="demo__body">
+                    <div class="demo-project">
+                      <div class="demo-project__head">
+                        <span class="demo-project__orb" aria-hidden="true"></span>
+                        <div>
+                          <p class="mono">项目</p>
+                          <p class="demo-project__title">算法竞赛 · 校队选拔</p>
+                        </div>
+                        <span class="demo-pill mono">进行中</span>
+                      </div>
+                      <p class="demo-project__outcome">九月前完成一轮完整模拟赛与复盘。</p>
+                      <div class="demo-progress"><span aria-hidden="true"></span></div>
+                      <ul class="demo-tasks">
+                        <li class="is-done"><span class="demo-check" aria-hidden="true"></span>整理往年赛题</li>
+                        <li class="is-done"><span class="demo-check" aria-hidden="true"></span>确定队友与分工</li>
+                        <li class="is-done"><span class="demo-check" aria-hidden="true"></span>完成第一场模拟赛</li>
+                        <li class="is-now"><span class="demo-check" aria-hidden="true"></span>复盘错题与补题</li>
+                        <li><span class="demo-check" aria-hidden="true"></span>准备九月校内选拔</li>
+                      </ul>
+                      <p class="demo-project__meta mono">3 / 5 · 今天推进 1 项</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="loop-scene" id="loop-panel-4" role="tabpanel" aria-labelledby="loop-tab-4" aria-hidden="true" data-loop-scene="3">
+                <div class="demo demo--execute">
+                  <div class="demo__body">
+                    <div class="demo-today">
+                      <div class="demo-today__head">
+                        <div>
+                          <p class="mono">今天</p>
+                          <p class="demo-today__date">11 月 04 日 · 周三</p>
+                        </div>
+                        <span class="demo-pill mono">演示</span>
+                      </div>
+                      <div class="demo-today__grid">
+                        <div class="demo-ring">
+                          <svg viewBox="0 0 120 120" aria-hidden="true">
+                            <circle class="demo-ring__track" cx="60" cy="60" r="50"></circle>
+                            <circle class="demo-ring__value" cx="60" cy="60" r="50"></circle>
+                          </svg>
+                          <span class="demo-ring__num">62%</span>
+                          <span class="demo-ring__label mono">今天</span>
+                        </div>
+                        <ul class="demo-today__list">
+                          <li class="is-done"><span class="demo-check" aria-hidden="true"></span><span>08:00 高数复习</span><span class="mono">完成</span></li>
+                          <li class="is-done"><span class="demo-check" aria-hidden="true"></span><span>10:00 交实验报告</span><span class="mono">完成</span></li>
+                          <li class="is-now"><span class="demo-check" aria-hidden="true"></span><span>14:30 算法训练</span><span class="mono">现在</span></li>
+                          <li><span class="demo-check" aria-hidden="true"></span><span>18:00 团队例会</span><span class="mono">待办</span></li>
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="loop-scene" id="loop-panel-5" role="tabpanel" aria-labelledby="loop-tab-5" aria-hidden="true" data-loop-scene="4">
+                <div class="demo demo--review">
+                  <div class="demo__body">
+                    <div class="demo-review">
+                      <div class="demo-review__head">
+                        <div>
+                          <p class="mono">回顾</p>
+                          <p class="demo-review__title">这一周怎么样</p>
+                        </div>
+                        <span class="demo-pill mono">演示</span>
+                      </div>
+                      <div class="demo-bars" aria-hidden="true">
+                        <span class="demo-bar demo-bar--1"></span>
+                        <span class="demo-bar demo-bar--2"></span>
+                        <span class="demo-bar demo-bar--3"></span>
+                        <span class="demo-bar demo-bar--4"></span>
+                        <span class="demo-bar demo-bar--5"></span>
+                        <span class="demo-bar demo-bar--6"></span>
+                        <span class="demo-bar demo-bar--7"></span>
+                      </div>
+                      <div class="demo-bars__labels mono" aria-hidden="true"><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span></div>
+                      <div class="demo-review__stats">
+                        <div><strong>18</strong><span class="mono">完成</span></div>
+                        <div><strong>5</strong><span class="mono">连续</span></div>
+                        <div><strong>3</strong><span class="mono">卡点</span></div>
+                      </div>
+                      <p class="demo-review__note">完成比上周多 4 项，两个项目都卡在等回复。</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= FEATURES · 02 ================= -->
+    <section class="section features" id="modules" aria-labelledby="features-title">
+      <div class="shell">
+        <div class="chapter" data-reveal>
+          <span class="chapter__num" aria-hidden="true">02</span>
+          <div class="chapter__body">
+            <p class="eyebrow">功能</p>
+            <h2 class="chapter__title display" id="features-title" data-split>一页只做一件事。</h2>
+            <p class="chapter__lede">收件箱收东西，助手回答问题，资料和笔记把东西留下来。下面三张图，是日常用得最多的三个页面。</p>
+          </div>
+        </div>
+
         <article class="feature feature--media-right">
           <div class="feature__copy" data-reveal>
-            <p class="eyebrow">01 / CAPTURE</p>
-            <h2 class="feature__title display">先收下，再想清楚</h2>
-            <p class="feature__lede">一句话、一张截图、一个文件、一个链接，先丢进收件箱，不要求你当场想清楚它是什么。AI 会读一遍内容，给出它该变成任务、日程、笔记、资料还是项目的建议。确认之后才写入，原条目和产物都留得住。</p>
+            <p class="eyebrow">01 / 收件箱</p>
+            <h3 class="feature__title display">先收下，再想清楚</h3>
+            <p class="feature__lede">一句话、一张截图、一个文件、一个链接，都可以先丢进收件箱。AI 读一遍，告诉你它更像任务、日程、笔记、资料还是项目。你确认之后才写入，原条目也保留。</p>
             <ul class="bullets">
               <li class="bullets__item">
-                <p class="bullets__title">一句话、一张截图、一个文件、一个链接</p>
+                <p class="bullets__title">文字、截图、文件、链接，都从这里进</p>
                 <p class="bullets__desc">先收进来，不要求当场分类。</p>
               </li>
               <li class="bullets__item">
-                <p class="bullets__title">AI 先读，给出这该变成什么</p>
-                <p class="bullets__desc">任务、日程、笔记、资料或项目，给一个建议。</p>
+                <p class="bullets__title">AI 只给建议</p>
+                <p class="bullets__desc">它只出提案，不动文件。</p>
               </li>
               <li class="bullets__item">
                 <p class="bullets__title">确认之后才写入</p>
-                <p class="bullets__desc">原条目保留，产物可以撤回。</p>
+                <p class="bullets__desc">原条目保留，保存后还能撤回。</p>
               </li>
             </ul>
           </div>
 
-          <div class="feature__media" data-reveal style="--i:1">
-            <figure class="shot" data-surface>
+          <div class="feature__media" data-reveal>
+            <figure class="shot" data-surface data-shot>
               <div class="shot__frame">
                 <div class="shot__bar">
                   <span class="window-dots" aria-hidden="true"><span></span><span></span><span></span></span>
-                  <span class="shot__label mono">INBOX · 收件箱</span>
-                  <span class="shot__badge mono">LOCAL</span>
+                  <span class="shot__label mono">收件箱</span>
+                  <span class="shot__badge mono">本机 · 演示</span>
                 </div>
-                <img src="./assets/inbox.png" width="1440" height="900" loading="lazy" decoding="async" alt="KERNEL 收件箱页面：捕捉输入框、待澄清计数、AI 归纳建议与已澄清/已丢弃入口">
+                <div class="shot__canvas">
+                  <img src="./assets/inbox.png" width="1440" height="900" loading="lazy" decoding="async" alt="KERNEL 收件箱页面：捕捉输入框、待处理计数、AI 归纳建议与已澄清/已丢弃入口">
+                  <span class="pin pin--a"><span class="pin__dot" aria-hidden="true"></span><span class="pin__label">先收下</span></span>
+                  <span class="pin pin--b"><span class="pin__dot" aria-hidden="true"></span><span class="pin__label">AI 只给建议</span></span>
+                </div>
               </div>
-              <figcaption class="shot__chip"><span class="shot__chip-dot" aria-hidden="true"></span>收件箱 · 27 待澄清</figcaption>
             </figure>
           </div>
         </article>
 
         <article class="feature feature--media-left">
           <div class="feature__copy" data-reveal>
-            <p class="eyebrow">02 / ASSISTANT</p>
-            <h2 class="feature__title display">先问清楚，再动手</h2>
-            <p class="feature__lede">直接问库里的日程、任务、笔记和资料，也可以让它帮你记一件刚发生的事。需要写入时，它先把结果摆在你面前，等你点确认；不想用 AI 的时候，手动记录和整理也能走完同一条循环。</p>
+            <p class="eyebrow">02 / 助手</p>
+            <h3 class="feature__title display">先问，再做。</h3>
+            <p class="feature__lede">可以直接问日程、任务、笔记和资料，也可以让它帮你记一件刚发生的事。要写入时，它先把结果给你看，你点确认才保存。不想用 AI 时，手动记录和整理也能走完同样的流程。</p>
             <ul class="bullets">
               <li class="bullets__item">
-                <p class="bullets__title">直接问库里的日程、任务、笔记、资料</p>
-                <p class="bullets__desc">回答基于你真实的数据，不靠猜。</p>
+                <p class="bullets__title">回答基于你的数据</p>
+                <p class="bullets__desc">数据里没有的，不编。找不到就说找不到。</p>
               </li>
               <li class="bullets__item">
-                <p class="bullets__title">需要写入时先给你看结果</p>
-                <p class="bullets__desc">确认前不动任何文件。</p>
+                <p class="bullets__title">写入前先给你看</p>
+                <p class="bullets__desc">确认前不改任何文件。</p>
               </li>
               <li class="bullets__item">
-                <p class="bullets__title">离线也能手动记录和整理</p>
-                <p class="bullets__desc">AI 不可用，循环照样转。</p>
+                <p class="bullets__title">离线也能手动记录</p>
+                <p class="bullets__desc">AI 不可用时，记录、整理、回顾照常。</p>
               </li>
             </ul>
           </div>
 
-          <div class="feature__media" data-reveal style="--i:1">
-            <figure class="shot" data-surface>
+          <div class="feature__media" data-reveal>
+            <figure class="shot" data-surface data-shot>
               <div class="shot__frame">
                 <div class="shot__bar">
                   <span class="window-dots" aria-hidden="true"><span></span><span></span><span></span></span>
-                  <span class="shot__label mono">ASSISTANT · 助手</span>
-                  <span class="shot__badge mono">LOCAL</span>
+                  <span class="shot__label mono">助手</span>
+                  <span class="shot__badge mono">本机 · 演示</span>
                 </div>
-                <img src="./assets/assistant.png" width="1440" height="900" loading="lazy" decoding="async" alt="KERNEL 助手页面：对话区，以及它能读取的数据、写入前确认规则和本机模型信息">
+                <div class="shot__canvas">
+                  <img src="./assets/assistant.png" width="1440" height="900" loading="lazy" decoding="async" alt="KERNEL 助手页面：对话区，以及它能读取的数据、写入前确认规则和本机模型信息">
+                  <span class="pin pin--c"><span class="pin__dot" aria-hidden="true"></span><span class="pin__label">确认后写入</span></span>
+                </div>
               </div>
-              <figcaption class="shot__chip"><span class="shot__chip-dot" aria-hidden="true"></span>助手 · 写前确认</figcaption>
             </figure>
           </div>
         </article>
 
         <article class="feature feature--media-right">
           <div class="feature__copy" data-reveal>
-            <p class="eyebrow">03 / REMEMBER</p>
-            <h2 class="feature__title display">看过的东西，留得下来</h2>
-            <p class="feature__lede">笔记用 Markdown 写，可以逐层蒸馏，原文只在末尾追加、不覆盖。文件资料保留简介、原文和本机位置；标签、区域和项目把它们连成一张能检索的索引。</p>
+            <p class="eyebrow">03 / 资料与笔记</p>
+            <h3 class="feature__title display">看过的，能找回来。</h3>
+            <p class="feature__lede">笔记用 Markdown 写，可以一层层做摘要，新内容只追加在末尾，不改原文。文件资料会留下简介、原文和本机位置，再用标签、区域和项目串起来。</p>
             <ul class="bullets">
               <li class="bullets__item">
-                <p class="bullets__title">Markdown 笔记，可以逐层蒸馏</p>
-                <p class="bullets__desc">标注层级，追加下一层，不改写原文。</p>
+                <p class="bullets__title">原文留着</p>
+                <p class="bullets__desc">摘要只追加，不改写已有内容。</p>
               </li>
               <li class="bullets__item">
-                <p class="bullets__title">文件附简介，原文和位置都保留</p>
-                <p class="bullets__desc">收进来的东西仍然找得到。</p>
+                <p class="bullets__title">文件有简介和位置</p>
+                <p class="bullets__desc">收进来的资料仍然找得到、打得开。</p>
               </li>
               <li class="bullets__item">
-                <p class="bullets__title">标签、区域、项目互相关联</p>
-                <p class="bullets__desc">从任何一条记录都能走到上下文。</p>
+                <p class="bullets__title">标签、区域、项目能互相找到</p>
+                <p class="bullets__desc">从任何一条记录都能走到它的上下文。</p>
               </li>
             </ul>
           </div>
 
-          <div class="feature__media" data-reveal style="--i:1">
-            <figure class="shot" data-surface>
+          <div class="feature__media" data-reveal>
+            <figure class="shot" data-surface data-shot>
               <div class="shot__frame">
                 <div class="shot__bar">
                   <span class="window-dots" aria-hidden="true"><span></span><span></span><span></span></span>
-                  <span class="shot__label mono">LIBRARY · 资料</span>
-                  <span class="shot__badge mono">LOCAL</span>
+                  <span class="shot__label mono">资料</span>
+                  <span class="shot__badge mono">本机 · 演示</span>
                 </div>
-                <img src="./assets/library.png" width="1440" height="900" loading="lazy" decoding="async" alt="KERNEL 资料页面：笔记与资料的统一索引、标签筛选和计数">
+                <div class="shot__canvas">
+                  <img src="./assets/library.png" width="1440" height="900" loading="lazy" decoding="async" alt="KERNEL 资料页面：笔记与资料的统一索引、标签筛选和计数">
+                  <span class="pin pin--d"><span class="pin__dot" aria-hidden="true"></span><span class="pin__label">原文保留</span></span>
+                  <span class="pin pin--e"><span class="pin__dot" aria-hidden="true"></span><span class="pin__label">逐层蒸馏</span></span>
+                  <span class="pin pin--f"><span class="pin__dot" aria-hidden="true"></span><span class="pin__label">标签索引</span></span>
+                </div>
               </div>
-              <figcaption class="shot__chip"><span class="shot__chip-dot" aria-hidden="true"></span>资料 · 75 条索引</figcaption>
             </figure>
           </div>
         </article>
       </div>
     </section>
 
-    <section class="daily" aria-labelledby="daily-title">
+    <!-- ================= DAILY ================= -->
+    <section class="daily" id="daily" aria-labelledby="daily-title">
       <div class="shell">
         <div class="daily__head" data-reveal>
-          <p class="eyebrow">04 / DAILY</p>
-          <h2 class="section-intro__title display" id="daily-title">每天打开，先看这两页</h2>
-          <p class="section-intro__sub">今天负责安排，个人页负责留下痕迹；两页都从真实记录里算，不用另外维护。</p>
+          <p class="eyebrow">每天打开的两页</p>
+          <h2 class="section-intro__title display" id="daily-title" data-split>每天先看这两页。</h2>
+          <p class="section-intro__sub">今天页用来安排，个人页用来回看。两页的内容都从已有记录里算出来，不需要另外填一遍。</p>
         </div>
 
         <div class="daily__grid">
           <article class="daily-card" data-reveal data-surface>
             <div class="daily-card__media">
-              <img src="./assets/overview.png" width="1440" height="900" loading="lazy" decoding="async" alt="KERNEL 今天页面：今日日程、任务清单、状态计数与快捷入口">
+              <img src="./assets/overview.png" width="1440" height="900" loading="lazy" decoding="async" alt="KERNEL 今天页面：今天的日程、任务清单、状态计数与快捷入口">
             </div>
             <div class="daily-card__body">
-              <p class="daily-card__meta mono">01 / TODAY</p>
-              <h3 class="daily-card__title">今天</h3>
+              <p class="daily-card__meta mono">01 / 今天 · 演示</p>
+              <h3 class="daily-card__title display">今天</h3>
               <p class="daily-card__desc">日程、任务、逾期和下一步行动放在一页上，打开就知道先做哪件。</p>
             </div>
           </article>
 
-          <article class="daily-card" data-reveal style="--i:1" data-surface>
+          <article class="daily-card" data-reveal data-surface>
             <div class="daily-card__media">
               <img src="./assets/profile.png" width="1440" height="900" loading="lazy" decoding="async" alt="KERNEL 个人页：活跃日历、习惯连续、正在推进的项目与最近踪迹">
             </div>
             <div class="daily-card__body">
-              <p class="daily-card__meta mono">02 / PROFILE</p>
-              <h3 class="daily-card__title">个人页</h3>
-              <p class="daily-card__desc">活跃日历、习惯连续、最近完成和最近踪迹，都是平时记录自然长出来的。</p>
+              <p class="daily-card__meta mono">02 / 个人页 · 演示</p>
+              <h3 class="daily-card__title display">个人页</h3>
+              <p class="daily-card__desc">活跃日历、习惯连续、最近完成和最近踪迹，都是平时记录积累出来的。</p>
             </div>
           </article>
         </div>
+
+        <p class="daily__note mono" data-reveal>截图使用演示数据</p>
       </div>
     </section>
 
-    <section class="loop" id="loop" aria-labelledby="loop-title">
+    <!-- ================= LOCAL · 03 ================= -->
+    <section class="section local" id="local" aria-labelledby="local-title">
       <div class="shell">
-        <div class="section-intro section-intro--center" data-reveal>
-          <p class="eyebrow">THE LOOP / 每天怎么用</p>
-          <h2 class="section-intro__title display" id="loop-title">一条循环，接住所有事</h2>
-          <p class="section-intro__sub">每天从一个入口开始：先收下，再澄清，放进项目与日程；做完之后，每周和每月各回看一次。</p>
+        <div class="chapter" data-reveal>
+          <span class="chapter__num" aria-hidden="true">03</span>
+          <div class="chapter__body">
+            <p class="eyebrow">数据在哪</p>
+            <h2 class="chapter__title display" id="local-title" data-split>数据在你自己的电脑上。</h2>
+            <p class="chapter__lede">一条记录一个文件，UTF-8 JSON，能读、能备份、能搬走。两个本机服务只监听 127.0.0.1，不发布到公网。</p>
+          </div>
         </div>
 
-        <div class="loop__rail" aria-hidden="true">
-          <span></span><span></span><span></span><span></span><span></span>
-        </div>
-
-        <ol class="loop__grid">
-          <li class="loop-card" data-reveal style="--i:0">
-            <span class="loop-card__num mono">01</span>
-            <h3 class="loop-card__title">捕捉</h3>
-            <p class="loop-card__en mono">CAPTURE</p>
-            <p class="loop-card__desc">先记下来</p>
-          </li>
-          <li class="loop-card" data-reveal style="--i:1">
-            <span class="loop-card__num mono">02</span>
-            <h3 class="loop-card__title">澄清</h3>
-            <p class="loop-card__en mono">CLARIFY</p>
-            <p class="loop-card__desc">想清楚是什么</p>
-          </li>
-          <li class="loop-card" data-reveal style="--i:2">
-            <span class="loop-card__num mono">03</span>
-            <h3 class="loop-card__title">组织</h3>
-            <p class="loop-card__en mono">ORGANIZE</p>
-            <p class="loop-card__desc">放进对应项目</p>
-          </li>
-          <li class="loop-card" data-reveal style="--i:3">
-            <span class="loop-card__num mono">04</span>
-            <h3 class="loop-card__title">执行</h3>
-            <p class="loop-card__en mono">EXECUTE</p>
-            <p class="loop-card__desc">今天先做哪件</p>
-          </li>
-          <li class="loop-card" data-reveal style="--i:4">
-            <span class="loop-card__num mono">05</span>
-            <h3 class="loop-card__title">回顾</h3>
-            <p class="loop-card__en mono">REVIEW</p>
-            <p class="loop-card__desc">每周每月回看</p>
-          </li>
-        </ol>
-      </div>
-    </section>
-
-    <section class="local" id="local" aria-labelledby="local-title">
-      <div class="shell">
-        <div class="local__inner">
+        <div class="local__grid">
           <div class="local__copy" data-reveal>
-            <p class="eyebrow">LOCAL FIRST / 数据在哪</p>
-            <h2 class="local__title display" id="local-title">数据在你自己的电脑上</h2>
-            <p class="local__lede">一记录一文件，UTF-8 JSON，可读、可备份、可迁移。两个本机服务只监听 <code>127.0.0.1</code>，不把数据锁在云端。</p>
-            <p class="local__code mono">data/tasks/t-0012.json</p>
+            <p class="local__lede">没有云同步，没有账号，也没有把数据放在别人的服务器上。整个 <code>data/</code> 目录可以直接拷到另一台电脑；卸载程序时，数据会保留。只有你主动使用 AI 时，相关请求内容才会发给模型。</p>
+
+            <div class="terminal" data-terminal>
+              <div class="terminal__bar">
+                <span class="window-dots" aria-hidden="true"><span></span><span></span><span></span></span>
+                <span class="mono">data/ · 本机预览</span>
+                <span class="terminal__badge mono">UTF-8</span>
+              </div>
+              <pre class="terminal__body" aria-label="data 目录文件结构示例"><span class="term-line">data/</span><span class="term-line">├─ tasks/t-0012.json</span><span class="term-line">├─ inbox/i-0027.json</span><span class="term-line">├─ notes/n-0004.md</span><span class="term-line">├─ projects/p-0003.json</span><span class="term-line">├─ meta/term.json</span><span class="term-line">└─ activity.jsonl</span><span class="term-line term-line--caret"><span class="terminal__caret" aria-hidden="true"></span></span></pre>
+            </div>
           </div>
 
-          <div class="guarantees" data-reveal style="--i:1">
+          <div class="guarantees" data-reveal>
+            <p class="guarantees__head mono"><span data-count="3" data-pad="2">03</span> 条保证</p>
             <article class="guarantee">
               <span class="guarantee__index mono">G1</span>
               <div class="guarantee__body">
                 <h3 class="guarantee__title">文件即数据库</h3>
-                <p class="guarantee__desc">一条记录一个 JSON 文件，能 diff、能备份、能直接搬走。</p>
+                <p class="guarantee__desc">每条记录都是一个 JSON 文件，能 diff、能备份、能直接搬走。</p>
               </div>
             </article>
             <article class="guarantee">
               <span class="guarantee__index mono">G2</span>
               <div class="guarantee__body">
-                <h3 class="guarantee__title">AI 只是建议层</h3>
-                <p class="guarantee__desc">读取、摘要、提取日期；写入前一定等你确认。</p>
+                <h3 class="guarantee__title">AI 不替你决定</h3>
+                <p class="guarantee__desc">读取、摘要、提取日期；写入前等你确认。</p>
               </div>
             </article>
             <article class="guarantee">
@@ -428,51 +775,92 @@
           </div>
         </div>
 
+        <div class="flow" data-reveal aria-label="本机数据流：浏览器经数据服务写入 JSON；AI 请求另走 opencode">
+          <div class="flow__row">
+            <div class="flow__node">
+              <span class="flow__kicker mono">浏览器</span>
+              <strong>浏览器</strong>
+              <span class="flow__note">/api 同源代理</span>
+            </div>
+            <div class="flow__link" aria-hidden="true"><span class="flow__packet"></span></div>
+            <div class="flow__mid">
+              <div class="flow__node flow__node--strong">
+                <span class="flow__kicker mono">127.0.0.1:4097</span>
+                <strong>数据服务</strong>
+                <span class="flow__note">唯一写入口</span>
+              </div>
+              <div class="flow__branch" aria-hidden="true"><span class="flow__packet flow__packet--down"></span></div>
+            </div>
+            <div class="flow__link" aria-hidden="true"><span class="flow__packet"></span></div>
+            <div class="flow__node">
+              <span class="flow__kicker mono">磁盘</span>
+              <strong>data/*.json</strong>
+              <span class="flow__note">一记录一文件 · UTF-8</span>
+            </div>
+          </div>
+
+          <div class="flow__ai">
+            <span class="flow__branch-label mono">AI 请求 · 只在你主动使用时出网</span>
+            <div class="flow__node flow__node--ai">
+              <span class="flow__kicker mono">127.0.0.1:4096</span>
+              <strong>opencode → DeepSeek</strong>
+              <span class="flow__note">请求内容会发给模型 · Key 只存本机</span>
+            </div>
+          </div>
+
+          <p class="flow__caption mono">单一写入口 · Zod 校验 · 原子写入 · 审计日志</p>
+        </div>
+
         <ul class="local__facts mono" data-reveal>
           <li>本地单用户</li>
           <li>Windows 10 / 11</li>
           <li>不发布公网</li>
+          <li>MIT License</li>
         </ul>
       </div>
     </section>
 
-    <section class="personas" id="personas" aria-labelledby="personas-title">
+    <!-- ================= PERSONAS · 04 ================= -->
+    <section class="section personas" id="personas" aria-labelledby="personas-title">
       <div class="shell">
-        <div class="personas__intro" data-reveal>
-          <p class="eyebrow">WHO IT'S FOR / 适合谁</p>
-          <h2 class="section-intro__title display" id="personas-title">不按身份分区，按事情组织</h2>
-          <p class="section-intro__sub">学生、知识工作者、自由职业者、创作者，都可以把事务放进来。</p>
+        <div class="chapter" data-reveal>
+          <span class="chapter__num" aria-hidden="true">04</span>
+          <div class="chapter__body">
+            <p class="eyebrow">适合谁</p>
+            <h2 class="chapter__title display" id="personas-title" data-split>不分身份，只分事情。</h2>
+            <p class="chapter__lede">学生、学生工作、独立开发者、创作者，都可以用。身份只是标签，事情按项目、区域和时间放。</p>
+          </div>
         </div>
 
-        <div class="personas__grid">
-          <article class="persona" data-reveal>
+        <div class="personas__grid" data-reveal>
+          <article class="persona" tabindex="0">
             <span class="persona__index mono">01</span>
             <h3 class="persona__title display">学生</h3>
-            <p class="persona__desc">课表、作业、考试周；把课程表和截止日期放在同一张日历上。</p>
+            <p class="persona__desc">课表、作业、考试周。课程表和截止日期放在同一张日历上。</p>
             <ul class="persona__tags">
               <li>课表</li><li>作业</li><li>考试周</li>
             </ul>
           </article>
-          <article class="persona" data-reveal>
+          <article class="persona" tabindex="0">
             <span class="persona__index mono">02</span>
             <h3 class="persona__title display">学生工作</h3>
-            <p class="persona__desc">例会、通知、活动筹备；通知当天回应，活动结束一周内复盘。</p>
+            <p class="persona__desc">例会、通知、活动筹备。通知当天回应，活动结束一周内复盘。</p>
             <ul class="persona__tags">
               <li>例会</li><li>通知</li><li>活动筹备</li>
             </ul>
           </article>
-          <article class="persona" data-reveal>
+          <article class="persona" tabindex="0">
             <span class="persona__index mono">03</span>
             <h3 class="persona__title display">独立开发者</h3>
-            <p class="persona__desc">项目、资料、发布节奏；一个项目一个完成定义，进度按真实任务算。</p>
+            <p class="persona__desc">项目、资料、发布节奏。一个项目一个完成定义，进度按真实任务算。</p>
             <ul class="persona__tags">
               <li>项目</li><li>资料</li><li>发布节奏</li>
             </ul>
           </article>
-          <article class="persona" data-reveal>
+          <article class="persona" tabindex="0">
             <span class="persona__index mono">04</span>
             <h3 class="persona__title display">创作者</h3>
-            <p class="persona__desc">灵感、素材、长期主题；先收进资料库，重读时再蒸馏。</p>
+            <p class="persona__desc">灵感、素材、长期主题。先收进资料库，重读时再做摘要。</p>
             <ul class="persona__tags">
               <li>灵感</li><li>素材</li><li>长期主题</li>
             </ul>
@@ -481,52 +869,68 @@
       </div>
     </section>
 
-    <section class="faq" id="faq" aria-labelledby="faq-title">
+    <!-- ================= FAQ · 05 ================= -->
+    <section class="section faq" id="faq" aria-labelledby="faq-title">
       <div class="shell faq__grid">
-        <div class="faq__intro" data-reveal>
-          <p class="eyebrow">FAQ / 常见问题</p>
-          <h2 class="section-intro__title display" id="faq-title">你可能想问</h2>
+        <div class="faq__intro">
+          <div class="chapter chapter--stack" data-reveal>
+            <span class="chapter__num" aria-hidden="true">05</span>
+            <div class="chapter__body">
+              <p class="eyebrow">常见问题</p>
+              <h2 class="chapter__title display" id="faq-title" data-split>你可能想问。</h2>
+              <p class="chapter__lede">关于数据、AI、手机和安装的六个回答。</p>
+            </div>
+          </div>
+          <p class="faq__aside" data-reveal>还有别的问题？<a href="https://github.com/plmt3742/kernel/issues" target="_blank" rel="noopener noreferrer">去 GitHub Issues 提问<span aria-hidden="true"> ↗</span></a></p>
         </div>
 
-        <div class="faq__list" data-reveal style="--i:1">
+        <div class="faq__list" data-reveal>
           <details class="faq__item">
-            <summary class="faq__summary">数据存在哪里？<svg class="faq__chevron" viewBox="0 0 24 24" width="15" height="15" fill="none" aria-hidden="true"><path d="m6 9 6 6 6-6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
-            <div class="faq__body"><p>存在你电脑上的 <code>data/</code> 目录，一条记录一个 JSON 文件；卸载程序时数据会保留。</p></div>
+            <summary class="faq__summary">数据存在哪里？<span class="faq__icon" aria-hidden="true"><span></span><span></span></span></summary>
+            <div class="faq__body"><div class="faq__body-inner"><p>存在你电脑上的 <code>data/</code> 目录，一条记录一个 JSON 文件；卸载程序时数据会保留。</p></div></div>
           </details>
           <details class="faq__item">
-            <summary class="faq__summary">需要联网吗？<svg class="faq__chevron" viewBox="0 0 24 24" width="15" height="15" fill="none" aria-hidden="true"><path d="m6 9 6 6 6-6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
-            <div class="faq__body"><p>应用本身离线可用；只有向 AI 提问或让它解析内容时，才会经本机服务把请求发到模型。</p></div>
+            <summary class="faq__summary">需要联网吗？<span class="faq__icon" aria-hidden="true"><span></span><span></span></span></summary>
+            <div class="faq__body"><div class="faq__body-inner"><p>应用本身离线可用；只有向 AI 提问或让它解析内容时，相关内容才会经本机服务发给模型。</p></div></div>
           </details>
           <details class="faq__item">
-            <summary class="faq__summary">AI 会自动改我的东西吗？<svg class="faq__chevron" viewBox="0 0 24 24" width="15" height="15" fill="none" aria-hidden="true"><path d="m6 9 6 6 6-6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
-            <div class="faq__body"><p>不会。它只产出建议，写入前一定先展示结果并等你确认。</p></div>
+            <summary class="faq__summary">AI 会自动改我的东西吗？<span class="faq__icon" aria-hidden="true"><span></span><span></span></span></summary>
+            <div class="faq__body"><div class="faq__body-inner"><p>不会。它只给建议，写入前会先把结果给你看，你确认才保存。对话和草稿默认不存档。</p></div></div>
           </details>
           <details class="faq__item">
-            <summary class="faq__summary">支持手机吗？<svg class="faq__chevron" viewBox="0 0 24 24" width="15" height="15" fill="none" aria-hidden="true"><path d="m6 9 6 6 6-6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
-            <div class="faq__body"><p>连同一个 WiFi 时可以用手机浏览器访问；目前是本地单用户版本。</p></div>
+            <summary class="faq__summary">支持手机吗？<span class="faq__icon" aria-hidden="true"><span></span><span></span></span></summary>
+            <div class="faq__body"><div class="faq__body-inner"><p>连同一个 WiFi 时可以用手机浏览器打开；目前是本地单用户版本，没有独立的手机 App。</p></div></div>
           </details>
           <details class="faq__item">
-            <summary class="faq__summary">需要装 Node.js 吗？<svg class="faq__chevron" viewBox="0 0 24 24" width="15" height="15" fill="none" aria-hidden="true"><path d="m6 9 6 6 6-6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
-            <div class="faq__body"><p>用 Windows 安装包不需要；从源码运行需要 Node.js 20.19+ 或 22.12+。</p></div>
+            <summary class="faq__summary">需要装 Node.js 吗？<span class="faq__icon" aria-hidden="true"><span></span><span></span></span></summary>
+            <div class="faq__body"><div class="faq__body-inner"><p>用 Windows 安装包不需要；从源码运行需要 Node.js 20.19+ 或 22.12+。</p></div></div>
           </details>
           <details class="faq__item">
-            <summary class="faq__summary">数据能迁移吗？<svg class="faq__chevron" viewBox="0 0 24 24" width="15" height="15" fill="none" aria-hidden="true"><path d="m6 9 6 6 6-6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
-            <div class="faq__body"><p>能。整个 <code>data/</code> 文件夹可以直接拷到另一台电脑。</p></div>
+            <summary class="faq__summary">数据能迁移吗？<span class="faq__icon" aria-hidden="true"><span></span><span></span></span></summary>
+            <div class="faq__body"><div class="faq__body-inner"><p>能。整个 <code>data/</code> 文件夹可以直接拷到另一台电脑；格式是 UTF-8 JSON，不依赖云端。</p></div></div>
           </details>
         </div>
       </div>
     </section>
 
+    <!-- ================= DOWNLOAD · 06 ================= -->
     <section class="cta" id="download" aria-labelledby="cta-title">
-      <div class="shell cta__inner" data-reveal>
-        <p class="eyebrow">GET STARTED</p>
-        <h2 class="cta__title display" id="cta-title">把事情收回来</h2>
-        <p class="cta__sub">先下载，用几天再决定。</p>
-        <div class="cta__actions">
-          <a class="btn btn--primary btn--lg" href="https://github.com/plmt3742/kernel/releases" target="_blank" rel="noopener noreferrer">下载 Windows 版</a>
-          <a class="btn btn--ghost btn--lg" href="#loop">看看它怎么用</a>
+      <div class="cta__aurora" aria-hidden="true"><span></span><span></span></div>
+      <div class="shell cta__inner">
+        <span class="cta__num" aria-hidden="true">06</span>
+        <p class="eyebrow" data-reveal>下载</p>
+        <h2 class="cta__title display" id="cta-title" data-split>先装上，用几天。</h2>
+        <p class="cta__sub" data-reveal>不合适就删掉，数据还在你的文件夹里。</p>
+        <div class="cta__actions" data-reveal>
+          <a class="btn btn--primary btn--lg btn--sheen" href="https://github.com/plmt3742/kernel/releases" target="_blank" rel="noopener noreferrer">
+            下载 Windows 版
+            <svg viewBox="0 0 24 24" width="17" height="17" fill="none" aria-hidden="true">
+              <path d="M12 4v11M7 10l5 5 5-5M5 20h14" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </a>
+          <a class="btn btn--ghost btn--lg" href="#loop">再看一遍五步</a>
         </div>
-        <p class="cta__note mono">MIT License · 本地单用户 · 不需要账号</p>
+        <p class="cta__note mono" data-reveal>MIT License · 本地单用户 · 不需要账号 · v1.1.0</p>
       </div>
     </section>
   </main>
@@ -537,9 +941,11 @@
         <nav class="footer__col" aria-labelledby="footer-product">
           <h2 class="footer__head mono" id="footer-product">产品</h2>
           <ul>
-            <li><a href="#modules">功能</a></li>
+            <li><a href="#why">为什么</a></li>
             <li><a href="#loop">工作方式</a></li>
+            <li><a href="#modules">功能</a></li>
             <li><a href="#local">本地优先</a></li>
+            <li><a href="#personas">适合谁</a></li>
             <li><a href="#faq">常见问题</a></li>
           </ul>
         </nav>
