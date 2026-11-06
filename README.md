@@ -126,6 +126,23 @@ npm run installer            # 构建 Windows 安装包
 
 手机上用：连同一个 WiFi，`npm run dev -- --host`，然后手机打开 `http://<电脑局域网IP>:5173`。打开首页时窄屏会自动进入 `/m` 手机入口（查阅 / 记录）；手机端是独立设计，不提供完整版入口。前端与数据服务默认只监听本机，局域网访问需显式 `--host`，并确认防火墙放行 5173。
 
+## 环境变量与依赖
+
+环境变量模板见 [`.env.example`](.env.example)。仓库只保留模板，真实值不入库；请在启动终端中设置为进程环境变量，数据服务不会自动读取 `.env` 文件。
+
+| 变量 | 用途 |
+|---|---|
+| `DEEPSEEK_API_KEY` | DeepSeek API Key；也可在「设置 → AI 集成」填写，保存在本机 `data/meta/secrets.json` |
+| `OPENCODE_SERVER_PASSWORD` | 数据服务与 opencode serve 之间的可选访问口令 |
+| `KERNEL_OPENCODE_URL` | opencode serve 地址，默认 `http://127.0.0.1:4096` |
+| `KERNEL_OPENCODE_BIN` | opencode 可执行文件路径；留空则从系统 `PATH` 查找 |
+
+依赖清单以 [`package.json`](package.json) 与 [`package-lock.json`](package-lock.json) 为准；Node.js 要求 `^20.19.0 || >=22.12.0`。主要依赖：
+
+- **前端**：React 19、React Router 7、Motion 12、cmdk、react-markdown + remark-gfm、date-fns、lucide-react
+- **服务端**：zod 4、write-file-atomic 8、@opencode-ai/sdk 1.18（原生 `node:http`，无 Web 框架）
+- **构建 / 分发**：Vite 7、TypeScript 5、Inno Setup 编译器
+
 ## Windows 安装包
 
 不想装 Node.js，就用安装包：
@@ -200,10 +217,17 @@ python -m http.server 4177 -d site
 
 | 项 | 内容 |
 |---|---|
-| 团队名称 | 【待填写】 |
-| 团队成员 | 【待填写】 |
-| 组别 | 【待填写】 |
-| 学校 | 【待填写】 |
-| 指导教师 | 【待填写】 |
+| 团队名称 | 巴巴博弈小组 |
+| 队长 | 林敬翔 |
+| 团队成员 | 马天宝、王梓涛 |
+| 学校 | 东莞理工学院 |
+| 学院 / 专业 | 计算机学院 · 工业软件专业（大二） |
+| 指导教师 | 姚晓曼 |
+
+| 成员 | 分工 |
+|---|---|
+| 林敬翔 | 项目负责人 / 队长：产品定义与范围裁决、总体架构、数据服务与数据模型、AI 链路、核心功能、发布与最终合并审查 |
+| 马天宝 | 移动端设计与适配：移动端全量界面设计稿（13 路由形态、token 映射、390 宽度自检）；手机端触控 / 弹窗 Phase 1 适配 |
+| 王梓涛 | 工程与文档 / 外部集成：工程文件审计与版本口径同步、文档索引 / CI / 质量门禁、微信通道 Phase 1（企业微信群机器人 + 本机入站预留） |
 
 应用本身只在本机运行，不发布到公网；介绍站可单独部署。
